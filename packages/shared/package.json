@@ -16,7 +16,15 @@
     }
   },
   "nx": {
-    "name": "shared"
+    "name": "shared",
+    "targets": {
+      "test": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "bun test packages/shared/src/lib/runtime/error.test.ts packages/shared/src/lib/runtime/env.test.ts"
+        }
+      }
+    }
   },
   "dependencies": {
     "tslib": "^2.3.0"

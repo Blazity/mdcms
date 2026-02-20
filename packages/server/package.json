@@ -16,9 +16,18 @@
     }
   },
   "nx": {
-    "name": "server"
+    "name": "server",
+    "targets": {
+      "test": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "bun test packages/server/src/lib/health.test.ts"
+        }
+      }
+    }
   },
   "dependencies": {
+    "@mdcms/shared": "workspace:*",
     "tslib": "^2.3.0"
   },
   "license": "MIT"
