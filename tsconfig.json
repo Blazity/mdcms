@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compileOnSave": false,
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/server"
+    },
+    {
+      "path": "./packages/studio"
+    },
+    {
+      "path": "./packages/sdk"
+    },
+    {
+      "path": "./packages/cli"
+    },
+    {
+      "path": "./packages/shared"
+    }
+  ]
+}

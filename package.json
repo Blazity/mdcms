@@ -1,0 +1,28 @@
+{
+  "name": "@mdcms/source",
+  "version": "0.0.0",
+  "license": "MIT",
+  "scripts": {
+    "build": "bun nx run-many -t build",
+    "typecheck": "bun nx run-many -t typecheck",
+    "check": "bun nx run-many -t build typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "private": true,
+  "dependencies": {},
+  "devDependencies": {
+    "@nx/js": "22.5.1",
+    "@swc-node/register": "~1.11.1",
+    "@swc/core": "~1.15.5",
+    "@swc/helpers": "~0.5.18",
+    "@types/node": "20.19.9",
+    "nx": "22.5.1",
+    "prettier": "~3.6.2",
+    "tslib": "^2.3.0",
+    "typescript": "~5.9.2"
+  },
+  "workspaces": [
+    "packages/*"
+  ]
+}
