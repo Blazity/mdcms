@@ -5,6 +5,7 @@ Backend API/runtime package boundary for MDCMS.
 ## Runtime Contracts (CMS-2)
 
 - `GET /healthz` is the foundational health endpoint for runtime process checks.
+- The Docker Compose `server` service uses `GET /healthz` as its container health probe.
 - Runtime errors are normalized to the shared `ErrorEnvelope` contract from `@mdcms/shared`.
 - Server env parsing extends shared `CoreEnv` with:
   - `PORT` (default `4000`, validated integer in range 1-65535)
@@ -44,3 +45,4 @@ Error responses follow:
 - `bun nx build server`
 - `bun nx typecheck server`
 - `bun nx test server`
+- `bun --cwd packages/server run start` (run Bun HTTP server runtime entrypoint for local development)

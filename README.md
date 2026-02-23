@@ -1,6 +1,6 @@
 # MDCMS Workspace
 
-This repository hosts the MDCMS monorepo foundation for CMS-1.
+This repository hosts the MDCMS monorepo foundation.
 
 It is initialized as a Bun-based Nx package workspace with the initial package boundaries required by the roadmap:
 
@@ -19,6 +19,7 @@ Run from `/Users/karol/Desktop/mdcms`:
 - `bun run build` - Build all projects with Nx.
 - `bun run typecheck` - Typecheck all projects with Nx.
 - `bun run check` - Run `build` and `typecheck` targets across projects.
+- `bun run compose:health` - Run the Docker Compose integration health and persistence checks.
 - `bun run format` - Format repository files with Prettier.
 - `bun run format:check` - Check repository formatting with Prettier.
 
@@ -29,3 +30,46 @@ Run from `/Users/karol/Desktop/mdcms`:
 - `packages/sdk`
 - `packages/cli`
 - `packages/shared`
+
+## Local Docker Stack (CMS-3)
+
+Run from `/Users/karol/Desktop/mdcms`:
+
+```bash
+docker compose up -d --build
+```
+
+Service endpoints:
+
+- Server API: `http://localhost:4000` (`GET /healthz`)
+- Postgres: `localhost:5432`
+- Redis: `localhost:6379`
+- MinIO API: `http://localhost:9000`
+- MinIO Console: `http://localhost:9001`
+- Mailhog SMTP: `localhost:1025`
+- Mailhog UI: `http://localhost:8025`
+
+Stop stack:
+
+```bash
+docker compose down
+```
+
+Run integration verification:
+
+```bash
+bun run compose:health
+```
+
+The verification script boots the stack, waits for healthy services, validates `/healthz`, checks required host port mappings, verifies `pgdata` and `miniodata` persistence across restart, and tears everything down.
+
+### Environment Defaults
+
+`.env` is optional. If present, Compose reads it automatically. Use `.env.example` as a starting point for overrides.
+
+### Bun and `node-gyp` Workarounds
+
+Some auth tooling (notably `better-auth` via `better-sqlite3`) may require native `node-gyp` compilation that can fail in Bun-focused environments.
+
+- Prefer `npx` over `bunx` for CLI operations that invoke affected tooling (e.g., schema/migration helper commands).
+- If Bun-native install fails, run dependency installation/build steps with Node.js in a build stage or local bootstrap step, then run the app with Bun.

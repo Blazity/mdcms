@@ -25,3 +25,14 @@ jobs:
 
       - run: bun install --no-cache
       - run: bun nx run-many -t build typecheck
+
+  compose-health:
+    runs-on: ubuntu-latest
+    needs: main
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: tree:0
+          fetch-depth: 0
+
+      - run: bash scripts/compose-health-check.sh
