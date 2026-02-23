@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { RuntimeError } from "./error.js";
-import { extendEnv, parseCoreEnv } from "./env.js";
+import { extendEnv, parseCoreEnv, parseDatabaseEnv } from "./env.js";
 
 test("parseCoreEnv applies default values when optional vars are missing", () => {
   const env = parseCoreEnv({} as NodeJS.ProcessEnv);
@@ -41,4 +41,23 @@ test("extendEnv composes extension values on top of CoreEnv", () => {
   assert.equal(extended.LOG_LEVEL, "debug");
   assert.equal(extended.APP_VERSION, "1.2.3");
   assert.equal(extended.SERVICE_NAME, "mdcms-server");
+});
+
+test("parseDatabaseEnv validates required DATABASE_URL and defaults", () => {
+  const env = parseDatabaseEnv({
+    DATABASE_URL: "postgresql://mdcms:mdcms@localhost:5432/mdcms",
+  } as NodeJS.ProcessEnv);
+
+  assert.equal(
+    env.DATABASE_URL,
+    "postgresql://mdcms:mdcms@localhost:5432/mdcms",
+  );
+});
+
+test("parseDatabaseEnv rejects missing DATABASE_URL", () => {
+  assert.throws(
+    () => parseDatabaseEnv({} as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof RuntimeError && error.code === "INVALID_ENV",
+  );
 });

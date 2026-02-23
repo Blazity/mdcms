@@ -7,6 +7,7 @@
     "typecheck": "bun nx run-many -t typecheck",
     "check": "bun nx run-many -t build typecheck",
     "compose:health": "bash scripts/compose-health-check.sh",
+    "migrate:check": "bash scripts/migration-startup-check.sh",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

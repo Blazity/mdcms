@@ -11,6 +11,19 @@ Backend API/runtime package boundary for MDCMS.
   - `PORT` (default `4000`, validated integer in range 1-65535)
   - `SERVICE_NAME` (default `mdcms-server`)
 
+## DB Adapter + SQL Migrations (CMS-4)
+
+- Database adapter baseline is implemented with Drizzle ORM and `postgres.js` in `src/lib/db.ts`.
+- SQL migrations are managed via Drizzle Kit and committed in `packages/server/drizzle`.
+- Server package scripts:
+  - `bun run --cwd packages/server db:generate` (generate SQL migrations from Drizzle schema)
+  - `bun run --cwd packages/server db:migrate` (apply pending SQL migrations)
+- Docker Compose runs SQL migrations automatically through one-shot `db-migrate` before `server` starts accepting traffic.
+
+### Migration Environment Variables
+
+- `DATABASE_URL` - required Postgres connection string.
+
 ### `/healthz` Response
 
 Process-only payload:

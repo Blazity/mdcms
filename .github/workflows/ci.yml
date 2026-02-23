@@ -26,6 +26,22 @@ jobs:
       - run: bun install --no-cache
       - run: bun nx run-many -t build typecheck
 
+  migration-harness:
+    runs-on: ubuntu-latest
+    needs: main
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: tree:0
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - run: bun install --no-cache
+      - run: bash scripts/migration-startup-check.sh
+
   compose-health:
     runs-on: ubuntu-latest
     needs: main

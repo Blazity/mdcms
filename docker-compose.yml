@@ -1,4 +1,19 @@
 services:
+  db-migrate:
+    build:
+      context: .
+      dockerfile: packages/server/Dockerfile
+    restart: "no"
+    command: ["bun", "run", "db:migrate"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://mdcms:mdcms@postgres:5432/mdcms}
+      NODE_ENV: ${NODE_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      APP_VERSION: ${APP_VERSION:-0.0.0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   server:
     build:
       context: .
@@ -33,6 +48,8 @@ services:
       retries: 12
       start_period: 5s
     depends_on:
+      db-migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:

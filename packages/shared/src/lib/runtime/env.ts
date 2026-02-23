@@ -12,6 +12,14 @@ export type CoreEnv = {
   APP_VERSION: string;
 };
 
+/**
+ * DatabaseEnv defines the baseline database configuration used by
+ * server-side persistence adapters.
+ */
+export type DatabaseEnv = {
+  DATABASE_URL: string;
+};
+
 const NODE_ENV_VALUES: NodeEnv[] = ["development", "test", "production"];
 const LOG_LEVEL_VALUES: LogLevel[] = [
   "trace",
@@ -21,6 +29,27 @@ const LOG_LEVEL_VALUES: LogLevel[] = [
   "error",
   "fatal",
 ];
+
+function parseRequiredString(
+  key: string,
+  value: string | undefined,
+  description: string,
+): string {
+  const resolvedValue = value?.trim();
+
+  if (resolvedValue && resolvedValue.length > 0) {
+    return resolvedValue;
+  }
+
+  throw new RuntimeError({
+    code: "INVALID_ENV",
+    message: `${key} must be set ${description}.`,
+    details: {
+      key,
+      value,
+    },
+  });
+}
 
 function parseNodeEnv(value: string | undefined): NodeEnv {
   const resolvedValue = value ?? "development";
@@ -54,6 +83,19 @@ function parseLogLevel(value: string | undefined): LogLevel {
       value: resolvedValue,
     },
   });
+}
+
+/**
+ * parseDatabaseEnv validates baseline database settings for server packages.
+ */
+export function parseDatabaseEnv(rawEnv: NodeJS.ProcessEnv): DatabaseEnv {
+  return {
+    DATABASE_URL: parseRequiredString(
+      "DATABASE_URL",
+      rawEnv.DATABASE_URL,
+      "to run database-backed workflows",
+    ),
+  };
 }
 
 /**
