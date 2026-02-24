@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import { RuntimeError } from "../runtime/error.js";
 import {
   assertActionCatalogList,
@@ -159,194 +161,214 @@ type StrictSemver = {
   raw: string;
 };
 
-const MODULE_KINDS: ModuleKind[] = ["domain", "core"];
-const STUDIO_MODES: StudioExecutionMode[] = ["iframe", "module"];
+const MODULE_KIND_VALUES = ["domain", "core"] as const;
+const STUDIO_MODE_VALUES = ["iframe", "module"] as const;
 const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
-const MODULE_MANIFEST_KEYS = [
-  "id",
-  "version",
-  "apiVersion",
-  "kind",
-  "dependsOn",
-  "minCoreVersion",
-  "maxCoreVersion",
-] as const;
-const MODULE_PACKAGE_KEYS = ["manifest", "server", "cli"] as const;
-const SERVER_SURFACE_KEYS = ["mount", "actions"] as const;
-const CLI_SURFACE_KEYS = [
-  "actionAliases",
-  "outputFormatters",
-  "preflightHooks",
-] as const;
-const CLI_ACTION_ALIAS_KEYS = ["alias", "actionId"] as const;
-const CLI_OUTPUT_FORMATTER_KEYS = ["actionId", "format"] as const;
-const CLI_PREFLIGHT_HOOK_KEYS = ["id", "run"] as const;
-const STUDIO_BOOTSTRAP_KEYS = [
-  "apiVersion",
-  "studioVersion",
-  "mode",
-  "entryUrl",
-  "integritySha256",
-  "signature",
-  "keyId",
-  "buildId",
-  "minStudioPackageVersion",
-  "minHostBridgeVersion",
-  "expiresAt",
-] as const;
-const HOST_BRIDGE_KEYS = [
-  "version",
-  "resolveComponent",
-  "renderMdxPreview",
-] as const;
-const STUDIO_MOUNT_CONTEXT_KEYS = ["apiBaseUrl", "auth", "hostBridge"] as const;
-const STUDIO_MOUNT_AUTH_KEYS = ["mode", "token"] as const;
-const REMOTE_STUDIO_MODULE_KEYS = ["mount"] as const;
-const MODULE_COMPATIBILITY_OPTIONS_KEYS = [
-  "coreVersion",
-  "supportedApiVersion",
-] as const;
-const STUDIO_COMPATIBILITY_OPTIONS_KEYS = [
-  "studioPackageVersion",
-  "hostBridgeVersion",
-  "supportedApiVersion",
-] as const;
+const nonEmptyStringSchema = z.string().trim().min(1, {
+  message: "must be a non-empty string.",
+});
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const strictSemverSchema = nonEmptyStringSchema.refine(
+  (value) => SEMVER_PATTERN.test(value),
+  {
+    message:
+      "must use strict x.y.z version format (no pre-release/build metadata).",
+  },
+);
 
-function toValueType(value: unknown): string {
-  if (Array.isArray(value)) {
-    return "array";
-  }
+const functionSchema = z.custom<(...args: unknown[]) => unknown>(
+  (value) => typeof value === "function",
+  {
+    message: "must be a function.",
+  },
+);
 
-  if (value === null) {
-    return "null";
-  }
-
-  return typeof value;
-}
-
-function throwContractError(
-  code: string,
-  message: string,
-  details: Record<string, unknown>,
-): never {
-  throw new RuntimeError({
-    code,
-    message,
-    statusCode: 500,
-    details,
-  });
-}
-
-function assertRecord(
-  value: unknown,
-  path: string,
-  code: string,
-): asserts value is Record<string, unknown> {
-  if (isRecord(value)) {
-    return;
-  }
-
-  throwContractError(code, `${path} must be an object.`, {
-    path,
-    valueType: toValueType(value),
-  });
-}
-
-function assertNoUnknownKeys(
-  value: Record<string, unknown>,
-  path: string,
-  allowedKeys: readonly string[],
-  code: string,
-): void {
-  const unknownKeys = Object.keys(value).filter(
-    (key) => !allowedKeys.includes(key),
-  );
-
-  if (unknownKeys.length === 0) {
-    return;
-  }
-
-  throwContractError(
-    code,
-    `${path} contains unknown field(s): ${unknownKeys.join(", ")}.`,
-    {
-      path,
-      unknownKeys,
-      allowedKeys,
-    },
-  );
-}
-
-function assertRequiredNonEmptyString(
-  value: unknown,
-  path: string,
-  code: string,
-): asserts value is string {
-  if (typeof value === "string" && value.trim().length > 0) {
-    return;
-  }
-
-  throwContractError(code, `${path} must be a non-empty string.`, {
-    path,
-    valueType: toValueType(value),
-    value,
-  });
-}
-
-function assertOptionalNonEmptyString(
-  value: unknown,
-  path: string,
-  code: string,
-): asserts value is string | undefined {
-  if (value === undefined) {
-    return;
-  }
-
-  assertRequiredNonEmptyString(value, path, code);
-}
-
-function assertFunction(
-  value: unknown,
-  path: string,
-  code: string,
-): asserts value is (...args: unknown[]) => unknown {
-  if (typeof value === "function") {
-    return;
-  }
-
-  throwContractError(code, `${path} must be a function.`, {
-    path,
-    valueType: toValueType(value),
-  });
-}
-
-function parseStrictSemver(
-  value: string,
-  path: string,
-  code: string,
-): StrictSemver {
-  const match = SEMVER_PATTERN.exec(value);
-
-  if (!match) {
-    throwContractError(
-      code,
-      `${path} must use strict x.y.z version format (no pre-release/build metadata).`,
+const moduleManifestSchema = z
+  .object({
+    id: nonEmptyStringSchema,
+    version: nonEmptyStringSchema,
+    apiVersion: nonEmptyStringSchema.refine(
+      (value) => value === EXTENSIBILITY_API_VERSION,
       {
-        path,
-        value,
+        message: `must be "${EXTENSIBILITY_API_VERSION}".`,
       },
-    );
-  }
+    ),
+    kind: z.enum(MODULE_KIND_VALUES).optional(),
+    dependsOn: z.array(nonEmptyStringSchema).optional(),
+    minCoreVersion: strictSemverSchema.optional(),
+    maxCoreVersion: strictSemverSchema.optional(),
+  })
+  .strict()
+  .superRefine((manifest, context) => {
+    if (manifest.dependsOn !== undefined) {
+      const seen = new Set<string>();
+
+      manifest.dependsOn.forEach((dependency, index) => {
+        if (seen.has(dependency)) {
+          context.addIssue({
+            code: "custom",
+            path: ["dependsOn", index],
+            message: `contains duplicate dependency id \"${dependency}\".`,
+          });
+        }
+
+        seen.add(dependency);
+      });
+    }
+
+    if (
+      manifest.minCoreVersion !== undefined &&
+      manifest.maxCoreVersion !== undefined
+    ) {
+      const minVersion = toStrictSemver(manifest.minCoreVersion);
+      const maxVersion = toStrictSemver(manifest.maxCoreVersion);
+
+      if (compareStrictSemver(minVersion, maxVersion) > 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["minCoreVersion"],
+          message: "must be less than or equal to maxCoreVersion.",
+        });
+      }
+    }
+  });
+
+const cliActionAliasSchema = z
+  .object({
+    alias: nonEmptyStringSchema,
+    actionId: nonEmptyStringSchema,
+  })
+  .strict();
+
+const cliOutputFormatterSchema = z
+  .object({
+    actionId: nonEmptyStringSchema.optional(),
+    format: functionSchema,
+  })
+  .strict();
+
+const cliPreflightHookSchema = z
+  .object({
+    id: nonEmptyStringSchema,
+    run: functionSchema,
+  })
+  .strict();
+
+const cliSurfaceSchema = z
+  .object({
+    actionAliases: z.array(cliActionAliasSchema).optional(),
+    outputFormatters: z.array(cliOutputFormatterSchema).optional(),
+    preflightHooks: z.array(cliPreflightHookSchema).optional(),
+  })
+  .strict();
+
+const serverSurfaceSchema = z
+  .object({
+    mount: functionSchema,
+    actions: z.array(z.unknown()).optional(),
+  })
+  .strict();
+
+const modulePackageSchema = z
+  .object({
+    manifest: moduleManifestSchema,
+    server: serverSurfaceSchema.optional(),
+    cli: cliSurfaceSchema.optional(),
+  })
+  .strict();
+
+const studioBootstrapManifestSchema = z
+  .object({
+    apiVersion: nonEmptyStringSchema.refine(
+      (value) => value === EXTENSIBILITY_API_VERSION,
+      {
+        message: `must be "${EXTENSIBILITY_API_VERSION}".`,
+      },
+    ),
+    studioVersion: nonEmptyStringSchema,
+    mode: z.enum(STUDIO_MODE_VALUES),
+    entryUrl: nonEmptyStringSchema,
+    integritySha256: nonEmptyStringSchema,
+    signature: nonEmptyStringSchema,
+    keyId: nonEmptyStringSchema,
+    buildId: nonEmptyStringSchema,
+    minStudioPackageVersion: strictSemverSchema,
+    minHostBridgeVersion: strictSemverSchema,
+    expiresAt: nonEmptyStringSchema.refine(
+      (value) => !Number.isNaN(Date.parse(value)),
+      {
+        message: "must be an ISO-8601 date string.",
+      },
+    ),
+  })
+  .strict();
+
+const hostBridgeV1Schema = z
+  .object({
+    version: nonEmptyStringSchema.refine(
+      (value) => value === HOST_BRIDGE_VERSION,
+      {
+        message: `must be "${HOST_BRIDGE_VERSION}".`,
+      },
+    ),
+    resolveComponent: functionSchema,
+    renderMdxPreview: functionSchema,
+  })
+  .strict();
+
+const studioMountAuthSchema = z
+  .object({
+    mode: z.enum(["cookie", "token"]),
+    token: nonEmptyStringSchema.optional(),
+  })
+  .strict()
+  .superRefine((auth, context) => {
+    if (auth.mode === "token" && auth.token === undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["token"],
+        message: "must be a non-empty string.",
+      });
+    }
+  });
+
+const studioMountContextSchema = z
+  .object({
+    apiBaseUrl: nonEmptyStringSchema,
+    auth: studioMountAuthSchema,
+    hostBridge: hostBridgeV1Schema,
+  })
+  .strict();
+
+const remoteStudioModuleSchema = z
+  .object({
+    mount: functionSchema,
+  })
+  .strict();
+
+const moduleCompatibilityOptionsSchema = z
+  .object({
+    coreVersion: strictSemverSchema,
+    supportedApiVersion: nonEmptyStringSchema.optional(),
+  })
+  .strict();
+
+const studioCompatibilityOptionsSchema = z
+  .object({
+    studioPackageVersion: strictSemverSchema,
+    hostBridgeVersion: strictSemverSchema,
+    supportedApiVersion: nonEmptyStringSchema.optional(),
+  })
+  .strict();
+
+function toStrictSemver(value: string): StrictSemver {
+  const [major, minor, patch] = value.split(".").map(Number);
 
   return {
-    major: Number(match[1]),
-    minor: Number(match[2]),
-    patch: Number(match[3]),
+    major,
+    minor,
+    patch,
     raw: value,
   };
 }
@@ -370,54 +392,89 @@ function compareStrictSemver(
   return 0;
 }
 
-function assertOptionalStrictSemver(
-  value: unknown,
+function formatIssuePath(
   path: string,
-  code: string,
-): StrictSemver | undefined {
-  if (value === undefined) {
-    return undefined;
+  issuePath: readonly PropertyKey[],
+): string {
+  if (issuePath.length === 0) {
+    return path;
   }
 
-  assertRequiredNonEmptyString(value, path, code);
-  return parseStrictSemver(value, path, code);
+  return issuePath.reduce<string>((acc, segment) => {
+    if (typeof segment === "number") {
+      return `${acc}[${segment}]`;
+    }
+
+    if (typeof segment === "symbol") {
+      return `${acc}.[${String(segment)}]`;
+    }
+
+    return `${acc}.${segment}`;
+  }, path);
 }
 
-function assertDependsOnArray(
+function toValidationMessage(
+  path: string,
+  issue: z.core.$ZodIssue,
+  fallback: string,
+): string {
+  const issuePath = formatIssuePath(path, issue.path ?? []);
+
+  if (
+    issue.code === "unrecognized_keys" &&
+    "keys" in issue &&
+    Array.isArray(issue.keys)
+  ) {
+    return `${issuePath} contains unknown field(s): ${issue.keys.join(", ")}.`;
+  }
+
+  if (issue.code === "custom") {
+    return `${issuePath} ${issue.message}`;
+  }
+
+  if (issue.message) {
+    return `${issuePath} ${issue.message}`;
+  }
+
+  return fallback;
+}
+
+function throwValidationRuntimeError(
+  code: string,
+  path: string,
+  error: z.ZodError,
+  fallbackMessage: string,
+): never {
+  const [firstIssue] = error.issues;
+  const message = firstIssue
+    ? toValidationMessage(path, firstIssue, fallbackMessage)
+    : fallbackMessage;
+
+  throw new RuntimeError({
+    code,
+    message,
+    statusCode: 500,
+    details: {
+      path: firstIssue ? formatIssuePath(path, firstIssue.path ?? []) : path,
+      issues: error.issues,
+    },
+  });
+}
+
+function assertWithSchema<T>(
+  schema: z.ZodType<T>,
   value: unknown,
   path: string,
   code: string,
-): asserts value is string[] | undefined {
-  if (value === undefined) {
+  fallbackMessage: string,
+): asserts value is T {
+  const parsed = schema.safeParse(value);
+
+  if (parsed.success) {
     return;
   }
 
-  if (!Array.isArray(value)) {
-    throwContractError(code, `${path} must be an array of non-empty strings.`, {
-      path,
-      valueType: toValueType(value),
-    });
-  }
-
-  const seen = new Set<string>();
-
-  value.forEach((item, index) => {
-    const itemPath = `${path}[${index}]`;
-    assertRequiredNonEmptyString(item, itemPath, code);
-
-    if (seen.has(item)) {
-      throwContractError(
-        code,
-        `${path} contains duplicate dependency id "${item}".`,
-        {
-          path,
-          value: item,
-        },
-      );
-    }
-
-    seen.add(item);
-  });
+  throwValidationRuntimeError(code, path, parsed.error, fallbackMessage);
 }
 
 /**
@@ -428,70 +485,13 @@ export function assertModuleManifest(
   value: unknown,
   path = "manifest",
 ): asserts value is ModuleManifest {
-  const code = "INVALID_MODULE_MANIFEST";
-
-  assertRecord(value, path, code);
-  assertNoUnknownKeys(value, path, MODULE_MANIFEST_KEYS, code);
-
-  assertRequiredNonEmptyString(value.id, `${path}.id`, code);
-  assertRequiredNonEmptyString(value.version, `${path}.version`, code);
-  assertRequiredNonEmptyString(value.apiVersion, `${path}.apiVersion`, code);
-
-  if (value.apiVersion !== EXTENSIBILITY_API_VERSION) {
-    throwContractError(
-      code,
-      `${path}.apiVersion must be "${EXTENSIBILITY_API_VERSION}".`,
-      {
-        path: `${path}.apiVersion`,
-        value: value.apiVersion,
-      },
-    );
-  }
-
-  if (value.kind !== undefined) {
-    if (
-      typeof value.kind !== "string" ||
-      !MODULE_KINDS.includes(value.kind as ModuleKind)
-    ) {
-      throwContractError(
-        code,
-        `${path}.kind must be one of: ${MODULE_KINDS.join(", ")}.`,
-        {
-          path: `${path}.kind`,
-          value: value.kind,
-        },
-      );
-    }
-  }
-
-  assertDependsOnArray(value.dependsOn, `${path}.dependsOn`, code);
-
-  const minVersion = assertOptionalStrictSemver(
-    value.minCoreVersion,
-    `${path}.minCoreVersion`,
-    code,
+  assertWithSchema(
+    moduleManifestSchema,
+    value,
+    path,
+    "INVALID_MODULE_MANIFEST",
+    `${path} is invalid.`,
   );
-  const maxVersion = assertOptionalStrictSemver(
-    value.maxCoreVersion,
-    `${path}.maxCoreVersion`,
-    code,
-  );
-
-  if (
-    minVersion !== undefined &&
-    maxVersion !== undefined &&
-    compareStrictSemver(minVersion, maxVersion) > 0
-  ) {
-    throwContractError(
-      code,
-      `${path}.minCoreVersion must be less than or equal to ${path}.maxCoreVersion.`,
-      {
-        path,
-        minCoreVersion: minVersion.raw,
-        maxCoreVersion: maxVersion.raw,
-      },
-    );
-  }
 }
 
 /**
@@ -502,113 +502,33 @@ export function assertMdcmsModulePackage(
   value: unknown,
   path = "module",
 ): asserts value is MdcmsModulePackage {
-  const code = "INVALID_MDCMS_MODULE_PACKAGE";
+  assertWithSchema(
+    modulePackageSchema,
+    value,
+    path,
+    "INVALID_MDCMS_MODULE_PACKAGE",
+    `${path} is invalid.`,
+  );
 
-  assertRecord(value, path, code);
-  assertNoUnknownKeys(value, path, MODULE_PACKAGE_KEYS, code);
+  const parsed = modulePackageSchema.parse(value);
 
-  if (value.manifest === undefined) {
-    throwContractError(code, `${path}.manifest is required.`, {
-      path: `${path}.manifest`,
-    });
-  }
-
-  assertModuleManifest(value.manifest, `${path}.manifest`);
-
-  if (value.server !== undefined) {
-    assertRecord(value.server, `${path}.server`, code);
-    assertNoUnknownKeys(
-      value.server,
-      `${path}.server`,
-      SERVER_SURFACE_KEYS,
-      code,
-    );
-
-    assertFunction(value.server.mount, `${path}.server.mount`, code);
-
-    if (value.server.actions !== undefined) {
-      assertActionCatalogList(value.server.actions, `${path}.server.actions`);
-    }
-  }
-
-  if (value.cli !== undefined) {
-    assertRecord(value.cli, `${path}.cli`, code);
-    assertNoUnknownKeys(value.cli, `${path}.cli`, CLI_SURFACE_KEYS, code);
-
-    if (value.cli.actionAliases !== undefined) {
-      if (!Array.isArray(value.cli.actionAliases)) {
-        throwContractError(
-          code,
-          `${path}.cli.actionAliases must be an array when provided.`,
-          {
-            path: `${path}.cli.actionAliases`,
-            valueType: toValueType(value.cli.actionAliases),
+  if (parsed.server?.actions !== undefined) {
+    try {
+      assertActionCatalogList(parsed.server.actions, `${path}.server.actions`);
+    } catch (error) {
+      if (error instanceof RuntimeError) {
+        throw new RuntimeError({
+          code: "INVALID_MDCMS_MODULE_PACKAGE",
+          message: error.message,
+          statusCode: 500,
+          details: {
+            path: `${path}.server.actions`,
+            cause: error.details,
           },
-        );
+        });
       }
 
-      value.cli.actionAliases.forEach((alias, index) => {
-        const aliasPath = `${path}.cli.actionAliases[${index}]`;
-        assertRecord(alias, aliasPath, code);
-        assertNoUnknownKeys(alias, aliasPath, CLI_ACTION_ALIAS_KEYS, code);
-        assertRequiredNonEmptyString(alias.alias, `${aliasPath}.alias`, code);
-        assertRequiredNonEmptyString(
-          alias.actionId,
-          `${aliasPath}.actionId`,
-          code,
-        );
-      });
-    }
-
-    if (value.cli.outputFormatters !== undefined) {
-      if (!Array.isArray(value.cli.outputFormatters)) {
-        throwContractError(
-          code,
-          `${path}.cli.outputFormatters must be an array when provided.`,
-          {
-            path: `${path}.cli.outputFormatters`,
-            valueType: toValueType(value.cli.outputFormatters),
-          },
-        );
-      }
-
-      value.cli.outputFormatters.forEach((formatter, index) => {
-        const formatterPath = `${path}.cli.outputFormatters[${index}]`;
-        assertRecord(formatter, formatterPath, code);
-        assertNoUnknownKeys(
-          formatter,
-          formatterPath,
-          CLI_OUTPUT_FORMATTER_KEYS,
-          code,
-        );
-        assertOptionalNonEmptyString(
-          formatter.actionId,
-          `${formatterPath}.actionId`,
-          code,
-        );
-        assertFunction(formatter.format, `${formatterPath}.format`, code);
-      });
-    }
-
-    if (value.cli.preflightHooks !== undefined) {
-      if (!Array.isArray(value.cli.preflightHooks)) {
-        throwContractError(
-          code,
-          `${path}.cli.preflightHooks must be an array when provided.`,
-          {
-            path: `${path}.cli.preflightHooks`,
-            valueType: toValueType(value.cli.preflightHooks),
-          },
-        );
-      }
-
-      value.cli.preflightHooks.forEach((hook, index) => {
-        const hookPath = `${path}.cli.preflightHooks[${index}]`;
-        assertRecord(hook, hookPath, code);
-        assertNoUnknownKeys(hook, hookPath, CLI_PREFLIGHT_HOOK_KEYS, code);
-        assertRequiredNonEmptyString(hook.id, `${hookPath}.id`, code);
-        assertFunction(hook.run, `${hookPath}.run`, code);
-      });
+      throw error;
     }
   }
 }
@@ -621,87 +541,13 @@ export function assertStudioBootstrapManifest(
   value: unknown,
   path = "studioBootstrapManifest",
 ): asserts value is StudioBootstrapManifest {
-  const code = "INVALID_STUDIO_BOOTSTRAP_MANIFEST";
-
-  assertRecord(value, path, code);
-  assertNoUnknownKeys(value, path, STUDIO_BOOTSTRAP_KEYS, code);
-
-  assertRequiredNonEmptyString(value.apiVersion, `${path}.apiVersion`, code);
-
-  if (value.apiVersion !== EXTENSIBILITY_API_VERSION) {
-    throwContractError(
-      code,
-      `${path}.apiVersion must be "${EXTENSIBILITY_API_VERSION}".`,
-      {
-        path: `${path}.apiVersion`,
-        value: value.apiVersion,
-      },
-    );
-  }
-
-  assertRequiredNonEmptyString(
-    value.studioVersion,
-    `${path}.studioVersion`,
-    code,
+  assertWithSchema(
+    studioBootstrapManifestSchema,
+    value,
+    path,
+    "INVALID_STUDIO_BOOTSTRAP_MANIFEST",
+    `${path} is invalid.`,
   );
-  assertRequiredNonEmptyString(value.mode, `${path}.mode`, code);
-
-  if (
-    typeof value.mode !== "string" ||
-    !STUDIO_MODES.includes(value.mode as StudioExecutionMode)
-  ) {
-    throwContractError(
-      code,
-      `${path}.mode must be one of: ${STUDIO_MODES.join(", ")}.`,
-      {
-        path: `${path}.mode`,
-        value: value.mode,
-      },
-    );
-  }
-
-  assertRequiredNonEmptyString(value.entryUrl, `${path}.entryUrl`, code);
-  assertRequiredNonEmptyString(
-    value.integritySha256,
-    `${path}.integritySha256`,
-    code,
-  );
-  assertRequiredNonEmptyString(value.signature, `${path}.signature`, code);
-  assertRequiredNonEmptyString(value.keyId, `${path}.keyId`, code);
-  assertRequiredNonEmptyString(value.buildId, `${path}.buildId`, code);
-  assertRequiredNonEmptyString(
-    value.minStudioPackageVersion,
-    `${path}.minStudioPackageVersion`,
-    code,
-  );
-  assertRequiredNonEmptyString(
-    value.minHostBridgeVersion,
-    `${path}.minHostBridgeVersion`,
-    code,
-  );
-  assertRequiredNonEmptyString(value.expiresAt, `${path}.expiresAt`, code);
-
-  parseStrictSemver(
-    value.minStudioPackageVersion,
-    `${path}.minStudioPackageVersion`,
-    code,
-  );
-  parseStrictSemver(
-    value.minHostBridgeVersion,
-    `${path}.minHostBridgeVersion`,
-    code,
-  );
-
-  if (Number.isNaN(Date.parse(value.expiresAt))) {
-    throwContractError(
-      code,
-      `${path}.expiresAt must be an ISO-8601 date string.`,
-      {
-        path: `${path}.expiresAt`,
-        value: value.expiresAt,
-      },
-    );
-  }
 }
 
 /**
@@ -712,26 +558,13 @@ export function assertHostBridgeV1(
   value: unknown,
   path = "hostBridge",
 ): asserts value is HostBridgeV1 {
-  const code = "INVALID_STUDIO_RUNTIME_CONTRACT";
-
-  assertRecord(value, path, code);
-  assertNoUnknownKeys(value, path, HOST_BRIDGE_KEYS, code);
-
-  assertRequiredNonEmptyString(value.version, `${path}.version`, code);
-
-  if (value.version !== HOST_BRIDGE_VERSION) {
-    throwContractError(
-      code,
-      `${path}.version must be "${HOST_BRIDGE_VERSION}".`,
-      {
-        path: `${path}.version`,
-        value: value.version,
-      },
-    );
-  }
-
-  assertFunction(value.resolveComponent, `${path}.resolveComponent`, code);
-  assertFunction(value.renderMdxPreview, `${path}.renderMdxPreview`, code);
+  assertWithSchema(
+    hostBridgeV1Schema,
+    value,
+    path,
+    "INVALID_STUDIO_RUNTIME_CONTRACT",
+    `${path} is invalid.`,
+  );
 }
 
 /**
@@ -742,30 +575,13 @@ export function assertStudioMountContext(
   value: unknown,
   path = "studioMountContext",
 ): asserts value is StudioMountContext {
-  const code = "INVALID_STUDIO_RUNTIME_CONTRACT";
-
-  assertRecord(value, path, code);
-  assertNoUnknownKeys(value, path, STUDIO_MOUNT_CONTEXT_KEYS, code);
-
-  assertRequiredNonEmptyString(value.apiBaseUrl, `${path}.apiBaseUrl`, code);
-  assertRecord(value.auth, `${path}.auth`, code);
-  assertNoUnknownKeys(value.auth, `${path}.auth`, STUDIO_MOUNT_AUTH_KEYS, code);
-  assertRequiredNonEmptyString(value.auth.mode, `${path}.auth.mode`, code);
-
-  if (value.auth.mode !== "cookie" && value.auth.mode !== "token") {
-    throwContractError(code, `${path}.auth.mode must be "cookie" or "token".`, {
-      path: `${path}.auth.mode`,
-      value: value.auth.mode,
-    });
-  }
-
-  if (value.auth.mode === "token") {
-    assertRequiredNonEmptyString(value.auth.token, `${path}.auth.token`, code);
-  } else if (value.auth.token !== undefined) {
-    assertOptionalNonEmptyString(value.auth.token, `${path}.auth.token`, code);
-  }
-
-  assertHostBridgeV1(value.hostBridge, `${path}.hostBridge`);
+  assertWithSchema(
+    studioMountContextSchema,
+    value,
+    path,
+    "INVALID_STUDIO_RUNTIME_CONTRACT",
+    `${path} is invalid.`,
+  );
 }
 
 /**
@@ -775,11 +591,13 @@ export function assertRemoteStudioModule(
   value: unknown,
   path = "remoteStudioModule",
 ): asserts value is RemoteStudioModule {
-  const code = "INVALID_STUDIO_RUNTIME_CONTRACT";
-
-  assertRecord(value, path, code);
-  assertNoUnknownKeys(value, path, REMOTE_STUDIO_MODULE_KEYS, code);
-  assertFunction(value.mount, `${path}.mount`, code);
+  assertWithSchema(
+    remoteStudioModuleSchema,
+    value,
+    path,
+    "INVALID_STUDIO_RUNTIME_CONTRACT",
+    `${path} is invalid.`,
+  );
 }
 
 /**
@@ -790,85 +608,65 @@ export function assertModuleManifestCompatibility(
   manifest: ModuleManifest,
   options: ModuleManifestCompatibilityOptions,
 ): void {
-  const code = "INCOMPATIBLE_MODULE_MANIFEST";
-
   assertModuleManifest(manifest, "manifest");
-  assertRecord(options as unknown, "options", code);
-  assertNoUnknownKeys(
-    options as unknown as Record<string, unknown>,
+  assertWithSchema(
+    moduleCompatibilityOptionsSchema,
+    options,
     "options",
-    MODULE_COMPATIBILITY_OPTIONS_KEYS,
-    code,
-  );
-  assertRequiredNonEmptyString(
-    options.coreVersion,
-    "options.coreVersion",
-    code,
-  );
-  const coreVersion = parseStrictSemver(
-    options.coreVersion,
-    "options.coreVersion",
-    code,
+    "INCOMPATIBLE_MODULE_MANIFEST",
+    "options is invalid.",
   );
 
+  const parsedOptions = moduleCompatibilityOptionsSchema.parse(options);
   const supportedApiVersion =
-    options.supportedApiVersion ?? EXTENSIBILITY_API_VERSION;
-
-  assertRequiredNonEmptyString(
-    supportedApiVersion,
-    "options.supportedApiVersion",
-    code,
-  );
+    parsedOptions.supportedApiVersion ?? EXTENSIBILITY_API_VERSION;
 
   if (manifest.apiVersion !== supportedApiVersion) {
-    throwContractError(
-      code,
-      `manifest.apiVersion ${manifest.apiVersion} is not supported (expected ${supportedApiVersion}).`,
-      {
+    throw new RuntimeError({
+      code: "INCOMPATIBLE_MODULE_MANIFEST",
+      message: `manifest.apiVersion ${manifest.apiVersion} is not supported (expected ${supportedApiVersion}).`,
+      statusCode: 500,
+      details: {
         path: "manifest.apiVersion",
         manifestApiVersion: manifest.apiVersion,
         supportedApiVersion,
       },
-    );
+    });
   }
 
-  if (manifest.minCoreVersion !== undefined) {
-    const min = parseStrictSemver(
-      manifest.minCoreVersion,
-      "manifest.minCoreVersion",
-      code,
-    );
+  const coreVersion = toStrictSemver(parsedOptions.coreVersion);
 
-    if (compareStrictSemver(coreVersion, min) < 0) {
-      throwContractError(
-        code,
-        `Core version ${options.coreVersion} is below manifest.minCoreVersion ${manifest.minCoreVersion}.`,
-        {
+  if (manifest.minCoreVersion !== undefined) {
+    const minVersion = toStrictSemver(manifest.minCoreVersion);
+
+    if (compareStrictSemver(coreVersion, minVersion) < 0) {
+      throw new RuntimeError({
+        code: "INCOMPATIBLE_MODULE_MANIFEST",
+        message: `Core version ${parsedOptions.coreVersion} is below manifest.minCoreVersion ${manifest.minCoreVersion}.`,
+        statusCode: 500,
+        details: {
           path: "manifest.minCoreVersion",
-          coreVersion: options.coreVersion,
+          coreVersion: parsedOptions.coreVersion,
           minCoreVersion: manifest.minCoreVersion,
         },
-      );
+      });
     }
   }
 
   if (manifest.maxCoreVersion !== undefined) {
-    const max = parseStrictSemver(
-      manifest.maxCoreVersion,
-      "manifest.maxCoreVersion",
-      code,
-    );
+    const maxVersion = toStrictSemver(manifest.maxCoreVersion);
 
-    if (compareStrictSemver(coreVersion, max) > 0) {
-      throwContractError(
-        code,
-        `Core version ${options.coreVersion} is above manifest.maxCoreVersion ${manifest.maxCoreVersion}.`,
-        {
+    if (compareStrictSemver(coreVersion, maxVersion) > 0) {
+      throw new RuntimeError({
+        code: "INCOMPATIBLE_MODULE_MANIFEST",
+        message: `Core version ${parsedOptions.coreVersion} is above manifest.maxCoreVersion ${manifest.maxCoreVersion}.`,
+        statusCode: 500,
+        details: {
           path: "manifest.maxCoreVersion",
-          coreVersion: options.coreVersion,
+          coreVersion: parsedOptions.coreVersion,
           maxCoreVersion: manifest.maxCoreVersion,
         },
-      );
+      });
     }
   }
 }
@@ -881,91 +679,65 @@ export function assertStudioBootstrapCompatibility(
   manifest: StudioBootstrapManifest,
   options: StudioBootstrapCompatibilityOptions,
 ): void {
-  const code = "INCOMPATIBLE_STUDIO_BOOTSTRAP_MANIFEST";
-
   assertStudioBootstrapManifest(manifest, "manifest");
-  assertRecord(options as unknown, "options", code);
-  assertNoUnknownKeys(
-    options as unknown as Record<string, unknown>,
+  assertWithSchema(
+    studioCompatibilityOptionsSchema,
+    options,
     "options",
-    STUDIO_COMPATIBILITY_OPTIONS_KEYS,
-    code,
-  );
-  assertRequiredNonEmptyString(
-    options.studioPackageVersion,
-    "options.studioPackageVersion",
-    code,
-  );
-  assertRequiredNonEmptyString(
-    options.hostBridgeVersion,
-    "options.hostBridgeVersion",
-    code,
+    "INCOMPATIBLE_STUDIO_BOOTSTRAP_MANIFEST",
+    "options is invalid.",
   );
 
+  const parsedOptions = studioCompatibilityOptionsSchema.parse(options);
   const supportedApiVersion =
-    options.supportedApiVersion ?? EXTENSIBILITY_API_VERSION;
-
-  assertRequiredNonEmptyString(
-    supportedApiVersion,
-    "options.supportedApiVersion",
-    code,
-  );
+    parsedOptions.supportedApiVersion ?? EXTENSIBILITY_API_VERSION;
 
   if (manifest.apiVersion !== supportedApiVersion) {
-    throwContractError(
-      code,
-      `manifest.apiVersion ${manifest.apiVersion} is not supported (expected ${supportedApiVersion}).`,
-      {
+    throw new RuntimeError({
+      code: "INCOMPATIBLE_STUDIO_BOOTSTRAP_MANIFEST",
+      message: `manifest.apiVersion ${manifest.apiVersion} is not supported (expected ${supportedApiVersion}).`,
+      statusCode: 500,
+      details: {
         path: "manifest.apiVersion",
         manifestApiVersion: manifest.apiVersion,
         supportedApiVersion,
       },
-    );
+    });
   }
 
-  const studioPackageVersion = parseStrictSemver(
-    options.studioPackageVersion,
-    "options.studioPackageVersion",
-    code,
+  const studioPackageVersion = toStrictSemver(
+    parsedOptions.studioPackageVersion,
   );
-  const hostBridgeVersion = parseStrictSemver(
-    options.hostBridgeVersion,
-    "options.hostBridgeVersion",
-    code,
-  );
-  const minStudioPackageVersion = parseStrictSemver(
+  const hostBridgeVersion = toStrictSemver(parsedOptions.hostBridgeVersion);
+  const minStudioPackageVersion = toStrictSemver(
     manifest.minStudioPackageVersion,
-    "manifest.minStudioPackageVersion",
-    code,
   );
-  const minHostBridgeVersion = parseStrictSemver(
-    manifest.minHostBridgeVersion,
-    "manifest.minHostBridgeVersion",
-    code,
-  );
+  const minHostBridgeVersion = toStrictSemver(manifest.minHostBridgeVersion);
 
   if (compareStrictSemver(studioPackageVersion, minStudioPackageVersion) < 0) {
-    throwContractError(
-      code,
-      `Studio package version ${options.studioPackageVersion} is below manifest.minStudioPackageVersion ${manifest.minStudioPackageVersion}.`,
-      {
+    throw new RuntimeError({
+      code: "INCOMPATIBLE_STUDIO_BOOTSTRAP_MANIFEST",
+      message: `Studio package version ${parsedOptions.studioPackageVersion} is below manifest.minStudioPackageVersion ${manifest.minStudioPackageVersion}.`,
+      statusCode: 500,
+      details: {
         path: "manifest.minStudioPackageVersion",
-        studioPackageVersion: options.studioPackageVersion,
+        studioPackageVersion: parsedOptions.studioPackageVersion,
         minStudioPackageVersion: manifest.minStudioPackageVersion,
       },
-    );
+    });
   }
 
   if (compareStrictSemver(hostBridgeVersion, minHostBridgeVersion) < 0) {
-    throwContractError(
-      code,
-      `Host bridge version ${options.hostBridgeVersion} is below manifest.minHostBridgeVersion ${manifest.minHostBridgeVersion}.`,
-      {
+    throw new RuntimeError({
+      code: "INCOMPATIBLE_STUDIO_BOOTSTRAP_MANIFEST",
+      message: `Host bridge version ${parsedOptions.hostBridgeVersion} is below manifest.minHostBridgeVersion ${manifest.minHostBridgeVersion}.`,
+      statusCode: 500,
+      details: {
         path: "manifest.minHostBridgeVersion",
-        hostBridgeVersion: options.hostBridgeVersion,
+        hostBridgeVersion: parsedOptions.hostBridgeVersion,
         minHostBridgeVersion: manifest.minHostBridgeVersion,
       },
-    );
+    });
   }
 }
 
@@ -973,12 +745,7 @@ export function assertStudioBootstrapCompatibility(
  * isModuleManifest is a non-throwing type guard for runtime checks.
  */
 export function isModuleManifest(value: unknown): value is ModuleManifest {
-  try {
-    assertModuleManifest(value);
-    return true;
-  } catch {
-    return false;
-  }
+  return moduleManifestSchema.safeParse(value).success;
 }
 
 /**
@@ -987,10 +754,5 @@ export function isModuleManifest(value: unknown): value is ModuleManifest {
 export function isStudioBootstrapManifest(
   value: unknown,
 ): value is StudioBootstrapManifest {
-  try {
-    assertStudioBootstrapManifest(value);
-    return true;
-  } catch {
-    return false;
-  }
+  return studioBootstrapManifestSchema.safeParse(value).success;
 }

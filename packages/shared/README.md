@@ -30,6 +30,7 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
   - `StudioBootstrapManifest`, `StudioMountContext`, `HostBridgeV1`, `RemoteStudioModule`
   - CLI support surfaces: `CliActionAlias`, `CliOutputFormatter`, `CliPreflightHook`
 - Runtime validators:
+  - Implemented with strict `zod` schemas (`.strict()` + custom refinements) and normalized `RuntimeError` output.
   - `assertModuleManifest(...)`
   - `assertMdcmsModulePackage(...)`
   - `assertStudioBootstrapManifest(...)`

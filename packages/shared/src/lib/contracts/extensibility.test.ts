@@ -102,7 +102,7 @@ test("assertModuleManifest rejects invalid dependsOn shapes and duplicates", () 
         ...validModuleManifest,
         dependsOn: "core.auth",
       }),
-    /dependsOn must be an array/,
+    /dependsOn.*array/,
   );
 
   assert.throws(
