@@ -5,6 +5,10 @@
   "scripts": {
     "build": "bun nx run-many -t build",
     "typecheck": "bun nx run-many -t typecheck",
+    "quality": "bun run format:check && bun run typecheck",
+    "unit": "bun nx run-many -t test",
+    "integration": "bun run compose:health && bun run migrate:check",
+    "ci:required": "bun run quality && bun run unit && bun run integration",
     "check": "bun nx run-many -t build typecheck",
     "compose:health": "bash scripts/compose-health-check.sh",
     "migrate:check": "bash scripts/migration-startup-check.sh",

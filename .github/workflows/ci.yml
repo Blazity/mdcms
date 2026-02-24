@@ -10,8 +10,12 @@ permissions:
   actions: read
   contents: read
 
+env:
+  NX_DAEMON: "false"
+  NX_CACHE_DIRECTORY: ".nx/cache"
+
 jobs:
-  main:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,12 +27,21 @@ jobs:
         with:
           bun-version: latest
 
-      - run: bun install --no-cache
-      - run: bun nx run-many -t build typecheck
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+            .nx/cache
+          key: ${{ runner.os }}-bun-nx-${{ hashFiles('bun.lock', 'package.json', 'nx.json', 'tsconfig.base.json', 'tsconfig.json', 'packages/*/package.json', '.github/workflows/ci.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-nx-
 
-  migration-harness:
+      - run: bun install --frozen-lockfile
+      - run: bun run quality
+
+  unit-tests:
     runs-on: ubuntu-latest
-    needs: main
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,16 +52,29 @@ jobs:
         with:
           bun-version: latest
 
-      - run: bun install --no-cache
-      - run: bash scripts/migration-startup-check.sh
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+            .nx/cache
+          key: ${{ runner.os }}-bun-nx-${{ hashFiles('bun.lock', 'package.json', 'nx.json', 'tsconfig.base.json', 'tsconfig.json', 'packages/*/package.json', '.github/workflows/ci.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-nx-
 
-  compose-health:
+      - run: bun install --frozen-lockfile
+      - run: bun run unit
+
+  integration-tests:
     runs-on: ubuntu-latest
-    needs: main
     steps:
       - uses: actions/checkout@v4
         with:
           filter: tree:0
           fetch-depth: 0
 
-      - run: bash scripts/compose-health-check.sh
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - run: bun run integration

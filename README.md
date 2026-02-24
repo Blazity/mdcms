@@ -18,6 +18,10 @@ Run from `/Users/karol/Desktop/mdcms`:
 
 - `bun run build` - Build all projects with Nx.
 - `bun run typecheck` - Typecheck all projects with Nx.
+- `bun run quality` - Run foundational quality checks (`format:check` + `typecheck`).
+- `bun run unit` - Run package unit test targets through Nx.
+- `bun run integration` - Run integration harness checks (`compose:health` + `migrate:check`).
+- `bun run ci:required` - Run all required CI gates locally in sequence.
 - `bun run check` - Run `build` and `typecheck` targets across projects.
 - `bun run compose:health` - Run the Docker Compose integration health and persistence checks.
 - `bun run migrate:check` - Verify auto-run SQL migrations and server startup in Docker Compose.
@@ -32,7 +36,7 @@ Run from `/Users/karol/Desktop/mdcms`:
 - `packages/cli`
 - `packages/shared`
 
-## Local Docker Stack (CMS-3)
+## Local Docker Stack
 
 Run from `/Users/karol/Desktop/mdcms`:
 
@@ -64,7 +68,7 @@ bun run compose:health
 
 The verification script boots the stack, waits for healthy services, validates `/healthz`, checks required host port mappings, verifies `pgdata` and `miniodata` persistence across restart, and tears everything down.
 
-## SQL Migrations (CMS-4)
+## SQL Migrations
 
 The DB adapter baseline uses Drizzle + `postgres.js` in `@mdcms/server`.
 
