@@ -21,7 +21,7 @@
       "test": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "bun test packages/shared/src/lib/runtime/error.test.ts packages/shared/src/lib/runtime/env.test.ts packages/shared/src/lib/contracts/action-catalog.test.ts"
+          "command": "bun test packages/shared/src/lib/runtime/error.test.ts packages/shared/src/lib/runtime/env.test.ts packages/shared/src/lib/contracts/action-catalog.test.ts packages/shared/src/lib/contracts/extensibility.test.ts"
         }
       }
     }

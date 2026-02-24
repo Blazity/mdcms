@@ -22,6 +22,28 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
 - `assertActionCatalogItem(...)` and `assertActionCatalogList(...)` validate action catalog payload shape and inline schema object shape at runtime.
 - Route ownership for Eden/Treaty contract typing lives in `@mdcms/server`, while payload contracts and validators remain in `@mdcms/shared`.
 
+## Extensibility Contracts + Studio Runtime Contracts (CMS-9)
+
+- Shared extensibility contracts are framework-agnostic by design and avoid direct Elysia/React/DOM dependencies in `@mdcms/shared`.
+- Core exported types:
+  - `ModuleManifest`, `MdcmsModulePackage`, `ServerSurface`, `CliSurface`
+  - `StudioBootstrapManifest`, `StudioMountContext`, `HostBridgeV1`, `RemoteStudioModule`
+  - CLI support surfaces: `CliActionAlias`, `CliOutputFormatter`, `CliPreflightHook`
+- Runtime validators:
+  - `assertModuleManifest(...)`
+  - `assertMdcmsModulePackage(...)`
+  - `assertStudioBootstrapManifest(...)`
+  - `assertStudioMountContext(...)`
+  - `assertHostBridgeV1(...)`
+  - `assertRemoteStudioModule(...)`
+- Compatibility check helpers:
+  - `assertModuleManifestCompatibility(manifest, { coreVersion, supportedApiVersion? })`
+  - `assertStudioBootstrapCompatibility(manifest, { studioPackageVersion, hostBridgeVersion, supportedApiVersion? })`
+- Strict compatibility version policy:
+  - `minCoreVersion`, `maxCoreVersion`, `minStudioPackageVersion`, `minHostBridgeVersion`
+    must use strict `x.y.z` format.
+  - Pre-release/build metadata (for example `1.0.0-beta.1`, `1.0.0+build`) is rejected.
+
 ## Build
 
 - `bun nx build shared`
