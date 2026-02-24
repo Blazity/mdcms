@@ -34,6 +34,7 @@
   "dependencies": {
     "@mdcms/shared": "workspace:*",
     "drizzle-orm": "^0.45.1",
+    "elysia": "^1.4.25",
     "postgres": "^3.4.8",
     "tslib": "^2.3.0"
   },

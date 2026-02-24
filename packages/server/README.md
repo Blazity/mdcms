@@ -11,6 +11,20 @@ Backend API/runtime package boundary for MDCMS.
   - `PORT` (default `4000`, validated integer in range 1-65535)
   - `SERVICE_NAME` (default `mdcms-server`)
 
+## Typed Action Catalog Endpoints (CMS-5)
+
+- Server exposes canonical action catalog endpoints:
+  - `GET /api/v1/actions`
+  - `GET /api/v1/actions/:id`
+- `createActionCatalogContractApp(...)` in `src/lib/action-catalog-contract.ts` is the server-owned Eden contract source for those routes.
+- `ActionCatalogContractApp` is exported so Studio/CLI adapters can use Treaty typing from backend-owned route definitions.
+- The catalog response contract uses flattened metadata and optional inline request/response schemas from `@mdcms/shared`.
+- `createServerRequestHandler` accepts:
+  - `actions?: ActionCatalogItem[]` to register catalog items
+  - `isActionVisible?: (context) => boolean | Promise<boolean>` to authorization-filter caller-visible actions
+- `isActionVisible` defaults to allow-all and is designed for future auth integration tasks.
+- Unprefixed `/actions` paths are rejected to keep `/api/v1` enforcement consistent across server and consumers.
+
 ## DB Adapter + SQL Migrations (CMS-4)
 
 - Database adapter baseline is implemented with Drizzle ORM and `postgres.js` in `src/lib/db.ts`.

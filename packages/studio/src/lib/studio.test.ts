@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { RuntimeError } from "@mdcms/shared";
+import { RuntimeError, type ActionCatalogItem } from "@mdcms/shared";
 
 import {
   createStudioRuntimeContext,
   formatStudioErrorEnvelope,
   resolveStudioEnv,
 } from "./studio.js";
+import { createStudioActionCatalogAdapter } from "./action-catalog-adapter.js";
 
 test("resolveStudioEnv parses core env and applies Studio defaults", () => {
   const env = resolveStudioEnv({
@@ -46,4 +47,62 @@ test("formatStudioErrorEnvelope keeps RuntimeError code", () => {
   assert.equal(envelope.status, "error");
   assert.equal(envelope.code, "STUDIO_RUNTIME_ERROR");
   assert.equal(envelope.message, "Cannot load studio runtime.");
+});
+
+test("createStudioActionCatalogAdapter lists actions from /api/v1/actions", async () => {
+  const adapter = createStudioActionCatalogAdapter("http://localhost", {
+    fetcher: async (input: string | URL | Request, init?: RequestInit) => {
+      assert.equal(String(input), "http://localhost/api/v1/actions");
+      assert.equal(init?.method, "GET");
+
+      const payload: ActionCatalogItem[] = [
+        {
+          id: "content.list",
+          kind: "query",
+          method: "GET",
+          path: "/api/v1/content",
+          permissions: ["content:read"],
+        },
+      ];
+
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  const result = await adapter.list();
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0]?.id, "content.list");
+});
+
+test("createStudioActionCatalogAdapter resolves detail and validates shape", async () => {
+  const adapter = createStudioActionCatalogAdapter("http://localhost", {
+    fetcher: async (input: string | URL | Request, init?: RequestInit) => {
+      assert.equal(
+        String(input),
+        "http://localhost/api/v1/actions/content.publish",
+      );
+      assert.equal(init?.method, "GET");
+
+      return new Response(
+        JSON.stringify({
+          id: "content.publish",
+          kind: "command",
+          method: "POST",
+          path: "/api/v1/content/:id/publish",
+          permissions: ["content:publish"],
+        } satisfies ActionCatalogItem),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
+    },
+  });
+
+  const result = await adapter.getById("content.publish");
+  assert.equal(result.id, "content.publish");
 });

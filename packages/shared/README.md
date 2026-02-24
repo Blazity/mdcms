@@ -12,6 +12,16 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
 - `parseDatabaseEnv(rawEnv)` validates baseline DB config:
   - `DATABASE_URL` (required)
 
+## Typed Action Catalog Contracts (CMS-5)
+
+- `API_V1_BASE_PATH` defines the canonical REST base path: `/api/v1`.
+- `ActionCatalogItem` is the flattened action metadata contract shared by server, Studio, and CLI:
+  - `id`, `kind`, `method`, `path`, `permissions`
+  - optional `studio`, optional `cli`
+  - optional inline `requestSchema` / `responseSchema`
+- `assertActionCatalogItem(...)` and `assertActionCatalogList(...)` validate action catalog payload shape and inline schema object shape at runtime.
+- Route ownership for Eden/Treaty contract typing lives in `@mdcms/server`, while payload contracts and validators remain in `@mdcms/shared`.
+
 ## Build
 
 - `bun nx build shared`

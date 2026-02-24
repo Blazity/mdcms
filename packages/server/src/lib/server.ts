@@ -1,10 +1,15 @@
 import {
   RuntimeError,
+  assertActionCatalogItem,
   createConsoleLogger,
+  type ActionCatalogItem,
+  type ActionCatalogVisibilityPolicyContext,
   type HealthzPayload,
   type Logger,
 } from "@mdcms/shared";
+import { Elysia } from "elysia";
 
+import { createActionCatalogContractApp } from "./action-catalog-contract.js";
 import { parseServerEnv } from "./env.js";
 import { toServerErrorResponse } from "./errors.js";
 import { createHealthzPayload } from "./health.js";
@@ -17,7 +22,16 @@ export type CreateServerRequestHandlerOptions = {
   now?: () => Date;
   startedAtMs?: number;
   healthCheck?: () => HealthzPayload;
+  actions?: ActionCatalogItem[];
+  isActionVisible?: ActionCatalogVisibilityPolicy;
 };
+
+export type ActionCatalogVisibilityPolicy = (
+  context: ActionCatalogVisibilityPolicyContext,
+) => boolean | Promise<boolean>;
+
+const DEFAULT_ACTION_VISIBILITY_POLICY: ActionCatalogVisibilityPolicy = () =>
+  true;
 
 function createJsonResponse(body: unknown, statusCode: number): Response {
   return new Response(JSON.stringify(body), {
@@ -26,6 +40,156 @@ function createJsonResponse(body: unknown, statusCode: number): Response {
       "content-type": "application/json; charset=utf-8",
     },
   });
+}
+
+function createNotFoundError(method: string, path: string): RuntimeError {
+  return new RuntimeError({
+    code: "NOT_FOUND",
+    message: "Route not found.",
+    statusCode: 404,
+    details: {
+      method,
+      path,
+    },
+  });
+}
+
+function createNotFoundResponse(): Response {
+  return new Response("Route not found.", { status: 404 });
+}
+
+function resolvePathname(request: Request): string {
+  try {
+    return new URL(request.url).pathname;
+  } catch {
+    return request.url;
+  }
+}
+
+function normalizeActionCatalog(
+  actions: ActionCatalogItem[],
+): ActionCatalogItem[] {
+  const seenIds = new Set<string>();
+
+  actions.forEach((action, index) => {
+    assertActionCatalogItem(action, `actions[${index}]`);
+
+    if (seenIds.has(action.id)) {
+      throw new RuntimeError({
+        code: "DUPLICATE_ACTION_ID",
+        message: `Duplicate action id "${action.id}" was found in action catalog setup.`,
+        statusCode: 500,
+        details: {
+          actionId: action.id,
+        },
+      });
+    }
+
+    seenIds.add(action.id);
+  });
+
+  return [...actions].sort((left, right) => left.id.localeCompare(right.id));
+}
+
+async function filterVisibleActions(
+  actions: ActionCatalogItem[],
+  request: Request,
+  isActionVisible: ActionCatalogVisibilityPolicy,
+): Promise<ActionCatalogItem[]> {
+  const visible: ActionCatalogItem[] = [];
+
+  for (const action of actions) {
+    const isVisible = await isActionVisible({
+      action,
+      request,
+    });
+
+    if (isVisible) {
+      visible.push(action);
+    }
+  }
+
+  return visible;
+}
+
+function createServerApp(options: {
+  healthCheck: () => HealthzPayload;
+  actions: ActionCatalogItem[];
+  isActionVisible: ActionCatalogVisibilityPolicy;
+}) {
+  const actionsById = new Map(
+    options.actions.map((action) => [action.id, action]),
+  );
+  const actionCatalogApp = createActionCatalogContractApp({
+    list: async ({ request }) =>
+      filterVisibleActions(options.actions, request, options.isActionVisible),
+    getById: async ({ id, request }) => {
+      const action = actionsById.get(id);
+
+      if (!action) {
+        return createNotFoundResponse();
+      }
+
+      const isVisible = await options.isActionVisible({
+        action,
+        request,
+      });
+
+      if (!isVisible) {
+        return createNotFoundResponse();
+      }
+
+      return action;
+    },
+  });
+
+  return new Elysia()
+    .get("/healthz", () => options.healthCheck())
+    .use(actionCatalogApp);
+}
+
+async function normalizeElysiaErrorResponse(input: {
+  response: Response;
+  request: Request;
+  now: Date;
+  logger: Logger;
+}): Promise<Response> {
+  if (input.response.status < 400) {
+    return input.response;
+  }
+
+  const contentType = input.response.headers.get("content-type");
+
+  if (contentType?.includes("application/json")) {
+    return input.response;
+  }
+
+  const rawMessage = await input.response.text();
+  const error =
+    input.response.status === 404
+      ? createNotFoundError(
+          input.request.method,
+          resolvePathname(input.request),
+        )
+      : new RuntimeError({
+          code: input.response.status >= 500 ? "INTERNAL_ERROR" : "HTTP_ERROR",
+          message: rawMessage || "Request failed.",
+          statusCode: input.response.status,
+        });
+  const requestId = input.request.headers.get("x-request-id") ?? undefined;
+  const errorResponse = toServerErrorResponse(error, {
+    requestId,
+    now: input.now,
+  });
+
+  input.logger.error("request_failed", {
+    method: input.request.method,
+    url: input.request.url,
+    statusCode: errorResponse.statusCode,
+    code: errorResponse.body.code,
+  });
+
+  return createJsonResponse(errorResponse.body, errorResponse.statusCode);
 }
 
 /**
@@ -49,28 +213,27 @@ export function createServerRequestHandler(
   const healthCheck =
     options.healthCheck ??
     (() => createHealthzPayload(env, startedAtMs, now()));
+  const actions = normalizeActionCatalog(options.actions ?? []);
+  const isActionVisible =
+    options.isActionVisible ?? DEFAULT_ACTION_VISIBILITY_POLICY;
+  const app = createServerApp({
+    healthCheck,
+    actions,
+    isActionVisible,
+  });
 
   return async (request: Request): Promise<Response> => {
-    const requestId = request.headers.get("x-request-id") ?? undefined;
-    let url: URL;
-
     try {
-      url = new URL(request.url);
+      const response = await app.fetch(request);
 
-      if (request.method === "GET" && url.pathname === "/healthz") {
-        return createJsonResponse(healthCheck(), 200);
-      }
-
-      throw new RuntimeError({
-        code: "NOT_FOUND",
-        message: "Route not found.",
-        statusCode: 404,
-        details: {
-          method: request.method,
-          path: url.pathname,
-        },
+      return normalizeElysiaErrorResponse({
+        response,
+        request,
+        now: now(),
+        logger,
       });
     } catch (error) {
+      const requestId = request.headers.get("x-request-id") ?? undefined;
       const errorResponse = toServerErrorResponse(error, {
         requestId,
         now: now(),
