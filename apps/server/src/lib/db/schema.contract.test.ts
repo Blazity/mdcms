@@ -23,7 +23,7 @@ type DrizzleSnapshot = {
 };
 
 function readLatestArtifacts(): {
-  migrationSql: string;
+  allMigrationSql: string;
   snapshot: DrizzleSnapshot;
 } {
   const drizzleDirectory = resolve(import.meta.dirname, "../../../drizzle");
@@ -42,15 +42,19 @@ function readLatestArtifacts(): {
     metaDirectory,
     `${String(latestEntry.idx).padStart(4, "0")}_snapshot.json`,
   );
-  const migrationPath = resolve(drizzleDirectory, `${latestEntry.tag}.sql`);
+  const allMigrationSql = [...journal.entries]
+    .sort((left, right) => left.idx - right.idx)
+    .map((entry) =>
+      readFileSync(resolve(drizzleDirectory, `${entry.tag}.sql`), "utf8"),
+    )
+    .join("\n");
 
   const snapshot = JSON.parse(
     readFileSync(snapshotPath, "utf8"),
   ) as DrizzleSnapshot;
-  const migrationSql = readFileSync(migrationPath, "utf8");
 
   return {
-    migrationSql,
+    allMigrationSql,
     snapshot,
   };
 }
@@ -213,25 +217,25 @@ test("snapshot includes required named constraints and indexes", () => {
 });
 
 test("migration SQL encodes published-version delete restriction and no extension setup", () => {
-  const { migrationSql } = readLatestArtifacts();
+  const { allMigrationSql } = readLatestArtifacts();
 
   assert.match(
-    migrationSql,
+    allMigrationSql,
     /CONSTRAINT "fk_documents_published_version".*ON DELETE restrict/i,
     "expected fk_documents_published_version to enforce ON DELETE RESTRICT",
   );
   assert.equal(
-    /create extension/i.test(migrationSql),
+    /create extension/i.test(allMigrationSql),
     false,
     "migration SQL must not include extension setup statements",
   );
   assert.equal(
-    /uuid-ossp/i.test(migrationSql),
+    /uuid-ossp/i.test(allMigrationSql),
     false,
     "migration SQL must not depend on uuid-ossp",
   );
   assert.equal(
-    /pgcrypto/i.test(migrationSql),
+    /pgcrypto/i.test(allMigrationSql),
     false,
     "migration SQL must not depend on pgcrypto",
   );

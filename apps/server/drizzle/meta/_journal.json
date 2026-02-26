@@ -15,6 +15,13 @@
       "when": 1772114196771,
       "tag": "0001_nervous_cyclops",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1772116360621,
+      "tag": "0002_classy_lord_hawal",
+      "breakpoints": true
     }
   ]
 }

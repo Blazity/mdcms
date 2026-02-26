@@ -1,0 +1,1 @@
+DROP TABLE "cms_internal_metadata" CASCADE;

@@ -15,20 +15,6 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-/**
- * cmsInternalMetadata provides a minimal persistent table for infrastructure-
- * level metadata so SQL migrations have a concrete baseline artifact.
- */
-export const cmsInternalMetadata = pgTable("cms_internal_metadata", {
-  key: text("key").primaryKey(),
-  value: text("value").notNull(),
-  updatedAt: timestamp("updated_at", {
-    withTimezone: true,
-  })
-    .defaultNow()
-    .notNull(),
-});
-
 export const projects = pgTable("projects", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizationId: uuid("organization_id"),
