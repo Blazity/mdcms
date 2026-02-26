@@ -17,35 +17,34 @@
       },
     },
     "apps/cli": {
-      "name": "@mdcms/app-cli",
+      "name": "@mdcms/cli",
       "version": "0.0.1",
       "dependencies": {
-        "@mdcms/cli": "workspace:*",
+        "@elysiajs/eden": "^1.4.8",
         "@mdcms/modules": "workspace:*",
+        "@mdcms/server": "workspace:*",
         "@mdcms/shared": "workspace:*",
+        "elysia": "^1.4.25",
         "tslib": "^2.3.0",
       },
     },
     "apps/server": {
-      "name": "@mdcms/app-server",
+      "name": "@mdcms/server",
       "version": "0.0.1",
       "dependencies": {
         "@mdcms/modules": "workspace:*",
-        "@mdcms/server": "workspace:*",
         "@mdcms/shared": "workspace:*",
+        "drizzle-orm": "^0.45.1",
+        "elysia": "^1.4.25",
+        "postgres": "^3.4.8",
         "tslib": "^2.3.0",
       },
-    },
-    "apps/studio-runtime": {
-      "name": "@mdcms/studio-runtime-app",
-      "version": "0.0.1",
-      "dependencies": {
-        "@mdcms/shared": "workspace:*",
-        "tslib": "^2.3.0",
+      "devDependencies": {
+        "drizzle-kit": "^0.31.9",
       },
     },
-    "packages/cli": {
-      "name": "@mdcms/cli",
+    "apps/studio": {
+      "name": "@mdcms/studio",
       "version": "0.0.1",
       "dependencies": {
         "@elysiajs/eden": "^1.4.8",
@@ -70,37 +69,12 @@
         "tslib": "^2.3.0",
       },
     },
-    "packages/server": {
-      "name": "@mdcms/server",
-      "version": "0.0.1",
-      "dependencies": {
-        "@mdcms/shared": "workspace:*",
-        "drizzle-orm": "^0.45.1",
-        "elysia": "^1.4.25",
-        "postgres": "^3.4.8",
-        "tslib": "^2.3.0",
-      },
-      "devDependencies": {
-        "drizzle-kit": "^0.31.9",
-      },
-    },
     "packages/shared": {
       "name": "@mdcms/shared",
       "version": "0.0.1",
       "dependencies": {
         "tslib": "^2.3.0",
         "zod": "^4.3.6",
-      },
-    },
-    "packages/studio": {
-      "name": "@mdcms/studio",
-      "version": "0.0.1",
-      "dependencies": {
-        "@elysiajs/eden": "^1.4.8",
-        "@mdcms/server": "workspace:*",
-        "@mdcms/shared": "workspace:*",
-        "elysia": "^1.4.25",
-        "tslib": "^2.3.0",
       },
     },
   },
@@ -387,23 +361,17 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
-    "@mdcms/app-cli": ["@mdcms/app-cli@workspace:apps/cli"],
-
-    "@mdcms/app-server": ["@mdcms/app-server@workspace:apps/server"],
-
-    "@mdcms/cli": ["@mdcms/cli@workspace:packages/cli"],
+    "@mdcms/cli": ["@mdcms/cli@workspace:apps/cli"],
 
     "@mdcms/modules": ["@mdcms/modules@workspace:packages/modules"],
 
     "@mdcms/sdk": ["@mdcms/sdk@workspace:packages/sdk"],
 
-    "@mdcms/server": ["@mdcms/server@workspace:packages/server"],
+    "@mdcms/server": ["@mdcms/server@workspace:apps/server"],
 
     "@mdcms/shared": ["@mdcms/shared@workspace:packages/shared"],
 
-    "@mdcms/studio": ["@mdcms/studio@workspace:packages/studio"],
-
-    "@mdcms/studio-runtime-app": ["@mdcms/studio-runtime-app@workspace:apps/studio-runtime"],
+    "@mdcms/studio": ["@mdcms/studio@workspace:apps/studio"],
 
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@0.2.4", "", { "dependencies": { "@emnapi/core": "^1.1.0", "@emnapi/runtime": "^1.1.0", "@tybys/wasm-util": "^0.9.0" } }, "sha512-9zESzOO5aDByvhIAsOy9TbpZ0Ur2AJbUI7UT73kcUTS2mxAMHOBaa1st/jAymNoCtvrit99kkzT1FZuXVcgfIQ=="],
 

@@ -15,9 +15,6 @@
       "path": "../../packages/modules/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/server/tsconfig.lib.json"
-    },
-    {
       "path": "../../packages/shared/tsconfig.lib.json"
     }
   ]

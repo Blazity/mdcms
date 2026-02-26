@@ -2,7 +2,7 @@
 
 This repository hosts the MDCMS monorepo foundation.
 
-It is initialized as a Bun-based Nx workspace with package boundaries and app-level composition/runtime topology required by the roadmap:
+It is initialized as a Bun-based Nx workspace with app/package boundaries and module/runtime topology required by the roadmap:
 
 | Package          | Purpose                                                         |
 | ---------------- | --------------------------------------------------------------- |
@@ -12,9 +12,6 @@ It is initialized as a Bun-based Nx workspace with package boundaries and app-le
 | `@mdcms/cli`     | CLI package boundary for operator workflows.                    |
 | `@mdcms/shared`  | Shared contracts/types/utilities boundary used across packages. |
 | `@mdcms/modules` | Deterministic local module registry (`packages/modules`).       |
-| `app-server`     | Server composition layer with module loading (`apps/server`).   |
-| `app-cli`        | CLI composition layer with module loading (`apps/cli`).         |
-| `studio-runtime` | Studio runtime artifact builder (`apps/studio-runtime`).        |
 
 ## Workspace Commands
 
@@ -32,20 +29,14 @@ Run from `/Users/karol/Desktop/mdcms`:
 - `bun run format` - Format repository files with Prettier.
 - `bun run format:check` - Check repository formatting with Prettier.
 
-## Package Layout
-
-- `packages/server`
-- `packages/studio`
-- `packages/sdk`
-- `packages/cli`
-- `packages/shared`
-- `packages/modules`
-
-## App Layout
+## Workspace Layout
 
 - `apps/server`
+- `apps/studio`
 - `apps/cli`
-- `apps/studio-runtime`
+- `packages/sdk`
+- `packages/shared`
+- `packages/modules`
 
 ## Local Docker Stack
 
@@ -86,13 +77,13 @@ The DB adapter baseline uses Drizzle + `postgres.js` in `@mdcms/server`.
 SQL migration authoring flow:
 
 ```bash
-bun run --cwd packages/server db:generate
+bun run --cwd apps/server db:generate
 ```
 
 SQL migration apply flow:
 
 ```bash
-bun run --cwd packages/server db:migrate
+bun run --cwd apps/server db:migrate
 ```
 
 In local Docker Compose, SQL migrations are applied automatically by the one-shot

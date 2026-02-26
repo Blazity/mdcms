@@ -1,4 +1,4 @@
-import { createCliRuntimeContext, type CliRuntimeContext } from "@mdcms/cli";
+import { createCliRuntimeContext, type CliRuntimeContext } from "./cli.js";
 import type {
   CliActionAlias,
   CliOutputFormatter,
@@ -11,9 +11,9 @@ import {
   collectCliPreflightHooks,
   loadCliModules,
   type CliModuleLoadReport,
-} from "./modules.js";
+} from "./module-loader.js";
 
-export type AppCliRuntimeContext = CliRuntimeContext & {
+export type CliRuntimeContextWithModules = CliRuntimeContext & {
   moduleLoadReport: CliModuleLoadReport;
   actionAliases: readonly CliActionAlias[];
   outputFormatters: readonly CliOutputFormatter[];
@@ -21,12 +21,12 @@ export type AppCliRuntimeContext = CliRuntimeContext & {
 };
 
 /**
- * createAppCliRuntimeContext composes @mdcms/cli runtime context with
+ * createCliRuntimeContextWithModules composes CLI runtime context with
  * compile-time local module loading from @mdcms/modules.
  */
-export function createAppCliRuntimeContext(
+export function createCliRuntimeContextWithModules(
   rawEnv: NodeJS.ProcessEnv = process.env,
-): AppCliRuntimeContext {
+): CliRuntimeContextWithModules {
   const runtimeContext = createCliRuntimeContext(rawEnv);
   const moduleLoadReport = loadCliModules({
     coreVersion: runtimeContext.env.APP_VERSION,

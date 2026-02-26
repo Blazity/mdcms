@@ -1,5 +1,5 @@
 {
-  "name": "@mdcms/app-server",
+  "name": "@mdcms/server",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -16,21 +16,31 @@
     }
   },
   "nx": {
-    "name": "app-server",
+    "name": "server",
     "targets": {
       "test": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "bun test --conditions @mdcms/source apps/server/src/modules.test.ts apps/server/src/app-server.test.ts"
+          "command": "bun test apps/server/src/lib/health.test.ts apps/server/src/lib/module-loader.test.ts apps/server/src/lib/runtime-with-modules.test.ts"
         }
       }
     }
   },
+  "scripts": {
+    "start": "bun --conditions @mdcms/source src/bin/http-server.ts",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "db:migrate": "drizzle-kit migrate --config drizzle.config.ts"
+  },
   "dependencies": {
     "@mdcms/modules": "workspace:*",
-    "@mdcms/server": "workspace:*",
     "@mdcms/shared": "workspace:*",
+    "drizzle-orm": "^0.45.1",
+    "elysia": "^1.4.25",
+    "postgres": "^3.4.8",
     "tslib": "^2.3.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "drizzle-kit": "^0.31.9"
+  }
 }

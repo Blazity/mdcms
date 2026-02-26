@@ -85,7 +85,7 @@ export function buildServerModuleLoadReport(
     createConsoleLogger({
       level: "info",
       context: {
-        runtime: "app-server",
+        runtime: "server",
       },
     });
 

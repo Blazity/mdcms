@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createAppCliRuntimeContext } from "./runtime.js";
+import { createCliRuntimeContextWithModules } from "./runtime-with-modules.js";
 
-test("createAppCliRuntimeContext loads module report from installed registry", () => {
-  const runtime = createAppCliRuntimeContext({
+test("createCliRuntimeContextWithModules loads module report from installed registry", () => {
+  const runtime = createCliRuntimeContextWithModules({
     NODE_ENV: "test",
     LOG_LEVEL: "debug",
     APP_VERSION: "1.0.0",
@@ -30,8 +30,8 @@ test("createAppCliRuntimeContext loads module report from installed registry", (
   );
 });
 
-test("createAppCliRuntimeContext loads bundled modules when APP_VERSION is unset", () => {
-  const runtime = createAppCliRuntimeContext({
+test("createCliRuntimeContextWithModules loads bundled modules when APP_VERSION is unset", () => {
+  const runtime = createCliRuntimeContextWithModules({
     NODE_ENV: "test",
     LOG_LEVEL: "debug",
     CLI_NAME: "mdcms",

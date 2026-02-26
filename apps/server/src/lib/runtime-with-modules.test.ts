@@ -3,21 +3,21 @@ import { test } from "node:test";
 
 import { createConsoleLogger } from "@mdcms/shared";
 
-import { createAppServerRequestHandler } from "./app-server.js";
+import { createServerRequestHandlerWithModules } from "./runtime-with-modules.js";
 
 const env = {
   NODE_ENV: "test",
   LOG_LEVEL: "debug",
   APP_VERSION: "1.0.0",
   PORT: "4000",
-  SERVICE_NAME: "mdcms-app-server",
+  SERVICE_NAME: "mdcms-server",
 } as NodeJS.ProcessEnv;
 
 const envWithoutAppVersion = {
   NODE_ENV: "test",
   LOG_LEVEL: "debug",
   PORT: "4000",
-  SERVICE_NAME: "mdcms-app-server",
+  SERVICE_NAME: "mdcms-server",
 } as NodeJS.ProcessEnv;
 
 const logger = createConsoleLogger({
@@ -25,8 +25,8 @@ const logger = createConsoleLogger({
   sink: () => undefined,
 });
 
-test("createAppServerRequestHandler surfaces module actions in /api/v1/actions", async () => {
-  const { handler, moduleLoadReport } = createAppServerRequestHandler({
+test("createServerRequestHandlerWithModules surfaces module actions in /api/v1/actions", async () => {
+  const { handler, moduleLoadReport } = createServerRequestHandlerWithModules({
     env,
     logger,
   });
@@ -44,8 +44,8 @@ test("createAppServerRequestHandler surfaces module actions in /api/v1/actions",
   );
 });
 
-test("createAppServerRequestHandler mounts server module routes", async () => {
-  const { handler } = createAppServerRequestHandler({
+test("createServerRequestHandlerWithModules mounts server module routes", async () => {
+  const { handler } = createServerRequestHandlerWithModules({
     env,
     logger,
   });
@@ -67,8 +67,8 @@ test("createAppServerRequestHandler mounts server module routes", async () => {
   assert.equal(contentBody.moduleId, "domain.content");
 });
 
-test("createAppServerRequestHandler loads bundled modules when APP_VERSION is unset", async () => {
-  const { moduleLoadReport } = createAppServerRequestHandler({
+test("createServerRequestHandlerWithModules loads bundled modules when APP_VERSION is unset", async () => {
+  const { moduleLoadReport } = createServerRequestHandlerWithModules({
     env: envWithoutAppVersion,
     logger,
   });

@@ -1,5 +1,5 @@
 {
-  "name": "@mdcms/app-cli",
+  "name": "@mdcms/cli",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -16,20 +16,22 @@
     }
   },
   "nx": {
-    "name": "app-cli",
+    "name": "cli",
     "targets": {
       "test": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "bun test --conditions @mdcms/source apps/cli/src/modules.test.ts apps/cli/src/runtime.test.ts"
+          "command": "bun test apps/cli/src/lib/cli.test.ts apps/cli/src/lib/module-loader.test.ts apps/cli/src/lib/runtime-with-modules.test.ts"
         }
       }
     }
   },
   "dependencies": {
-    "@mdcms/cli": "workspace:*",
+    "@elysiajs/eden": "^1.4.8",
     "@mdcms/modules": "workspace:*",
+    "@mdcms/server": "workspace:*",
     "@mdcms/shared": "workspace:*",
+    "elysia": "^1.4.25",
     "tslib": "^2.3.0"
   },
   "license": "MIT"

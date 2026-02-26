@@ -7,28 +7,19 @@
       "path": "./packages/modules"
     },
     {
-      "path": "./packages/server"
+      "path": "./apps/server"
     },
     {
-      "path": "./packages/studio"
+      "path": "./apps/studio"
     },
     {
       "path": "./packages/sdk"
     },
     {
-      "path": "./packages/cli"
-    },
-    {
-      "path": "./packages/shared"
-    },
-    {
-      "path": "./apps/server"
-    },
-    {
       "path": "./apps/cli"
     },
     {
-      "path": "./apps/studio-runtime"
+      "path": "./packages/shared"
     }
   ]
 }

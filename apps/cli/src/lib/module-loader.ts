@@ -85,7 +85,7 @@ export function buildCliModuleLoadReport(
     createConsoleLogger({
       level: "info",
       context: {
-        runtime: "app-cli",
+        runtime: "cli",
       },
     });
 

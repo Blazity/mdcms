@@ -15,10 +15,10 @@
       "path": "../../packages/modules/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/cli/tsconfig.lib.json"
+      "path": "../../packages/shared/tsconfig.lib.json"
     },
     {
-      "path": "../../packages/shared/tsconfig.lib.json"
+      "path": "../server/tsconfig.lib.json"
     }
   ]
 }

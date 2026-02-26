@@ -1,6 +1,5 @@
-import { parseServerEnv } from "@mdcms/server";
-
-import { createAppServerRequestHandler } from "../app-server.js";
+import { parseServerEnv } from "../lib/env.js";
+import { createServerRequestHandlerWithModules } from "../lib/runtime-with-modules.js";
 
 type BunServer = {
   stop: (closeActiveConnections?: boolean) => void;
@@ -16,7 +15,7 @@ type BunRuntime = {
 declare const Bun: BunRuntime;
 
 const env = parseServerEnv(process.env);
-const { handler, moduleLoadReport } = createAppServerRequestHandler({
+const { handler } = createServerRequestHandlerWithModules({
   env: process.env,
 });
 
@@ -33,7 +32,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   }
 
   isShuttingDown = true;
-  console.info(`[app-server] received ${signal}, shutting down`);
+  console.info(`[server] received ${signal}, shutting down`);
   server.stop(true);
   await Promise.resolve();
 }
@@ -48,8 +47,5 @@ registerSignalHandler("SIGINT");
 registerSignalHandler("SIGTERM");
 
 console.info(
-  `[app-server] listening on port ${env.PORT} as ${env.SERVICE_NAME} (${env.NODE_ENV})`,
-);
-console.info(
-  `[app-server] loaded modules: ${moduleLoadReport.loadedModuleIds.join(", ") || "none"}`,
+  `[server] listening on port ${env.PORT} as ${env.SERVICE_NAME} (${env.NODE_ENV})`,
 );

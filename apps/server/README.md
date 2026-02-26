@@ -28,21 +28,22 @@ Backend API/runtime package boundary for MDCMS.
 
 ## Module Topology Integration
 
-- App-level server module loading lives in `apps/server/src/modules.ts`.
-- `apps/server` consumes `@mdcms/modules` compile-time registry and mounts only bundled local module server surfaces.
+- Server module loading lives in `src/lib/module-loader.ts`.
+- `@mdcms/server` consumes `@mdcms/modules` compile-time registry and mounts only bundled local module server surfaces.
 - Loader output is deterministic and reports:
   - `loadedModuleIds`
   - `skippedModuleIds`
   - structured skip reasons (`missing-surface`, `incompatible`, `invalid-package`)
+- `createServerRequestHandlerWithModules(...)` composes module load report + mounts + action catalog into the server runtime.
 - Runtime logs emit module load summary lines for loaded and skipped modules.
 
 ## DB Adapter + SQL Migrations (CMS-4)
 
 - Database adapter baseline is implemented with Drizzle ORM and `postgres.js` in `src/lib/db.ts`.
-- SQL migrations are managed via Drizzle Kit and committed in `packages/server/drizzle`.
+- SQL migrations are managed via Drizzle Kit and committed in `apps/server/drizzle`.
 - Server package scripts:
-  - `bun run --cwd packages/server db:generate` (generate SQL migrations from Drizzle schema)
-  - `bun run --cwd packages/server db:migrate` (apply pending SQL migrations)
+  - `bun run --cwd apps/server db:generate` (generate SQL migrations from Drizzle schema)
+  - `bun run --cwd apps/server db:migrate` (apply pending SQL migrations)
 - Docker Compose runs SQL migrations automatically through one-shot `db-migrate` before `server` starts accepting traffic.
 
 ### Migration Environment Variables
@@ -83,4 +84,4 @@ Error responses follow:
 - `bun nx build server`
 - `bun nx typecheck server`
 - `bun nx test server`
-- `bun --cwd packages/server run start` (run Bun HTTP server runtime entrypoint for local development)
+- `bun --cwd apps/server run start` (run Bun HTTP server runtime entrypoint for local development)

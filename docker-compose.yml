@@ -2,7 +2,7 @@ services:
   db-migrate:
     build:
       context: .
-      dockerfile: packages/server/Dockerfile
+      dockerfile: apps/server/Dockerfile
     restart: "no"
     command: ["bun", "run", "db:migrate"]
     environment:
@@ -17,7 +17,7 @@ services:
   server:
     build:
       context: .
-      dockerfile: packages/server/Dockerfile
+      dockerfile: apps/server/Dockerfile
     restart: unless-stopped
     ports:
       - "4000:4000"

@@ -1,10 +1,10 @@
 import {
   createServerRequestHandler,
-  parseServerEnv,
   type CreateServerRequestHandlerOptions,
   type ServerRequestHandler,
-} from "@mdcms/server";
+} from "./server.js";
 import { createConsoleLogger, type Logger } from "@mdcms/shared";
+import { parseServerEnv } from "./env.js";
 
 import {
   collectServerModuleActions,
@@ -12,9 +12,9 @@ import {
   mountLoadedServerModules,
   type ServerModuleAppDeps,
   type ServerModuleLoadReport,
-} from "./modules.js";
+} from "./module-loader.js";
 
-export type CreateAppServerRequestHandlerOptions = {
+export type CreateServerRequestHandlerWithModulesOptions = {
   env?: NodeJS.ProcessEnv;
   logger?: Logger;
   moduleDeps?: ServerModuleAppDeps;
@@ -25,18 +25,18 @@ export type CreateAppServerRequestHandlerOptions = {
   >;
 };
 
-export type AppServerRequestHandlerResult = {
+export type ServerRequestHandlerWithModulesResult = {
   handler: ServerRequestHandler;
   moduleLoadReport: ServerModuleLoadReport;
 };
 
 /**
- * createAppServerRequestHandler composes the package server runtime with
+ * createServerRequestHandlerWithModules composes the server runtime with
  * compile-time local module loading from @mdcms/modules.
  */
-export function createAppServerRequestHandler(
-  options: CreateAppServerRequestHandlerOptions = {},
-): AppServerRequestHandlerResult {
+export function createServerRequestHandlerWithModules(
+  options: CreateServerRequestHandlerWithModulesOptions = {},
+): ServerRequestHandlerWithModulesResult {
   const rawEnv = options.env ?? process.env;
   const env = parseServerEnv(rawEnv);
   const logger =
@@ -44,7 +44,7 @@ export function createAppServerRequestHandler(
     createConsoleLogger({
       level: env.LOG_LEVEL,
       context: {
-        runtime: "app-server",
+        runtime: "server",
         service: env.SERVICE_NAME,
       },
     });
