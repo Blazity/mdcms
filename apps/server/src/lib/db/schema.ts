@@ -16,29 +16,25 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const projects = pgTable("projects", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  organizationId: uuid("organization_id"),
-  name: text("name").notNull(),
-  slug: text("slug").notNull().unique(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  createdBy: uuid("created_by").notNull(),
+  id: uuid().defaultRandom().primaryKey(),
+  organizationId: uuid(),
+  name: text().notNull(),
+  slug: text().notNull().unique(),
+  createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+  createdBy: uuid().notNull(),
 });
 
 export const environments = pgTable(
   "environments",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    projectId: uuid("project_id")
+    id: uuid().defaultRandom().primaryKey(),
+    projectId: uuid()
       .notNull()
       .references(() => projects.id),
-    name: text("name").notNull(),
-    description: text("description"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    createdBy: uuid("created_by").notNull(),
+    name: text().notNull(),
+    description: text(),
+    createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+    createdBy: uuid().notNull(),
   },
   (table) => [
     unique("unique_environment_id_project").on(table.id, table.projectId),
@@ -49,29 +45,27 @@ export const environments = pgTable(
 export const documentVersions = pgTable(
   "document_versions",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    documentId: uuid("document_id")
+    id: uuid().defaultRandom().primaryKey(),
+    documentId: uuid()
       .notNull()
       .references(() => documents.documentId),
-    translationGroupId: uuid("translation_group_id").notNull(),
-    projectId: uuid("project_id")
+    translationGroupId: uuid().notNull(),
+    projectId: uuid()
       .notNull()
       .references(() => projects.id),
-    environmentId: uuid("environment_id")
+    environmentId: uuid()
       .notNull()
       .references(() => environments.id),
-    schemaType: text("schema_type").notNull(),
-    locale: text("locale").notNull(),
-    contentFormat: text("content_format").notNull(),
-    path: text("path").notNull(),
-    body: text("body").notNull(),
-    frontmatter: jsonb("frontmatter").notNull(),
-    version: integer("version").notNull(),
-    publishedBy: uuid("published_by").notNull(),
-    publishedAt: timestamp("published_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    changeSummary: text("change_summary"),
+    schemaType: text().notNull(),
+    locale: text().notNull(),
+    contentFormat: text().notNull(),
+    path: text().notNull(),
+    body: text().notNull(),
+    frontmatter: jsonb().notNull(),
+    version: integer().notNull(),
+    publishedBy: uuid().notNull(),
+    publishedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+    changeSummary: text(),
   },
   (table): any => [
     check(
@@ -97,36 +91,28 @@ export const documentVersions = pgTable(
 export const documents = pgTable(
   "documents",
   {
-    documentId: uuid("document_id").primaryKey(),
-    translationGroupId: uuid("translation_group_id").notNull(),
-    projectId: uuid("project_id")
+    documentId: uuid().primaryKey(),
+    translationGroupId: uuid().notNull(),
+    projectId: uuid()
       .notNull()
       .references(() => projects.id),
-    environmentId: uuid("environment_id")
+    environmentId: uuid()
       .notNull()
       .references(() => environments.id),
-    path: text("path").notNull(),
-    schemaType: text("schema_type").notNull(),
-    locale: text("locale").notNull(),
-    contentFormat: text("content_format").notNull(),
-    body: text("body").notNull(),
-    frontmatter: jsonb("frontmatter").notNull(),
-    isDeleted: boolean("is_deleted").default(false).notNull(),
-    hasUnpublishedChanges: boolean("has_unpublished_changes")
-      .default(true)
-      .notNull(),
-    publishedVersion: integer("published_version"),
-    draftRevision: bigint("draft_revision", { mode: "number" })
-      .default(1)
-      .notNull(),
-    createdBy: uuid("created_by").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedBy: uuid("updated_by").notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    path: text().notNull(),
+    schemaType: text().notNull(),
+    locale: text().notNull(),
+    contentFormat: text().notNull(),
+    body: text().notNull(),
+    frontmatter: jsonb().notNull(),
+    isDeleted: boolean().default(false).notNull(),
+    hasUnpublishedChanges: boolean().default(true).notNull(),
+    publishedVersion: integer(),
+    draftRevision: bigint({ mode: "number" }).default(1).notNull(),
+    createdBy: uuid().notNull(),
+    createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+    updatedBy: uuid().notNull(),
+    updatedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
   },
   (table): any => [
     check(
@@ -180,36 +166,32 @@ export const documents = pgTable(
 );
 
 export const media = pgTable("media", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  projectId: uuid("project_id")
+  id: uuid().defaultRandom().primaryKey(),
+  projectId: uuid()
     .notNull()
     .references(() => projects.id),
-  filename: text("filename").notNull(),
-  mimeType: text("mime_type").notNull(),
-  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
-  s3Key: text("s3_key").notNull(),
-  url: text("url").notNull(),
-  uploadedBy: uuid("uploaded_by").notNull(),
-  uploadedAt: timestamp("uploaded_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
+  filename: text().notNull(),
+  mimeType: text().notNull(),
+  sizeBytes: bigint({ mode: "number" }).notNull(),
+  s3Key: text().notNull(),
+  url: text().notNull(),
+  uploadedBy: uuid().notNull(),
+  uploadedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
 });
 
 export const migrations = pgTable(
   "migrations",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    name: text("name").notNull(),
-    projectId: uuid("project_id")
+    id: uuid().defaultRandom().primaryKey(),
+    name: text().notNull(),
+    projectId: uuid()
       .notNull()
       .references(() => projects.id),
-    environmentId: uuid("environment_id").notNull(),
-    schemaType: text("schema_type").notNull(),
-    appliedAt: timestamp("applied_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    appliedBy: uuid("applied_by").notNull(),
-    documentsAffected: integer("documents_affected").notNull(),
+    environmentId: uuid().notNull(),
+    schemaType: text().notNull(),
+    appliedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+    appliedBy: uuid().notNull(),
+    documentsAffected: integer().notNull(),
   },
   (table) => [
     foreignKey({

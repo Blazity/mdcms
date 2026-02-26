@@ -27,7 +27,9 @@ export function createDatabaseConnection(
   const client = postgres(env.DATABASE_URL, {
     onnotice: () => undefined,
   });
-  const db = drizzle(client);
+  const db = drizzle(client, {
+    casing: "snake_case",
+  });
 
   return {
     env,
