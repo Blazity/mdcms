@@ -10,21 +10,17 @@
     "./package.json": "./package.json",
     ".": {
       "@mdcms/source": "./src/index.ts",
+      "bun": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     }
   },
   "nx": {
-    "name": "modules",
-    "targets": {
-      "test": {
-        "executor": "nx:run-commands",
-        "options": {
-          "command": "bun test packages/modules/src/index.test.ts"
-        }
-      }
-    }
+    "name": "modules"
+  },
+  "scripts": {
+    "test": "bun test ./src"
   },
   "dependencies": {
     "@mdcms/shared": "workspace:*",

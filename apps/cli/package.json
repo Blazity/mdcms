@@ -10,21 +10,17 @@
     "./package.json": "./package.json",
     ".": {
       "@mdcms/source": "./src/index.ts",
+      "bun": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     }
   },
   "nx": {
-    "name": "cli",
-    "targets": {
-      "test": {
-        "executor": "nx:run-commands",
-        "options": {
-          "command": "bun test apps/cli/src/lib/cli.test.ts apps/cli/src/lib/module-loader.test.ts apps/cli/src/lib/runtime-with-modules.test.ts"
-        }
-      }
-    }
+    "name": "cli"
+  },
+  "scripts": {
+    "test": "bun test ./src"
   },
   "dependencies": {
     "@elysiajs/eden": "^1.4.8",

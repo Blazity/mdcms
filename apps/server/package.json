@@ -10,23 +10,17 @@
     "./package.json": "./package.json",
     ".": {
       "@mdcms/source": "./src/index.ts",
+      "bun": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     }
   },
   "nx": {
-    "name": "server",
-    "targets": {
-      "test": {
-        "executor": "nx:run-commands",
-        "options": {
-          "command": "bun test apps/server/src/lib/health.test.ts apps/server/src/lib/module-loader.test.ts apps/server/src/lib/runtime-with-modules.test.ts"
-        }
-      }
-    }
+    "name": "server"
   },
   "scripts": {
+    "test": "bun test ./src",
     "start": "bun --conditions @mdcms/source src/bin/http-server.ts",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config drizzle.config.ts"

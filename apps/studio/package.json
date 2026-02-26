@@ -10,6 +10,7 @@
     "./package.json": "./package.json",
     ".": {
       "@mdcms/source": "./src/index.ts",
+      "bun": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
@@ -23,14 +24,11 @@
         "options": {
           "command": "bun tsc --build apps/studio/tsconfig.lib.json && bun --conditions @mdcms/source apps/studio/src/lib/build-runtime.ts"
         }
-      },
-      "test": {
-        "executor": "nx:run-commands",
-        "options": {
-          "command": "bun test apps/studio/src/lib/studio.test.ts apps/studio/src/lib/build-runtime.test.ts"
-        }
       }
     }
+  },
+  "scripts": {
+    "test": "bun test ./src"
   },
   "dependencies": {
     "@elysiajs/eden": "^1.4.8",

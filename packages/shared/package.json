@@ -10,21 +10,17 @@
     "./package.json": "./package.json",
     ".": {
       "@mdcms/source": "./src/index.ts",
+      "bun": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     }
   },
   "nx": {
-    "name": "shared",
-    "targets": {
-      "test": {
-        "executor": "nx:run-commands",
-        "options": {
-          "command": "bun test packages/shared/src/lib/runtime/error.test.ts packages/shared/src/lib/runtime/env.test.ts packages/shared/src/lib/contracts/action-catalog.test.ts packages/shared/src/lib/contracts/extensibility.test.ts"
-        }
-      }
-    }
+    "name": "shared"
+  },
+  "scripts": {
+    "test": "bun test ./src"
   },
   "dependencies": {
     "tslib": "^2.3.0",
