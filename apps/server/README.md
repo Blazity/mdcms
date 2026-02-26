@@ -46,6 +46,33 @@ Backend API/runtime package boundary for MDCMS.
   - `bun run --cwd apps/server db:migrate` (apply pending SQL migrations)
 - Docker Compose runs SQL migrations automatically through one-shot `db-migrate` before `server` starts accepting traffic.
 
+### Core Schema Baseline (CMS-11 + CMS-12)
+
+- Core tables created in `src/lib/db/schema.ts`:
+  - `projects`
+  - `environments`
+  - `documents`
+  - `document_versions`
+  - `media`
+  - `migrations`
+- Named integrity constraints used by downstream tasks:
+  - `unique_environment_id_project`
+  - `unique_environment_per_project`
+  - `fk_documents_env_project`
+  - `fk_document_versions_env_project`
+  - `fk_documents_published_version` (`ON DELETE RESTRICT`)
+  - `unique_document_version`
+- Required content indexes and partial unique indexes:
+  - `idx_versions_document`
+  - `idx_versions_scope`
+  - `idx_documents_active_scope_type_locale_path`
+  - `idx_documents_active_scope_updated_at`
+  - `idx_documents_active_scope_unpublished_updated_at`
+  - `idx_documents_scope_translation_group`
+  - `uniq_documents_active_path`
+  - `uniq_documents_active_translation_locale`
+- UUID defaults use built-in `gen_random_uuid()` behavior from PostgreSQL 16; migrations intentionally do not create `pgcrypto` or `uuid-ossp` extensions.
+
 ### Migration Environment Variables
 
 - `DATABASE_URL` - required Postgres connection string.
