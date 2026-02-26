@@ -22,8 +22,19 @@ Backend API/runtime package boundary for MDCMS.
 - `createServerRequestHandler` accepts:
   - `actions?: ActionCatalogItem[]` to register catalog items
   - `isActionVisible?: (context) => boolean | Promise<boolean>` to authorization-filter caller-visible actions
+  - `configureApp?: (app) => void` for composition-root route/module mounting before request handling
 - `isActionVisible` defaults to allow-all and is designed for future auth integration tasks.
 - Unprefixed `/actions` paths are rejected to keep `/api/v1` enforcement consistent across server and consumers.
+
+## Module Topology Integration
+
+- App-level server module loading lives in `apps/server/src/modules.ts`.
+- `apps/server` consumes `@mdcms/modules` compile-time registry and mounts only bundled local module server surfaces.
+- Loader output is deterministic and reports:
+  - `loadedModuleIds`
+  - `skippedModuleIds`
+  - structured skip reasons (`missing-surface`, `incompatible`, `invalid-package`)
+- Runtime logs emit module load summary lines for loaded and skipped modules.
 
 ## DB Adapter + SQL Migrations (CMS-4)
 

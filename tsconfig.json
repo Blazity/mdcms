@@ -4,6 +4,9 @@
   "files": [],
   "references": [
     {
+      "path": "./packages/modules"
+    },
+    {
       "path": "./packages/server"
     },
     {
@@ -17,6 +20,15 @@
     },
     {
       "path": "./packages/shared"
+    },
+    {
+      "path": "./apps/server"
+    },
+    {
+      "path": "./apps/cli"
+    },
+    {
+      "path": "./apps/studio-runtime"
     }
   ]
 }

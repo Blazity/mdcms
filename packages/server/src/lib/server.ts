@@ -16,6 +16,8 @@ import { createHealthzPayload } from "./health.js";
 
 export type ServerRequestHandler = (request: Request) => Promise<Response>;
 
+export type ServerAppConfigurator = (app: unknown) => void;
+
 export type CreateServerRequestHandlerOptions = {
   env?: NodeJS.ProcessEnv;
   logger?: Logger;
@@ -24,6 +26,7 @@ export type CreateServerRequestHandlerOptions = {
   healthCheck?: () => HealthzPayload;
   actions?: ActionCatalogItem[];
   isActionVisible?: ActionCatalogVisibilityPolicy;
+  configureApp?: ServerAppConfigurator;
 };
 
 export type ActionCatalogVisibilityPolicy = (
@@ -116,6 +119,7 @@ function createServerApp(options: {
   healthCheck: () => HealthzPayload;
   actions: ActionCatalogItem[];
   isActionVisible: ActionCatalogVisibilityPolicy;
+  configureApp?: ServerAppConfigurator;
 }) {
   const actionsById = new Map(
     options.actions.map((action) => [action.id, action]),
@@ -143,9 +147,11 @@ function createServerApp(options: {
     },
   });
 
-  return new Elysia()
-    .get("/healthz", () => options.healthCheck())
-    .use(actionCatalogApp);
+  const app = new Elysia().get("/healthz", () => options.healthCheck());
+
+  options.configureApp?.(app);
+
+  return app.use(actionCatalogApp);
 }
 
 async function normalizeElysiaErrorResponse(input: {
@@ -220,6 +226,7 @@ export function createServerRequestHandler(
     healthCheck,
     actions,
     isActionVisible,
+    configureApp: options.configureApp,
   });
 
   return async (request: Request): Promise<Response> => {

@@ -33,7 +33,7 @@ jobs:
             ~/.bun/install/cache
             node_modules
             .nx/cache
-          key: ${{ runner.os }}-bun-nx-${{ hashFiles('bun.lock', 'package.json', 'nx.json', 'tsconfig.base.json', 'tsconfig.json', 'packages/*/package.json', '.github/workflows/ci.yml') }}
+          key: ${{ runner.os }}-bun-nx-${{ hashFiles('bun.lock', 'package.json', 'nx.json', 'tsconfig.base.json', 'tsconfig.json', 'packages/*/package.json', 'packages/modules/package.json', 'apps/*/package.json', '.github/workflows/ci.yml') }}
           restore-keys: |
             ${{ runner.os }}-bun-nx-
 
@@ -58,7 +58,7 @@ jobs:
             ~/.bun/install/cache
             node_modules
             .nx/cache
-          key: ${{ runner.os }}-bun-nx-${{ hashFiles('bun.lock', 'package.json', 'nx.json', 'tsconfig.base.json', 'tsconfig.json', 'packages/*/package.json', '.github/workflows/ci.yml') }}
+          key: ${{ runner.os }}-bun-nx-${{ hashFiles('bun.lock', 'package.json', 'nx.json', 'tsconfig.base.json', 'tsconfig.json', 'packages/*/package.json', 'packages/modules/package.json', 'apps/*/package.json', '.github/workflows/ci.yml') }}
           restore-keys: |
             ${{ runner.os }}-bun-nx-
 

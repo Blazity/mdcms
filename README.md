@@ -2,15 +2,19 @@
 
 This repository hosts the MDCMS monorepo foundation.
 
-It is initialized as a Bun-based Nx package workspace with the initial package boundaries required by the roadmap:
+It is initialized as a Bun-based Nx workspace with package boundaries and app-level composition/runtime topology required by the roadmap:
 
-| Package         | Purpose                                                         |
-| --------------- | --------------------------------------------------------------- |
-| `@mdcms/server` | Backend server package boundary for API/runtime implementation. |
-| `@mdcms/studio` | Host-embedded Studio package boundary for runtime loader work.  |
-| `@mdcms/sdk`    | Client SDK package boundary for content API consumption.        |
-| `@mdcms/cli`    | CLI package boundary for operator workflows.                    |
-| `@mdcms/shared` | Shared contracts/types/utilities boundary used across packages. |
+| Package          | Purpose                                                         |
+| ---------------- | --------------------------------------------------------------- |
+| `@mdcms/server`  | Backend server package boundary for API/runtime implementation. |
+| `@mdcms/studio`  | Host-embedded Studio package boundary for runtime loader work.  |
+| `@mdcms/sdk`     | Client SDK package boundary for content API consumption.        |
+| `@mdcms/cli`     | CLI package boundary for operator workflows.                    |
+| `@mdcms/shared`  | Shared contracts/types/utilities boundary used across packages. |
+| `@mdcms/modules` | Deterministic local module registry (`packages/modules`).       |
+| `app-server`     | Server composition layer with module loading (`apps/server`).   |
+| `app-cli`        | CLI composition layer with module loading (`apps/cli`).         |
+| `studio-runtime` | Studio runtime artifact builder (`apps/studio-runtime`).        |
 
 ## Workspace Commands
 
@@ -19,7 +23,7 @@ Run from `/Users/karol/Desktop/mdcms`:
 - `bun run build` - Build all projects with Nx.
 - `bun run typecheck` - Typecheck all projects with Nx.
 - `bun run quality` - Run foundational quality checks (`format:check` + `typecheck`).
-- `bun run unit` - Run package unit test targets through Nx.
+- `bun run unit` - Run unit test targets through Nx.
 - `bun run integration` - Run integration harness checks (`compose:health` + `migrate:check`).
 - `bun run ci:required` - Run all required CI gates locally in sequence.
 - `bun run check` - Run `build` and `typecheck` targets across projects.
@@ -35,6 +39,13 @@ Run from `/Users/karol/Desktop/mdcms`:
 - `packages/sdk`
 - `packages/cli`
 - `packages/shared`
+- `packages/modules`
+
+## App Layout
+
+- `apps/server`
+- `apps/cli`
+- `apps/studio-runtime`
 
 ## Local Docker Stack
 

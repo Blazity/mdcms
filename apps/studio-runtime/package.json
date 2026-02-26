@@ -1,0 +1,40 @@
+{
+  "name": "@mdcms/studio-runtime-app",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "@mdcms/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "nx": {
+    "name": "studio-runtime",
+    "targets": {
+      "build": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "bun tsc --build apps/studio-runtime/tsconfig.lib.json && bun --conditions @mdcms/source apps/studio-runtime/src/build-runtime.ts"
+        }
+      },
+      "test": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "bun test apps/studio-runtime/src/build-runtime.test.ts"
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "@mdcms/shared": "workspace:*",
+    "tslib": "^2.3.0"
+  },
+  "license": "MIT"
+}
