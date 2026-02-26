@@ -5,6 +5,9 @@ import {
 } from "./server.js";
 import { createConsoleLogger, type Logger } from "@mdcms/shared";
 import { parseServerEnv } from "./env.js";
+import { createDatabaseConnection, type DatabaseConnection } from "./db.js";
+import { createContentDAL } from "./dal/index.js";
+import type { ContentDAL } from "./dal/types.js";
 
 import {
   collectServerModuleActions,
@@ -28,6 +31,8 @@ export type CreateServerRequestHandlerWithModulesOptions = {
 export type ServerRequestHandlerWithModulesResult = {
   handler: ServerRequestHandler;
   moduleLoadReport: ServerModuleLoadReport;
+  dbConnection: DatabaseConnection;
+  dal: ContentDAL;
 };
 
 /**
@@ -49,6 +54,9 @@ export function createServerRequestHandlerWithModules(
       },
     });
 
+  const dbConnection = createDatabaseConnection({ env: rawEnv });
+  const dal = createContentDAL({ db: dbConnection.db });
+
   const moduleLoadReport =
     options.moduleLoadReport ??
     loadServerModules({
@@ -56,7 +64,7 @@ export function createServerRequestHandlerWithModules(
       logger,
     });
   const actions = collectServerModuleActions(moduleLoadReport);
-  const moduleDeps = options.moduleDeps ?? {};
+  const moduleDeps = { ...(options.moduleDeps ?? {}), dal };
 
   const handler = createServerRequestHandler({
     ...(options.serverOptions ?? {}),
@@ -71,5 +79,7 @@ export function createServerRequestHandlerWithModules(
   return {
     handler,
     moduleLoadReport,
+    dbConnection,
+    dal,
   };
 }
