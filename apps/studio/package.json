@@ -30,12 +30,23 @@
   "scripts": {
     "test": "bun test ./src"
   },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
   "dependencies": {
     "@elysiajs/eden": "^1.4.8",
     "@mdcms/server": "workspace:*",
     "@mdcms/shared": "workspace:*",
     "elysia": "^1.4.25",
     "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.12",
+    "@types/react-dom": "^19.0.5",
+    "next": "^15.2.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "license": "MIT"
 }

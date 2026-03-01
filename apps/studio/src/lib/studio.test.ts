@@ -9,6 +9,7 @@ import {
   resolveStudioEnv,
 } from "./studio.js";
 import { createStudioActionCatalogAdapter } from "./action-catalog-adapter.js";
+import { Studio } from "./studio-component.js";
 
 test("resolveStudioEnv parses core env and applies Studio defaults", () => {
   const env = resolveStudioEnv({
@@ -105,4 +106,18 @@ test("createStudioActionCatalogAdapter resolves detail and validates shape", asy
 
   const result = await adapter.getById("content.publish");
   assert.equal(result.id, "content.publish");
+});
+
+test("Studio renders deterministic embed shell marker", () => {
+  const node = Studio({
+    config: {
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+    },
+  });
+
+  assert.equal(typeof node, "object");
+  assert.equal(node.props["data-testid"], "mdcms-studio-root");
+  assert.equal(node.props["data-mdcms-project"], "marketing-site");
+  assert.equal(node.props["data-mdcms-server-url"], "http://localhost:4000");
 });
