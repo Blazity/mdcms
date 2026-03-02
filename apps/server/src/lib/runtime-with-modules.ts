@@ -12,6 +12,7 @@ import {
   createInMemoryContentStore,
   mountContentApiRoutes,
 } from "./content-api.js";
+import { createAuthService, mountAuthRoutes } from "./auth.js";
 
 import {
   collectServerModuleActions,
@@ -67,6 +68,7 @@ export function createServerRequestHandlerWithModules(
       coreVersion: env.APP_VERSION,
       logger,
     });
+  const authService = createAuthService({ db: dbConnection.db, env: rawEnv });
   const contentStore = createInMemoryContentStore();
   const actions = collectServerModuleActions(moduleLoadReport);
   const moduleDeps = { ...(options.moduleDeps ?? {}), dal };
@@ -77,6 +79,7 @@ export function createServerRequestHandlerWithModules(
     logger,
     actions,
     configureApp: (app) => {
+      mountAuthRoutes(app, { authService });
       mountContentApiRoutes(app, { store: contentStore });
       mountLoadedServerModules(app, moduleDeps, moduleLoadReport);
     },

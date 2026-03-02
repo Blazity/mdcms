@@ -76,6 +76,18 @@ Backend API/runtime package boundary for MDCMS.
   - `limit` defaults to `20`
   - `limit` max is `100`
 
+## Session Auth Endpoints (CMS-36)
+
+- Server-side Studio session auth is implemented with `better-auth` + Drizzle adapter.
+- Session routes are mounted under `/api/v1/auth`.
+- Implemented endpoints:
+  - `POST /api/v1/auth/login`
+  - `GET /api/v1/auth/session`
+  - `POST /api/v1/auth/logout`
+- Login issues an HttpOnly session cookie (Better Auth `session_token`).
+- Session validation is deny-by-default: requests without a valid session token receive `401 UNAUTHORIZED`.
+- Better Auth native endpoints are also available under `/api/v1/auth/*` (for example `POST /api/v1/auth/sign-up/email`).
+
 ## DB Adapter + SQL Migrations (CMS-4)
 
 - Database adapter baseline is implemented with Drizzle ORM and `postgres.js` in `src/lib/db.ts`.
@@ -88,6 +100,10 @@ Backend API/runtime package boundary for MDCMS.
 ### Core Schema Baseline (CMS-11 + CMS-12)
 
 - Core tables created in `src/lib/db/schema.ts`:
+  - `users`
+  - `sessions`
+  - `accounts`
+  - `verifications`
   - `projects`
   - `environments`
   - `documents`

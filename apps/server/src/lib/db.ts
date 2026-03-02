@@ -1,9 +1,12 @@
 import { parseDatabaseEnv, type DatabaseEnv } from "@mdcms/shared";
 import { drizzle } from "drizzle-orm/postgres-js";
+import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
+import * as schema from "./db/schema.js";
+
 export type PostgresClient = ReturnType<typeof postgres>;
-export type DrizzleDatabase = ReturnType<typeof drizzle>;
+export type DrizzleDatabase = PostgresJsDatabase<typeof schema>;
 
 export type DatabaseConnection = {
   env: DatabaseEnv;
@@ -29,6 +32,7 @@ export function createDatabaseConnection(
   });
   const db = drizzle(client, {
     casing: "snake_case",
+    schema,
   });
 
   return {

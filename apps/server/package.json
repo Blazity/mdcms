@@ -21,6 +21,7 @@
   },
   "scripts": {
     "test": "bun test ./src",
+    "dev": "DATABASE_URL=${DATABASE_URL:-postgresql://mdcms:mdcms@localhost:5432/mdcms} bun --watch --conditions @mdcms/source src/bin/http-server.ts",
     "start": "bun --conditions @mdcms/source src/bin/http-server.ts",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config drizzle.config.ts"
@@ -28,6 +29,7 @@
   "dependencies": {
     "@mdcms/modules": "workspace:*",
     "@mdcms/shared": "workspace:*",
+    "better-auth": "^1.5.1",
     "drizzle-orm": "^0.45.1",
     "elysia": "^1.4.25",
     "postgres": "^3.4.8",

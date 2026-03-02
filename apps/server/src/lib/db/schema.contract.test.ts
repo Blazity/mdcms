@@ -63,6 +63,48 @@ test("schema snapshot includes CMS-11/CMS-12 core tables and columns", () => {
   const { snapshot } = readLatestArtifacts();
 
   const requiredTableColumns: Record<string, string[]> = {
+    "public.users": [
+      "id",
+      "name",
+      "email",
+      "email_verified",
+      "image",
+      "created_at",
+      "updated_at",
+    ],
+    "public.sessions": [
+      "id",
+      "expires_at",
+      "token",
+      "created_at",
+      "updated_at",
+      "ip_address",
+      "user_agent",
+      "user_id",
+    ],
+    "public.accounts": [
+      "id",
+      "account_id",
+      "provider_id",
+      "user_id",
+      "access_token",
+      "refresh_token",
+      "id_token",
+      "access_token_expires_at",
+      "refresh_token_expires_at",
+      "scope",
+      "password",
+      "created_at",
+      "updated_at",
+    ],
+    "public.verifications": [
+      "id",
+      "identifier",
+      "value",
+      "expires_at",
+      "created_at",
+      "updated_at",
+    ],
     "public.projects": [
       "id",
       "organization_id",
@@ -159,6 +201,10 @@ test("snapshot includes required named constraints and indexes", () => {
   const documentsTable = snapshot.tables["public.documents"];
   const documentVersionsTable = snapshot.tables["public.document_versions"];
   const environmentsTable = snapshot.tables["public.environments"];
+  const authUsersTable = snapshot.tables["public.users"];
+  const authSessionsTable = snapshot.tables["public.sessions"];
+  const authAccountsTable = snapshot.tables["public.accounts"];
+  const authVerificationsTable = snapshot.tables["public.verifications"];
 
   assert.ok(documentsTable, "expected documents table in snapshot");
   assert.ok(
@@ -166,6 +212,10 @@ test("snapshot includes required named constraints and indexes", () => {
     "expected document_versions table in snapshot",
   );
   assert.ok(environmentsTable, "expected environments table in snapshot");
+  assert.ok(authUsersTable, "expected users table in snapshot");
+  assert.ok(authSessionsTable, "expected sessions table in snapshot");
+  assert.ok(authAccountsTable, "expected accounts table in snapshot");
+  assert.ok(authVerificationsTable, "expected verifications table in snapshot");
 
   for (const indexName of [
     "idx_documents_active_scope_type_locale_path",
@@ -213,6 +263,26 @@ test("snapshot includes required named constraints and indexes", () => {
   assert.ok(
     environmentsTable.uniqueConstraints.unique_environment_per_project,
     "expected unique constraint unique_environment_per_project on environments",
+  );
+  assert.ok(
+    authUsersTable.uniqueConstraints.uniq_auth_users_email,
+    "expected unique constraint uniq_auth_users_email on users",
+  );
+  assert.ok(
+    authSessionsTable.uniqueConstraints.uniq_auth_sessions_token,
+    "expected unique constraint uniq_auth_sessions_token on sessions",
+  );
+  assert.ok(
+    authSessionsTable.indexes.idx_auth_sessions_user_id,
+    "expected index idx_auth_sessions_user_id on sessions",
+  );
+  assert.ok(
+    authAccountsTable.indexes.idx_auth_accounts_user_id,
+    "expected index idx_auth_accounts_user_id on accounts",
+  );
+  assert.ok(
+    authVerificationsTable.indexes.idx_auth_verifications_identifier,
+    "expected index idx_auth_verifications_identifier on verifications",
   );
 });
 

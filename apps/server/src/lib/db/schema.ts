@@ -24,6 +24,75 @@ export const projects = pgTable("projects", {
   createdBy: uuid().notNull(),
 });
 
+export const authUsers = pgTable(
+  "users",
+  {
+    id: text().primaryKey(),
+    name: text().notNull(),
+    email: text().notNull(),
+    emailVerified: boolean().default(false).notNull(),
+    image: text(),
+    createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [unique("uniq_auth_users_email").on(table.email)],
+);
+
+export const authSessions = pgTable(
+  "sessions",
+  {
+    id: text().primaryKey(),
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+    token: text().notNull(),
+    createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+    ipAddress: text(),
+    userAgent: text(),
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    unique("uniq_auth_sessions_token").on(table.token),
+    index("idx_auth_sessions_user_id").on(table.userId),
+  ],
+);
+
+export const authAccounts = pgTable(
+  "accounts",
+  {
+    id: text().primaryKey(),
+    accountId: text().notNull(),
+    providerId: text().notNull(),
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    accessToken: text(),
+    refreshToken: text(),
+    idToken: text(),
+    accessTokenExpiresAt: timestamp({ withTimezone: true }),
+    refreshTokenExpiresAt: timestamp({ withTimezone: true }),
+    scope: text(),
+    password: text(),
+    createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_auth_accounts_user_id").on(table.userId)],
+);
+
+export const authVerifications = pgTable(
+  "verifications",
+  {
+    id: text().primaryKey(),
+    identifier: text().notNull(),
+    value: text().notNull(),
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+    createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_auth_verifications_identifier").on(table.identifier)],
+);
+
 export const environments = pgTable(
   "environments",
   {
