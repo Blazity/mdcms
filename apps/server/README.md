@@ -61,6 +61,21 @@ Backend API/runtime package boundary for MDCMS.
 - `createServerRequestHandlerWithModules(...)` composes module load report + mounts + action catalog into the server runtime.
 - Runtime logs emit module load summary lines for loaded and skipped modules.
 
+## Content API Endpoints (CMS-21)
+
+- Content routes are mounted under `/api/v1/content` in the server runtime.
+- Implemented endpoints:
+  - `GET /api/v1/content`
+  - `GET /api/v1/content/:documentId`
+  - `POST /api/v1/content`
+  - `PUT /api/v1/content/:documentId`
+  - `DELETE /api/v1/content/:documentId`
+- List endpoint query contract supports:
+  - `type`, `path`, `locale`, `slug`, `published`, `isDeleted`, `hasUnpublishedChanges`, `draft`, `resolve`, `project`, `environment`, `limit`, `offset`, `sort`, `order`, `q`
+- Pagination defaults:
+  - `limit` defaults to `20`
+  - `limit` max is `100`
+
 ## DB Adapter + SQL Migrations (CMS-4)
 
 - Database adapter baseline is implemented with Drizzle ORM and `postgres.js` in `src/lib/db.ts`.

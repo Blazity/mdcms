@@ -23,6 +23,31 @@ export type SerializeErrorContext = {
   now?: Date;
 };
 
+function isRuntimeErrorLike(
+  error: unknown,
+): error is Pick<RuntimeError, "code" | "message" | "details" | "statusCode"> {
+  if (error instanceof RuntimeError) {
+    return true;
+  }
+
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const candidate = error as {
+    code?: unknown;
+    message?: unknown;
+    details?: unknown;
+    statusCode?: unknown;
+  };
+
+  return (
+    typeof candidate.code === "string" &&
+    typeof candidate.message === "string" &&
+    typeof candidate.statusCode === "number"
+  );
+}
+
 /**
  * RuntimeError represents expected domain/runtime failures that should
  * keep a stable error code, details and HTTP status mapping.
@@ -56,7 +81,7 @@ export function serializeError(
     timestamp,
   };
 
-  if (error instanceof RuntimeError) {
+  if (isRuntimeErrorLike(error)) {
     return {
       ...base,
       code: error.code,

@@ -14,6 +14,20 @@ export type ServerErrorContext = {
   now?: Date;
 };
 
+function resolveStatusCode(error: unknown): number {
+  if (error instanceof RuntimeError) {
+    return error.statusCode;
+  }
+
+  if (typeof error !== "object" || error === null) {
+    return 500;
+  }
+
+  const candidate = error as { statusCode?: unknown };
+
+  return typeof candidate.statusCode === "number" ? candidate.statusCode : 500;
+}
+
 /**
  * toServerErrorResponse maps unknown errors into the shared envelope and
  * a stable HTTP status code.
@@ -22,7 +36,7 @@ export function toServerErrorResponse(
   error: unknown,
   context: ServerErrorContext = {},
 ): ServerErrorResponse {
-  const statusCode = error instanceof RuntimeError ? error.statusCode : 500;
+  const statusCode = resolveStatusCode(error);
 
   return {
     statusCode,

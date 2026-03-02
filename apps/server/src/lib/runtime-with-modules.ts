@@ -8,6 +8,10 @@ import { parseServerEnv } from "./env.js";
 import { createDatabaseConnection, type DatabaseConnection } from "./db.js";
 import { createContentDAL } from "./dal/index.js";
 import type { ContentDAL } from "./dal/types.js";
+import {
+  createInMemoryContentStore,
+  mountContentApiRoutes,
+} from "./content-api.js";
 
 import {
   collectServerModuleActions,
@@ -63,6 +67,7 @@ export function createServerRequestHandlerWithModules(
       coreVersion: env.APP_VERSION,
       logger,
     });
+  const contentStore = createInMemoryContentStore();
   const actions = collectServerModuleActions(moduleLoadReport);
   const moduleDeps = { ...(options.moduleDeps ?? {}), dal };
 
@@ -72,6 +77,7 @@ export function createServerRequestHandlerWithModules(
     logger,
     actions,
     configureApp: (app) => {
+      mountContentApiRoutes(app, { store: contentStore });
       mountLoadedServerModules(app, moduleDeps, moduleLoadReport);
     },
   });
