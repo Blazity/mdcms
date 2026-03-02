@@ -13,6 +13,7 @@ import { createActionCatalogContractApp } from "./action-catalog-contract.js";
 import { parseServerEnv } from "./env.js";
 import { toServerErrorResponse } from "./errors.js";
 import { createHealthzPayload } from "./health.js";
+import { createTargetRoutingGuard } from "./target-routing-guard.js";
 
 export type ServerRequestHandler = (request: Request) => Promise<Response>;
 
@@ -222,6 +223,7 @@ export function createServerRequestHandler(
   const actions = normalizeActionCatalog(options.actions ?? []);
   const isActionVisible =
     options.isActionVisible ?? DEFAULT_ACTION_VISIBILITY_POLICY;
+  const targetRoutingGuard = createTargetRoutingGuard();
   const app = createServerApp({
     healthCheck,
     actions,
@@ -231,6 +233,7 @@ export function createServerRequestHandler(
 
   return async (request: Request): Promise<Response> => {
     try {
+      targetRoutingGuard(request);
       const response = await app.fetch(request);
 
       return normalizeElysiaErrorResponse({

@@ -26,6 +26,30 @@ Backend API/runtime package boundary for MDCMS.
 - `isActionVisible` defaults to allow-all and is designed for future auth integration tasks.
 - Unprefixed `/actions` paths are rejected to keep `/api/v1` enforcement consistent across server and consumers.
 
+## Explicit Target Routing Guard (CMS-14)
+
+- The server enforces explicit request routing for scoped API prefixes before handler execution.
+- Supported routing forms on incoming requests:
+  - Headers:
+    - `X-MDCMS-Project`
+    - `X-MDCMS-Environment`
+  - Query params:
+    - `project`
+    - `environment`
+- Header/query parity is required. If both forms are provided for the same field and differ, request fails with `TARGET_ROUTING_MISMATCH` (`400`).
+- Missing required target values fail with `MISSING_TARGET_ROUTING` (`400`).
+- Default scoped route policies:
+  - Require `project + environment`:
+    - `/api/v1/content`
+    - `/api/v1/schema`
+    - `/api/v1/webhooks`
+    - `/api/v1/search`
+    - `/api/v1/collaboration`
+    - `/api/v1/media`
+  - Require `project`:
+    - `/api/v1/environments`
+- Endpoints outside scoped policy (for example `/healthz`, `/api/v1/actions`, and module paths under `/api/v1/modules/*`) are not guarded by CMS-14 routing enforcement.
+
 ## Module Topology Integration
 
 - Server module loading lives in `src/lib/module-loader.ts`.
