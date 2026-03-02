@@ -24,6 +24,9 @@ Run from `/Users/karol/Desktop/mdcms`:
 - `bun run integration` - Run integration harness checks (`compose:health` + `migrate:check`).
 - `bun run ci:required` - Run all required CI gates locally in sequence.
 - `bun run check` - Run `build` and `typecheck` targets across projects.
+- `bun run dev` - Start Studio watch build, server auto-restart, and the Studio example Next.js dev server in one command.
+- `bun run compose:dev` - Run the full dev loop in Docker Compose (infra + migrations + hot-reload app/server/studio).
+- `bun run compose:dev:down` - Stop the Docker Compose dev stack.
 - `bun run compose:health` - Run the Docker Compose integration health and persistence checks.
 - `bun run migrate:check` - Verify auto-run SQL migrations and server startup in Docker Compose.
 - `bun run format` - Format repository files with Prettier.
@@ -47,6 +50,12 @@ Run from `/Users/karol/Desktop/mdcms`:
 docker compose up -d --build
 ```
 
+For a full containerized development loop (infra + db migration + `bun run dev` watchers):
+
+```bash
+bun run compose:dev
+```
+
 Service endpoints:
 
 - Server API: `http://localhost:4000` (`GET /healthz`)
@@ -56,11 +65,18 @@ Service endpoints:
 - MinIO Console: `http://localhost:9001`
 - Mailhog SMTP: `localhost:1025`
 - Mailhog UI: `http://localhost:8025`
+- Studio example app: `http://127.0.0.1:4173`
 
 Stop stack:
 
 ```bash
 docker compose down
+```
+
+Stop containerized dev stack:
+
+```bash
+bun run compose:dev:down
 ```
 
 Run integration verification:

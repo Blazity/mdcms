@@ -38,3 +38,9 @@ Environment overrides:
 - `MDCMS_STUDIO_EXAMPLE_HOST` (default `127.0.0.1`)
 - `MDCMS_STUDIO_EXAMPLE_PORT` (default `4173`)
 - `DATABASE_URL` for `server:dev` (default `postgresql://mdcms:mdcms@localhost:5432/mdcms`)
+
+For a fully containerized dev loop (infra + migrations + app/server/studio watchers), run:
+
+```bash
+bun run compose:dev
+```

@@ -3,6 +3,12 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "nx": {
+    "name": "studio-example"
+  },
+  "scripts": {
+    "dev": "NEXT_TELEMETRY_DISABLED=1 bun x next dev --hostname ${MDCMS_STUDIO_EXAMPLE_HOST:-127.0.0.1} --port ${MDCMS_STUDIO_EXAMPLE_PORT:-4173}"
+  },
   "dependencies": {
     "@mdcms/studio": "workspace:*",
     "next": "^15.2.2",
