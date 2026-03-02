@@ -170,7 +170,7 @@ async function bundleRuntimeEntry(input: {
 export async function buildStudioRuntimeArtifacts(
   options: BuildStudioRuntimeArtifactsOptions = {},
 ): Promise<StudioRuntimeBuildResult> {
-  const projectRoot = options.projectRoot ?? resolve("apps/studio");
+  const projectRoot = options.projectRoot ?? resolve("packages/studio");
   const sourceFile = resolve(
     options.sourceFile ?? join(projectRoot, "src/lib/remote-module.ts"),
   );

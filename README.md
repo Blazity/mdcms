@@ -32,8 +32,9 @@ Run from `/Users/karol/Desktop/mdcms`:
 ## Workspace Layout
 
 - `apps/server`
-- `apps/studio`
 - `apps/cli`
+- `apps/studio-example`
+- `packages/studio`
 - `packages/sdk`
 - `packages/shared`
 - `packages/modules`

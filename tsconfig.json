@@ -10,7 +10,7 @@
       "path": "./apps/server"
     },
     {
-      "path": "./apps/studio"
+      "path": "./packages/studio"
     },
     {
       "path": "./packages/sdk"

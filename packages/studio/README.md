@@ -48,7 +48,7 @@ export default function AdminPage() {
 
 ## Embed Smoke Scaffold
 
-- Sample host app: `apps/studio/examples/next-embed-smoke`
+- Sample host app: `apps/studio-example`
 - Catch-all embed route: `app/admin/[[...path]]/page.tsx`
 - CI-blocking smoke command:
 

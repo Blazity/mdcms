@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_DIR="$ROOT_DIR/apps/studio/examples/next-embed-smoke"
+APP_DIR="$ROOT_DIR/apps/studio-example"
 HOST="127.0.0.1"
 PORT="4173"
 BASE_URL="http://${HOST}:${PORT}"

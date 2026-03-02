@@ -43,26 +43,18 @@
         "drizzle-kit": "^0.31.9",
       },
     },
-    "apps/studio": {
-      "name": "@mdcms/studio",
+    "apps/studio-example": {
+      "name": "@mdcms/studio-example",
       "version": "0.0.1",
       "dependencies": {
-        "@elysiajs/eden": "^1.4.8",
-        "@mdcms/server": "workspace:*",
-        "@mdcms/shared": "workspace:*",
-        "elysia": "^1.4.25",
-        "tslib": "^2.3.0",
-      },
-      "devDependencies": {
-        "@types/react": "^19.0.12",
-        "@types/react-dom": "^19.0.5",
+        "@mdcms/studio": "workspace:*",
         "next": "^15.2.2",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
       },
-      "peerDependencies": {
-        "react": "^19.0.0",
-        "react-dom": "^19.0.0",
+      "devDependencies": {
+        "@types/react": "^19.0.12",
+        "@types/react-dom": "^19.0.5",
       },
     },
     "packages/modules": {
@@ -86,6 +78,28 @@
       "dependencies": {
         "tslib": "^2.3.0",
         "zod": "^4.3.6",
+      },
+    },
+    "packages/studio": {
+      "name": "@mdcms/studio",
+      "version": "0.0.1",
+      "dependencies": {
+        "@elysiajs/eden": "^1.4.8",
+        "@mdcms/server": "workspace:*",
+        "@mdcms/shared": "workspace:*",
+        "elysia": "^1.4.25",
+        "tslib": "^2.3.0",
+      },
+      "devDependencies": {
+        "@types/react": "^19.0.12",
+        "@types/react-dom": "^19.0.5",
+        "next": "^15.2.2",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
+      },
+      "peerDependencies": {
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
       },
     },
   },
@@ -432,7 +446,9 @@
 
     "@mdcms/shared": ["@mdcms/shared@workspace:packages/shared"],
 
-    "@mdcms/studio": ["@mdcms/studio@workspace:apps/studio"],
+    "@mdcms/studio": ["@mdcms/studio@workspace:packages/studio"],
+
+    "@mdcms/studio-example": ["@mdcms/studio-example@workspace:apps/studio-example"],
 
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@0.2.4", "", { "dependencies": { "@emnapi/core": "^1.1.0", "@emnapi/runtime": "^1.1.0", "@tybys/wasm-util": "^0.9.0" } }, "sha512-9zESzOO5aDByvhIAsOy9TbpZ0Ur2AJbUI7UT73kcUTS2mxAMHOBaa1st/jAymNoCtvrit99kkzT1FZuXVcgfIQ=="],
 

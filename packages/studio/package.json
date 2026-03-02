@@ -22,7 +22,7 @@
       "build": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "bun tsc --build apps/studio/tsconfig.lib.json && bun --conditions @mdcms/source apps/studio/src/lib/build-runtime.ts"
+          "command": "bun tsc --build packages/studio/tsconfig.lib.json && bun --conditions @mdcms/source packages/studio/src/lib/build-runtime.ts"
         }
       }
     }
