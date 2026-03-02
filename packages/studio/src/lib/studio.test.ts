@@ -120,4 +120,110 @@ test("Studio renders deterministic embed shell marker", () => {
   assert.equal(node.props["data-testid"], "mdcms-studio-root");
   assert.equal(node.props["data-mdcms-project"], "marketing-site");
   assert.equal(node.props["data-mdcms-server-url"], "http://localhost:4000");
+  assert.equal(node.props["data-mdcms-brand"], "MDCMS");
+  assert.equal(node.props["data-mdcms-state"], "ready");
+  assert.equal(node.props["data-mdcms-role"], "viewer");
+});
+
+test("Studio supports loading shell state", () => {
+  const node = Studio({
+    config: {
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+    },
+    state: "loading",
+  });
+
+  assert.equal(node.props["data-mdcms-state"], "loading");
+  assert.equal(
+    node.props.children[0].props.children[0].props.children[2].props.children,
+    "Loading Studio...",
+  );
+});
+
+test("Studio supports forbidden shell state", () => {
+  const node = Studio({
+    config: {
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+    },
+    state: "forbidden",
+  });
+
+  assert.equal(node.props["data-mdcms-state"], "forbidden");
+  assert.equal(
+    node.props.children[1].props.children,
+    "You do not have permission to access Studio.",
+  );
+});
+
+test("Studio supports error shell state with custom message", () => {
+  const node = Studio({
+    config: {
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+    },
+    state: "error",
+    errorMessage: "Bootstrap request failed.",
+  });
+
+  assert.equal(node.props["data-mdcms-state"], "error");
+  assert.equal(
+    node.props.children[1].props.children,
+    "Bootstrap request failed.",
+  );
+});
+
+test("Studio supports empty shell state", () => {
+  const node = Studio({
+    config: {
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+    },
+    state: "empty",
+  });
+
+  assert.equal(node.props["data-mdcms-state"], "empty");
+  assert.equal(
+    node.props.children[1].props.children,
+    "No content found for this route.",
+  );
+});
+
+test("Studio enforces viewer-safe interaction constraints", () => {
+  const node = Studio({
+    config: {
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+    },
+    state: "ready",
+    role: "viewer",
+  });
+  const actionRow = node.props.children[1].props.children[1];
+  const createButton = actionRow.props.children[0];
+  const publishButton = actionRow.props.children[1];
+
+  assert.equal(node.props["data-mdcms-can-write"], "false");
+  assert.equal(node.props["data-mdcms-can-publish"], "false");
+  assert.equal(createButton.props.disabled, true);
+  assert.equal(publishButton.props.disabled, true);
+});
+
+test("Studio enables editing actions for editor role", () => {
+  const node = Studio({
+    config: {
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+    },
+    state: "ready",
+    role: "editor",
+  });
+  const actionRow = node.props.children[1].props.children[1];
+  const createButton = actionRow.props.children[0];
+  const publishButton = actionRow.props.children[1];
+
+  assert.equal(node.props["data-mdcms-can-write"], "true");
+  assert.equal(node.props["data-mdcms-can-publish"], "true");
+  assert.equal(createButton.props.disabled, false);
+  assert.equal(publishButton.props.disabled, false);
 });

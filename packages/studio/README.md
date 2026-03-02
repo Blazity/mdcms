@@ -2,11 +2,23 @@
 
 Host-embedded Studio package boundary for MDCMS.
 
-## Studio Embed Shell (CMS-8)
+## Studio Embed Shell (CMS-47)
 
 - `Studio` is exported from `@mdcms/studio` as the host app entrypoint.
-- Current CMS-8 scope is a minimal placeholder shell for embed smoke coverage.
+- CMS-47 shell states are supported via `state` prop:
+  - `loading`
+  - `ready` (default)
+  - `empty`
+  - `error`
+  - `forbidden`
+- Role-aware shell behavior is supported via `role` prop:
+  - `owner`
+  - `admin`
+  - `editor`
+  - `viewer` (default; viewer-safe action constraints)
+- Branding is fixed to `MDCMS` in MVP.
 - Runtime loader/bootstrap execution is deferred to later roadmap tasks.
+- Shell composition follows a Tailwind + shadcn-style component approach.
 
 Usage:
 
@@ -43,6 +55,7 @@ export default function AdminPage() {
 ## Build
 
 - `bun nx build studio`
+- `bun nx run studio:dev`
 - `bun nx typecheck studio`
 - `bun nx test studio`
 
