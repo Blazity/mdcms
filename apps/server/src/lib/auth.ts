@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import { RuntimeError, serializeError } from "@mdcms/shared";
-import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { z } from "zod";
@@ -33,6 +33,8 @@ export const API_KEY_OPERATION_SCOPES = [
 ] as const;
 
 const API_KEY_PREFIX = "mdcms_key_";
+const SESSION_INACTIVITY_TIMEOUT_SECONDS = 2 * 60 * 60;
+const SESSION_ABSOLUTE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 export type ApiKeyOperationScope = (typeof API_KEY_OPERATION_SCOPES)[number];
 
@@ -115,6 +117,14 @@ export type AuthService = {
   ) => Promise<{ key: string; metadata: ApiKeyMetadata }>;
   listApiKeys: (request: Request) => Promise<ApiKeyMetadata[]>;
   revokeApiKey: (request: Request, keyId: string) => Promise<ApiKeyMetadata>;
+  revokeAllUserSessions: (userId: string) => Promise<number>;
+  revokeAllSessionsForUserByAdmin: (
+    request: Request,
+    userId: string,
+  ) => Promise<{
+    userId: string;
+    revokedSessions: number;
+  }>;
   handleAuthRequest: (request: Request) => Promise<Response>;
 };
 
@@ -376,6 +386,74 @@ function resolveAuthSecret(env: NodeJS.ProcessEnv): string {
   return "mdcms-dev-secret-do-not-use-in-production";
 }
 
+function parseEnvBoolean(value: string | undefined): boolean | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  return undefined;
+}
+
+function resolveSecureCookiePolicy(env: NodeJS.ProcessEnv): boolean {
+  const explicitInsecure = parseEnvBoolean(env.MDCMS_AUTH_INSECURE_COOKIES);
+  return explicitInsecure === true ? false : true;
+}
+
+function parseCsvSet(rawValue: string | undefined): Set<string> {
+  if (!rawValue) {
+    return new Set<string>();
+  }
+
+  return new Set(
+    rawValue
+      .split(",")
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0),
+  );
+}
+
+function resolveAdminAllowlist(env: NodeJS.ProcessEnv): {
+  userIds: Set<string>;
+  emails: Set<string>;
+} {
+  return {
+    userIds: parseCsvSet(env.MDCMS_AUTH_ADMIN_USER_IDS),
+    emails: new Set(
+      [...parseCsvSet(env.MDCMS_AUTH_ADMIN_EMAILS)].map((email) =>
+        email.toLowerCase(),
+      ),
+    ),
+  };
+}
+
+function isSessionBeyondAbsoluteMaxAge(session: StudioSession): boolean {
+  const issuedAt = Date.parse(session.issuedAt);
+
+  if (Number.isNaN(issuedAt)) {
+    return true;
+  }
+
+  return Date.now() - issuedAt > SESSION_ABSOLUTE_MAX_AGE_MS;
+}
+
+function createUnauthorizedSessionError(message: string): RuntimeError {
+  return new RuntimeError({
+    code: "UNAUTHORIZED",
+    message,
+    statusCode: 401,
+  });
+}
+
 export type CreateAuthServiceOptions = {
   db: DrizzleDatabase;
   env?: NodeJS.ProcessEnv;
@@ -387,6 +465,8 @@ export function createAuthService(
   const rawEnv = options.env ?? process.env;
   const baseUrl = resolveAuthBaseUrl(rawEnv);
   const secret = resolveAuthSecret(rawEnv);
+  const useSecureCookies = resolveSecureCookiePolicy(rawEnv);
+  const adminAllowlist = resolveAdminAllowlist(rawEnv);
 
   const auth = betterAuth({
     appName: "mdcms",
@@ -407,16 +487,16 @@ export function createAuthService(
       enabled: true,
     },
     session: {
-      expiresIn: 2 * 60 * 60,
+      expiresIn: SESSION_INACTIVITY_TIMEOUT_SECONDS,
       updateAge: 0,
     },
     advanced: {
-      useSecureCookies: rawEnv.NODE_ENV === "production",
+      useSecureCookies,
       defaultCookieAttributes: {
         path: "/",
         httpOnly: true,
         sameSite: "strict",
-        secure: rawEnv.NODE_ENV === "production",
+        secure: useSecureCookies,
       },
     },
     rateLimit: {
@@ -424,20 +504,59 @@ export function createAuthService(
     },
   });
 
+  async function revokeAllUserSessions(userId: string): Promise<number> {
+    const normalizedUserId = assertNonEmptyString(userId, "userId");
+    const revoked = await options.db
+      .delete(authSessions)
+      .where(eq(authSessions.userId, normalizedUserId))
+      .returning({
+        id: authSessions.id,
+      });
+
+    return revoked.length;
+  }
+
   async function requireSession(request: Request): Promise<StudioSession> {
     const session = (await auth.api.getSession({
       headers: request.headers,
     })) as BetterAuthLikeSession | null;
 
     if (!session) {
+      throw createUnauthorizedSessionError(
+        "A valid Studio session is required.",
+      );
+    }
+
+    const parsed = toStudioSession(session);
+
+    if (isSessionBeyondAbsoluteMaxAge(parsed)) {
+      await options.db
+        .delete(authSessions)
+        .where(eq(authSessions.id, parsed.id));
+      throw createUnauthorizedSessionError(
+        "Session exceeded the absolute maximum age.",
+      );
+    }
+
+    return parsed;
+  }
+
+  async function assertAdminSession(request: Request): Promise<StudioSession> {
+    const session = await requireSession(request);
+    const isAdmin =
+      adminAllowlist.userIds.has(session.userId) ||
+      adminAllowlist.emails.has(session.email.toLowerCase());
+
+    if (!isAdmin) {
       throw new RuntimeError({
-        code: "UNAUTHORIZED",
-        message: "A valid Studio session is required.",
-        statusCode: 401,
+        code: "FORBIDDEN",
+        message:
+          "Admin privileges are required to revoke sessions for another user.",
+        statusCode: 403,
       });
     }
 
-    return toStudioSession(session);
+    return session;
   }
 
   async function requireActiveApiKey(
@@ -505,8 +624,18 @@ export function createAuthService(
           });
         }
 
+        const studioSession = toStudioSession(session);
+        await options.db
+          .delete(authSessions)
+          .where(
+            and(
+              eq(authSessions.userId, studioSession.userId),
+              ne(authSessions.id, studioSession.id),
+            ),
+          );
+
         return {
-          session: toStudioSession(session),
+          session: studioSession,
           setCookie: responseCookie,
         };
       } catch (error) {
@@ -715,6 +844,33 @@ export function createAuthService(
       return toApiKeyMetadata(updated ?? existing);
     },
 
+    revokeAllUserSessions,
+
+    async revokeAllSessionsForUserByAdmin(request, userId) {
+      await assertAdminSession(request);
+      const normalizedUserId = assertNonEmptyString(userId, "userId");
+      const user = await options.db.query.authUsers.findFirst({
+        where: eq(authUsers.id, normalizedUserId),
+      });
+
+      if (!user) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "User not found.",
+          statusCode: 404,
+          details: {
+            userId: normalizedUserId,
+          },
+        });
+      }
+
+      const revokedSessions = await revokeAllUserSessions(normalizedUserId);
+      return {
+        userId: normalizedUserId,
+        revokedSessions,
+      };
+    },
+
     handleAuthRequest(request) {
       return auth.handler(request);
     },
@@ -808,6 +964,25 @@ export function mountAuthRoutes(
       return handleRouteError(request, error);
     }
   });
+
+  authApp.post?.(
+    "/api/v1/auth/users/:userId/sessions/revoke-all",
+    async ({ request, params }: any) => {
+      try {
+        const result =
+          await options.authService.revokeAllSessionsForUserByAdmin(
+            request,
+            params.userId,
+          );
+
+        return {
+          data: result,
+        };
+      } catch (error) {
+        return handleRouteError(request, error);
+      }
+    },
+  );
 
   authApp.get?.("/api/v1/auth/api-keys", async ({ request }: any) => {
     try {

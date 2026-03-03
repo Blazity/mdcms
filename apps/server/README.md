@@ -93,6 +93,26 @@ Backend API/runtime package boundary for MDCMS.
 - Session validation is deny-by-default: requests without a valid session token receive `401 UNAUTHORIZED`.
 - Better Auth native endpoints are also available under `/api/v1/auth/*` (for example `POST /api/v1/auth/sign-up/email`).
 
+## Session Security Policy (CMS-37)
+
+- Session cookie policy:
+  - `HttpOnly`
+  - `SameSite=Strict`
+  - `Path=/`
+  - `Secure` by default (including local/dev), with explicit local override via `MDCMS_AUTH_INSECURE_COOKIES=true`.
+- Session lifetime policy:
+  - inactivity timeout: `2h` rolling (`expiresIn=7200`).
+  - absolute max age: `12h` from initial issue time (enforced server-side on each session check).
+- Session ID rotation:
+  - on successful sign-in, older sessions for the same user are revoked.
+- Admin session revocation endpoint:
+  - `POST /api/v1/auth/users/:userId/sessions/revoke-all`
+  - requires authenticated admin session.
+  - admin identities are sourced from env allowlists:
+    - `MDCMS_AUTH_ADMIN_USER_IDS` (comma-separated user IDs)
+    - `MDCMS_AUTH_ADMIN_EMAILS` (comma-separated emails)
+  - deterministic semantics: `401` unauthenticated, `403` non-admin, `404` unknown user.
+
 ## API Key Lifecycle + Authorization (CMS-42 + CMS-43)
 
 - API key management endpoints:
