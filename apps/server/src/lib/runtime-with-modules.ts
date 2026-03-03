@@ -9,7 +9,7 @@ import { createDatabaseConnection, type DatabaseConnection } from "./db.js";
 import { createContentDAL } from "./dal/index.js";
 import type { ContentDAL } from "./dal/types.js";
 import {
-  createInMemoryContentStore,
+  createDatabaseContentStore,
   mountContentApiRoutes,
 } from "./content-api.js";
 import { createAuthService, mountAuthRoutes } from "./auth.js";
@@ -69,7 +69,7 @@ export function createServerRequestHandlerWithModules(
       logger,
     });
   const authService = createAuthService({ db: dbConnection.db, env: rawEnv });
-  const contentStore = createInMemoryContentStore();
+  const contentStore = createDatabaseContentStore({ db: dbConnection.db });
   const actions = collectServerModuleActions(moduleLoadReport);
   const moduleDeps = { ...(options.moduleDeps ?? {}), dal };
 
@@ -80,7 +80,11 @@ export function createServerRequestHandlerWithModules(
     actions,
     configureApp: (app) => {
       mountAuthRoutes(app, { authService });
-      mountContentApiRoutes(app, { store: contentStore });
+      mountContentApiRoutes(app, {
+        store: contentStore,
+        authorize: (request, requirement) =>
+          authService.authorizeRequest(request, requirement),
+      });
       mountLoadedServerModules(app, moduleDeps, moduleLoadReport);
     },
   });

@@ -75,6 +75,50 @@ Backend API/runtime package boundary for MDCMS.
 - Pagination defaults:
   - `limit` defaults to `20`
   - `limit` max is `100`
+- Content storage is DB-backed (`documents` table), not process memory.
+- List/integer query parsing is strict (`limit=1abc` is rejected with `INVALID_QUERY_PARAM`).
+- Content endpoints are deny-by-default and require either:
+  - valid Studio session cookie, or
+  - valid API key with required operation scope + allowed `(project, environment)` tuple.
+
+## Session Auth Endpoints (CMS-36)
+
+- Server-side Studio session auth is implemented with `better-auth` + Drizzle adapter.
+- Session routes are mounted under `/api/v1/auth`.
+- Implemented endpoints:
+  - `POST /api/v1/auth/login`
+  - `GET /api/v1/auth/session`
+  - `POST /api/v1/auth/logout`
+- Login issues an HttpOnly session cookie (Better Auth `session_token`).
+- Session validation is deny-by-default: requests without a valid session token receive `401 UNAUTHORIZED`.
+- Better Auth native endpoints are also available under `/api/v1/auth/*` (for example `POST /api/v1/auth/sign-up/email`).
+
+## API Key Lifecycle + Authorization (CMS-42 + CMS-43)
+
+- API key management endpoints:
+  - `GET /api/v1/auth/api-keys` (metadata only, session required)
+  - `POST /api/v1/auth/api-keys` (create + one-time key reveal, session required)
+  - `POST /api/v1/auth/api-keys/:keyId/revoke` (immediate revoke, session required)
+- API keys are generated with `mdcms_key_` prefix and hashed at rest (`api_keys.key_hash`).
+- Keys store:
+  - operation scopes
+  - `(project, environment)` context allowlist tuples
+  - optional expiry + revoke timestamps
+- Deny-by-default operation scopes enforced:
+  - `content:read`
+  - `content:write:draft`
+  - `content:publish`
+  - `content:delete`
+  - `schema:read`
+  - `schema:write`
+  - `media:upload`
+  - `media:delete`
+  - `webhooks:read`
+  - `webhooks:write`
+  - `environments:clone`
+  - `environments:promote`
+  - `migrations:run`
+- API keys authorize access only; explicit request routing (`project` + `environment`) remains mandatory.
 
 ## Session Auth Endpoints (CMS-36)
 

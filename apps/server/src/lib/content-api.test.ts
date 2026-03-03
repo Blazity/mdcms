@@ -26,7 +26,10 @@ function createHandler() {
   return createServerRequestHandler({
     env: baseEnv,
     configureApp: (app) => {
-      mountContentApiRoutes(app, { store });
+      mountContentApiRoutes(app, {
+        store,
+        authorize: async () => undefined,
+      });
     },
     now: () => new Date("2026-03-02T10:00:00.000Z"),
   });
@@ -153,7 +156,11 @@ test("content API supports get/update/delete lifecycle", async () => {
     }),
   );
   const updated = (await updateResponse.json()) as {
-    data: { path: string; draftRevision: number; hasUnpublishedChanges: boolean };
+    data: {
+      path: string;
+      draftRevision: number;
+      hasUnpublishedChanges: boolean;
+    };
   };
 
   assert.equal(updateResponse.status, 200);
@@ -201,6 +208,18 @@ test("content API enforces list query validation and routing requirements", asyn
 
   assert.equal(invalidLimitResponse.status, 400);
   assert.equal(invalidLimitBody.code, "INVALID_QUERY_PARAM");
+
+  const malformedLimitResponse = await handler(
+    new Request("http://localhost/api/v1/content?limit=1abc", {
+      headers: scopeHeaders,
+    }),
+  );
+  const malformedLimitBody = (await malformedLimitResponse.json()) as {
+    code: string;
+  };
+
+  assert.equal(malformedLimitResponse.status, 400);
+  assert.equal(malformedLimitBody.code, "INVALID_QUERY_PARAM");
 
   const missingScopeResponse = await handler(
     new Request("http://localhost/api/v1/content"),
