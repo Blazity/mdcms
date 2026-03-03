@@ -207,3 +207,141 @@ testWithDatabase("auth logout revokes an active session", async () => {
     await dbConnection.close();
   }
 });
+
+testWithDatabase(
+  "API key lifecycle supports create/list/revoke with one-time key reveal",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+
+    try {
+      await handler(
+        new Request("http://localhost/api/v1/auth/sign-up/email", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            password,
+            name: "Admin User",
+          }),
+        }),
+      );
+
+      const loginResponse = await handler(
+        new Request("http://localhost/api/v1/auth/login", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            password,
+          }),
+        }),
+      );
+      const cookie = extractSetCookie(loginResponse);
+
+      const readKeyResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          method: "POST",
+          headers: {
+            cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            label: "read-only",
+            scopes: ["content:read"],
+            contextAllowlist: [
+              { project: "marketing-site", environment: "production" },
+            ],
+          }),
+        }),
+      );
+      const readKeyBody = (await readKeyResponse.json()) as {
+        data: {
+          id: string;
+          key: string;
+          label: string;
+          revokedAt: string | null;
+        };
+      };
+
+      assert.equal(readKeyResponse.status, 200);
+      assert.equal(readKeyBody.data.key.startsWith("mdcms_key_"), true);
+      assert.equal(readKeyBody.data.label, "read-only");
+      assert.equal(readKeyBody.data.revokedAt, null);
+
+      const listBeforeRevoke = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          headers: {
+            cookie,
+          },
+        }),
+      );
+      const listBeforeRevokeBody = (await listBeforeRevoke.json()) as {
+        data: Array<{
+          id: string;
+          label: string;
+          revokedAt: string | null;
+          key?: string;
+        }>;
+      };
+      const createdMetadata = listBeforeRevokeBody.data.find(
+        (row) => row.id === readKeyBody.data.id,
+      );
+
+      assert.equal(listBeforeRevoke.status, 200);
+      assert.ok(createdMetadata);
+      assert.equal(createdMetadata?.label, "read-only");
+      assert.equal(createdMetadata?.revokedAt, null);
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(createdMetadata ?? {}, "key"),
+        false,
+      );
+
+      const revokeResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/auth/api-keys/${readKeyBody.data.id}/revoke`,
+          {
+            method: "POST",
+            headers: {
+              cookie,
+            },
+          },
+        ),
+      );
+      const revokeBody = (await revokeResponse.json()) as {
+        data: { id: string; revokedAt: string | null };
+      };
+
+      assert.equal(revokeResponse.status, 200);
+      assert.equal(revokeBody.data.id, readKeyBody.data.id);
+      assert.ok(revokeBody.data.revokedAt);
+
+      const listAfterRevoke = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          headers: {
+            cookie,
+          },
+        }),
+      );
+      const listAfterRevokeBody = (await listAfterRevoke.json()) as {
+        data: Array<{ id: string; revokedAt: string | null }>;
+      };
+      const revokedMetadata = listAfterRevokeBody.data.find(
+        (row) => row.id === readKeyBody.data.id,
+      );
+
+      assert.equal(listAfterRevoke.status, 200);
+      assert.ok(revokedMetadata?.revokedAt);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);

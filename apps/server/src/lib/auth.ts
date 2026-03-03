@@ -1,14 +1,40 @@
+import { createHash, randomBytes } from "node:crypto";
+
 import { RuntimeError, serializeError } from "@mdcms/shared";
+import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { z } from "zod";
 
 import type { DrizzleDatabase } from "./db.js";
 import {
+  apiKeys,
   authAccounts,
   authSessions,
   authUsers,
   authVerifications,
+  type ApiKeyScopeTuple,
 } from "./db/schema.js";
+
+export const API_KEY_OPERATION_SCOPES = [
+  "content:read",
+  "content:write:draft",
+  "content:publish",
+  "content:delete",
+  "schema:read",
+  "schema:write",
+  "media:upload",
+  "media:delete",
+  "webhooks:read",
+  "webhooks:write",
+  "environments:clone",
+  "environments:promote",
+  "migrations:run",
+] as const;
+
+const API_KEY_PREFIX = "mdcms_key_";
+
+export type ApiKeyOperationScope = (typeof API_KEY_OPERATION_SCOPES)[number];
 
 export type StudioSession = {
   id: string;
@@ -18,20 +44,51 @@ export type StudioSession = {
   expiresAt: string;
 };
 
+export type ApiKeyPrincipal = {
+  type: "api_key";
+  keyId: string;
+  keyPrefix: string;
+  label: string;
+  scopes: readonly ApiKeyOperationScope[];
+  contextAllowlist: readonly ApiKeyScopeTuple[];
+};
+
 export type SessionPrincipal = {
   type: "session";
   session: StudioSession;
 };
 
+export type AuthPrincipal = ApiKeyPrincipal | SessionPrincipal;
+
 export type AuthorizationRequirement = {
-  requiredScope: string;
+  requiredScope: ApiKeyOperationScope;
   project?: string;
   environment?: string;
 };
 
 export type AuthorizedRequest = {
-  mode: "session";
-  principal: SessionPrincipal;
+  mode: "session" | "api_key";
+  principal: AuthPrincipal;
+};
+
+export type CreateApiKeyInput = {
+  label: string;
+  scopes: ApiKeyOperationScope[];
+  contextAllowlist: ApiKeyScopeTuple[];
+  expiresAt?: string;
+};
+
+export type ApiKeyMetadata = {
+  id: string;
+  label: string;
+  keyPrefix: string;
+  scopes: ApiKeyOperationScope[];
+  contextAllowlist: ApiKeyScopeTuple[];
+  createdByUserId: string;
+  createdAt: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
 };
 
 export type AuthService = {
@@ -52,6 +109,12 @@ export type AuthService = {
     request: Request,
     requirement: AuthorizationRequirement,
   ) => Promise<AuthorizedRequest>;
+  createApiKey: (
+    request: Request,
+    input: CreateApiKeyInput,
+  ) => Promise<{ key: string; metadata: ApiKeyMetadata }>;
+  listApiKeys: (request: Request) => Promise<ApiKeyMetadata[]>;
+  revokeApiKey: (request: Request, keyId: string) => Promise<ApiKeyMetadata>;
   handleAuthRequest: (request: Request) => Promise<Response>;
 };
 
@@ -72,6 +135,20 @@ type AuthRouteApp = {
   get?: (path: string, handler: (ctx: any) => unknown) => AuthRouteApp;
   post?: (path: string, handler: (ctx: any) => unknown) => AuthRouteApp;
 };
+
+const CreateApiKeyInputSchema = z.object({
+  label: z.string().trim().min(1).max(128),
+  scopes: z.array(z.enum(API_KEY_OPERATION_SCOPES)).min(1),
+  contextAllowlist: z
+    .array(
+      z.object({
+        project: z.string().trim().min(1),
+        environment: z.string().trim().min(1),
+      }),
+    )
+    .min(1),
+  expiresAt: z.string().datetime().optional(),
+});
 
 function toIsoString(value: unknown): string {
   if (value instanceof Date) {
@@ -161,6 +238,96 @@ function extractCookiePair(setCookieHeader: string | null): string {
   }
 
   return pair.trim();
+}
+
+function extractBearerToken(
+  authorizationHeader: string | null,
+): string | undefined {
+  if (!authorizationHeader) {
+    return undefined;
+  }
+
+  const trimmed = authorizationHeader.trim();
+
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+
+  const [scheme, token] = trimmed.split(/\s+/, 2);
+
+  if (!scheme || !token || scheme.toLowerCase() !== "bearer") {
+    throw new RuntimeError({
+      code: "UNAUTHORIZED",
+      message: "Authorization header must use Bearer token format.",
+      statusCode: 401,
+    });
+  }
+
+  return token;
+}
+
+function hashApiKey(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function ensureValidApiKeyToken(token: string): void {
+  if (!token.startsWith(API_KEY_PREFIX)) {
+    throw new RuntimeError({
+      code: "UNAUTHORIZED",
+      message: "Invalid API key format.",
+      statusCode: 401,
+    });
+  }
+}
+
+function normalizeApiKeyScopes(value: unknown): ApiKeyOperationScope[] {
+  const parsed = z.array(z.enum(API_KEY_OPERATION_SCOPES)).safeParse(value);
+
+  if (!parsed.success) {
+    throw new RuntimeError({
+      code: "INTERNAL_ERROR",
+      message: "Stored API key scopes are invalid.",
+      statusCode: 500,
+    });
+  }
+
+  return parsed.data;
+}
+
+function normalizeApiKeyContextAllowlist(value: unknown): ApiKeyScopeTuple[] {
+  const parsed = z
+    .array(
+      z.object({
+        project: z.string().trim().min(1),
+        environment: z.string().trim().min(1),
+      }),
+    )
+    .safeParse(value);
+
+  if (!parsed.success) {
+    throw new RuntimeError({
+      code: "INTERNAL_ERROR",
+      message: "Stored API key context allowlist is invalid.",
+      statusCode: 500,
+    });
+  }
+
+  return parsed.data;
+}
+
+function toApiKeyMetadata(row: typeof apiKeys.$inferSelect): ApiKeyMetadata {
+  return {
+    id: row.id,
+    label: row.label,
+    keyPrefix: row.keyPrefix,
+    scopes: normalizeApiKeyScopes(row.scopes),
+    contextAllowlist: normalizeApiKeyContextAllowlist(row.contextAllowlist),
+    createdByUserId: row.createdByUserId,
+    createdAt: toIsoString(row.createdAt),
+    expiresAt: row.expiresAt ? toIsoString(row.expiresAt) : null,
+    revokedAt: row.revokedAt ? toIsoString(row.revokedAt) : null,
+    lastUsedAt: row.lastUsedAt ? toIsoString(row.lastUsedAt) : null,
+  };
 }
 
 function toStudioSession(payload: BetterAuthLikeSession): StudioSession {
@@ -273,6 +440,34 @@ export function createAuthService(
     return toStudioSession(session);
   }
 
+  async function requireActiveApiKey(
+    token: string,
+  ): Promise<{ row: typeof apiKeys.$inferSelect; metadata: ApiKeyMetadata }> {
+    ensureValidApiKeyToken(token);
+    const hashedToken = hashApiKey(token);
+
+    const row = await options.db.query.apiKeys.findFirst({
+      where: and(
+        eq(apiKeys.keyHash, hashedToken),
+        isNull(apiKeys.revokedAt),
+        or(isNull(apiKeys.expiresAt), sql`${apiKeys.expiresAt} > now()`),
+      ),
+    });
+
+    if (!row) {
+      throw new RuntimeError({
+        code: "UNAUTHORIZED",
+        message: "API key is invalid, expired, or revoked.",
+        statusCode: 401,
+      });
+    }
+
+    return {
+      row,
+      metadata: toApiKeyMetadata(row),
+    };
+  }
+
   return {
     async login(request, email, password) {
       try {
@@ -347,7 +542,76 @@ export function createAuthService(
       };
     },
 
-    async authorizeRequest(request, _requirement) {
+    async authorizeRequest(request, requirement) {
+      const bearerToken = extractBearerToken(
+        request.headers.get("authorization"),
+      );
+
+      if (bearerToken) {
+        const { row, metadata } = await requireActiveApiKey(bearerToken);
+        const hasRequiredScope = metadata.scopes.includes(
+          requirement.requiredScope,
+        );
+
+        if (!hasRequiredScope) {
+          throw new RuntimeError({
+            code: "FORBIDDEN",
+            message: `API key scope "${requirement.requiredScope}" is required for this endpoint.`,
+            statusCode: 403,
+            details: {
+              requiredScope: requirement.requiredScope,
+            },
+          });
+        }
+
+        if (!requirement.project || !requirement.environment) {
+          throw new RuntimeError({
+            code: "FORBIDDEN",
+            message:
+              "API key authorization requires explicit project/environment routing context.",
+            statusCode: 403,
+          });
+        }
+
+        const isContextAllowed = metadata.contextAllowlist.some(
+          (candidate) =>
+            candidate.project === requirement.project &&
+            candidate.environment === requirement.environment,
+        );
+
+        if (!isContextAllowed) {
+          throw new RuntimeError({
+            code: "FORBIDDEN",
+            message:
+              "API key is not allowed for the requested project/environment context.",
+            statusCode: 403,
+            details: {
+              project: requirement.project,
+              environment: requirement.environment,
+            },
+          });
+        }
+
+        await options.db
+          .update(apiKeys)
+          .set({
+            lastUsedAt: new Date(),
+          })
+          .where(eq(apiKeys.id, row.id));
+
+        return {
+          mode: "api_key",
+          principal: {
+            type: "api_key",
+            keyId: metadata.id,
+            keyPrefix: metadata.keyPrefix,
+            label: metadata.label,
+            scopes: metadata.scopes,
+            contextAllowlist: metadata.contextAllowlist,
+          } satisfies ApiKeyPrincipal,
+        };
+      }
+
       const session = await requireSession(request);
       return {
         mode: "session",
@@ -356,6 +620,99 @@ export function createAuthService(
           session,
         } satisfies SessionPrincipal,
       };
+    },
+
+    async createApiKey(request, input) {
+      const session = await requireSession(request);
+      const parsed = CreateApiKeyInputSchema.safeParse(input);
+
+      if (!parsed.success) {
+        throw new RuntimeError({
+          code: "INVALID_INPUT",
+          message:
+            parsed.error.issues[0]?.message ?? "API key payload is invalid.",
+          statusCode: 400,
+          details: {
+            issue: parsed.error.issues[0]?.path.join(".") ?? undefined,
+          },
+        });
+      }
+
+      const key = `${API_KEY_PREFIX}${randomBytes(24).toString("base64url")}`;
+      const keyHash = hashApiKey(key);
+      const keyPrefix = `${key.slice(0, API_KEY_PREFIX.length + 8)}...`;
+      const expiresAt = parsed.data.expiresAt
+        ? new Date(parsed.data.expiresAt)
+        : null;
+
+      const [created] = await options.db
+        .insert(apiKeys)
+        .values({
+          label: parsed.data.label,
+          keyPrefix,
+          keyHash,
+          scopes: parsed.data.scopes,
+          contextAllowlist: parsed.data.contextAllowlist,
+          expiresAt,
+          createdByUserId: session.userId,
+        })
+        .returning();
+
+      if (!created) {
+        throw new RuntimeError({
+          code: "INTERNAL_ERROR",
+          message: "Failed to create API key.",
+          statusCode: 500,
+        });
+      }
+
+      return {
+        key,
+        metadata: toApiKeyMetadata(created),
+      };
+    },
+
+    async listApiKeys(request) {
+      await requireSession(request);
+
+      const rows = await options.db
+        .select()
+        .from(apiKeys)
+        .orderBy(desc(apiKeys.createdAt));
+
+      return rows.map((row) => toApiKeyMetadata(row));
+    },
+
+    async revokeApiKey(request, keyId) {
+      await requireSession(request);
+      const normalizedKeyId = assertNonEmptyString(keyId, "keyId");
+
+      const [existing] = await options.db
+        .select()
+        .from(apiKeys)
+        .where(eq(apiKeys.id, normalizedKeyId))
+        .limit(1);
+
+      if (!existing) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "API key not found.",
+          statusCode: 404,
+          details: {
+            keyId: normalizedKeyId,
+          },
+        });
+      }
+
+      const [updated] = await options.db
+        .update(apiKeys)
+        .set({
+          revokedAt: new Date(),
+        })
+        .where(eq(apiKeys.id, normalizedKeyId))
+        .returning();
+
+      return toApiKeyMetadata(updated ?? existing);
     },
 
     handleAuthRequest(request) {
@@ -451,6 +808,51 @@ export function mountAuthRoutes(
       return handleRouteError(request, error);
     }
   });
+
+  authApp.get?.("/api/v1/auth/api-keys", async ({ request }: any) => {
+    try {
+      const rows = await options.authService.listApiKeys(request);
+      return {
+        data: rows,
+      };
+    } catch (error) {
+      return handleRouteError(request, error);
+    }
+  });
+
+  authApp.post?.("/api/v1/auth/api-keys", async ({ request, body }: any) => {
+    try {
+      const payload = (body ?? {}) as CreateApiKeyInput;
+      const created = await options.authService.createApiKey(request, payload);
+
+      return {
+        data: {
+          key: created.key,
+          ...created.metadata,
+        },
+      };
+    } catch (error) {
+      return handleRouteError(request, error);
+    }
+  });
+
+  authApp.post?.(
+    "/api/v1/auth/api-keys/:keyId/revoke",
+    async ({ request, params }: any) => {
+      try {
+        const metadata = await options.authService.revokeApiKey(
+          request,
+          params.keyId,
+        );
+
+        return {
+          data: metadata,
+        };
+      } catch (error) {
+        return handleRouteError(request, error);
+      }
+    },
+  );
 
   // Expose Better Auth native endpoints under /api/v1/auth/*
   authApp.post?.("/api/v1/auth/sign-up/email", ({ request }: any) =>

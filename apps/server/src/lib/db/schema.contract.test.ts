@@ -105,6 +105,19 @@ test("schema snapshot includes CMS-11/CMS-12 core tables and columns", () => {
       "created_at",
       "updated_at",
     ],
+    "public.api_keys": [
+      "id",
+      "label",
+      "key_prefix",
+      "key_hash",
+      "scopes",
+      "context_allowlist",
+      "expires_at",
+      "revoked_at",
+      "last_used_at",
+      "created_by_user_id",
+      "created_at",
+    ],
     "public.projects": [
       "id",
       "organization_id",
@@ -201,6 +214,7 @@ test("snapshot includes required named constraints and indexes", () => {
   const documentsTable = snapshot.tables["public.documents"];
   const documentVersionsTable = snapshot.tables["public.document_versions"];
   const environmentsTable = snapshot.tables["public.environments"];
+  const apiKeysTable = snapshot.tables["public.api_keys"];
   const authUsersTable = snapshot.tables["public.users"];
   const authSessionsTable = snapshot.tables["public.sessions"];
   const authAccountsTable = snapshot.tables["public.accounts"];
@@ -212,6 +226,7 @@ test("snapshot includes required named constraints and indexes", () => {
     "expected document_versions table in snapshot",
   );
   assert.ok(environmentsTable, "expected environments table in snapshot");
+  assert.ok(apiKeysTable, "expected api_keys table in snapshot");
   assert.ok(authUsersTable, "expected users table in snapshot");
   assert.ok(authSessionsTable, "expected sessions table in snapshot");
   assert.ok(authAccountsTable, "expected accounts table in snapshot");
@@ -263,6 +278,15 @@ test("snapshot includes required named constraints and indexes", () => {
   assert.ok(
     environmentsTable.uniqueConstraints.unique_environment_per_project,
     "expected unique constraint unique_environment_per_project on environments",
+  );
+
+  assert.ok(
+    apiKeysTable.uniqueConstraints.uniq_api_keys_key_hash,
+    "expected unique constraint uniq_api_keys_key_hash on api_keys",
+  );
+  assert.ok(
+    apiKeysTable.indexes.idx_api_keys_created_by,
+    "expected index idx_api_keys_created_by on api_keys",
   );
   assert.ok(
     authUsersTable.uniqueConstraints.uniq_auth_users_email,

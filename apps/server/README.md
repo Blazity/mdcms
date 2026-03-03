@@ -88,6 +88,19 @@ Backend API/runtime package boundary for MDCMS.
 - Session validation is deny-by-default: requests without a valid session token receive `401 UNAUTHORIZED`.
 - Better Auth native endpoints are also available under `/api/v1/auth/*` (for example `POST /api/v1/auth/sign-up/email`).
 
+## API Key Lifecycle (CMS-42)
+
+- API key management endpoints:
+  - `GET /api/v1/auth/api-keys` (metadata only, session required)
+  - `POST /api/v1/auth/api-keys` (create + one-time key reveal, session required)
+  - `POST /api/v1/auth/api-keys/:keyId/revoke` (immediate revoke, session required)
+- API keys are generated with `mdcms_key_` prefix and hashed at rest (`api_keys.key_hash`).
+- Keys support:
+  - labels
+  - optional expiry
+  - immediate revoke
+  - rotation workflow (create new key, migrate consumers, revoke old key)
+
 ## DB Adapter + SQL Migrations (CMS-4)
 
 - Database adapter baseline is implemented with Drizzle ORM and `postgres.js` in `src/lib/db.ts`.
@@ -104,6 +117,7 @@ Backend API/runtime package boundary for MDCMS.
   - `sessions`
   - `accounts`
   - `verifications`
+  - `api_keys`
   - `projects`
   - `environments`
   - `documents`

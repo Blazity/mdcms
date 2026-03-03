@@ -93,6 +93,35 @@ export const authVerifications = pgTable(
   (table) => [index("idx_auth_verifications_identifier").on(table.identifier)],
 );
 
+export type ApiKeyScopeTuple = {
+  project: string;
+  environment: string;
+};
+
+export const apiKeys = pgTable(
+  "api_keys",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    label: text().notNull(),
+    keyPrefix: text().notNull(),
+    keyHash: text().notNull(),
+    scopes: jsonb().$type<string[]>().notNull(),
+    contextAllowlist: jsonb().$type<ApiKeyScopeTuple[]>().notNull(),
+    expiresAt: timestamp({ withTimezone: true }),
+    revokedAt: timestamp({ withTimezone: true }),
+    lastUsedAt: timestamp({ withTimezone: true }),
+    createdByUserId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "restrict" }),
+    createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("uniq_api_keys_key_hash").on(table.keyHash),
+    index("idx_api_keys_active").on(table.revokedAt, table.expiresAt),
+    index("idx_api_keys_created_by").on(table.createdByUserId),
+  ],
+);
+
 export const environments = pgTable(
   "environments",
   {
