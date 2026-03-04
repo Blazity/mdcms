@@ -457,6 +457,7 @@ function createUnauthorizedSessionError(message: string): RuntimeError {
 export type CreateAuthServiceOptions = {
   db: DrizzleDatabase;
   env?: NodeJS.ProcessEnv;
+  isAdminSession?: (session: StudioSession) => boolean | Promise<boolean>;
 };
 
 export function createAuthService(
@@ -467,6 +468,11 @@ export function createAuthService(
   const secret = resolveAuthSecret(rawEnv);
   const useSecureCookies = resolveSecureCookiePolicy(rawEnv);
   const adminAllowlist = resolveAdminAllowlist(rawEnv);
+  const isAdminSession =
+    options.isAdminSession ??
+    ((session: StudioSession) =>
+      adminAllowlist.userIds.has(session.userId) ||
+      adminAllowlist.emails.has(session.email.toLowerCase()));
 
   const auth = betterAuth({
     appName: "mdcms",
@@ -543,9 +549,7 @@ export function createAuthService(
 
   async function assertAdminSession(request: Request): Promise<StudioSession> {
     const session = await requireSession(request);
-    const isAdmin =
-      adminAllowlist.userIds.has(session.userId) ||
-      adminAllowlist.emails.has(session.email.toLowerCase());
+    const isAdmin = await isAdminSession(session);
 
     if (!isAdmin) {
       throw new RuntimeError({
@@ -1039,7 +1043,25 @@ export function mountAuthRoutes(
   authApp.post?.("/api/v1/auth/sign-out", ({ request }: any) =>
     options.authService.handleAuthRequest(request),
   );
-  authApp.get?.("/api/v1/auth/get-session", ({ request }: any) =>
-    options.authService.handleAuthRequest(request),
-  );
+  authApp.get?.("/api/v1/auth/get-session", async ({ request }: any) => {
+    try {
+      const session = await options.authService.getSession(request);
+
+      if (!session) {
+        throw new RuntimeError({
+          code: "UNAUTHORIZED",
+          message: "A valid Studio session is required.",
+          statusCode: 401,
+        });
+      }
+
+      return {
+        data: {
+          session,
+        },
+      };
+    } catch (error) {
+      return handleRouteError(request, error);
+    }
+  });
 }

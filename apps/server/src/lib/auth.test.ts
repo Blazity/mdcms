@@ -420,6 +420,45 @@ testWithDatabase(
 );
 
 testWithDatabase(
+  "native get-session route enforces absolute max age policy",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+
+    try {
+      await signUp(handler, { email, password });
+      const { cookie, session } = await login(handler, { email, password });
+
+      await dbConnection.db
+        .update(authSessions)
+        .set({
+          createdAt: new Date(Date.now() - 13 * 60 * 60 * 1000),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        })
+        .where(eq(authSessions.id, session.id));
+
+      const response = await handler(
+        new Request("http://localhost/api/v1/auth/get-session", {
+          headers: {
+            cookie,
+          },
+        }),
+      );
+      const body = (await response.json()) as { code: string };
+
+      assert.equal(response.status, 401);
+      assert.equal(body.code, "UNAUTHORIZED");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
   "auth login rotates previous sessions for the same user",
   async () => {
     const { handler, dbConnection } = createServerRequestHandlerWithModules({

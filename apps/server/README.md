@@ -108,9 +108,11 @@ Backend API/runtime package boundary for MDCMS.
 - Admin session revocation endpoint:
   - `POST /api/v1/auth/users/:userId/sessions/revoke-all`
   - requires authenticated admin session.
-  - admin identities are sourced from env allowlists:
+  - default admin identities are sourced from env allowlists:
     - `MDCMS_AUTH_ADMIN_USER_IDS` (comma-separated user IDs)
     - `MDCMS_AUTH_ADMIN_EMAILS` (comma-separated emails)
+  - `createAuthService(...)` accepts `isAdminSession(session)` to plug a role
+    source (for example CMS-44 RBAC) without changing this endpoint contract.
   - deterministic semantics: `401` unauthenticated, `403` non-admin, `404` unknown user.
 
 ## API Key Lifecycle + Authorization (CMS-42 + CMS-43)
