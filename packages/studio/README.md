@@ -41,6 +41,7 @@ import { Studio, type StudioConfig } from "@mdcms/studio";
 
 const config: StudioConfig = {
   project: "marketing-site",
+  environment: "staging",
   serverUrl: "http://localhost:4000",
 };
 
@@ -48,6 +49,19 @@ export default function AdminPage() {
   return <Studio config={config} path={["content", "posts"]} />;
 }
 ```
+
+## Document Shell Route (CMS-50)
+
+- Route contract: `/admin/content/:type/:documentId`
+- `loadStudioDocumentShell(config, { type, documentId, locale })` fetches draft
+  content from:
+  - `GET /api/v1/content/:documentId?draft=true`
+  - with explicit headers:
+    - `X-MDCMS-Project`
+    - `X-MDCMS-Environment`
+    - `X-MDCMS-Locale`
+- `Studio` accepts `documentShell` data so host apps can render scoped
+  load/error/ready shell states without losing route context.
 
 ## Action Catalog Adapter (CMS-5)
 

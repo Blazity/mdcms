@@ -3,6 +3,7 @@ import { Button } from "./ui/button.js";
 export type StudioConfig = {
   project: string;
   serverUrl: string;
+  environment: string;
 };
 
 export type StudioRole = "owner" | "admin" | "editor" | "viewer";
@@ -20,6 +21,18 @@ export type StudioProps = {
   state?: StudioShellState;
   errorMessage?: string;
   role?: StudioRole;
+  documentShell?: {
+    state: "loading" | "ready" | "error";
+    type: string;
+    documentId: string;
+    locale: string;
+    data?: {
+      path: string;
+      body: string;
+      updatedAt: string;
+    };
+    errorMessage?: string;
+  };
 };
 
 export type StudioInternalRoute =
@@ -117,6 +130,7 @@ export function Studio({
   state = "ready",
   errorMessage,
   role = "viewer",
+  documentShell,
 }: StudioProps) {
   const canWrite = role === "owner" || role === "admin" || role === "editor";
   const canPublish = role === "owner" || role === "admin" || role === "editor";
@@ -136,6 +150,8 @@ export function Studio({
     resolvedRoute.route === "content" && resolvedRoute.subPath.length > 0
       ? `/content/${resolvedRoute.subPath.join("/")}`
       : null;
+  const isDocumentShellRoute =
+    resolvedRoute.route === "content" && resolvedRoute.subPath.length >= 2;
   const statusMessage =
     effectiveState === "loading"
       ? "Loading Studio..."
@@ -251,7 +267,8 @@ export function Studio({
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
             <div>
               Connected to <span className="font-mono">{config.serverUrl}</span>{" "}
-              for <span className="font-medium">{config.project}</span>.
+              for <span className="font-medium">{config.project}</span>/
+              <span className="font-medium">{config.environment}</span>.
             </div>
             <div className="mt-1">
               Active route: <strong>{ROUTE_LABELS[resolvedRoute.route]}</strong>
@@ -273,6 +290,47 @@ export function Studio({
               </div>
             ) : null}
           </div>
+
+          {isDocumentShellRoute ? (
+            <div
+              className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-800"
+              data-mdcms-document-shell="true"
+            >
+              <div className="mb-2 text-xs text-slate-500">
+                Document Shell Route
+              </div>
+              <div>
+                Type: <strong>{resolvedRoute.subPath[0]}</strong>
+              </div>
+              <div>
+                Document ID: <code>{resolvedRoute.subPath[1]}</code>
+              </div>
+              <div>
+                Locale: <strong>{documentShell?.locale ?? "en"}</strong>
+              </div>
+              {documentShell?.state === "loading" ? (
+                <div className="mt-2 text-slate-600">Loading document...</div>
+              ) : documentShell?.state === "error" ? (
+                <div className="mt-2 text-red-700">
+                  {documentShell.errorMessage ?? "Failed to load document."}
+                </div>
+              ) : documentShell?.data ? (
+                <div className="mt-2 space-y-1">
+                  <div>
+                    Path: <code>{documentShell.data.path}</code>
+                  </div>
+                  <div>
+                    Updated:{" "}
+                    <span className="font-mono">{documentShell.data.updatedAt}</span>
+                  </div>
+                  <pre className="max-h-44 overflow-auto rounded border border-slate-200 bg-slate-50 p-2 text-xs">
+                    {documentShell.data.body}
+                  </pre>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="flex flex-wrap gap-2">
             <Button
               type="button"

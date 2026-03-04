@@ -10,6 +10,7 @@ import {
 } from "./studio.js";
 import { createStudioActionCatalogAdapter } from "./action-catalog-adapter.js";
 import { Studio } from "./studio-component.js";
+import { loadStudioDocumentShell } from "./document-shell.js";
 
 type ReactLikeNode = {
   props?: Record<string, unknown>;
@@ -177,6 +178,7 @@ test("Studio renders deterministic embed shell marker", () => {
   const node = Studio({
     config: {
       project: "marketing-site",
+      environment: "staging",
       serverUrl: "http://localhost:4000",
     },
   });
@@ -194,6 +196,7 @@ test("Studio supports loading shell state", () => {
   const node = Studio({
     config: {
       project: "marketing-site",
+      environment: "staging",
       serverUrl: "http://localhost:4000",
     },
     state: "loading",
@@ -210,6 +213,7 @@ test("Studio supports forbidden shell state", () => {
   const node = Studio({
     config: {
       project: "marketing-site",
+      environment: "staging",
       serverUrl: "http://localhost:4000",
     },
     state: "forbidden",
@@ -226,6 +230,7 @@ test("Studio supports error shell state with custom message", () => {
   const node = Studio({
     config: {
       project: "marketing-site",
+      environment: "staging",
       serverUrl: "http://localhost:4000",
     },
     state: "error",
@@ -243,6 +248,7 @@ test("Studio supports empty shell state", () => {
   const node = Studio({
     config: {
       project: "marketing-site",
+      environment: "staging",
       serverUrl: "http://localhost:4000",
     },
     state: "empty",
@@ -259,6 +265,7 @@ test("Studio enforces viewer-safe interaction constraints", () => {
   const node = Studio({
     config: {
       project: "marketing-site",
+      environment: "staging",
       serverUrl: "http://localhost:4000",
     },
     state: "ready",
@@ -277,6 +284,7 @@ test("Studio enables editing actions for editor role", () => {
   const node = Studio({
     config: {
       project: "marketing-site",
+      environment: "staging",
       serverUrl: "http://localhost:4000",
     },
     state: "ready",
@@ -295,6 +303,7 @@ test("Studio resolves content route from catch-all path segments", () => {
   const node = Studio({
     config: {
       project: "marketing-site",
+      environment: "staging",
       serverUrl: "http://localhost:4000",
     },
     state: "ready",
@@ -311,6 +320,7 @@ test("Studio enforces admin-only route access for users/settings", () => {
   const editorNode = Studio({
     config: {
       project: "marketing-site",
+      environment: "staging",
       serverUrl: "http://localhost:4000",
     },
     state: "ready",
@@ -320,6 +330,7 @@ test("Studio enforces admin-only route access for users/settings", () => {
   const adminNode = Studio({
     config: {
       project: "marketing-site",
+      environment: "staging",
       serverUrl: "http://localhost:4000",
     },
     state: "ready",
@@ -335,6 +346,7 @@ test("Studio supports schema and folder-path content navigation modes", () => {
   const schemaNode = Studio({
     config: {
       project: "marketing-site",
+      environment: "staging",
       serverUrl: "http://localhost:4000",
     },
     state: "ready",
@@ -344,6 +356,7 @@ test("Studio supports schema and folder-path content navigation modes", () => {
   const folderNode = Studio({
     config: {
       project: "marketing-site",
+      environment: "staging",
       serverUrl: "http://localhost:4000",
     },
     state: "ready",
@@ -367,4 +380,90 @@ test("Studio supports schema and folder-path content navigation modes", () => {
 
   assert.equal(schemaOption?.props?.["data-mdcms-content-view-active"], "true");
   assert.equal(folderOption?.props?.["data-mdcms-content-view-active"], "true");
+});
+
+test("loadStudioDocumentShell fetches draft content with scoped headers", async () => {
+  const result = await loadStudioDocumentShell(
+    {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+    },
+    {
+      type: "BlogPost",
+      documentId: "11111111-1111-4111-8111-111111111111",
+      locale: "en",
+    },
+    {
+      fetcher: async (input, init) => {
+        assert.equal(
+          String(input),
+          "http://localhost:4000/api/v1/content/11111111-1111-4111-8111-111111111111?draft=true",
+        );
+        assert.equal(
+          (init?.headers as Record<string, string>)["x-mdcms-project"],
+          "marketing-site",
+        );
+        assert.equal(
+          (init?.headers as Record<string, string>)["x-mdcms-environment"],
+          "staging",
+        );
+        assert.equal(
+          (init?.headers as Record<string, string>)["x-mdcms-locale"],
+          "en",
+        );
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              documentId: "11111111-1111-4111-8111-111111111111",
+              type: "BlogPost",
+              locale: "en",
+              path: "blog/launch-notes",
+              body: "# Launch Notes",
+              updatedAt: "2026-03-04T10:00:00.000Z",
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      },
+    },
+  );
+
+  assert.equal(result.state, "ready");
+  assert.equal(result.data?.path, "blog/launch-notes");
+});
+
+test("Studio renders document shell state for content document routes", () => {
+  const node = Studio({
+    config: {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+    },
+    state: "ready",
+    role: "editor",
+    path: ["content", "BlogPost", "11111111-1111-4111-8111-111111111111"],
+    documentShell: {
+      state: "ready",
+      type: "BlogPost",
+      documentId: "11111111-1111-4111-8111-111111111111",
+      locale: "en",
+      data: {
+        path: "blog/launch-notes",
+        body: "# Launch Notes",
+        updatedAt: "2026-03-04T10:00:00.000Z",
+      },
+    },
+  });
+
+  assert.equal(node.props["data-mdcms-route"], "content");
+  assert.equal(node.props["data-mdcms-document-shell"], undefined);
+  const documentShellNode = findNodeByProp(node, "data-mdcms-document-shell", "true");
+  assert.ok(documentShellNode);
 });
