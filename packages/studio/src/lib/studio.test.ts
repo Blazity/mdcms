@@ -11,6 +11,40 @@ import {
 import { createStudioActionCatalogAdapter } from "./action-catalog-adapter.js";
 import { Studio } from "./studio-component.js";
 
+type ReactLikeNode = {
+  props?: Record<string, unknown>;
+};
+
+function findNodeByDataAction(
+  root: unknown,
+  action: string,
+): ReactLikeNode | undefined {
+  if (!root || typeof root !== "object") {
+    return undefined;
+  }
+
+  const node = root as ReactLikeNode;
+  if (node.props?.["data-mdcms-action"] === action) {
+    return node;
+  }
+
+  const children = node.props?.children;
+  if (!children) {
+    return undefined;
+  }
+
+  const queue = Array.isArray(children) ? [...children] : [children];
+  while (queue.length > 0) {
+    const candidate = queue.shift();
+    const found = findNodeByDataAction(candidate, action);
+    if (found) {
+      return found;
+    }
+  }
+
+  return undefined;
+}
+
 test("resolveStudioEnv parses core env and applies Studio defaults", () => {
   const env = resolveStudioEnv({
     NODE_ENV: "production",
@@ -199,14 +233,13 @@ test("Studio enforces viewer-safe interaction constraints", () => {
     state: "ready",
     role: "viewer",
   });
-  const actionRow = node.props.children[1].props.children[1];
-  const createButton = actionRow.props.children[0];
-  const publishButton = actionRow.props.children[1];
+  const createButton = findNodeByDataAction(node, "create-content");
+  const publishButton = findNodeByDataAction(node, "publish-content");
 
   assert.equal(node.props["data-mdcms-can-write"], "false");
   assert.equal(node.props["data-mdcms-can-publish"], "false");
-  assert.equal(createButton.props.disabled, true);
-  assert.equal(publishButton.props.disabled, true);
+  assert.equal(createButton?.props?.disabled, true);
+  assert.equal(publishButton?.props?.disabled, true);
 });
 
 test("Studio enables editing actions for editor role", () => {
@@ -218,12 +251,50 @@ test("Studio enables editing actions for editor role", () => {
     state: "ready",
     role: "editor",
   });
-  const actionRow = node.props.children[1].props.children[1];
-  const createButton = actionRow.props.children[0];
-  const publishButton = actionRow.props.children[1];
+  const createButton = findNodeByDataAction(node, "create-content");
+  const publishButton = findNodeByDataAction(node, "publish-content");
 
   assert.equal(node.props["data-mdcms-can-write"], "true");
   assert.equal(node.props["data-mdcms-can-publish"], "true");
-  assert.equal(createButton.props.disabled, false);
-  assert.equal(publishButton.props.disabled, false);
+  assert.equal(createButton?.props?.disabled, false);
+  assert.equal(publishButton?.props?.disabled, false);
+});
+
+test("Studio resolves content route from catch-all path segments", () => {
+  const node = Studio({
+    config: {
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+    },
+    state: "ready",
+    role: "editor",
+    path: ["content", "posts"],
+  });
+
+  assert.equal(node.props["data-mdcms-route"], "content");
+  assert.equal(node.props["data-mdcms-state"], "ready");
+});
+
+test("Studio enforces admin-only route access for users/settings", () => {
+  const editorNode = Studio({
+    config: {
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+    },
+    state: "ready",
+    role: "editor",
+    path: ["users"],
+  });
+  const adminNode = Studio({
+    config: {
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+    },
+    state: "ready",
+    role: "admin",
+    path: ["users"],
+  });
+
+  assert.equal(editorNode.props["data-mdcms-state"], "forbidden");
+  assert.equal(adminNode.props["data-mdcms-state"], "ready");
 });

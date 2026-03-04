@@ -5,6 +5,13 @@ Host-embedded Studio package boundary for MDCMS.
 ## Studio Embed Shell (CMS-47)
 
 - `Studio` is exported from `@mdcms/studio` as the host app entrypoint.
+- Internal Studio surfaces are resolved from catch-all route path segments:
+  - `dashboard`
+  - `content`
+  - `trash`
+  - `environments`
+  - `users`
+  - `settings`
 - CMS-47 shell states are supported via `state` prop:
   - `loading`
   - `ready` (default)
@@ -17,6 +24,8 @@ Host-embedded Studio package boundary for MDCMS.
   - `editor`
   - `viewer` (default; viewer-safe action constraints)
 - Branding is fixed to `MDCMS` in MVP.
+- Admin-only surfaces (`users`, `settings`) render `forbidden` for
+  non-admin/non-owner roles when state is otherwise `ready`.
 - Runtime loader/bootstrap execution is deferred to later roadmap tasks.
 - Shell composition follows a Tailwind + shadcn-style component approach.
 
@@ -31,7 +40,7 @@ const config: StudioConfig = {
 };
 
 export default function AdminPage() {
-  return <Studio config={config} />;
+  return <Studio config={config} path={["content", "posts"]} />;
 }
 ```
 

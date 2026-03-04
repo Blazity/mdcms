@@ -16,10 +16,87 @@ export type StudioShellState =
 
 export type StudioProps = {
   config: StudioConfig;
+  path?: string | string[];
   state?: StudioShellState;
   errorMessage?: string;
   role?: StudioRole;
 };
+
+export type StudioInternalRoute =
+  | "dashboard"
+  | "content"
+  | "trash"
+  | "environments"
+  | "users"
+  | "settings";
+
+const ROUTE_LABELS: Record<StudioInternalRoute, string> = {
+  dashboard: "Dashboard",
+  content: "Content",
+  trash: "Trash",
+  environments: "Environments",
+  users: "Users",
+  settings: "Settings",
+};
+
+function normalizeRoutePath(path: StudioProps["path"]): string[] {
+  if (!path) {
+    return [];
+  }
+
+  if (Array.isArray(path)) {
+    return path.map((segment) => segment.trim()).filter(Boolean);
+  }
+
+  return path
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function resolveInternalRoute(path: StudioProps["path"]): {
+  route: StudioInternalRoute;
+  subPath: string[];
+  isUnknown: boolean;
+} {
+  const [first, ...rest] = normalizeRoutePath(path);
+
+  if (!first) {
+    return {
+      route: "dashboard",
+      subPath: [],
+      isUnknown: false,
+    };
+  }
+
+  if (first === "content") {
+    return {
+      route: "content",
+      subPath: rest,
+      isUnknown: false,
+    };
+  }
+
+  if (
+    first === "dashboard" ||
+    first === "trash" ||
+    first === "environments" ||
+    first === "users" ||
+    first === "settings"
+  ) {
+    return {
+      route: first,
+      subPath: rest,
+      isUnknown: false,
+    };
+  }
+
+  return {
+    route: "dashboard",
+    subPath: [],
+    isUnknown: true,
+  };
+}
 
 /**
  * Studio is the host-embedded entrypoint for MDCMS Studio.
@@ -28,21 +105,37 @@ export type StudioProps = {
  */
 export function Studio({
   config,
+  path,
   state = "ready",
   errorMessage,
   role = "viewer",
 }: StudioProps) {
   const canWrite = role === "owner" || role === "admin" || role === "editor";
   const canPublish = role === "owner" || role === "admin" || role === "editor";
+  const hasAdminAccess = role === "owner" || role === "admin";
   const isViewerSafe = !canWrite;
+  const resolvedRoute = resolveInternalRoute(path);
+  const routeRequiresAdmin =
+    resolvedRoute.route === "users" || resolvedRoute.route === "settings";
+  const effectiveState: StudioShellState =
+    state === "ready" && routeRequiresAdmin && !hasAdminAccess
+      ? "forbidden"
+      : state === "ready" && resolvedRoute.isUnknown
+        ? "empty"
+        : state;
+
+  const subRouteLabel =
+    resolvedRoute.route === "content" && resolvedRoute.subPath.length > 0
+      ? `/content/${resolvedRoute.subPath.join("/")}`
+      : null;
   const statusMessage =
-    state === "loading"
+    effectiveState === "loading"
       ? "Loading Studio..."
-      : state === "empty"
+      : effectiveState === "empty"
         ? "No content found for this route."
-        : state === "forbidden"
+        : effectiveState === "forbidden"
           ? "You do not have permission to access Studio."
-          : state === "error"
+          : effectiveState === "error"
             ? errorMessage?.trim() || "Failed to initialize Studio."
             : "Studio shell ready.";
 
@@ -51,9 +144,10 @@ export function Studio({
       data-testid="mdcms-studio-root"
       data-mdcms-project={config.project}
       data-mdcms-server-url={config.serverUrl}
-      data-mdcms-state={state}
+      data-mdcms-state={effectiveState}
       data-mdcms-brand="MDCMS"
       data-mdcms-role={role}
+      data-mdcms-route={resolvedRoute.route}
       data-mdcms-can-write={canWrite ? "true" : "false"}
       data-mdcms-can-publish={canPublish ? "true" : "false"}
       className="mx-auto w-full max-w-5xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
@@ -71,31 +165,66 @@ export function Studio({
         </span>
       </header>
 
-      {state === "loading" ? (
+      {effectiveState === "loading" ? (
         <div className="space-y-3" aria-live="polite">
           <div className="h-4 w-2/5 animate-pulse rounded bg-slate-200" />
           <div className="h-20 w-full animate-pulse rounded bg-slate-100" />
         </div>
-      ) : state === "error" ? (
+      ) : effectiveState === "error" ? (
         <div
           role="alert"
           className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
         >
           {statusMessage}
         </div>
-      ) : state === "forbidden" ? (
+      ) : effectiveState === "forbidden" ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           {statusMessage}
         </div>
-      ) : state === "empty" ? (
+      ) : effectiveState === "empty" ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
           {statusMessage}
         </div>
       ) : (
         <div className="space-y-4">
+          <nav className="flex flex-wrap gap-2" aria-label="Studio routes">
+            {(
+              [
+                "dashboard",
+                "content",
+                "trash",
+                "environments",
+                "users",
+                "settings",
+              ] as const
+            ).map((route) => (
+              <span
+                key={route}
+                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700"
+                data-mdcms-nav-route={route}
+                data-mdcms-nav-active={
+                  route === resolvedRoute.route ? "true" : "false"
+                }
+              >
+                {ROUTE_LABELS[route]}
+              </span>
+            ))}
+          </nav>
+
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-            Connected to <span className="font-mono">{config.serverUrl}</span>{" "}
-            for <span className="font-medium">{config.project}</span>.
+            <div>
+              Connected to <span className="font-mono">{config.serverUrl}</span>{" "}
+              for <span className="font-medium">{config.project}</span>.
+            </div>
+            <div className="mt-1">
+              Active route: <strong>{ROUTE_LABELS[resolvedRoute.route]}</strong>
+              {subRouteLabel ? (
+                <>
+                  {" "}
+                  <span className="text-slate-500">({subRouteLabel})</span>
+                </>
+              ) : null}
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button

@@ -131,13 +131,13 @@ test("RBAC rejects non-global Owner/Admin grants", () => {
   assert.throws(() =>
     evaluateEffectiveRole(
       [
-        grant({
+        {
           role: "admin",
           scope: {
             kind: "project",
             project: "marketing-site",
           },
-        }),
+        } as unknown as RbacGrant,
       ],
       {
         project: "marketing-site",
@@ -148,7 +148,7 @@ test("RBAC rejects non-global Owner/Admin grants", () => {
   assert.throws(() =>
     evaluateEffectiveRole(
       [
-        grant({
+        {
           role: "owner",
           scope: {
             kind: "folder_prefix",
@@ -156,7 +156,7 @@ test("RBAC rejects non-global Owner/Admin grants", () => {
             environment: "staging",
             pathPrefix: "blog/",
           },
-        }),
+        } as unknown as RbacGrant,
       ],
       {
         project: "marketing-site",
