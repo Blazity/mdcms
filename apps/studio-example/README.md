@@ -14,8 +14,9 @@ This sample app exists for CMS-47 verification.
 - `/admin/<any>` - Studio embed shell via catch-all route
 - Internal surfaces are mapped by first segment after `/admin`:
   - `/admin/dashboard`
-  - `/admin/content`
-  - `/admin/trash`
+- `/admin/content`
+- `/admin/content/by-path/*` (folder-path navigation mode)
+- `/admin/trash`
   - `/admin/environments`
   - `/admin/users` (admin/owner only)
   - `/admin/settings` (admin/owner only)

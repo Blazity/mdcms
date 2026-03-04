@@ -30,6 +30,8 @@ export type StudioInternalRoute =
   | "users"
   | "settings";
 
+export type ContentNavigationMode = "schema" | "folder";
+
 const ROUTE_LABELS: Record<StudioInternalRoute, string> = {
   dashboard: "Dashboard",
   content: "Content",
@@ -58,6 +60,7 @@ function resolveInternalRoute(path: StudioProps["path"]): {
   route: StudioInternalRoute;
   subPath: string[];
   isUnknown: boolean;
+  contentViewMode: ContentNavigationMode;
 } {
   const [first, ...rest] = normalizeRoutePath(path);
 
@@ -66,14 +69,17 @@ function resolveInternalRoute(path: StudioProps["path"]): {
       route: "dashboard",
       subPath: [],
       isUnknown: false,
+      contentViewMode: "schema",
     };
   }
 
   if (first === "content") {
+    const [modeMarker, ...modeSubPath] = rest;
     return {
       route: "content",
-      subPath: rest,
+      subPath: modeMarker === "by-path" ? modeSubPath : rest,
       isUnknown: false,
+      contentViewMode: modeMarker === "by-path" ? "folder" : "schema",
     };
   }
 
@@ -88,6 +94,7 @@ function resolveInternalRoute(path: StudioProps["path"]): {
       route: first,
       subPath: rest,
       isUnknown: false,
+      contentViewMode: "schema",
     };
   }
 
@@ -95,6 +102,7 @@ function resolveInternalRoute(path: StudioProps["path"]): {
     route: "dashboard",
     subPath: [],
     isUnknown: true,
+    contentViewMode: "schema",
   };
 }
 
@@ -148,6 +156,7 @@ export function Studio({
       data-mdcms-brand="MDCMS"
       data-mdcms-role={role}
       data-mdcms-route={resolvedRoute.route}
+      data-mdcms-content-view={resolvedRoute.contentViewMode}
       data-mdcms-can-write={canWrite ? "true" : "false"}
       data-mdcms-can-publish={canPublish ? "true" : "false"}
       className="mx-auto w-full max-w-5xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
@@ -211,6 +220,34 @@ export function Studio({
             ))}
           </nav>
 
+          {resolvedRoute.route === "content" ? (
+            <div
+              className="flex flex-wrap items-center gap-2"
+              data-mdcms-content-view-toggle="true"
+            >
+              <a
+                href="/admin/content"
+                className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-700"
+                data-mdcms-content-view-option="schema"
+                data-mdcms-content-view-active={
+                  resolvedRoute.contentViewMode === "schema" ? "true" : "false"
+                }
+              >
+                Schema View
+              </a>
+              <a
+                href="/admin/content/by-path"
+                className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-700"
+                data-mdcms-content-view-option="folder"
+                data-mdcms-content-view-active={
+                  resolvedRoute.contentViewMode === "folder" ? "true" : "false"
+                }
+              >
+                Folder View
+              </a>
+            </div>
+          ) : null}
+
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
             <div>
               Connected to <span className="font-mono">{config.serverUrl}</span>{" "}
@@ -225,6 +262,16 @@ export function Studio({
                 </>
               ) : null}
             </div>
+            {resolvedRoute.route === "content" ? (
+              <div className="mt-1 text-slate-600">
+                Browsing mode:{" "}
+                <strong>
+                  {resolvedRoute.contentViewMode === "schema"
+                    ? "Schema-first"
+                    : "Folder-path"}
+                </strong>
+              </div>
+            ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
             <Button

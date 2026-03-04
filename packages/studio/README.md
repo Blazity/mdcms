@@ -8,6 +8,8 @@ Host-embedded Studio package boundary for MDCMS.
 - Internal Studio surfaces are resolved from catch-all route path segments:
   - `dashboard`
   - `content`
+    - schema-first mode: `/admin/content`
+    - folder-path mode: `/admin/content/by-path/*`
   - `trash`
   - `environments`
   - `users`
@@ -26,6 +28,9 @@ Host-embedded Studio package boundary for MDCMS.
 - Branding is fixed to `MDCMS` in MVP.
 - Admin-only surfaces (`users`, `settings`) render `forbidden` for
   non-admin/non-owner roles when state is otherwise `ready`.
+- Content surface supports deterministic mode switching between:
+  - schema-first navigation
+  - folder-path navigation
 - Runtime loader/bootstrap execution is deferred to later roadmap tasks.
 - Shell composition follows a Tailwind + shadcn-style component approach.
 

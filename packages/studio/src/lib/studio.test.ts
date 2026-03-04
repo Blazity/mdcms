@@ -45,6 +45,37 @@ function findNodeByDataAction(
   return undefined;
 }
 
+function findNodeByProp(
+  root: unknown,
+  key: string,
+  value: unknown,
+): ReactLikeNode | undefined {
+  if (!root || typeof root !== "object") {
+    return undefined;
+  }
+
+  const node = root as ReactLikeNode;
+  if (node.props?.[key] === value) {
+    return node;
+  }
+
+  const children = node.props?.children;
+  if (!children) {
+    return undefined;
+  }
+
+  const queue = Array.isArray(children) ? [...children] : [children];
+  while (queue.length > 0) {
+    const candidate = queue.shift();
+    const found = findNodeByProp(candidate, key, value);
+    if (found) {
+      return found;
+    }
+  }
+
+  return undefined;
+}
+
 test("resolveStudioEnv parses core env and applies Studio defaults", () => {
   const env = resolveStudioEnv({
     NODE_ENV: "production",
@@ -273,6 +304,7 @@ test("Studio resolves content route from catch-all path segments", () => {
 
   assert.equal(node.props["data-mdcms-route"], "content");
   assert.equal(node.props["data-mdcms-state"], "ready");
+  assert.equal(node.props["data-mdcms-content-view"], "schema");
 });
 
 test("Studio enforces admin-only route access for users/settings", () => {
@@ -297,4 +329,42 @@ test("Studio enforces admin-only route access for users/settings", () => {
 
   assert.equal(editorNode.props["data-mdcms-state"], "forbidden");
   assert.equal(adminNode.props["data-mdcms-state"], "ready");
+});
+
+test("Studio supports schema and folder-path content navigation modes", () => {
+  const schemaNode = Studio({
+    config: {
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+    },
+    state: "ready",
+    role: "editor",
+    path: ["content"],
+  });
+  const folderNode = Studio({
+    config: {
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+    },
+    state: "ready",
+    role: "editor",
+    path: ["content", "by-path", "blog"],
+  });
+
+  assert.equal(schemaNode.props["data-mdcms-content-view"], "schema");
+  assert.equal(folderNode.props["data-mdcms-content-view"], "folder");
+
+  const schemaOption = findNodeByProp(
+    schemaNode,
+    "data-mdcms-content-view-option",
+    "schema",
+  );
+  const folderOption = findNodeByProp(
+    folderNode,
+    "data-mdcms-content-view-option",
+    "folder",
+  );
+
+  assert.equal(schemaOption?.props?.["data-mdcms-content-view-active"], "true");
+  assert.equal(folderOption?.props?.["data-mdcms-content-view-active"], "true");
 });
