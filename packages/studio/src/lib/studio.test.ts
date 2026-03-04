@@ -466,4 +466,8 @@ test("Studio renders document shell state for content document routes", () => {
   assert.equal(node.props["data-mdcms-document-shell"], undefined);
   const documentShellNode = findNodeByProp(node, "data-mdcms-document-shell", "true");
   assert.ok(documentShellNode);
+  assert.equal(
+    documentShellNode?.props?.["data-mdcms-editor-engine"],
+    "tiptap-markdown",
+  );
 });

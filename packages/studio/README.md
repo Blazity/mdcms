@@ -63,6 +63,19 @@ export default function AdminPage() {
 - `Studio` accepts `documentShell` data so host apps can render scoped
   load/error/ready shell states without losing route context.
 
+## TipTap Markdown Baseline (CMS-51)
+
+- Markdown editor baseline is wired through TipTap:
+  - `@tiptap/core`
+  - `@tiptap/starter-kit`
+  - `@tiptap/markdown`
+- Reusable pipeline helpers:
+  - `parseMarkdownToDocument(markdown)`
+  - `serializeDocumentToMarkdown(jsonDoc)`
+  - `roundTripMarkdown(markdown)`
+- Round-trip stability is covered in unit tests to reduce phantom diff risk in
+  downstream collaboration and autosave work.
+
 ## Action Catalog Adapter (CMS-5)
 
 - `createStudioActionCatalogAdapter(baseUrl, options?)` provides a typed Eden/Treaty client for:

@@ -1,4 +1,5 @@
 import { Button } from "./ui/button.js";
+import { roundTripMarkdown } from "./markdown-pipeline.js";
 
 export type StudioConfig = {
   project: string;
@@ -152,6 +153,15 @@ export function Studio({
       : null;
   const isDocumentShellRoute =
     resolvedRoute.route === "content" && resolvedRoute.subPath.length >= 2;
+  let documentRoundTripBody: string | undefined;
+
+  if (documentShell?.state === "ready" && documentShell.data) {
+    try {
+      documentRoundTripBody = roundTripMarkdown(documentShell.data.body).markdown;
+    } catch {
+      documentRoundTripBody = documentShell.data.body;
+    }
+  }
   const statusMessage =
     effectiveState === "loading"
       ? "Loading Studio..."
@@ -295,6 +305,7 @@ export function Studio({
             <div
               className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-800"
               data-mdcms-document-shell="true"
+              data-mdcms-editor-engine="tiptap-markdown"
             >
               <div className="mb-2 text-xs text-slate-500">
                 Document Shell Route
@@ -324,7 +335,7 @@ export function Studio({
                     <span className="font-mono">{documentShell.data.updatedAt}</span>
                   </div>
                   <pre className="max-h-44 overflow-auto rounded border border-slate-200 bg-slate-50 p-2 text-xs">
-                    {documentShell.data.body}
+                    {documentRoundTripBody}
                   </pre>
                 </div>
               ) : null}
