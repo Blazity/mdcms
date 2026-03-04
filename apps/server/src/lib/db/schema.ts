@@ -122,6 +122,65 @@ export const apiKeys = pgTable(
   ],
 );
 
+export const rbacGrants = pgTable(
+  "rbac_grants",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    userId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    role: text().notNull(),
+    scopeKind: text().notNull(),
+    project: text(),
+    environment: text(),
+    pathPrefix: text(),
+    source: text(),
+    createdByUserId: text().references(() => authUsers.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+    revokedAt: timestamp({ withTimezone: true }),
+  },
+  (table): any => [
+    check(
+      "rbac_grants_role_check",
+      sql`${table.role} in ('owner', 'admin', 'editor', 'viewer')`,
+    ),
+    check(
+      "rbac_grants_scope_kind_check",
+      sql`${table.scopeKind} in ('global', 'project', 'folder_prefix')`,
+    ),
+    check(
+      "rbac_grants_scope_fields_check",
+      sql`(
+        (${table.scopeKind} = 'global' and ${table.project} is null and ${table.environment} is null and ${table.pathPrefix} is null)
+        or
+        (${table.scopeKind} = 'project' and ${table.project} is not null and ${table.environment} is null and ${table.pathPrefix} is null)
+        or
+        (${table.scopeKind} = 'folder_prefix' and ${table.project} is not null and ${table.environment} is not null and ${table.pathPrefix} is not null)
+      )`,
+    ),
+    check(
+      "rbac_grants_admin_owner_global_check",
+      sql`(
+        ${table.role} not in ('owner', 'admin')
+        or ${table.scopeKind} = 'global'
+      )`,
+    ),
+    index("idx_rbac_grants_user_active").on(
+      table.userId,
+      table.revokedAt,
+      table.role,
+    ),
+    index("idx_rbac_grants_scope_active").on(
+      table.scopeKind,
+      table.project,
+      table.environment,
+      table.revokedAt,
+    ),
+  ],
+);
+
 export const environments = pgTable(
   "environments",
   {

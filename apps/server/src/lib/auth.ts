@@ -13,8 +13,14 @@ import {
   authSessions,
   authUsers,
   authVerifications,
+  rbacGrants,
   type ApiKeyScopeTuple,
 } from "./db/schema.js";
+import {
+  evaluatePermission,
+  type RbacAction,
+  type RbacGrant,
+} from "./rbac.js";
 
 export const API_KEY_OPERATION_SCOPES = [
   "content:read",
@@ -66,6 +72,7 @@ export type AuthorizationRequirement = {
   requiredScope: ApiKeyOperationScope;
   project?: string;
   environment?: string;
+  documentPath?: string;
 };
 
 export type AuthorizedRequest = {
@@ -436,6 +443,26 @@ function resolveAdminAllowlist(env: NodeJS.ProcessEnv): {
   };
 }
 
+function toRbacAction(requiredScope: ApiKeyOperationScope): RbacAction | null {
+  if (requiredScope === "content:read") {
+    return "content:read";
+  }
+
+  if (requiredScope === "content:write:draft") {
+    return "content:write:draft";
+  }
+
+  if (requiredScope === "content:publish") {
+    return "content:publish";
+  }
+
+  if (requiredScope === "content:delete") {
+    return "content:delete";
+  }
+
+  return null;
+}
+
 function isSessionBeyondAbsoluteMaxAge(session: StudioSession): boolean {
   const issuedAt = Date.parse(session.issuedAt);
 
@@ -510,6 +537,188 @@ export function createAuthService(
     },
   });
 
+  function toRbacGrant(row: typeof rbacGrants.$inferSelect): RbacGrant {
+    if (row.role === "owner" || row.role === "admin") {
+      if (row.scopeKind !== "global") {
+        throw new RuntimeError({
+          code: "INTERNAL_ERROR",
+          message: "Stored RBAC grant has invalid role/scope pairing.",
+          statusCode: 500,
+          details: {
+            grantId: row.id,
+          },
+        });
+      }
+
+      return {
+        role: row.role,
+        scope: { kind: "global" },
+        source: row.source ?? undefined,
+      };
+    }
+
+    if (row.role !== "editor" && row.role !== "viewer") {
+      throw new RuntimeError({
+        code: "INTERNAL_ERROR",
+        message: "Stored RBAC grant has invalid role value.",
+        statusCode: 500,
+        details: {
+          grantId: row.id,
+          role: row.role,
+        },
+      });
+    }
+
+    if (row.scopeKind === "global") {
+      return {
+        role: row.role,
+        scope: { kind: "global" },
+        source: row.source ?? undefined,
+      };
+    }
+
+    if (row.scopeKind === "project") {
+      if (!row.project) {
+        throw new RuntimeError({
+          code: "INTERNAL_ERROR",
+          message: "Stored RBAC grant is missing required project scope data.",
+          statusCode: 500,
+          details: {
+            grantId: row.id,
+          },
+        });
+      }
+
+      return {
+        role: row.role,
+        scope: {
+          kind: "project",
+          project: row.project,
+        },
+        source: row.source ?? undefined,
+      };
+    }
+
+    if (row.scopeKind === "folder_prefix") {
+      if (!row.project || !row.environment || !row.pathPrefix) {
+        throw new RuntimeError({
+          code: "INTERNAL_ERROR",
+          message:
+            "Stored RBAC grant is missing required folder-prefix scope data.",
+          statusCode: 500,
+          details: {
+            grantId: row.id,
+          },
+        });
+      }
+
+      return {
+        role: row.role,
+        scope: {
+          kind: "folder_prefix",
+          project: row.project,
+          environment: row.environment,
+          pathPrefix: row.pathPrefix,
+        },
+        source: row.source ?? undefined,
+      };
+    }
+
+    throw new RuntimeError({
+      code: "INTERNAL_ERROR",
+      message: "Stored RBAC grant has invalid scope kind.",
+      statusCode: 500,
+      details: {
+        grantId: row.id,
+        scopeKind: row.scopeKind,
+      },
+    });
+  }
+
+  async function seedBootstrapOwnerIfNeeded(session: StudioSession): Promise<void> {
+    const [ownerCountRow] = await options.db
+      .select({
+        count: sql<number>`count(*)::int`,
+      })
+      .from(rbacGrants)
+      .where(and(eq(rbacGrants.role, "owner"), isNull(rbacGrants.revokedAt)));
+    const ownerCount = ownerCountRow?.count ?? 0;
+
+    if (ownerCount > 0) {
+      return;
+    }
+
+    await options.db
+      .insert(rbacGrants)
+      .values({
+        userId: session.userId,
+        role: "owner",
+        scopeKind: "global",
+        source: "bootstrap:first-session",
+        createdByUserId: session.userId,
+      })
+      .onConflictDoNothing();
+  }
+
+  async function loadSessionRbacGrants(session: StudioSession): Promise<RbacGrant[]> {
+    await seedBootstrapOwnerIfNeeded(session);
+
+    const rows = await options.db
+      .select()
+      .from(rbacGrants)
+      .where(
+        and(eq(rbacGrants.userId, session.userId), isNull(rbacGrants.revokedAt)),
+      );
+
+    return rows.map((row) => toRbacGrant(row));
+  }
+
+  async function assertSessionRbacAuthorization(
+    session: StudioSession,
+    requirement: AuthorizationRequirement,
+  ): Promise<void> {
+    const action = toRbacAction(requirement.requiredScope);
+
+    if (!action) {
+      return;
+    }
+
+    if (!requirement.project) {
+      throw new RuntimeError({
+        code: "FORBIDDEN",
+        message:
+          "RBAC authorization requires an explicit project in the request context.",
+        statusCode: 403,
+      });
+    }
+
+    const grants = await loadSessionRbacGrants(session);
+    const decision = evaluatePermission({
+      grants,
+      target: {
+        project: requirement.project,
+        environment: requirement.environment,
+        path: requirement.documentPath,
+      },
+      action,
+    });
+
+    if (!decision.allowed) {
+      throw new RuntimeError({
+        code: "FORBIDDEN",
+        message:
+          "Session role does not allow this operation for the requested content scope.",
+        statusCode: 403,
+        details: {
+          requiredScope: requirement.requiredScope,
+          project: requirement.project,
+          environment: requirement.environment ?? null,
+          documentPath: requirement.documentPath ?? null,
+        },
+      });
+    }
+  }
+
   async function revokeAllUserSessions(userId: string): Promise<number> {
     const normalizedUserId = assertNonEmptyString(userId, "userId");
     const revoked = await options.db
@@ -549,7 +758,13 @@ export function createAuthService(
 
   async function assertAdminSession(request: Request): Promise<StudioSession> {
     const session = await requireSession(request);
-    const isAdmin = await isAdminSession(session);
+    const grants = await loadSessionRbacGrants(session);
+    const hasGlobalAdminGrant = grants.some(
+      (grant) =>
+        grant.scope.kind === "global" &&
+        (grant.role === "owner" || grant.role === "admin"),
+    );
+    const isAdmin = hasGlobalAdminGrant || (await isAdminSession(session));
 
     if (!isAdmin) {
       throw new RuntimeError({
@@ -746,6 +961,7 @@ export function createAuthService(
       }
 
       const session = await requireSession(request);
+      await assertSessionRbacAuthorization(session, requirement);
       return {
         mode: "session",
         principal: {

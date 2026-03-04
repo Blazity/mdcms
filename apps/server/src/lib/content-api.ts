@@ -1288,12 +1288,16 @@ export function mountContentApiRoutes(
   contentApp.get?.("/api/v1/content", ({ request, query }: any) => {
     return executeWithRuntimeErrorsHandled(request, async () => {
       const scope = pickScope(request);
+      const typedQuery = query as ContentListQuery;
+      const requestedPath = typedQuery.path?.trim();
       await options.authorize(request, {
-        requiredScope: resolveContentReadScope(query as ContentListQuery),
+        requiredScope: resolveContentReadScope(typedQuery),
         project: scope.project,
         environment: scope.environment,
+        documentPath:
+          requestedPath && requestedPath.length > 0 ? requestedPath : undefined,
       });
-      const result = await options.store.list(scope, query as ContentListQuery);
+      const result = await options.store.list(scope, typedQuery);
 
       return {
         data: result.rows.map((row) => toDocumentResponse(row)),
@@ -1312,8 +1316,11 @@ export function mountContentApiRoutes(
     ({ request, params, query }: any) => {
       return executeWithRuntimeErrorsHandled(request, async () => {
         const scope = pickScope(request);
+        const typedQuery = query as ContentListQuery;
+        const requiredScope = resolveContentReadScope(typedQuery);
+
         await options.authorize(request, {
-          requiredScope: resolveContentReadScope(query as ContentListQuery),
+          requiredScope,
           project: scope.project,
           environment: scope.environment,
         });
@@ -1330,6 +1337,13 @@ export function mountContentApiRoutes(
           });
         }
 
+        await options.authorize(request, {
+          requiredScope,
+          project: scope.project,
+          environment: scope.environment,
+          documentPath: document.path,
+        });
+
         return {
           data: toDocumentResponse(document),
         };
@@ -1340,15 +1354,17 @@ export function mountContentApiRoutes(
   contentApp.post?.("/api/v1/content", ({ request, body }: any) => {
     return executeWithRuntimeErrorsHandled(request, async () => {
       const scope = pickScope(request);
+      const payload = (body ?? {}) as ContentWritePayload;
+      const requestedPath =
+        typeof payload.path === "string" ? payload.path.trim() : undefined;
       await options.authorize(request, {
         requiredScope: "content:write:draft",
         project: scope.project,
         environment: scope.environment,
+        documentPath:
+          requestedPath && requestedPath.length > 0 ? requestedPath : undefined,
       });
-      const document = await options.store.create(
-        scope,
-        (body ?? {}) as ContentWritePayload,
-      );
+      const document = await options.store.create(scope, payload);
 
       return {
         data: toDocumentResponse(document),
@@ -1361,15 +1377,49 @@ export function mountContentApiRoutes(
     ({ request, params, body }: any) => {
       return executeWithRuntimeErrorsHandled(request, async () => {
         const scope = pickScope(request);
+        const payload = (body ?? {}) as ContentWritePayload;
+
         await options.authorize(request, {
           requiredScope: "content:write:draft",
           project: scope.project,
           environment: scope.environment,
         });
+        const existing = await options.store.getById(scope, params.documentId);
+
+        if (!existing || existing.isDeleted) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+            details: {
+              documentId: params.documentId,
+            },
+          });
+        }
+
+        await options.authorize(request, {
+          requiredScope: "content:write:draft",
+          project: scope.project,
+          environment: scope.environment,
+          documentPath: existing.path,
+        });
+        const nextPath =
+          payload.path !== undefined
+            ? assertRequiredString(payload.path, "path")
+            : existing.path;
+
+        if (nextPath !== existing.path) {
+          await options.authorize(request, {
+            requiredScope: "content:write:draft",
+            project: scope.project,
+            environment: scope.environment,
+            documentPath: nextPath,
+          });
+        }
         const document = await options.store.update(
           scope,
           params.documentId,
-          (body ?? {}) as ContentWritePayload,
+          payload,
         );
 
         return {
@@ -1388,6 +1438,25 @@ export function mountContentApiRoutes(
           requiredScope: "content:delete",
           project: scope.project,
           environment: scope.environment,
+        });
+        const existing = await options.store.getById(scope, params.documentId);
+
+        if (!existing) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+            details: {
+              documentId: params.documentId,
+            },
+          });
+        }
+
+        await options.authorize(request, {
+          requiredScope: "content:delete",
+          project: scope.project,
+          environment: scope.environment,
+          documentPath: existing.path,
         });
         const document = await options.store.softDelete(
           scope,

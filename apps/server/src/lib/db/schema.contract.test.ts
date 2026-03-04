@@ -118,6 +118,19 @@ test("schema snapshot includes CMS-11/CMS-12 core tables and columns", () => {
       "created_by_user_id",
       "created_at",
     ],
+    "public.rbac_grants": [
+      "id",
+      "user_id",
+      "role",
+      "scope_kind",
+      "project",
+      "environment",
+      "path_prefix",
+      "source",
+      "created_by_user_id",
+      "created_at",
+      "revoked_at",
+    ],
     "public.projects": [
       "id",
       "organization_id",
@@ -215,6 +228,7 @@ test("snapshot includes required named constraints and indexes", () => {
   const documentVersionsTable = snapshot.tables["public.document_versions"];
   const environmentsTable = snapshot.tables["public.environments"];
   const apiKeysTable = snapshot.tables["public.api_keys"];
+  const rbacGrantsTable = snapshot.tables["public.rbac_grants"];
   const authUsersTable = snapshot.tables["public.users"];
   const authSessionsTable = snapshot.tables["public.sessions"];
   const authAccountsTable = snapshot.tables["public.accounts"];
@@ -227,6 +241,7 @@ test("snapshot includes required named constraints and indexes", () => {
   );
   assert.ok(environmentsTable, "expected environments table in snapshot");
   assert.ok(apiKeysTable, "expected api_keys table in snapshot");
+  assert.ok(rbacGrantsTable, "expected rbac_grants table in snapshot");
   assert.ok(authUsersTable, "expected users table in snapshot");
   assert.ok(authSessionsTable, "expected sessions table in snapshot");
   assert.ok(authAccountsTable, "expected accounts table in snapshot");
@@ -287,6 +302,22 @@ test("snapshot includes required named constraints and indexes", () => {
   assert.ok(
     apiKeysTable.indexes.idx_api_keys_created_by,
     "expected index idx_api_keys_created_by on api_keys",
+  );
+  assert.ok(
+    rbacGrantsTable.indexes.idx_rbac_grants_user_active,
+    "expected index idx_rbac_grants_user_active on rbac_grants",
+  );
+  assert.ok(
+    rbacGrantsTable.indexes.idx_rbac_grants_scope_active,
+    "expected index idx_rbac_grants_scope_active on rbac_grants",
+  );
+  assert.ok(
+    rbacGrantsTable.foreignKeys.rbac_grants_user_id_users_id_fk,
+    "expected foreign key rbac_grants_user_id_users_id_fk on rbac_grants",
+  );
+  assert.ok(
+    rbacGrantsTable.foreignKeys.rbac_grants_created_by_user_id_users_id_fk,
+    "expected foreign key rbac_grants_created_by_user_id_users_id_fk on rbac_grants",
   );
   assert.ok(
     authUsersTable.uniqueConstraints.uniq_auth_users_email,

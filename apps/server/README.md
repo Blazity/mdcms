@@ -115,6 +115,30 @@ Backend API/runtime package boundary for MDCMS.
     source (for example CMS-44 RBAC) without changing this endpoint contract.
   - deterministic semantics: `401` unauthenticated, `403` non-admin, `404` unknown user.
 
+## RBAC Engine + Runtime Enforcement (CMS-44)
+
+- RBAC grants are persisted in `rbac_grants` and evaluated with most-permissive
+  precedence across:
+  - global scope
+  - project scope
+  - folder-prefix scope (`documents.path` prefix)
+- Role capabilities:
+  - `owner` and `admin`: instance-wide only (global scope)
+  - `editor`: read/write draft, publish/unpublish, delete
+  - `viewer`: read-only
+- Owner invariants:
+  - exactly one active Owner must exist at all times
+  - remove/demote-last-owner operations must fail deterministically with
+    `OWNER_INVARIANT_VIOLATION` (`409`)
+- Session-authenticated content authorization now applies RBAC checks in
+  addition to auth/session validity:
+  - list/get/create/update/delete routes evaluate role permissions using
+    request target scope and document path context where available
+- Admin session-revocation endpoint accepts:
+  - global `owner`/`admin` RBAC grants, or
+  - fallback env allowlists (`MDCMS_AUTH_ADMIN_USER_IDS`,
+    `MDCMS_AUTH_ADMIN_EMAILS`) for bootstrap compatibility.
+
 ## API Key Lifecycle + Authorization (CMS-42 + CMS-43)
 
 - API key management endpoints:
