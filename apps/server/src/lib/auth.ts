@@ -20,6 +20,7 @@ import {
   evaluatePermission,
   type RbacAction,
   type RbacGrant,
+  type RbacRole,
 } from "./rbac.js";
 
 export const API_KEY_OPERATION_SCOPES = [
@@ -64,6 +65,7 @@ export type ApiKeyPrincipal = {
 export type SessionPrincipal = {
   type: "session";
   session: StudioSession;
+  role?: RbacRole;
 };
 
 export type AuthPrincipal = ApiKeyPrincipal | SessionPrincipal;
@@ -676,11 +678,11 @@ export function createAuthService(
   async function assertSessionRbacAuthorization(
     session: StudioSession,
     requirement: AuthorizationRequirement,
-  ): Promise<void> {
+  ): Promise<RbacRole | undefined> {
     const action = toRbacAction(requirement.requiredScope);
 
     if (!action) {
-      return;
+      return undefined;
     }
 
     if (!requirement.project) {
@@ -717,6 +719,8 @@ export function createAuthService(
         },
       });
     }
+
+    return decision.effectiveRole;
   }
 
   async function revokeAllUserSessions(userId: string): Promise<number> {
@@ -961,12 +965,13 @@ export function createAuthService(
       }
 
       const session = await requireSession(request);
-      await assertSessionRbacAuthorization(session, requirement);
+      const role = await assertSessionRbacAuthorization(session, requirement);
       return {
         mode: "session",
         principal: {
           type: "session",
           session,
+          role,
         } satisfies SessionPrincipal,
       };
     },

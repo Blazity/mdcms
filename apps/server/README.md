@@ -139,6 +139,26 @@ Backend API/runtime package boundary for MDCMS.
   - fallback env allowlists (`MDCMS_AUTH_ADMIN_USER_IDS`,
     `MDCMS_AUTH_ADMIN_EMAILS`) for bootstrap compatibility.
 
+## Collaboration Handshake Authorization (CMS-45)
+
+- Collaboration handshake guard is mounted at `GET /api/v1/collaboration`.
+- Required query tuple:
+  - `project`
+  - `environment`
+  - `documentId` (UUID)
+- Required security checks:
+  - `Origin` must match `MDCMS_COLLAB_ALLOWED_ORIGINS` (comma-separated allowlist)
+  - API keys are explicitly rejected for collaboration
+  - only session auth is accepted
+  - document must exist in requested `(project, environment)` scope
+  - RBAC must allow draft read/write on `documents.path`
+- Deterministic collaboration close semantics for socket adapters:
+  - `4401` for revoked/expired/missing session
+  - `4403` for origin/scope/document/RBAC or API-key-forbidden conditions
+- Current endpoint acts as handshake authorization boundary and returns `426`
+  after successful auth checks, ready for WS transport adapters in downstream
+  collaboration tasks.
+
 ## API Key Lifecycle + Authorization (CMS-42 + CMS-43)
 
 - API key management endpoints:

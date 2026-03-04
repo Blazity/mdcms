@@ -13,6 +13,7 @@ import {
   mountContentApiRoutes,
 } from "./content-api.js";
 import { createAuthService, mountAuthRoutes } from "./auth.js";
+import { mountCollaborationRoutes } from "./collaboration-auth.js";
 
 import {
   collectServerModuleActions,
@@ -84,6 +85,24 @@ export function createServerRequestHandlerWithModules(
         store: contentStore,
         authorize: (request, requirement) =>
           authService.authorizeRequest(request, requirement),
+      });
+      mountCollaborationRoutes(app, {
+        authService,
+        env: rawEnv,
+        resolveDocument: async ({ project, environment, documentId }) => {
+          const document = await contentStore.getById(
+            { project, environment },
+            documentId,
+          );
+
+          if (!document || document.isDeleted) {
+            return undefined;
+          }
+
+          return {
+            path: document.path,
+          };
+        },
       });
       mountLoadedServerModules(app, moduleDeps, moduleLoadReport);
     },
