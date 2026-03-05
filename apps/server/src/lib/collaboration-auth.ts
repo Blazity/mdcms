@@ -133,7 +133,9 @@ export function resolveCollaborationAllowedOrigins(
 export function createCollaborationAuthGuard(
   options: CreateCollaborationAuthGuardOptions,
 ): {
-  authorizeHandshake: (request: Request) => Promise<CollaborationHandshakeResult>;
+  authorizeHandshake: (
+    request: Request,
+  ) => Promise<CollaborationHandshakeResult>;
   revalidateWrite: (
     request: Request,
     context: CollaborationSessionContext,
@@ -275,7 +277,9 @@ export function mountCollaborationRoutes(
   const guard = createCollaborationAuthGuard({
     authService: options.authService,
     resolveDocument: options.resolveDocument,
-    allowedOrigins: resolveCollaborationAllowedOrigins(options.env ?? process.env),
+    allowedOrigins: resolveCollaborationAllowedOrigins(
+      options.env ?? process.env,
+    ),
   });
 
   collabApp.get?.("/api/v1/collaboration", async ({ request }: any) => {

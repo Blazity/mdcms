@@ -48,5 +48,7 @@ export default async function AdminCatchAllPage({
     );
   }
 
-  return <Studio config={config} path={routePath} documentShell={documentShell} />;
+  return (
+    <Studio config={config} path={routePath} documentShell={documentShell} />
+  );
 }

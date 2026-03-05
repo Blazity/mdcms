@@ -637,7 +637,9 @@ export function createAuthService(
     });
   }
 
-  async function seedBootstrapOwnerIfNeeded(session: StudioSession): Promise<void> {
+  async function seedBootstrapOwnerIfNeeded(
+    session: StudioSession,
+  ): Promise<void> {
     const [ownerCountRow] = await options.db
       .select({
         count: sql<number>`count(*)::int`,
@@ -662,14 +664,19 @@ export function createAuthService(
       .onConflictDoNothing();
   }
 
-  async function loadSessionRbacGrants(session: StudioSession): Promise<RbacGrant[]> {
+  async function loadSessionRbacGrants(
+    session: StudioSession,
+  ): Promise<RbacGrant[]> {
     await seedBootstrapOwnerIfNeeded(session);
 
     const rows = await options.db
       .select()
       .from(rbacGrants)
       .where(
-        and(eq(rbacGrants.userId, session.userId), isNull(rbacGrants.revokedAt)),
+        and(
+          eq(rbacGrants.userId, session.userId),
+          isNull(rbacGrants.revokedAt),
+        ),
       );
 
     return rows.map((row) => toRbacGrant(row));

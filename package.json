@@ -16,8 +16,8 @@
     "studio:embed:smoke": "bash scripts/studio-embed-smoke-check.sh",
     "compose:health": "bash scripts/compose-health-check.sh",
     "migrate:check": "bash scripts/migration-startup-check.sh",
-    "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format": "bun x prettier --write .",
+    "format:check": "bun x prettier --check ."
   },
   "private": true,
   "dependencies": {},

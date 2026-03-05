@@ -157,7 +157,9 @@ export function Studio({
 
   if (documentShell?.state === "ready" && documentShell.data) {
     try {
-      documentRoundTripBody = roundTripMarkdown(documentShell.data.body).markdown;
+      documentRoundTripBody = roundTripMarkdown(
+        documentShell.data.body,
+      ).markdown;
     } catch {
       documentRoundTripBody = documentShell.data.body;
     }
@@ -332,7 +334,9 @@ export function Studio({
                   </div>
                   <div>
                     Updated:{" "}
-                    <span className="font-mono">{documentShell.data.updatedAt}</span>
+                    <span className="font-mono">
+                      {documentShell.data.updatedAt}
+                    </span>
                   </div>
                   <pre className="max-h-44 overflow-auto rounded border border-slate-200 bg-slate-50 p-2 text-xs">
                     {documentRoundTripBody}

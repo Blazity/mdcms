@@ -54,7 +54,9 @@ function extractMarkdown(editor: Editor): string {
   }
 
   const markdownStorage = (
-    editor as unknown as { storage?: { markdown?: { getMarkdown?: () => string } } }
+    editor as unknown as {
+      storage?: { markdown?: { getMarkdown?: () => string } };
+    }
   ).storage?.markdown;
 
   if (typeof markdownStorage?.getMarkdown === "function") {

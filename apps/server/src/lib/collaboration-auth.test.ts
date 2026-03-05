@@ -297,4 +297,3 @@ test("collaboration route returns 426 after successful handshake authorization",
 
   assert.equal(response.status, 426);
 });
-
