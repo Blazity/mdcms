@@ -6,16 +6,12 @@ import { dirname, join } from "node:path";
 import { RuntimeError } from "@mdcms/shared";
 
 import type { CliCommand, CliCommandContext } from "./framework.js";
-
-type PullManifestEntry = {
-  path: string;
-  format: "md" | "mdx";
-  draftRevision: number;
-  publishedVersion: number | null;
-  hash: string;
-};
-
-type PullManifest = Record<string, PullManifestEntry>;
+import {
+  loadScopedManifest,
+  resolveScopedManifestPath,
+  writeScopedManifestAtomic,
+  type ScopedManifest,
+} from "./manifest.js";
 
 type ContentDocumentPayload = {
   documentId: string;
@@ -55,12 +51,8 @@ type PullOptions = {
   dryRun: boolean;
 };
 
-function parseBooleanFlag(
-  args: string[],
-  short: string,
-  long: string,
-): boolean {
-  return args.includes(short) || args.includes(long);
+function parseBooleanFlag(args: string[], long: string): boolean {
+  return args.includes(long);
 }
 
 function parsePullOptions(args: string[]): PullOptions {
@@ -85,9 +77,9 @@ function parsePullOptions(args: string[]): PullOptions {
   }
 
   return {
-    published: parseBooleanFlag(args, "", "--published"),
-    force: parseBooleanFlag(args, "", "--force"),
-    dryRun: parseBooleanFlag(args, "", "--dry-run"),
+    published: parseBooleanFlag(args, "--published"),
+    force: parseBooleanFlag(args, "--force"),
+    dryRun: parseBooleanFlag(args, "--dry-run"),
   };
 }
 
@@ -360,33 +352,6 @@ function resolveLocalPathForDocument(
   return `${basePath}.${extension}`;
 }
 
-async function loadManifest(path: string): Promise<PullManifest> {
-  if (!existsSync(path)) {
-    return {};
-  }
-
-  const raw = await readFile(path, "utf8");
-  const parsed = JSON.parse(raw) as unknown;
-
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new RuntimeError({
-      code: "INVALID_MANIFEST",
-      message: `Manifest at "${path}" must be an object.`,
-      statusCode: 400,
-    });
-  }
-
-  return parsed as PullManifest;
-}
-
-async function saveManifest(
-  path: string,
-  manifest: PullManifest,
-): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-}
-
 async function readHash(path: string): Promise<string | undefined> {
   if (!existsSync(path)) {
     return undefined;
@@ -465,7 +430,7 @@ async function applyPullChanges(input: {
   context: CliCommandContext;
   changes: PullChange[];
   manifestPath: string;
-  manifest: PullManifest;
+  manifest: ScopedManifest;
 }): Promise<void> {
   for (const change of input.changes) {
     if (change.status === "Unchanged") {
@@ -514,13 +479,13 @@ async function applyPullChanges(input: {
     };
   }
 
-  await saveManifest(input.manifestPath, input.manifest);
+  await writeScopedManifestAtomic(input.manifestPath, input.manifest);
 }
 
 async function computePullChanges(input: {
   context: CliCommandContext;
   remoteDocuments: ContentDocumentPayload[];
-  manifest: PullManifest;
+  manifest: ScopedManifest;
 }): Promise<PullChange[]> {
   const changes: PullChange[] = [];
   const seenDocumentIds = new Set<string>();
@@ -644,13 +609,12 @@ export async function runPullCommand(
   const remoteDocuments = await fetchAllContent(context, {
     draft: !options.published,
   });
-  const manifestPath = join(
-    context.cwd,
-    ".mdcms",
-    "manifests",
-    `${context.project}.${context.environment}.json`,
-  );
-  const manifest = await loadManifest(manifestPath);
+  const manifestPath = resolveScopedManifestPath({
+    cwd: context.cwd,
+    project: context.project,
+    environment: context.environment,
+  });
+  const manifest = await loadScopedManifest(manifestPath);
   const changes = await computePullChanges({
     context,
     remoteDocuments,

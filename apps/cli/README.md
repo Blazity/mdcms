@@ -49,6 +49,21 @@ CLI package boundary for MDCMS operator workflows.
   - `Unchanged`
 - Transport metadata remains in local manifest only and is not written into frontmatter/body files.
 
+## Scoped Manifest Contract (CMS-81)
+
+- Manifest path is scope-specific:
+  - `.mdcms/manifests/<project>.<environment>.json`
+- Manifest shape:
+  - `document_id -> { path, format, draftRevision, publishedVersion, hash }`
+- The manifest is the sole local transport metadata source for pull logic.
+- Validation is strict on read:
+  - top-level must be an object map
+  - each entry must contain only required keys
+  - invalid types, unknown keys, or drifted shape fail with deterministic `INVALID_MANIFEST` errors
+- Writes are atomic:
+  - data is written to a temp file and moved into place via rename to avoid partial/corrupt manifests
+- Manifest files are local-only artifacts (`.gitignore` includes `.mdcms/manifests/`).
+
 ## Action Catalog Adapter (CMS-5)
 
 - `createCliActionCatalogAdapter(baseUrl, options?)` provides a typed Eden/Treaty client for:

@@ -105,6 +105,9 @@ test("pull defaults to prompt-and-apply using draft reads", async () => {
     assert.equal(existsSync(localPath), true);
     const localContent = await readFile(localPath, "utf8");
     assert.equal(localContent.includes("Hello draft content"), true);
+    assert.equal(localContent.includes("draftRevision"), false);
+    assert.equal(localContent.includes("publishedVersion"), false);
+    assert.equal(localContent.includes("documentId"), false);
 
     const manifestPath = join(
       cwd,
