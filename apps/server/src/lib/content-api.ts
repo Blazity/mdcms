@@ -5,24 +5,16 @@ import {
   resolveRequestTargetRouting,
   serializeError,
 } from "@mdcms/shared";
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  ilike,
-  isNotNull,
-  isNull,
-  ne,
-  or,
-  sql,
-  type SQL,
-} from "drizzle-orm";
+import { and, eq, ne, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import type { DrizzleDatabase } from "./db.js";
-import { documents, environments, projects } from "./db/schema.js";
+import {
+  documents,
+  documentVersions,
+  environments,
+  projects,
+} from "./db/schema.js";
 import type { ApiKeyOperationScope, AuthorizationRequirement } from "./auth.js";
 
 /* ------------------------------------------------------------------ */
@@ -91,6 +83,12 @@ type ContentWritePayload = {
   body?: string;
   createdBy?: string;
   updatedBy?: string;
+};
+
+type ContentPublishPayload = {
+  changeSummary?: unknown;
+  change_summary?: unknown;
+  actorId?: unknown;
 };
 
 type ContentRouteApp = {
@@ -267,6 +265,27 @@ function assertJsonObject(
   return parseInputField(JsonObjectSchema, value, field);
 }
 
+function parseOptionalString(
+  value: unknown,
+  field: string,
+): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    throw new RuntimeError({
+      code: "INVALID_INPUT",
+      message: `Field "${field}" must be a string.`,
+      statusCode: 400,
+      details: { field },
+    });
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function pickScope(request: Request): { project: string; environment: string } {
   const scope = resolveRequestTargetRouting(request);
 
@@ -424,6 +443,7 @@ export type ContentStore = {
   getById: (
     scope: { project: string; environment: string },
     documentId: string,
+    options?: { draft?: boolean },
   ) => Promise<ContentDocument | undefined>;
   update: (
     scope: { project: string; environment: string },
@@ -434,10 +454,46 @@ export type ContentStore = {
     scope: { project: string; environment: string },
     documentId: string,
   ) => Promise<ContentDocument>;
+  publish: (
+    scope: { project: string; environment: string },
+    documentId: string,
+    input: {
+      changeSummary?: string;
+      actorId?: string;
+    },
+  ) => Promise<ContentDocument>;
+  unpublish: (
+    scope: { project: string; environment: string },
+    documentId: string,
+    input: {
+      actorId?: string;
+    },
+  ) => Promise<ContentDocument>;
 };
 
 export function createInMemoryContentStore(): ContentStore {
   const scopedDocs = new Map<string, Map<string, ContentDocument>>();
+  const scopedPublishedSnapshots = new Map<
+    string,
+    Map<
+      string,
+      Map<
+        number,
+        {
+          version: number;
+          path: string;
+          type: string;
+          locale: string;
+          format: ContentFormat;
+          frontmatter: Record<string, unknown>;
+          body: string;
+          publishedAt: string;
+          publishedBy: string;
+          changeSummary?: string;
+        }
+      >
+    >
+  >();
 
   function getScopeStore(scope: {
     project: string;
@@ -449,6 +505,38 @@ export function createInMemoryContentStore(): ContentStore {
     if (!store) {
       store = new Map<string, ContentDocument>();
       scopedDocs.set(key, store);
+    }
+
+    return store;
+  }
+
+  function getScopePublishedSnapshots(scope: {
+    project: string;
+    environment: string;
+  }): Map<
+    string,
+    Map<
+      number,
+      {
+        version: number;
+        path: string;
+        type: string;
+        locale: string;
+        format: ContentFormat;
+        frontmatter: Record<string, unknown>;
+        body: string;
+        publishedAt: string;
+        publishedBy: string;
+        changeSummary?: string;
+      }
+    >
+  > {
+    const key = toScopeKey(scope.project, scope.environment);
+    let store = scopedPublishedSnapshots.get(key);
+
+    if (!store) {
+      store = new Map();
+      scopedPublishedSnapshots.set(key, store);
     }
 
     return store;
@@ -474,6 +562,62 @@ export function createInMemoryContentStore(): ContentStore {
     }
 
     return undefined;
+  }
+
+  function resolveReadDocument(input: {
+    document: ContentDocument;
+    draft: boolean;
+    publishedSnapshots: Map<
+      string,
+      Map<
+        number,
+        {
+          version: number;
+          path: string;
+          type: string;
+          locale: string;
+          format: ContentFormat;
+          frontmatter: Record<string, unknown>;
+          body: string;
+          publishedAt: string;
+          publishedBy: string;
+          changeSummary?: string;
+        }
+      >
+    >;
+  }): ContentDocument | undefined {
+    if (input.draft) {
+      return input.document;
+    }
+
+    if (
+      input.document.isDeleted ||
+      input.document.publishedVersion === null ||
+      input.document.publishedVersion === undefined
+    ) {
+      return undefined;
+    }
+
+    const snapshot = input.publishedSnapshots
+      .get(input.document.documentId)
+      ?.get(input.document.publishedVersion);
+
+    if (!snapshot) {
+      return undefined;
+    }
+
+    return {
+      ...input.document,
+      path: snapshot.path,
+      type: snapshot.type,
+      locale: snapshot.locale,
+      format: snapshot.format,
+      frontmatter: snapshot.frontmatter,
+      body: snapshot.body,
+      version: snapshot.version,
+      updatedAt: snapshot.publishedAt,
+      updatedBy: snapshot.publishedBy,
+    };
   }
 
   return {
@@ -533,6 +677,7 @@ export function createInMemoryContentStore(): ContentStore {
 
     async list(scope, query) {
       const store = getScopeStore(scope);
+      const publishedSnapshots = getScopePublishedSnapshots(scope);
       const limit = parsePositiveInt(query.limit, "limit", {
         defaultValue: DEFAULT_LIMIT,
         min: 1,
@@ -550,8 +695,7 @@ export function createInMemoryContentStore(): ContentStore {
       );
       const sort = parseSortField(query.sort);
       const order = parseSortOrder(query.order);
-
-      parseBoolean(query.draft, "draft");
+      const draft = parseBoolean(query.draft, "draft") === true;
 
       const normalizedType = query.type?.trim();
       const normalizedPath = query.path?.trim();
@@ -559,56 +703,65 @@ export function createInMemoryContentStore(): ContentStore {
       const normalizedSlug = query.slug?.trim();
       const normalizedQ = query.q?.trim().toLowerCase();
 
-      const rows = [...store.values()].filter((doc) => {
-        if (normalizedType && doc.type !== normalizedType) {
-          return false;
-        }
-
-        if (normalizedPath && !doc.path.startsWith(normalizedPath)) {
-          return false;
-        }
-
-        if (normalizedLocale && doc.locale !== normalizedLocale) {
-          return false;
-        }
-
-        if (
-          normalizedSlug &&
-          String(doc.frontmatter.slug ?? "").trim() !== normalizedSlug
-        ) {
-          return false;
-        }
-
-        if (published !== undefined) {
-          const isPublished = doc.publishedVersion !== null;
-
-          if (isPublished !== published) {
+      const rows = [...store.values()]
+        .map((document) =>
+          resolveReadDocument({
+            document,
+            draft,
+            publishedSnapshots,
+          }),
+        )
+        .filter((doc): doc is ContentDocument => Boolean(doc))
+        .filter((doc) => {
+          if (normalizedType && doc.type !== normalizedType) {
             return false;
           }
-        }
 
-        if (isDeleted !== undefined && doc.isDeleted !== isDeleted) {
-          return false;
-        }
-
-        if (
-          hasUnpublishedChanges !== undefined &&
-          doc.hasUnpublishedChanges !== hasUnpublishedChanges
-        ) {
-          return false;
-        }
-
-        if (normalizedQ) {
-          const haystack =
-            `${doc.path}\n${doc.body}\n${JSON.stringify(doc.frontmatter)}`.toLowerCase();
-
-          if (!haystack.includes(normalizedQ)) {
+          if (normalizedPath && !doc.path.startsWith(normalizedPath)) {
             return false;
           }
-        }
 
-        return true;
-      });
+          if (normalizedLocale && doc.locale !== normalizedLocale) {
+            return false;
+          }
+
+          if (
+            normalizedSlug &&
+            String(doc.frontmatter.slug ?? "").trim() !== normalizedSlug
+          ) {
+            return false;
+          }
+
+          if (published !== undefined) {
+            const isPublished = doc.publishedVersion !== null;
+
+            if (isPublished !== published) {
+              return false;
+            }
+          }
+
+          if (isDeleted !== undefined && doc.isDeleted !== isDeleted) {
+            return false;
+          }
+
+          if (
+            hasUnpublishedChanges !== undefined &&
+            doc.hasUnpublishedChanges !== hasUnpublishedChanges
+          ) {
+            return false;
+          }
+
+          if (normalizedQ) {
+            const haystack =
+              `${doc.path}\n${doc.body}\n${JSON.stringify(doc.frontmatter)}`.toLowerCase();
+
+            if (!haystack.includes(normalizedQ)) {
+              return false;
+            }
+          }
+
+          return true;
+        });
 
       rows.sort((left, right) => {
         let compared = 0;
@@ -635,13 +788,24 @@ export function createInMemoryContentStore(): ContentStore {
       };
     },
 
-    async getById(scope, documentId) {
+    async getById(scope, documentId, options) {
       const store = getScopeStore(scope);
+      const publishedSnapshots = getScopePublishedSnapshots(scope);
       const normalizedDocumentId = assertRequiredString(
         documentId,
         "documentId",
       );
-      return store.get(normalizedDocumentId);
+      const existing = store.get(normalizedDocumentId);
+
+      if (!existing) {
+        return undefined;
+      }
+
+      return resolveReadDocument({
+        document: existing,
+        draft: options?.draft === true,
+        publishedSnapshots,
+      });
     },
 
     async update(scope, documentId, payload) {
@@ -754,6 +918,101 @@ export function createInMemoryContentStore(): ContentStore {
 
       return deleted;
     },
+
+    async publish(scope, documentId, input) {
+      const store = getScopeStore(scope);
+      const publishedSnapshots = getScopePublishedSnapshots(scope);
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const existing = store.get(normalizedDocumentId);
+
+      if (!existing || existing.isDeleted) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const documentSnapshots =
+        publishedSnapshots.get(normalizedDocumentId) ?? new Map();
+      if (!publishedSnapshots.has(normalizedDocumentId)) {
+        publishedSnapshots.set(normalizedDocumentId, documentSnapshots);
+      }
+
+      const latestVersion = [...documentSnapshots.keys()].reduce(
+        (maxVersion, candidateVersion) =>
+          candidateVersion > maxVersion ? candidateVersion : maxVersion,
+        0,
+      );
+      const nextVersion = latestVersion + 1;
+      const actorId = input.actorId?.trim() || DEFAULT_ACTOR;
+      const now = new Date().toISOString();
+
+      documentSnapshots.set(nextVersion, {
+        version: nextVersion,
+        path: existing.path,
+        type: existing.type,
+        locale: existing.locale,
+        format: existing.format,
+        frontmatter: existing.frontmatter,
+        body: existing.body,
+        publishedAt: now,
+        publishedBy: actorId,
+        changeSummary: input.changeSummary,
+      });
+
+      const updated: ContentDocument = {
+        ...existing,
+        version: nextVersion,
+        publishedVersion: nextVersion,
+        hasUnpublishedChanges: false,
+        updatedBy: actorId,
+        updatedAt: now,
+      };
+
+      store.set(normalizedDocumentId, updated);
+      return updated;
+    },
+
+    async unpublish(scope, documentId, input) {
+      const store = getScopeStore(scope);
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const existing = store.get(normalizedDocumentId);
+
+      if (!existing || existing.isDeleted) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const actorId = input.actorId?.trim() || DEFAULT_ACTOR;
+      const now = new Date().toISOString();
+      const updated: ContentDocument = {
+        ...existing,
+        version: 0,
+        publishedVersion: null,
+        hasUnpublishedChanges: true,
+        updatedBy: actorId,
+        updatedAt: now,
+      };
+
+      store.set(normalizedDocumentId, updated);
+      return updated;
+    },
   };
 }
 
@@ -848,6 +1107,142 @@ export function createDatabaseContentStore(
     return db.query.documents.findFirst({
       where: and(...baseConditions),
     });
+  }
+
+  async function resolvePublishedSnapshot(
+    scopeIds: { projectId: string; environmentId: string },
+    headRow: typeof documents.$inferSelect,
+  ): Promise<ContentDocument | undefined> {
+    if (
+      headRow.isDeleted ||
+      headRow.publishedVersion === null ||
+      headRow.publishedVersion === undefined
+    ) {
+      return undefined;
+    }
+
+    const versionRow = await db.query.documentVersions.findFirst({
+      where: and(
+        eq(documentVersions.projectId, scopeIds.projectId),
+        eq(documentVersions.environmentId, scopeIds.environmentId),
+        eq(documentVersions.documentId, headRow.documentId),
+        eq(documentVersions.version, headRow.publishedVersion),
+      ),
+    });
+
+    if (!versionRow) {
+      return undefined;
+    }
+
+    return {
+      documentId: headRow.documentId,
+      translationGroupId: headRow.translationGroupId,
+      project: "",
+      environment: "",
+      path: versionRow.path,
+      type: versionRow.schemaType,
+      locale: versionRow.locale,
+      format: versionRow.contentFormat as ContentFormat,
+      isDeleted: headRow.isDeleted,
+      hasUnpublishedChanges: headRow.hasUnpublishedChanges,
+      version: versionRow.version,
+      publishedVersion: headRow.publishedVersion,
+      draftRevision: headRow.draftRevision,
+      frontmatter: versionRow.frontmatter as Record<string, unknown>,
+      body: versionRow.body,
+      createdBy: headRow.createdBy,
+      createdAt: toIsoString(headRow.createdAt),
+      updatedBy: headRow.updatedBy,
+      updatedAt: toIsoString(versionRow.publishedAt),
+    };
+  }
+
+  function applyListFilters(
+    document: ContentDocument,
+    query: {
+      type?: string;
+      path?: string;
+      locale?: string;
+      slug?: string;
+      published?: boolean;
+      isDeleted?: boolean;
+      hasUnpublishedChanges?: boolean;
+      q?: string;
+    },
+  ): boolean {
+    if (query.type && document.type !== query.type) {
+      return false;
+    }
+
+    if (query.path && !document.path.startsWith(query.path)) {
+      return false;
+    }
+
+    if (query.locale && document.locale !== query.locale) {
+      return false;
+    }
+
+    if (
+      query.slug &&
+      String(document.frontmatter.slug ?? "").trim() !== query.slug
+    ) {
+      return false;
+    }
+
+    if (query.published !== undefined) {
+      const isPublished = document.publishedVersion !== null;
+
+      if (isPublished !== query.published) {
+        return false;
+      }
+    }
+
+    if (
+      query.isDeleted !== undefined &&
+      document.isDeleted !== query.isDeleted
+    ) {
+      return false;
+    }
+
+    if (
+      query.hasUnpublishedChanges !== undefined &&
+      document.hasUnpublishedChanges !== query.hasUnpublishedChanges
+    ) {
+      return false;
+    }
+
+    if (query.q) {
+      const haystack =
+        `${document.path}\n${document.body}\n${JSON.stringify(document.frontmatter)}`.toLowerCase();
+
+      if (!haystack.includes(query.q)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function sortDocuments(
+    rows: ContentDocument[],
+    sort: SortField,
+    order: SortOrder,
+  ): ContentDocument[] {
+    rows.sort((left, right) => {
+      let compared = 0;
+
+      if (sort === "path") {
+        compared = left.path.localeCompare(right.path);
+      } else if (sort === "createdAt") {
+        compared = left.createdAt.localeCompare(right.createdAt);
+      } else {
+        compared = left.updatedAt.localeCompare(right.updatedAt);
+      }
+
+      return order === "asc" ? compared : compared * -1;
+    });
+
+    return rows;
   }
 
   return {
@@ -957,7 +1352,7 @@ export function createDatabaseContentStore(
         query.hasUnpublishedChanges,
         "hasUnpublishedChanges",
       );
-      parseBoolean(query.draft, "draft");
+      const draft = parseBoolean(query.draft, "draft") === true;
 
       const sort = parseSortField(query.sort);
       const order = parseSortOrder(query.order);
@@ -965,7 +1360,7 @@ export function createDatabaseContentStore(
       const normalizedPath = query.path?.trim();
       const normalizedLocale = query.locale?.trim();
       const normalizedSlug = query.slug?.trim();
-      const normalizedQ = query.q?.trim();
+      const normalizedQ = query.q?.trim().toLowerCase();
       const scopeIds = await resolveScopeIds(scope, false);
 
       if (!scopeIds) {
@@ -977,93 +1372,59 @@ export function createDatabaseContentStore(
         };
       }
 
-      const conditions: SQL[] = [
-        eq(documents.projectId, scopeIds.projectId),
-        eq(documents.environmentId, scopeIds.environmentId),
-      ];
-
-      if (normalizedType) {
-        conditions.push(eq(documents.schemaType, normalizedType));
-      }
-
-      if (normalizedPath) {
-        conditions.push(sql`${documents.path} like ${`${normalizedPath}%`}`);
-      }
-
-      if (normalizedLocale) {
-        conditions.push(eq(documents.locale, normalizedLocale));
-      }
-
-      if (normalizedSlug) {
-        conditions.push(
-          sql`${documents.frontmatter}->>'slug' = ${normalizedSlug}`,
-        );
-      }
-
-      if (published !== undefined) {
-        conditions.push(
-          published
-            ? isNotNull(documents.publishedVersion)
-            : isNull(documents.publishedVersion),
-        );
-      }
-
-      if (isDeleted !== undefined) {
-        conditions.push(eq(documents.isDeleted, isDeleted));
-      }
-
-      if (hasUnpublishedChanges !== undefined) {
-        conditions.push(
-          eq(documents.hasUnpublishedChanges, hasUnpublishedChanges),
-        );
-      }
-
-      if (normalizedQ) {
-        const pattern = `%${normalizedQ}%`;
-        conditions.push(
-          or(
-            ilike(documents.path, pattern),
-            ilike(documents.body, pattern),
-            sql`cast(${documents.frontmatter} as text) ilike ${pattern}`,
-          )!,
-        );
-      }
-
-      const [countRow] = await db
-        .select({ total: count() })
-        .from(documents)
-        .where(and(...conditions));
-
-      const orderBy =
-        sort === "path"
-          ? order === "asc"
-            ? asc(documents.path)
-            : desc(documents.path)
-          : sort === "createdAt"
-            ? order === "asc"
-              ? asc(documents.createdAt)
-              : desc(documents.createdAt)
-            : order === "asc"
-              ? asc(documents.updatedAt)
-              : desc(documents.updatedAt);
-
-      const rows = await db
+      const headRows = await db
         .select()
         .from(documents)
-        .where(and(...conditions))
-        .orderBy(orderBy)
-        .limit(limit)
-        .offset(offset);
+        .where(
+          and(
+            eq(documents.projectId, scopeIds.projectId),
+            eq(documents.environmentId, scopeIds.environmentId),
+          ),
+        );
+
+      const resolvedRows: ContentDocument[] = [];
+
+      for (const row of headRows) {
+        if (draft) {
+          resolvedRows.push(toContentDocument(scope, row));
+          continue;
+        }
+
+        const publishedSnapshot = await resolvePublishedSnapshot(scopeIds, row);
+
+        if (publishedSnapshot) {
+          resolvedRows.push({
+            ...publishedSnapshot,
+            project: scope.project,
+            environment: scope.environment,
+          });
+        }
+      }
+
+      const filteredRows = resolvedRows.filter((document) =>
+        applyListFilters(document, {
+          type: normalizedType,
+          path: normalizedPath,
+          locale: normalizedLocale,
+          slug: normalizedSlug,
+          published,
+          isDeleted,
+          hasUnpublishedChanges,
+          q: normalizedQ,
+        }),
+      );
+      const sortedRows = sortDocuments(filteredRows, sort, order);
+      const total = sortedRows.length;
 
       return {
-        rows: rows.map((row) => toContentDocument(scope, row)),
-        total: countRow?.total ?? 0,
+        rows: sortedRows.slice(offset, offset + limit),
+        total,
         limit,
         offset,
       };
     },
 
-    async getById(scope, documentId) {
+    async getById(scope, documentId, options) {
       const normalizedDocumentId = assertRequiredString(
         documentId,
         "documentId",
@@ -1082,7 +1443,25 @@ export function createDatabaseContentStore(
         ),
       });
 
-      return row ? toContentDocument(scope, row) : undefined;
+      if (!row) {
+        return undefined;
+      }
+
+      if (options?.draft === true) {
+        return toContentDocument(scope, row);
+      }
+
+      const publishedSnapshot = await resolvePublishedSnapshot(scopeIds, row);
+
+      if (!publishedSnapshot) {
+        return undefined;
+      }
+
+      return {
+        ...publishedSnapshot,
+        project: scope.project,
+        environment: scope.environment,
+      };
     },
 
     async update(scope, documentId, payload) {
@@ -1259,6 +1638,155 @@ export function createDatabaseContentStore(
 
       return toContentDocument(scope, updated);
     },
+
+    async publish(scope, documentId, input) {
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const existing = await db.query.documents.findFirst({
+        where: and(
+          eq(documents.projectId, scopeIds.projectId),
+          eq(documents.environmentId, scopeIds.environmentId),
+          eq(documents.documentId, normalizedDocumentId),
+          eq(documents.isDeleted, false),
+        ),
+      });
+
+      if (!existing) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const actorId = input.actorId?.trim() || DEFAULT_ACTOR;
+      const publishedDocument = await db.transaction(async (tx) => {
+        const [latestVersionRow] = await tx
+          .select({
+            value: sql<number>`coalesce(max(${documentVersions.version}), 0)`,
+          })
+          .from(documentVersions)
+          .where(eq(documentVersions.documentId, normalizedDocumentId));
+        const nextVersion = (latestVersionRow?.value ?? 0) + 1;
+
+        await tx.insert(documentVersions).values({
+          documentId: existing.documentId,
+          translationGroupId: existing.translationGroupId,
+          projectId: existing.projectId,
+          environmentId: existing.environmentId,
+          schemaType: existing.schemaType,
+          locale: existing.locale,
+          contentFormat: existing.contentFormat,
+          path: existing.path,
+          body: existing.body,
+          frontmatter: existing.frontmatter,
+          version: nextVersion,
+          publishedBy: actorId,
+          changeSummary: input.changeSummary ?? null,
+        });
+
+        const [updated] = await tx
+          .update(documents)
+          .set({
+            publishedVersion: nextVersion,
+            hasUnpublishedChanges: false,
+            updatedBy: actorId,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(documents.projectId, scopeIds.projectId),
+              eq(documents.environmentId, scopeIds.environmentId),
+              eq(documents.documentId, normalizedDocumentId),
+            ),
+          )
+          .returning();
+
+        if (!updated) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+            details: {
+              documentId: normalizedDocumentId,
+            },
+          });
+        }
+
+        return updated;
+      });
+
+      return toContentDocument(scope, publishedDocument);
+    },
+
+    async unpublish(scope, documentId, input) {
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const actorId = input.actorId?.trim() || DEFAULT_ACTOR;
+      const [updated] = await db
+        .update(documents)
+        .set({
+          publishedVersion: null,
+          hasUnpublishedChanges: true,
+          updatedBy: actorId,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(documents.projectId, scopeIds.projectId),
+            eq(documents.environmentId, scopeIds.environmentId),
+            eq(documents.documentId, normalizedDocumentId),
+            eq(documents.isDeleted, false),
+          ),
+        )
+        .returning();
+
+      if (!updated) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      return toContentDocument(scope, updated);
+    },
   };
 }
 
@@ -1318,13 +1846,16 @@ export function mountContentApiRoutes(
         const scope = pickScope(request);
         const typedQuery = query as ContentListQuery;
         const requiredScope = resolveContentReadScope(typedQuery);
+        const draft = parseBoolean(typedQuery.draft, "draft") === true;
 
         await options.authorize(request, {
           requiredScope,
           project: scope.project,
           environment: scope.environment,
         });
-        const document = await options.store.getById(scope, params.documentId);
+        const document = await options.store.getById(scope, params.documentId, {
+          draft,
+        });
 
         if (!document || document.isDeleted) {
           throw new RuntimeError({
@@ -1384,7 +1915,9 @@ export function mountContentApiRoutes(
           project: scope.project,
           environment: scope.environment,
         });
-        const existing = await options.store.getById(scope, params.documentId);
+        const existing = await options.store.getById(scope, params.documentId, {
+          draft: true,
+        });
 
         if (!existing || existing.isDeleted) {
           throw new RuntimeError({
@@ -1429,6 +1962,105 @@ export function mountContentApiRoutes(
     },
   );
 
+  contentApp.post?.(
+    "/api/v1/content/:documentId/publish",
+    ({ request, params, body }: any) => {
+      return executeWithRuntimeErrorsHandled(request, async () => {
+        const scope = pickScope(request);
+        await options.authorize(request, {
+          requiredScope: "content:publish",
+          project: scope.project,
+          environment: scope.environment,
+        });
+        const existing = await options.store.getById(scope, params.documentId, {
+          draft: true,
+        });
+
+        if (!existing || existing.isDeleted) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+            details: {
+              documentId: params.documentId,
+            },
+          });
+        }
+
+        await options.authorize(request, {
+          requiredScope: "content:publish",
+          project: scope.project,
+          environment: scope.environment,
+          documentPath: existing.path,
+        });
+
+        const payload = (body ?? {}) as ContentPublishPayload;
+        const changeSummary = parseOptionalString(
+          payload.changeSummary ?? payload.change_summary,
+          "changeSummary",
+        );
+        const actorId = parseOptionalString(payload.actorId, "actorId");
+        const document = await options.store.publish(scope, params.documentId, {
+          changeSummary,
+          actorId,
+        });
+
+        return {
+          data: toDocumentResponse(document),
+        };
+      });
+    },
+  );
+
+  contentApp.post?.(
+    "/api/v1/content/:documentId/unpublish",
+    ({ request, params, body }: any) => {
+      return executeWithRuntimeErrorsHandled(request, async () => {
+        const scope = pickScope(request);
+        await options.authorize(request, {
+          requiredScope: "content:publish",
+          project: scope.project,
+          environment: scope.environment,
+        });
+        const existing = await options.store.getById(scope, params.documentId, {
+          draft: true,
+        });
+
+        if (!existing || existing.isDeleted) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+            details: {
+              documentId: params.documentId,
+            },
+          });
+        }
+
+        await options.authorize(request, {
+          requiredScope: "content:publish",
+          project: scope.project,
+          environment: scope.environment,
+          documentPath: existing.path,
+        });
+
+        const payload = (body ?? {}) as ContentPublishPayload;
+        const actorId = parseOptionalString(payload.actorId, "actorId");
+        const document = await options.store.unpublish(
+          scope,
+          params.documentId,
+          {
+            actorId,
+          },
+        );
+
+        return {
+          data: toDocumentResponse(document),
+        };
+      });
+    },
+  );
+
   contentApp.delete?.(
     "/api/v1/content/:documentId",
     ({ request, params }: any) => {
@@ -1439,7 +2071,9 @@ export function mountContentApiRoutes(
           project: scope.project,
           environment: scope.environment,
         });
-        const existing = await options.store.getById(scope, params.documentId);
+        const existing = await options.store.getById(scope, params.documentId, {
+          draft: true,
+        });
 
         if (!existing) {
           throw new RuntimeError({

@@ -93,6 +93,7 @@ export function createServerRequestHandlerWithModules(
           const document = await contentStore.getById(
             { project, environment },
             documentId,
+            { draft: true },
           );
 
           if (!document || document.isDeleted) {

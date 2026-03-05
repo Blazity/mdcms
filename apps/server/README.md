@@ -70,11 +70,20 @@ Backend API/runtime package boundary for MDCMS.
   - `POST /api/v1/content`
   - `PUT /api/v1/content/:documentId`
   - `DELETE /api/v1/content/:documentId`
+  - `POST /api/v1/content/:documentId/publish`
+  - `POST /api/v1/content/:documentId/unpublish`
 - List endpoint query contract supports:
   - `type`, `path`, `locale`, `slug`, `published`, `isDeleted`, `hasUnpublishedChanges`, `draft`, `resolve`, `project`, `environment`, `limit`, `offset`, `sort`, `order`, `q`
 - Pagination defaults:
   - `limit` defaults to `20`
   - `limit` max is `100`
+- Read semantics:
+  - default (`draft` omitted or `draft=false`) returns only published snapshots from `document_versions` for non-deleted documents.
+  - `draft=true` returns mutable head rows from `documents`.
+- Publish lifecycle semantics:
+  - publish appends immutable row to `document_versions`, updates `documents.published_version`, and sets `documents.has_unpublished_changes = FALSE`.
+  - unpublish clears `documents.published_version` and sets `documents.has_unpublished_changes = TRUE`.
+  - publish accepts optional `change_summary` (or `changeSummary`) request field and stores it in `document_versions.change_summary`.
 - Content storage is DB-backed (`documents` table), not process memory.
 - List/integer query parsing is strict (`limit=1abc` is rejected with `INVALID_QUERY_PARAM`).
 - Content endpoints are deny-by-default and require either:
