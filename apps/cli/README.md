@@ -24,6 +24,31 @@ CLI package boundary for MDCMS operator workflows.
   - CLI flag (`--api-key`) -> env (`MDCMS_API_KEY`) -> stored profile hook (reserved for CMS-79)
 - Usage errors are deterministic and include stable error codes/messages.
 
+## Pull Command (CMS-80)
+
+- Command:
+  - `mdcms pull`
+- Flags:
+  - `--published` -> fetch published snapshots (`draft=false`)
+  - `--dry-run` -> compute/print plan only, no file writes
+  - `--force` -> skip overwrite prompt for locally modified files
+- Default mode:
+  - prompt-and-apply (not dry-run)
+  - fetches draft heads (`draft=true`)
+- Deterministic mapping:
+  - localized types: `<path>.<locale>.<ext>`
+  - non-localized types: `<path>.<ext>`
+  - extension is sourced from server content format (`md`/`mdx`)
+  - pulled type must exist in config `types` mapping; missing type mapping fails fast
+- Plan output status groups:
+  - `Modified`
+  - `Locally modified`
+  - `New`
+  - `Moved/Renamed`
+  - `Deleted on server`
+  - `Unchanged`
+- Transport metadata remains in local manifest only and is not written into frontmatter/body files.
+
 ## Action Catalog Adapter (CMS-5)
 
 - `createCliActionCatalogAdapter(baseUrl, options?)` provides a typed Eden/Treaty client for:

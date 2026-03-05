@@ -1,11 +1,17 @@
+import { stdin as processStdin, stdout as processStdout } from "node:process";
+import { createInterface } from "node:readline/promises";
+
 import { RuntimeError } from "@mdcms/shared";
 
 import { formatCliErrorEnvelope } from "./cli.js";
 import { type CliConfig, loadCliConfig } from "./config.js";
+import { createPullCommand } from "./pull.js";
 
-type Writer = {
+export type Writer = {
   write: (chunk: string) => unknown;
 };
+
+type ConfirmPrompt = (message: string) => Promise<boolean>;
 
 export type CliGlobalOptions = {
   help: boolean;
@@ -32,6 +38,8 @@ export type CliCommandContext = {
   environment: string;
   apiKey?: string;
   args: string[];
+  fetcher: typeof fetch;
+  confirm: ConfirmPrompt;
   stdout: Writer;
   stderr: Writer;
 };
@@ -57,20 +65,11 @@ export type RunMdcmsCliOptions = {
   commands?: CliCommand[];
   loadConfig?: typeof loadCliConfig;
   resolveStoredApiKey?: ResolveStoredApiKey;
+  fetcher?: typeof fetch;
+  confirm?: ConfirmPrompt;
 };
 
-const DEFAULT_COMMANDS: CliCommand[] = [
-  {
-    name: "pull",
-    description: "Pull content from MDCMS into local files.",
-    run: async (context) => {
-      context.stderr.write(
-        'Command "pull" is not available yet in this build.\n',
-      );
-      return 1;
-    },
-  },
-];
+const DEFAULT_COMMANDS: CliCommand[] = [createPullCommand()];
 
 function parseOptionalValue(
   value: string | undefined,
@@ -327,6 +326,25 @@ function writeCliError(stderr: Writer, error: unknown): void {
   stderr.write(`${envelope.code}: ${envelope.message}\n`);
 }
 
+async function defaultConfirmPrompt(message: string): Promise<boolean> {
+  if (!processStdin.isTTY) {
+    return false;
+  }
+
+  const reader = createInterface({
+    input: processStdin,
+    output: processStdout,
+  });
+
+  try {
+    const answer = await reader.question(`${message} [y/N] `);
+    const normalized = answer.trim().toLowerCase();
+    return normalized === "y" || normalized === "yes";
+  } finally {
+    reader.close();
+  }
+}
+
 export async function runMdcmsCli(
   argv: string[],
   options: RunMdcmsCliOptions = {},
@@ -336,6 +354,8 @@ export async function runMdcmsCli(
   const cwd = options.cwd ?? process.cwd();
   const env = options.env ?? process.env;
   const commands = options.commands ?? DEFAULT_COMMANDS;
+  const fetcher = options.fetcher ?? fetch;
+  const confirm = options.confirm ?? defaultConfirmPrompt;
   const registry = createCommandRegistry(commands);
   const invocation = parseCliInvocation(argv);
 
@@ -384,6 +404,8 @@ export async function runMdcmsCli(
       environment: resolved.environment,
       apiKey: resolved.apiKey,
       args: invocation.commandArgs,
+      fetcher,
+      confirm,
       stdout,
       stderr,
     });
