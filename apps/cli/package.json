@@ -6,6 +6,9 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "mdcms": "./dist/bin/mdcms.js"
+  },
   "exports": {
     "./package.json": "./package.json",
     ".": {
@@ -20,7 +23,8 @@
     "name": "cli"
   },
   "scripts": {
-    "test": "bun test ./src"
+    "test": "bun test ./src",
+    "dev": "bun --conditions @mdcms/source src/bin/mdcms.ts --help"
   },
   "dependencies": {
     "@elysiajs/eden": "^1.4.8",

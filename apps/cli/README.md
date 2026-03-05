@@ -2,9 +2,27 @@
 
 CLI package boundary for MDCMS operator workflows.
 
-## Current Status
+## CLI Runtime Framework (CMS-77)
 
-This package is intentionally scaffolded in CMS-1 to reserve the `@mdcms/cli` namespace and establish build/typecheck targets. Command implementation (`init`, `pull`, `push`, auth flows, migrations) follows in later tasks.
+- Executable entrypoint:
+  - `apps/cli/src/bin/mdcms.ts` (Bun shebang, compiled to `dist/bin/mdcms.js`)
+- Runtime command runner:
+  - `runMdcmsCli(argv, options?)` in `src/lib/framework.ts`
+  - deterministic parsing for global flags and command dispatch
+- Global target/auth flags:
+  - `--project`
+  - `--environment`
+  - `--api-key`
+  - `--config` (default `mdcms.config.ts`)
+  - `--server-url`
+  - `--help`
+- Target resolution precedence:
+  - CLI flags -> env (`MDCMS_PROJECT`, `MDCMS_ENVIRONMENT`) -> config defaults
+- Server URL resolution precedence:
+  - CLI flag (`--server-url`) -> env (`MDCMS_SERVER_URL`) -> config (`serverUrl`)
+- API key resolution precedence (headless/CI compatible):
+  - CLI flag (`--api-key`) -> env (`MDCMS_API_KEY`) -> stored profile hook (reserved for CMS-79)
+- Usage errors are deterministic and include stable error codes/messages.
 
 ## Action Catalog Adapter (CMS-5)
 
