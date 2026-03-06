@@ -5,7 +5,7 @@ import { createConsoleLogger } from "@mdcms/shared";
 import { eq } from "drizzle-orm";
 import postgres from "postgres";
 
-import { authSessions } from "./db/schema.js";
+import { authSessions, cliLoginChallenges } from "./db/schema.js";
 import { createServerRequestHandlerWithModules } from "./runtime-with-modules.js";
 
 const env = {
@@ -769,3 +769,273 @@ testWithDatabase(
     }
   },
 );
+
+testWithDatabase(
+  "CLI login browser flow supports start -> authorize -> exchange and self-revoke",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+    const state = `state-${Date.now()}-abcdefghijklmnop`;
+    const redirectUri = "http://127.0.0.1:45123/callback";
+
+    try {
+      await signUp(handler, { email, password });
+
+      const startResponse = await handler(
+        new Request("http://localhost/api/v1/auth/cli/login/start", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            project: "marketing-site",
+            environment: "staging",
+            redirectUri,
+            state,
+            scopes: ["content:read", "content:write:draft"],
+          }),
+        }),
+      );
+      const startBody = (await startResponse.json()) as {
+        data: {
+          challengeId: string;
+          authorizeUrl: string;
+        };
+      };
+
+      assert.equal(startResponse.status, 200);
+      assert.ok(startBody.data.challengeId);
+      assert.equal(
+        startBody.data.authorizeUrl.includes(
+          "/api/v1/auth/cli/login/authorize",
+        ),
+        true,
+      );
+
+      const authorizeGetResponse = await handler(
+        new Request(startBody.data.authorizeUrl, {
+          method: "GET",
+        }),
+      );
+      const authorizeGetHtml = await authorizeGetResponse.text();
+
+      assert.equal(authorizeGetResponse.status, 200);
+      assert.equal(
+        authorizeGetResponse.headers.get("content-type")?.includes("text/html"),
+        true,
+      );
+      assert.equal(authorizeGetHtml.includes("<form"), true);
+
+      const authorizePostUrl = new URL(startBody.data.authorizeUrl);
+      const authorizePostResponse = await handler(
+        new Request(authorizePostUrl.toString(), {
+          method: "POST",
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams({
+            email,
+            password,
+          }).toString(),
+        }),
+      );
+      const redirectLocation = authorizePostResponse.headers.get("location");
+
+      assert.equal(authorizePostResponse.status, 302);
+      assert.ok(redirectLocation);
+      assert.ok(authorizePostResponse.headers.get("set-cookie"));
+
+      const callbackUrl = new URL(redirectLocation ?? "");
+      const code = callbackUrl.searchParams.get("code");
+      const returnedState = callbackUrl.searchParams.get("state");
+
+      assert.ok(code);
+      assert.equal(returnedState, state);
+
+      const exchangeResponse = await handler(
+        new Request("http://localhost/api/v1/auth/cli/login/exchange", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            challengeId: startBody.data.challengeId,
+            state,
+            code,
+          }),
+        }),
+      );
+      const exchangeBody = (await exchangeResponse.json()) as {
+        data: {
+          id: string;
+          key: string;
+          keyPrefix: string;
+        };
+      };
+
+      assert.equal(exchangeResponse.status, 200);
+      assert.equal(exchangeBody.data.key.startsWith("mdcms_key_"), true);
+      assert.ok(exchangeBody.data.id);
+      assert.ok(exchangeBody.data.keyPrefix);
+
+      const challengeRows = await dbConnection.db
+        .select()
+        .from(cliLoginChallenges)
+        .where(eq(cliLoginChallenges.id, startBody.data.challengeId));
+      assert.equal(challengeRows.length, 1);
+      assert.equal(challengeRows[0]?.status, "exchanged");
+      assert.ok(challengeRows[0]?.usedAt);
+
+      const reusedExchangeResponse = await handler(
+        new Request("http://localhost/api/v1/auth/cli/login/exchange", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            challengeId: startBody.data.challengeId,
+            state,
+            code,
+          }),
+        }),
+      );
+      const reusedExchangeBody = (await reusedExchangeResponse.json()) as {
+        code: string;
+      };
+      assert.equal(reusedExchangeResponse.status, 409);
+      assert.equal(reusedExchangeBody.code, "LOGIN_CHALLENGE_USED");
+
+      const selfRevokeResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys/self/revoke", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${exchangeBody.data.key}`,
+          },
+        }),
+      );
+      const selfRevokeBody = (await selfRevokeResponse.json()) as {
+        data: { revoked: boolean; keyId: string };
+      };
+      assert.equal(selfRevokeResponse.status, 200);
+      assert.equal(selfRevokeBody.data.revoked, true);
+      assert.equal(selfRevokeBody.data.keyId, exchangeBody.data.id);
+
+      const secondRevokeResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys/self/revoke", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${exchangeBody.data.key}`,
+          },
+        }),
+      );
+      const secondRevokeBody = (await secondRevokeResponse.json()) as {
+        code: string;
+      };
+      assert.equal(secondRevokeResponse.status, 401);
+      assert.equal(secondRevokeBody.code, "UNAUTHORIZED");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase("CLI login exchange rejects expired challenge", async () => {
+  const { handler, dbConnection } = createServerRequestHandlerWithModules({
+    env,
+    logger,
+  });
+  const state = `state-${Date.now()}-abcdefghijklmnop`;
+
+  try {
+    const startResponse = await handler(
+      new Request("http://localhost/api/v1/auth/cli/login/start", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          project: "marketing-site",
+          environment: "staging",
+          redirectUri: "http://127.0.0.1:45123/callback",
+          state,
+        }),
+      }),
+    );
+    const startBody = (await startResponse.json()) as {
+      data: { challengeId: string };
+    };
+
+    await dbConnection.db
+      .update(cliLoginChallenges)
+      .set({
+        expiresAt: new Date(Date.now() - 1_000),
+      })
+      .where(eq(cliLoginChallenges.id, startBody.data.challengeId));
+
+    const exchangeResponse = await handler(
+      new Request("http://localhost/api/v1/auth/cli/login/exchange", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          challengeId: startBody.data.challengeId,
+          state,
+          code: "invalid-code-for-expired-case",
+        }),
+      }),
+    );
+    const exchangeBody = (await exchangeResponse.json()) as { code: string };
+
+    assert.equal(exchangeResponse.status, 410);
+    assert.equal(exchangeBody.code, "LOGIN_CHALLENGE_EXPIRED");
+  } finally {
+    await dbConnection.close();
+  }
+});
+
+testWithDatabase("CLI login authorize rejects state mismatch", async () => {
+  const { handler, dbConnection } = createServerRequestHandlerWithModules({
+    env,
+    logger,
+  });
+  const state = `state-${Date.now()}-abcdefghijklmnop`;
+
+  try {
+    const startResponse = await handler(
+      new Request("http://localhost/api/v1/auth/cli/login/start", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          project: "marketing-site",
+          environment: "staging",
+          redirectUri: "http://127.0.0.1:45123/callback",
+          state,
+        }),
+      }),
+    );
+    const startBody = (await startResponse.json()) as {
+      data: { challengeId: string };
+    };
+
+    const badAuthorizeResponse = await handler(
+      new Request(
+        `http://localhost/api/v1/auth/cli/login/authorize?challenge=${encodeURIComponent(startBody.data.challengeId)}&state=wrong-state-value-abcdefghijklmnop`,
+      ),
+    );
+    const badAuthorizeBody = (await badAuthorizeResponse.json()) as {
+      code: string;
+    };
+
+    assert.equal(badAuthorizeResponse.status, 400);
+    assert.equal(badAuthorizeBody.code, "INVALID_LOGIN_EXCHANGE");
+  } finally {
+    await dbConnection.close();
+  }
+});

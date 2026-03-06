@@ -10,9 +10,10 @@ import type { DrizzleDatabase } from "./db.js";
 import {
   apiKeys,
   authAccounts,
-  authSessions,
   authUsers,
+  authSessions,
   authVerifications,
+  cliLoginChallenges,
   rbacGrants,
   type ApiKeyScopeTuple,
 } from "./db/schema.js";
@@ -46,6 +47,11 @@ export const API_KEY_OPERATION_SCOPES = [
 const API_KEY_PREFIX = "mdcms_key_";
 const SESSION_INACTIVITY_TIMEOUT_SECONDS = 2 * 60 * 60;
 const SESSION_ABSOLUTE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+const CLI_LOGIN_CHALLENGE_TTL_MS = 10 * 60 * 1000;
+const CLI_LOGIN_DEFAULT_SCOPES: readonly ApiKeyOperationScope[] = [
+  "content:read",
+  "content:write:draft",
+];
 
 export type ApiKeyOperationScope = (typeof API_KEY_OPERATION_SCOPES)[number];
 
@@ -106,6 +112,46 @@ export type ApiKeyMetadata = {
   lastUsedAt: string | null;
 };
 
+export type CliLoginStartInput = {
+  project: string;
+  environment: string;
+  redirectUri: string;
+  state: string;
+  scopes?: ApiKeyOperationScope[];
+};
+
+export type CliLoginStartResult = {
+  challengeId: string;
+  authorizeUrl: string;
+  expiresAt: string;
+};
+
+export type CliLoginAuthorizeInput = {
+  challengeId: string;
+  state: string;
+  email?: string;
+  password?: string;
+  request: Request;
+};
+
+export type CliLoginAuthorizeResult =
+  | {
+      outcome: "login_required";
+      challengeId: string;
+      state: string;
+    }
+  | {
+      outcome: "redirect";
+      location: string;
+      setCookie?: string;
+    };
+
+export type CliLoginExchangeInput = {
+  challengeId: string;
+  state: string;
+  code: string;
+};
+
 export type AuthService = {
   login: (
     request: Request,
@@ -130,6 +176,16 @@ export type AuthService = {
   ) => Promise<{ key: string; metadata: ApiKeyMetadata }>;
   listApiKeys: (request: Request) => Promise<ApiKeyMetadata[]>;
   revokeApiKey: (request: Request, keyId: string) => Promise<ApiKeyMetadata>;
+  revokeSelfApiKey: (
+    request: Request,
+  ) => Promise<{ revoked: boolean; keyId: string }>;
+  startCliLogin: (input: CliLoginStartInput) => Promise<CliLoginStartResult>;
+  authorizeCliLogin: (
+    input: CliLoginAuthorizeInput,
+  ) => Promise<CliLoginAuthorizeResult>;
+  exchangeCliLogin: (
+    input: CliLoginExchangeInput,
+  ) => Promise<{ key: string; metadata: ApiKeyMetadata }>;
   revokeAllUserSessions: (userId: string) => Promise<number>;
   revokeAllSessionsForUserByAdmin: (
     request: Request,
@@ -171,6 +227,20 @@ const CreateApiKeyInputSchema = z.object({
     )
     .min(1),
   expiresAt: z.string().datetime().optional(),
+});
+
+const CliLoginStartInputSchema = z.object({
+  project: z.string().trim().min(1),
+  environment: z.string().trim().min(1),
+  redirectUri: z.string().trim().url(),
+  state: z.string().trim().min(16).max(256),
+  scopes: z.array(z.enum(API_KEY_OPERATION_SCOPES)).min(1).optional(),
+});
+
+const CliLoginExchangeInputSchema = z.object({
+  challengeId: z.string().uuid(),
+  state: z.string().trim().min(16).max(256),
+  code: z.string().trim().min(16).max(256),
 });
 
 function toIsoString(value: unknown): string {
@@ -270,6 +340,89 @@ function extractBearerToken(
 
 function hashApiKey(token: string): string {
   return createHash("sha256").update(token).digest("hex");
+}
+
+function hashCliLoginToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function assertLoopbackRedirectUri(value: string): string {
+  let parsed: URL;
+
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new RuntimeError({
+      code: "INVALID_INPUT",
+      message: 'Field "redirectUri" must be a valid URL.',
+      statusCode: 400,
+      details: { field: "redirectUri" },
+    });
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  const isLoopbackHost =
+    hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+
+  if (parsed.protocol !== "http:" || !isLoopbackHost) {
+    throw new RuntimeError({
+      code: "INVALID_INPUT",
+      message:
+        'Field "redirectUri" must use loopback HTTP origin (127.0.0.1, localhost, or ::1).',
+      statusCode: 400,
+      details: { field: "redirectUri", value },
+    });
+  }
+
+  if (!parsed.port) {
+    throw new RuntimeError({
+      code: "INVALID_INPUT",
+      message: 'Field "redirectUri" must include an explicit loopback port.',
+      statusCode: 400,
+      details: { field: "redirectUri", value },
+    });
+  }
+
+  return parsed.toString();
+}
+
+function appendQueryParams(
+  url: string,
+  params: Record<string, string>,
+): string {
+  const parsed = new URL(url);
+
+  for (const [key, value] of Object.entries(params)) {
+    parsed.searchParams.set(key, value);
+  }
+
+  return parsed.toString();
+}
+
+function renderCliAuthorizeLoginForm(input: {
+  challengeId: string;
+  state: string;
+}): string {
+  return [
+    "<!doctype html>",
+    "<html>",
+    "<head>",
+    '<meta charset="utf-8" />',
+    '<meta name="viewport" content="width=device-width,initial-scale=1" />',
+    "<title>MDCMS CLI Login</title>",
+    "<style>body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;max-width:420px;margin:48px auto;padding:0 16px;}label{display:block;font-size:14px;margin-top:12px;}input{width:100%;padding:8px;margin-top:4px;box-sizing:border-box;}button{margin-top:16px;padding:10px 14px;cursor:pointer;}</style>",
+    "</head>",
+    "<body>",
+    "<h1>MDCMS CLI Login</h1>",
+    "<p>Zaloguj się, aby autoryzować CLI.</p>",
+    `<form method="post" action="/api/v1/auth/cli/login/authorize?challenge=${encodeURIComponent(input.challengeId)}&state=${encodeURIComponent(input.state)}">`,
+    '<label>Email<input name="email" type="email" autocomplete="email" required /></label>',
+    '<label>Password<input name="password" type="password" autocomplete="current-password" required /></label>',
+    '<button type="submit">Authorize CLI</button>',
+    "</form>",
+    "</body>",
+    "</html>",
+  ].join("");
 }
 
 function ensureValidApiKeyToken(token: string): void {
@@ -800,84 +953,208 @@ export function createAuthService(
     };
   }
 
+  function normalizeRequestedCliScopes(
+    scopes: ApiKeyOperationScope[] | undefined,
+  ): ApiKeyOperationScope[] {
+    const source =
+      scopes && scopes.length > 0 ? scopes : [...CLI_LOGIN_DEFAULT_SCOPES];
+    return [...new Set(source)].sort();
+  }
+
+  async function createApiKeyForUser(input: {
+    userId: string;
+    label: string;
+    scopes: ApiKeyOperationScope[];
+    contextAllowlist: ApiKeyScopeTuple[];
+    expiresAt?: Date | null;
+  }): Promise<{ key: string; metadata: ApiKeyMetadata }> {
+    const key = `${API_KEY_PREFIX}${randomBytes(24).toString("base64url")}`;
+    const keyHash = hashApiKey(key);
+    const keyPrefix = `${key.slice(0, API_KEY_PREFIX.length + 8)}...`;
+
+    const [created] = await options.db
+      .insert(apiKeys)
+      .values({
+        label: input.label,
+        keyPrefix,
+        keyHash,
+        scopes: input.scopes,
+        contextAllowlist: input.contextAllowlist,
+        expiresAt: input.expiresAt ?? null,
+        createdByUserId: input.userId,
+      })
+      .returning();
+
+    if (!created) {
+      throw new RuntimeError({
+        code: "INTERNAL_ERROR",
+        message: "Failed to create API key.",
+        statusCode: 500,
+      });
+    }
+
+    return {
+      key,
+      metadata: toApiKeyMetadata(created),
+    };
+  }
+
+  async function requireCliLoginChallenge(
+    challengeId: string,
+  ): Promise<typeof cliLoginChallenges.$inferSelect> {
+    const normalizedChallengeId = assertNonEmptyString(
+      challengeId,
+      "challengeId",
+    );
+    const row = await options.db.query.cliLoginChallenges.findFirst({
+      where: eq(cliLoginChallenges.id, normalizedChallengeId),
+    });
+
+    if (!row) {
+      throw new RuntimeError({
+        code: "NOT_FOUND",
+        message: "CLI login challenge not found.",
+        statusCode: 404,
+        details: {
+          challengeId: normalizedChallengeId,
+        },
+      });
+    }
+
+    if (row.usedAt || row.status === "exchanged") {
+      throw new RuntimeError({
+        code: "LOGIN_CHALLENGE_USED",
+        message: "CLI login challenge has already been used.",
+        statusCode: 409,
+      });
+    }
+
+    if (row.expiresAt.getTime() <= Date.now()) {
+      await options.db
+        .update(cliLoginChallenges)
+        .set({
+          usedAt: new Date(),
+          status: "exchanged",
+        })
+        .where(eq(cliLoginChallenges.id, row.id));
+
+      throw new RuntimeError({
+        code: "LOGIN_CHALLENGE_EXPIRED",
+        message: "CLI login challenge expired.",
+        statusCode: 410,
+      });
+    }
+
+    return row;
+  }
+
+  function assertCliChallengeState(
+    row: typeof cliLoginChallenges.$inferSelect,
+    state: string,
+  ): void {
+    const normalizedState = assertNonEmptyString(state, "state");
+    const stateHash = hashCliLoginToken(normalizedState);
+
+    if (stateHash !== row.stateHash) {
+      throw new RuntimeError({
+        code: "INVALID_LOGIN_EXCHANGE",
+        message: "CLI login state does not match challenge.",
+        statusCode: 400,
+      });
+    }
+  }
+
+  async function loginWithEmailPassword(
+    request: Request,
+    email: string,
+    password: string,
+  ): Promise<{ session: StudioSession; setCookie: string }> {
+    try {
+      const response = await auth.api.signInEmail({
+        headers: request.headers,
+        body: {
+          email,
+          password,
+        },
+        asResponse: true,
+      });
+
+      if (response.status >= 400) {
+        throw new RuntimeError({
+          code: "AUTH_INVALID_CREDENTIALS",
+          message: "Email or password is invalid.",
+          statusCode: 401,
+        });
+      }
+
+      const setCookie = response.headers.get("set-cookie");
+      if (!setCookie || setCookie.trim().length === 0) {
+        throw new RuntimeError({
+          code: "INTERNAL_ERROR",
+          message: "Auth provider did not return a session cookie.",
+          statusCode: 500,
+        });
+      }
+
+      const cookiePair = extractCookiePair(setCookie);
+      const session = (await auth.api.getSession({
+        headers: new Headers({
+          cookie: cookiePair,
+        }),
+      })) as BetterAuthLikeSession | null;
+
+      if (!session) {
+        throw new RuntimeError({
+          code: "INTERNAL_ERROR",
+          message: "Session lookup failed after successful sign-in.",
+          statusCode: 500,
+        });
+      }
+
+      const studioSession = toStudioSession(session);
+      await options.db
+        .delete(authSessions)
+        .where(
+          and(
+            eq(authSessions.userId, studioSession.userId),
+            ne(authSessions.id, studioSession.id),
+          ),
+        );
+
+      return {
+        session: studioSession,
+        setCookie,
+      };
+    } catch (error) {
+      mapUnknownAuthError(
+        error,
+        "AUTH_INVALID_CREDENTIALS",
+        "Email or password is invalid.",
+      );
+    }
+  }
+
+  async function getSessionIfAvailable(
+    request: Request,
+  ): Promise<StudioSession | undefined> {
+    try {
+      return await requireSession(request);
+    } catch (error) {
+      if (error instanceof RuntimeError && error.code === "UNAUTHORIZED") {
+        return undefined;
+      }
+
+      throw error;
+    }
+  }
+
   return {
     async login(request, email, password) {
-      try {
-        const response = await auth.api.signInEmail({
-          headers: request.headers,
-          body: {
-            email,
-            password,
-          },
-          asResponse: true,
-        });
-
-        if (response.status >= 400) {
-          throw new RuntimeError({
-            code: "AUTH_INVALID_CREDENTIALS",
-            message: "Email or password is invalid.",
-            statusCode: 401,
-          });
-        }
-
-        const setCookie = response.headers.get("set-cookie");
-        if (!setCookie || setCookie.trim().length === 0) {
-          throw new RuntimeError({
-            code: "INTERNAL_ERROR",
-            message: "Auth provider did not return a session cookie.",
-            statusCode: 500,
-          });
-        }
-
-        const cookiePair = extractCookiePair(setCookie);
-        const responseCookie = setCookie;
-        const session = (await auth.api.getSession({
-          headers: new Headers({
-            cookie: cookiePair,
-          }),
-        })) as BetterAuthLikeSession | null;
-
-        if (!session) {
-          throw new RuntimeError({
-            code: "INTERNAL_ERROR",
-            message: "Session lookup failed after successful sign-in.",
-            statusCode: 500,
-          });
-        }
-
-        const studioSession = toStudioSession(session);
-        await options.db
-          .delete(authSessions)
-          .where(
-            and(
-              eq(authSessions.userId, studioSession.userId),
-              ne(authSessions.id, studioSession.id),
-            ),
-          );
-
-        return {
-          session: studioSession,
-          setCookie: responseCookie,
-        };
-      } catch (error) {
-        mapUnknownAuthError(
-          error,
-          "AUTH_INVALID_CREDENTIALS",
-          "Email or password is invalid.",
-        );
-      }
+      return loginWithEmailPassword(request, email, password);
     },
 
     async getSession(request) {
-      try {
-        return await requireSession(request);
-      } catch (error) {
-        if (error instanceof RuntimeError && error.code === "UNAUTHORIZED") {
-          return undefined;
-        }
-
-        throw error;
-      }
+      return getSessionIfAvailable(request);
     },
 
     async logout(request) {
@@ -990,38 +1267,16 @@ export function createAuthService(
         });
       }
 
-      const key = `${API_KEY_PREFIX}${randomBytes(24).toString("base64url")}`;
-      const keyHash = hashApiKey(key);
-      const keyPrefix = `${key.slice(0, API_KEY_PREFIX.length + 8)}...`;
       const expiresAt = parsed.data.expiresAt
         ? new Date(parsed.data.expiresAt)
         : null;
-
-      const [created] = await options.db
-        .insert(apiKeys)
-        .values({
-          label: parsed.data.label,
-          keyPrefix,
-          keyHash,
-          scopes: parsed.data.scopes,
-          contextAllowlist: parsed.data.contextAllowlist,
-          expiresAt,
-          createdByUserId: session.userId,
-        })
-        .returning();
-
-      if (!created) {
-        throw new RuntimeError({
-          code: "INTERNAL_ERROR",
-          message: "Failed to create API key.",
-          statusCode: 500,
-        });
-      }
-
-      return {
-        key,
-        metadata: toApiKeyMetadata(created),
-      };
+      return createApiKeyForUser({
+        userId: session.userId,
+        label: parsed.data.label,
+        scopes: parsed.data.scopes,
+        contextAllowlist: parsed.data.contextAllowlist,
+        expiresAt,
+      });
     },
 
     async listApiKeys(request) {
@@ -1065,6 +1320,210 @@ export function createAuthService(
         .returning();
 
       return toApiKeyMetadata(updated ?? existing);
+    },
+
+    async revokeSelfApiKey(request) {
+      const bearerToken = extractBearerToken(
+        request.headers.get("authorization"),
+      );
+
+      if (!bearerToken) {
+        throw new RuntimeError({
+          code: "UNAUTHORIZED",
+          message: "Authorization header with Bearer API key is required.",
+          statusCode: 401,
+        });
+      }
+
+      const { row } = await requireActiveApiKey(bearerToken);
+
+      await options.db
+        .update(apiKeys)
+        .set({
+          revokedAt: new Date(),
+        })
+        .where(eq(apiKeys.id, row.id));
+
+      return {
+        revoked: true,
+        keyId: row.id,
+      };
+    },
+
+    async startCliLogin(input) {
+      const parsed = CliLoginStartInputSchema.safeParse(input);
+
+      if (!parsed.success) {
+        throw new RuntimeError({
+          code: "INVALID_INPUT",
+          message:
+            parsed.error.issues[0]?.message ??
+            "CLI login start payload is invalid.",
+          statusCode: 400,
+        });
+      }
+
+      const redirectUri = assertLoopbackRedirectUri(parsed.data.redirectUri);
+      const state = parsed.data.state.trim();
+      const stateHash = hashCliLoginToken(state);
+      const expiresAt = new Date(Date.now() + CLI_LOGIN_CHALLENGE_TTL_MS);
+      const requestedScopes = normalizeRequestedCliScopes(parsed.data.scopes);
+      const [challenge] = await options.db
+        .insert(cliLoginChallenges)
+        .values({
+          project: parsed.data.project,
+          environment: parsed.data.environment,
+          redirectUri,
+          requestedScopes,
+          stateHash,
+          status: "pending",
+          expiresAt,
+        })
+        .returning();
+
+      if (!challenge) {
+        throw new RuntimeError({
+          code: "INTERNAL_ERROR",
+          message: "Failed to create CLI login challenge.",
+          statusCode: 500,
+        });
+      }
+
+      const authorizeUrl = appendQueryParams(
+        `${baseUrl}/api/v1/auth/cli/login/authorize`,
+        {
+          challenge: challenge.id,
+          state,
+        },
+      );
+
+      return {
+        challengeId: challenge.id,
+        authorizeUrl,
+        expiresAt: challenge.expiresAt.toISOString(),
+      };
+    },
+
+    async authorizeCliLogin(input) {
+      const challengeId = assertNonEmptyString(
+        input.challengeId,
+        "challengeId",
+      );
+      const state = assertNonEmptyString(input.state, "state");
+      const challenge = await requireCliLoginChallenge(challengeId);
+      assertCliChallengeState(challenge, state);
+
+      let session = await getSessionIfAvailable(input.request);
+      let setCookie: string | undefined;
+
+      if (!session) {
+        if (!input.email || !input.password) {
+          return {
+            outcome: "login_required",
+            challengeId,
+            state,
+          };
+        }
+
+        const loginResult = await loginWithEmailPassword(
+          input.request,
+          input.email,
+          input.password,
+        );
+        session = loginResult.session;
+        setCookie = loginResult.setCookie;
+      }
+
+      if (!session) {
+        throw new RuntimeError({
+          code: "UNAUTHORIZED",
+          message: "A valid session is required to authorize CLI login.",
+          statusCode: 401,
+        });
+      }
+
+      const code = randomBytes(24).toString("base64url");
+      const codeHash = hashCliLoginToken(code);
+      await options.db
+        .update(cliLoginChallenges)
+        .set({
+          authorizationCodeHash: codeHash,
+          userId: session.userId,
+          status: "authorized",
+          authorizedAt: new Date(),
+        })
+        .where(eq(cliLoginChallenges.id, challenge.id));
+
+      return {
+        outcome: "redirect",
+        location: appendQueryParams(challenge.redirectUri, {
+          code,
+          state,
+        }),
+        setCookie,
+      };
+    },
+
+    async exchangeCliLogin(input) {
+      const parsed = CliLoginExchangeInputSchema.safeParse(input);
+
+      if (!parsed.success) {
+        throw new RuntimeError({
+          code: "INVALID_INPUT",
+          message:
+            parsed.error.issues[0]?.message ??
+            "CLI login exchange payload is invalid.",
+          statusCode: 400,
+        });
+      }
+
+      const challenge = await requireCliLoginChallenge(parsed.data.challengeId);
+      assertCliChallengeState(challenge, parsed.data.state);
+
+      if (
+        challenge.status !== "authorized" ||
+        !challenge.authorizationCodeHash ||
+        !challenge.userId
+      ) {
+        throw new RuntimeError({
+          code: "INVALID_LOGIN_EXCHANGE",
+          message: "CLI login challenge is not ready for code exchange.",
+          statusCode: 400,
+        });
+      }
+
+      const codeHash = hashCliLoginToken(parsed.data.code);
+      if (codeHash !== challenge.authorizationCodeHash) {
+        throw new RuntimeError({
+          code: "INVALID_LOGIN_EXCHANGE",
+          message: "CLI login authorization code is invalid.",
+          statusCode: 400,
+        });
+      }
+
+      const created = await createApiKeyForUser({
+        userId: challenge.userId,
+        label: `cli:${challenge.project}/${challenge.environment}`,
+        scopes: normalizeRequestedCliScopes(
+          challenge.requestedScopes as ApiKeyOperationScope[],
+        ),
+        contextAllowlist: [
+          {
+            project: challenge.project,
+            environment: challenge.environment,
+          },
+        ],
+      });
+
+      await options.db
+        .update(cliLoginChallenges)
+        .set({
+          status: "exchanged",
+          usedAt: new Date(),
+        })
+        .where(eq(cliLoginChallenges.id, challenge.id));
+
+      return created;
     },
 
     revokeAllUserSessions,
@@ -1112,6 +1571,22 @@ function requireSessionPayload(
   }
 
   return session;
+}
+
+function parseCliLoginAuthorizeQuery(request: Request): {
+  challengeId: string;
+  state: string;
+} {
+  const url = new URL(request.url);
+  const challengeId = assertNonEmptyString(
+    url.searchParams.get("challenge"),
+    "challenge",
+  );
+  const state = assertNonEmptyString(url.searchParams.get("state"), "state");
+  return {
+    challengeId,
+    state,
+  };
 }
 
 export function mountAuthRoutes(
@@ -1233,6 +1708,159 @@ export function mountAuthRoutes(
           data: metadata,
         };
       }),
+  );
+
+  authApp.post?.("/api/v1/auth/api-keys/self/revoke", ({ request }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () => {
+      const result = await options.authService.revokeSelfApiKey(request);
+      return {
+        data: result,
+      };
+    }),
+  );
+
+  authApp.post?.("/api/v1/auth/cli/login/start", ({ request, body }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () => {
+      const payload = (body ?? {}) as CliLoginStartInput;
+      const started = await options.authService.startCliLogin(payload);
+      return {
+        data: started,
+      };
+    }),
+  );
+
+  authApp.get?.("/api/v1/auth/cli/login/authorize", ({ request }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () => {
+      const query = parseCliLoginAuthorizeQuery(request);
+      const result = await options.authService.authorizeCliLogin({
+        challengeId: query.challengeId,
+        state: query.state,
+        request,
+      });
+
+      if (result.outcome === "login_required") {
+        return new Response(
+          renderCliAuthorizeLoginForm({
+            challengeId: result.challengeId,
+            state: result.state,
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "text/html; charset=utf-8",
+            },
+          },
+        );
+      }
+
+      return createJsonResponse(
+        {
+          data: {
+            redirectTo: result.location,
+          },
+        },
+        302,
+        {
+          location: result.location,
+          ...(result.setCookie
+            ? {
+                "set-cookie": result.setCookie,
+              }
+            : {}),
+        },
+      );
+    }),
+  );
+
+  authApp.post?.("/api/v1/auth/cli/login/authorize", ({ request, body }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () => {
+      const query = parseCliLoginAuthorizeQuery(request);
+      let email: string | undefined;
+      let password: string | undefined;
+
+      const payload = (body ?? {}) as {
+        email?: unknown;
+        password?: unknown;
+      };
+      email = typeof payload.email === "string" ? payload.email : undefined;
+      password =
+        typeof payload.password === "string" ? payload.password : undefined;
+
+      if (!email || !password) {
+        const contentType = request.headers.get("content-type") ?? "";
+        if (contentType.includes("application/x-www-form-urlencoded")) {
+          const formData = await request.formData().catch(() => undefined);
+          const formEmail = formData?.get("email");
+          const formPassword = formData?.get("password");
+          email = typeof formEmail === "string" ? formEmail : email;
+          password = typeof formPassword === "string" ? formPassword : password;
+        } else if (contentType.includes("application/json")) {
+          const jsonPayload = (await request.json().catch(() => ({}))) as {
+            email?: unknown;
+            password?: unknown;
+          };
+          email =
+            typeof jsonPayload.email === "string" ? jsonPayload.email : email;
+          password =
+            typeof jsonPayload.password === "string"
+              ? jsonPayload.password
+              : password;
+        }
+      }
+
+      const result = await options.authService.authorizeCliLogin({
+        challengeId: query.challengeId,
+        state: query.state,
+        email,
+        password,
+        request,
+      });
+
+      if (result.outcome === "login_required") {
+        return new Response(
+          renderCliAuthorizeLoginForm({
+            challengeId: result.challengeId,
+            state: result.state,
+          }),
+          {
+            status: 401,
+            headers: {
+              "content-type": "text/html; charset=utf-8",
+            },
+          },
+        );
+      }
+
+      return createJsonResponse(
+        {
+          data: {
+            redirectTo: result.location,
+          },
+        },
+        302,
+        {
+          location: result.location,
+          ...(result.setCookie
+            ? {
+                "set-cookie": result.setCookie,
+              }
+            : {}),
+        },
+      );
+    }),
+  );
+
+  authApp.post?.("/api/v1/auth/cli/login/exchange", ({ request, body }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () => {
+      const payload = (body ?? {}) as CliLoginExchangeInput;
+      const exchanged = await options.authService.exchangeCliLogin(payload);
+      return {
+        data: {
+          key: exchanged.key,
+          ...exchanged.metadata,
+        },
+      };
+    }),
   );
 
   // Expose Better Auth native endpoints under /api/v1/auth/*

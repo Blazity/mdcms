@@ -5,6 +5,9 @@ import { RuntimeError, type CliPreflightHook } from "@mdcms/shared";
 
 import { formatCliErrorEnvelope } from "./cli.js";
 import { type CliConfig, loadCliConfig } from "./config.js";
+import { createCredentialStore, type CredentialStore } from "./credentials.js";
+import { createLoginCommand } from "./login.js";
+import { createLogoutCommand } from "./logout.js";
 import { createPullCommand } from "./pull.js";
 import { createPushCommand } from "./push.js";
 import {
@@ -71,12 +74,15 @@ export type RunMdcmsCliOptions = {
   commands?: CliCommand[];
   loadConfig?: typeof loadCliConfig;
   resolveStoredApiKey?: ResolveStoredApiKey;
+  credentialStore?: CredentialStore;
   fetcher?: typeof fetch;
   confirm?: ConfirmPrompt;
   runtimeWithModules?: CliRuntimeContextWithModules;
 };
 
 const DEFAULT_COMMANDS: CliCommand[] = [
+  createLoginCommand(),
+  createLogoutCommand(),
   createPullCommand(),
   createPushCommand(),
 ];
@@ -398,6 +404,17 @@ export async function runMdcmsCli(
   const confirm = options.confirm ?? defaultConfirmPrompt;
   const runtimeWithModules =
     options.runtimeWithModules ?? createCliRuntimeContextWithModules(env);
+  const credentialStore =
+    options.credentialStore ??
+    createCredentialStore({
+      env,
+    });
+  const resolveStoredApiKey =
+    options.resolveStoredApiKey ??
+    (async (input) => {
+      const profile = await credentialStore.getProfile(input);
+      return profile?.apiKey;
+    });
   const registry = createCommandRegistry(commands);
   const invocation = parseCliInvocation(argv);
 
@@ -432,7 +449,7 @@ export async function runMdcmsCli(
       global: invocation.global,
       env,
       config,
-      resolveStoredApiKey: options.resolveStoredApiKey,
+      resolveStoredApiKey,
       requiresTarget: command.requiresTarget !== false,
     });
 

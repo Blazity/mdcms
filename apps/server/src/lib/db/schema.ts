@@ -122,6 +122,38 @@ export const apiKeys = pgTable(
   ],
 );
 
+export const cliLoginChallenges = pgTable(
+  "cli_login_challenges",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    project: text().notNull(),
+    environment: text().notNull(),
+    redirectUri: text().notNull(),
+    requestedScopes: jsonb().$type<string[]>().notNull(),
+    stateHash: text().notNull(),
+    authorizationCodeHash: text(),
+    status: text().default("pending").notNull(),
+    userId: text().references(() => authUsers.id, {
+      onDelete: "set null",
+    }),
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+    authorizedAt: timestamp({ withTimezone: true }),
+    usedAt: timestamp({ withTimezone: true }),
+    createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+  },
+  (table): any => [
+    check(
+      "cli_login_challenges_status_check",
+      sql`${table.status} in ('pending', 'authorized', 'exchanged')`,
+    ),
+    index("idx_cli_login_challenges_status_expires").on(
+      table.status,
+      table.expiresAt,
+    ),
+    index("idx_cli_login_challenges_user").on(table.userId),
+  ],
+);
+
 export const rbacGrants = pgTable(
   "rbac_grants",
   {

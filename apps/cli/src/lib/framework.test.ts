@@ -13,6 +13,7 @@ import {
   runMdcmsCli,
   type CliCommand,
 } from "./framework.js";
+import { createInMemoryCredentialStore } from "./credentials.js";
 import type { CliRuntimeContextWithModules } from "./runtime-with-modules.js";
 
 function createRuntimeWithPreflightHooks(
@@ -203,6 +204,56 @@ test("runMdcmsCli executes command with resolved target and auth context", async
     environment: "env-environment",
     apiKey: "env-api-key",
   });
+});
+
+test("runMdcmsCli resolves stored API key from credential store by default", async () => {
+  let capturedApiKey: string | undefined;
+  const command: CliCommand = {
+    name: "inspect",
+    description: "Inspect context",
+    run: async (context) => {
+      capturedApiKey = context.apiKey;
+      return 0;
+    },
+  };
+  const credentialStore = createInMemoryCredentialStore();
+  await credentialStore.setProfile(
+    {
+      serverUrl: "http://config-server",
+      project: "config-project",
+      environment: "config-environment",
+    },
+    {
+      authMode: "api_key",
+      apiKey: "stored-api-key",
+      apiKeyId: "key-id",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  );
+
+  const exitCode = await runMdcmsCli(["inspect"], {
+    commands: [command],
+    credentialStore,
+    loadConfig: async () => ({
+      config: {
+        serverUrl: "http://config-server",
+        project: "config-project",
+        environment: "config-environment",
+      },
+      configPath: "/repo/mdcms.config.ts",
+    }),
+    stdout: {
+      write: () => undefined,
+    },
+    stderr: {
+      write: () => undefined,
+    },
+    runtimeWithModules: createRuntimeWithPreflightHooks([]),
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(capturedApiKey, "stored-api-key");
 });
 
 test("runMdcmsCli executes preflight hooks before command execution", async () => {

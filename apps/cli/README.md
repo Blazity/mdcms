@@ -22,8 +22,27 @@ CLI package boundary for MDCMS operator workflows.
 - Server URL resolution precedence:
   - CLI flag (`--server-url`) -> env (`MDCMS_SERVER_URL`) -> config (`serverUrl`)
 - API key resolution precedence (headless/CI compatible):
-  - CLI flag (`--api-key`) -> env (`MDCMS_API_KEY`) -> stored profile hook (reserved for CMS-79)
+  - CLI flag (`--api-key`) -> env (`MDCMS_API_KEY`) -> stored profile (`cms login`)
 - Usage errors are deterministic and include stable error codes/messages.
+
+## Login/Logout Credential Lifecycle (CMS-79)
+
+- Commands:
+  - `mdcms login`
+  - `mdcms logout`
+- `login` flow:
+  - starts browser-based flow via server endpoints under `/api/v1/auth/cli/login/*`
+  - opens default system browser and waits for loopback callback (`127.0.0.1:<port>`)
+  - exchanges one-time code for scoped API key
+  - stores profile under tuple `(serverUrl, project, environment)`
+- `logout` flow:
+  - best-effort remote revoke via `POST /api/v1/auth/api-keys/self/revoke`
+  - always clears local stored profile deterministically
+- Credential storage behavior:
+  - OS credential store on macOS when available
+  - fallback file store at `~/.mdcms/credentials.json` with `0600` permissions
+  - one active profile per `(serverUrl, project, environment)` tuple
+- Pull/push automatically consume stored credentials through runtime precedence.
 
 ## Pull Command (CMS-80)
 
