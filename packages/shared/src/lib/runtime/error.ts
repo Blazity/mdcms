@@ -23,7 +23,7 @@ export type SerializeErrorContext = {
   now?: Date;
 };
 
-function isRuntimeErrorLike(
+export function isRuntimeErrorLike(
   error: unknown,
 ): error is Pick<RuntimeError, "code" | "message" | "details" | "statusCode"> {
   if (error instanceof RuntimeError) {
