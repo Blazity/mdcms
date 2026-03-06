@@ -232,6 +232,41 @@ test("collaboration handshake returns session context on success", async () => {
   assert.equal(result.context.documentPath, "blog/post-1");
 });
 
+test("collaboration handshake requires both draft-read and write permissions", async () => {
+  const requiredScopes: string[] = [];
+  const guard = createCollaborationAuthGuard({
+    authService: createAuthServiceStub({
+      async authorizeRequest(_request, requirement) {
+        requiredScopes.push(requirement.requiredScope);
+        return {
+          mode: "session",
+          principal: {
+            type: "session",
+            session: createSession("editor-2"),
+            role: "editor",
+          },
+        };
+      },
+    }),
+    allowedOrigins: ["http://localhost:4173"],
+    resolveDocument: async () => ({ path: "blog/post-1" }),
+  });
+
+  const result = await guard.authorizeHandshake(
+    new Request(
+      `http://localhost/api/v1/collaboration?project=marketing&environment=staging&documentId=${DOCUMENT_ID}`,
+      {
+        headers: {
+          origin: "http://localhost:4173",
+        },
+      },
+    ),
+  );
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(requiredScopes, ["content:read:draft", "content:write"]);
+});
+
 test("collaboration write revalidation closes with 4401 when session is missing", async () => {
   const guard = createCollaborationAuthGuard({
     authService: createAuthServiceStub({
@@ -304,6 +339,46 @@ test("collaboration write revalidation closes with 4403 on RBAC deny", async () 
   }
 
   assert.equal(result.closeCode, 4403);
+});
+
+test("collaboration write revalidation checks draft-read and write permissions", async () => {
+  const requiredScopes: string[] = [];
+  const guard = createCollaborationAuthGuard({
+    authService: createAuthServiceStub({
+      async authorizeRequest(_request, requirement) {
+        requiredScopes.push(requirement.requiredScope);
+        return {
+          mode: "session",
+          principal: {
+            type: "session",
+            session: createSession("editor-3"),
+            role: "editor",
+          },
+        };
+      },
+    }),
+    allowedOrigins: ["http://localhost:4173"],
+    resolveDocument: async () => ({ path: "blog/post-1" }),
+  });
+  const result = await guard.revalidateWrite(
+    new Request("http://localhost/api/v1/collaboration", {
+      headers: {
+        origin: "http://localhost:4173",
+      },
+    }),
+    {
+      userId: "user-1",
+      sessionId: "session-1",
+      project: "marketing",
+      environment: "staging",
+      documentId: DOCUMENT_ID,
+      documentPath: "blog/post-1",
+      role: "editor",
+    },
+  );
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(requiredScopes, ["content:read:draft", "content:write"]);
 });
 
 test("collaboration route returns 426 after successful handshake authorization", async () => {

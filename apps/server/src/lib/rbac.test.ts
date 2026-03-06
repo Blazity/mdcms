@@ -117,8 +117,32 @@ test("RBAC permission evaluation respects role capability mapping", () => {
     action: "content:delete",
   });
 
+  const readDraft = evaluatePermission({
+    grants,
+    target: {
+      project: "marketing-site",
+      environment: "production",
+      path: "blog/release-notes",
+    },
+    action: "content:read:draft",
+  });
+
+  const writeDraft = evaluatePermission({
+    grants,
+    target: {
+      project: "marketing-site",
+      environment: "production",
+      path: "blog/release-notes",
+    },
+    action: "content:write",
+  });
+
   assert.equal(publish.allowed, true);
   assert.equal(publish.effectiveRole, "editor");
+  assert.equal(readDraft.allowed, true);
+  assert.equal(readDraft.effectiveRole, "editor");
+  assert.equal(writeDraft.allowed, true);
+  assert.equal(writeDraft.effectiveRole, "editor");
   assert.equal(unpublish.allowed, true);
   assert.equal(unpublish.effectiveRole, "editor");
   assert.equal(deleteContent.allowed, true);

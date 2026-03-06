@@ -30,6 +30,8 @@ import {
 
 export const API_KEY_OPERATION_SCOPES = [
   "content:read",
+  "content:read:draft",
+  "content:write",
   "content:write:draft",
   "content:publish",
   "content:delete",
@@ -45,12 +47,14 @@ export const API_KEY_OPERATION_SCOPES = [
 ] as const;
 
 const API_KEY_PREFIX = "mdcms_key_";
+const LEGACY_CONTENT_WRITE_DRAFT_SCOPE = "content:write:draft";
 const SESSION_INACTIVITY_TIMEOUT_SECONDS = 2 * 60 * 60;
 const SESSION_ABSOLUTE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const CLI_LOGIN_CHALLENGE_TTL_MS = 10 * 60 * 1000;
 const CLI_LOGIN_DEFAULT_SCOPES: readonly ApiKeyOperationScope[] = [
   "content:read",
-  "content:write:draft",
+  "content:read:draft",
+  "content:write",
 ];
 
 export type ApiKeyOperationScope = (typeof API_KEY_OPERATION_SCOPES)[number];
@@ -586,8 +590,15 @@ function toRbacAction(requiredScope: ApiKeyOperationScope): RbacAction | null {
     return "content:read";
   }
 
-  if (requiredScope === "content:write:draft") {
-    return "content:write:draft";
+  if (requiredScope === "content:read:draft") {
+    return "content:read:draft";
+  }
+
+  if (
+    requiredScope === "content:write" ||
+    requiredScope === LEGACY_CONTENT_WRITE_DRAFT_SCOPE
+  ) {
+    return "content:write";
   }
 
   if (requiredScope === "content:publish") {
@@ -599,6 +610,21 @@ function toRbacAction(requiredScope: ApiKeyOperationScope): RbacAction | null {
   }
 
   return null;
+}
+
+function apiKeyScopesSatisfyRequirement(
+  scopes: readonly ApiKeyOperationScope[],
+  requiredScope: ApiKeyOperationScope,
+): boolean {
+  if (scopes.includes(requiredScope)) {
+    return true;
+  }
+
+  if (requiredScope === "content:write") {
+    return scopes.includes(LEGACY_CONTENT_WRITE_DRAFT_SCOPE);
+  }
+
+  return false;
 }
 
 function isSessionBeyondAbsoluteMaxAge(session: StudioSession): boolean {
@@ -1176,7 +1202,8 @@ export function createAuthService(
 
       if (bearerToken) {
         const { row, metadata } = await requireActiveApiKey(bearerToken);
-        const hasRequiredScope = metadata.scopes.includes(
+        const hasRequiredScope = apiKeyScopesSatisfyRequirement(
+          metadata.scopes,
           requirement.requiredScope,
         );
 

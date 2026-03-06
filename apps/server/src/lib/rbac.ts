@@ -40,7 +40,8 @@ export type RbacResourceTarget = {
 
 export type RbacAction =
   | "content:read"
-  | "content:write:draft"
+  | "content:read:draft"
+  | "content:write"
   | "content:publish"
   | "content:unpublish"
   | "content:delete"
@@ -58,14 +59,16 @@ const ROLE_ACTIONS: Record<RbacRole, readonly RbacAction[]> = {
   viewer: ["content:read"],
   editor: [
     "content:read",
-    "content:write:draft",
+    "content:read:draft",
+    "content:write",
     "content:publish",
     "content:unpublish",
     "content:delete",
   ],
   admin: [
     "content:read",
-    "content:write:draft",
+    "content:read:draft",
+    "content:write",
     "content:publish",
     "content:unpublish",
     "content:delete",
@@ -74,7 +77,8 @@ const ROLE_ACTIONS: Record<RbacRole, readonly RbacAction[]> = {
   ],
   owner: [
     "content:read",
-    "content:write:draft",
+    "content:read:draft",
+    "content:write",
     "content:publish",
     "content:unpublish",
     "content:delete",

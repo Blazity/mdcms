@@ -5,7 +5,7 @@ import { createConsoleLogger } from "@mdcms/shared";
 import { eq } from "drizzle-orm";
 import postgres from "postgres";
 
-import { authSessions, cliLoginChallenges } from "./db/schema.js";
+import { authSessions, cliLoginChallenges, rbacGrants } from "./db/schema.js";
 import { createServerRequestHandlerWithModules } from "./runtime-with-modules.js";
 
 const env = {
@@ -771,6 +771,193 @@ testWithDatabase(
 );
 
 testWithDatabase(
+  "API key content scopes split draft-read and write while keeping legacy write:draft as write-only",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+
+    try {
+      await signUp(handler, {
+        email,
+        password,
+        name: "Scope Test User",
+      });
+      const loginResult = await login(handler, {
+        email,
+        password,
+      });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: loginResult.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:auth-scope-split",
+          createdByUserId: loginResult.session.userId,
+        })
+        .onConflictDoNothing();
+
+      const createDocumentResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: {
+            cookie: loginResult.cookie,
+            "x-mdcms-project": "marketing-site",
+            "x-mdcms-environment": "production",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            path: `content/posts/scope-test-${Date.now()}`,
+            type: "post",
+            locale: "en",
+            format: "md",
+            frontmatter: {
+              title: "Scope test",
+              slug: "scope-test",
+            },
+            body: "draft body",
+          }),
+        }),
+      );
+      const createDocumentBody = (await createDocumentResponse.json()) as {
+        data: { documentId: string };
+      };
+      assert.equal(createDocumentResponse.status, 200);
+
+      const legacyWriteKeyResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          method: "POST",
+          headers: {
+            cookie: loginResult.cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            label: "legacy-write-only",
+            scopes: ["content:write:draft"],
+            contextAllowlist: [
+              {
+                project: "marketing-site",
+                environment: "production",
+              },
+            ],
+          }),
+        }),
+      );
+      const legacyWriteKeyBody = (await legacyWriteKeyResponse.json()) as {
+        data: { key: string };
+      };
+      assert.equal(legacyWriteKeyResponse.status, 200);
+
+      const draftReadForbiddenResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${createDocumentBody.data.documentId}?draft=true`,
+          {
+            headers: {
+              authorization: `Bearer ${legacyWriteKeyBody.data.key}`,
+              "x-mdcms-project": "marketing-site",
+              "x-mdcms-environment": "production",
+            },
+          },
+        ),
+      );
+      const draftReadForbiddenBody =
+        (await draftReadForbiddenResponse.json()) as {
+          code: string;
+        };
+      assert.equal(draftReadForbiddenResponse.status, 403);
+      assert.equal(draftReadForbiddenBody.code, "FORBIDDEN");
+
+      const legacyWriteUpdateResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${createDocumentBody.data.documentId}`,
+          {
+            method: "PUT",
+            headers: {
+              authorization: `Bearer ${legacyWriteKeyBody.data.key}`,
+              "x-mdcms-project": "marketing-site",
+              "x-mdcms-environment": "production",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              body: "updated by legacy write scope",
+            }),
+          },
+        ),
+      );
+      assert.equal(legacyWriteUpdateResponse.status, 200);
+
+      const draftReadKeyResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          method: "POST",
+          headers: {
+            cookie: loginResult.cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            label: "draft-read-only",
+            scopes: ["content:read:draft"],
+            contextAllowlist: [
+              {
+                project: "marketing-site",
+                environment: "production",
+              },
+            ],
+          }),
+        }),
+      );
+      const draftReadKeyBody = (await draftReadKeyResponse.json()) as {
+        data: { key: string };
+      };
+      assert.equal(draftReadKeyResponse.status, 200);
+
+      const draftReadAllowedResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${createDocumentBody.data.documentId}?draft=true`,
+          {
+            headers: {
+              authorization: `Bearer ${draftReadKeyBody.data.key}`,
+              "x-mdcms-project": "marketing-site",
+              "x-mdcms-environment": "production",
+            },
+          },
+        ),
+      );
+      assert.equal(draftReadAllowedResponse.status, 200);
+
+      const draftWriteForbiddenResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${createDocumentBody.data.documentId}`,
+          {
+            method: "PUT",
+            headers: {
+              authorization: `Bearer ${draftReadKeyBody.data.key}`,
+              "x-mdcms-project": "marketing-site",
+              "x-mdcms-environment": "production",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              body: "should be rejected",
+            }),
+          },
+        ),
+      );
+      const draftWriteForbiddenBody =
+        (await draftWriteForbiddenResponse.json()) as {
+          code: string;
+        };
+      assert.equal(draftWriteForbiddenResponse.status, 403);
+      assert.equal(draftWriteForbiddenBody.code, "FORBIDDEN");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
   "CLI login browser flow supports start -> authorize -> exchange and self-revoke",
   async () => {
     const { handler, dbConnection } = createServerRequestHandlerWithModules({
@@ -796,7 +983,7 @@ testWithDatabase(
             environment: "staging",
             redirectUri,
             state,
-            scopes: ["content:read", "content:write:draft"],
+            scopes: ["content:read", "content:read:draft", "content:write"],
           }),
         }),
       );

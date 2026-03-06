@@ -1741,7 +1741,7 @@ function resolveContentReadScope(
   query: ContentListQuery,
 ): ApiKeyOperationScope {
   const draft = parseBoolean(query.draft, "draft");
-  return draft === true ? "content:write:draft" : "content:read";
+  return draft === true ? "content:read:draft" : "content:read";
 }
 
 export function mountContentApiRoutes(
@@ -1826,7 +1826,7 @@ export function mountContentApiRoutes(
       const requestedPath =
         typeof payload.path === "string" ? payload.path.trim() : undefined;
       await options.authorize(request, {
-        requiredScope: "content:write:draft",
+        requiredScope: "content:write",
         project: scope.project,
         environment: scope.environment,
         documentPath:
@@ -1848,7 +1848,7 @@ export function mountContentApiRoutes(
         const payload = (body ?? {}) as ContentWritePayload;
 
         await options.authorize(request, {
-          requiredScope: "content:write:draft",
+          requiredScope: "content:write",
           project: scope.project,
           environment: scope.environment,
         });
@@ -1868,7 +1868,7 @@ export function mountContentApiRoutes(
         }
 
         await options.authorize(request, {
-          requiredScope: "content:write:draft",
+          requiredScope: "content:write",
           project: scope.project,
           environment: scope.environment,
           documentPath: existing.path,
@@ -1880,7 +1880,7 @@ export function mountContentApiRoutes(
 
         if (nextPath !== existing.path) {
           await options.authorize(request, {
-            requiredScope: "content:write:draft",
+            requiredScope: "content:write",
             project: scope.project,
             environment: scope.environment,
             documentPath: nextPath,

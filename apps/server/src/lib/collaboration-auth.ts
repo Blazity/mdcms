@@ -1,7 +1,11 @@
 import { RuntimeError } from "@mdcms/shared";
 import { z } from "zod";
 
-import type { AuthService, SessionPrincipal } from "./auth.js";
+import type {
+  AuthService,
+  AuthorizedRequest,
+  SessionPrincipal,
+} from "./auth.js";
 
 const CollaborationQuerySchema = z.object({
   project: z.string().trim().min(1),
@@ -143,6 +147,32 @@ export function createCollaborationAuthGuard(
 } {
   const allowedOrigins = new Set(options.allowedOrigins);
 
+  async function authorizeDraftReadAndWrite(input: {
+    request: Request;
+    project: string;
+    environment: string;
+    documentPath: string;
+  }): Promise<AuthorizedRequest> {
+    const readAuthorized = await options.authService.authorizeRequest(
+      input.request,
+      {
+        requiredScope: "content:read:draft",
+        project: input.project,
+        environment: input.environment,
+        documentPath: input.documentPath,
+      },
+    );
+
+    await options.authService.authorizeRequest(input.request, {
+      requiredScope: "content:write",
+      project: input.project,
+      environment: input.environment,
+      documentPath: input.documentPath,
+    });
+
+    return readAuthorized;
+  }
+
   async function authorizeHandshake(
     request: Request,
   ): Promise<CollaborationHandshakeResult> {
@@ -184,8 +214,8 @@ export function createCollaborationAuthGuard(
     }
 
     try {
-      const authorized = await options.authService.authorizeRequest(request, {
-        requiredScope: "content:write:draft",
+      const authorized = await authorizeDraftReadAndWrite({
+        request,
         project: query.project,
         environment: query.environment,
         documentPath: document.path,
@@ -236,8 +266,8 @@ export function createCollaborationAuthGuard(
         };
       }
 
-      await options.authService.authorizeRequest(request, {
-        requiredScope: "content:write:draft",
+      await authorizeDraftReadAndWrite({
+        request,
         project: context.project,
         environment: context.environment,
         documentPath: context.documentPath,

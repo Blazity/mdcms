@@ -34,6 +34,7 @@ CLI package boundary for MDCMS operator workflows.
   - starts browser-based flow via server endpoints under `/api/v1/auth/cli/login/*`
   - opens default system browser and waits for loopback callback (`127.0.0.1:<port>`)
   - exchanges one-time code for scoped API key
+  - default issued scopes: `content:read`, `content:read:draft`, `content:write`
   - stores profile under tuple `(serverUrl, project, environment)`
 - `logout` flow:
   - best-effort remote revoke via `POST /api/v1/auth/api-keys/self/revoke`
@@ -43,6 +44,9 @@ CLI package boundary for MDCMS operator workflows.
   - fallback file store at `~/.mdcms/credentials.json` with `0600` permissions
   - one active profile per `(serverUrl, project, environment)` tuple
 - Pull/push automatically consume stored credentials through runtime precedence.
+- Scope expectations:
+  - `pull` draft mode (`draft=true`) requires `content:read:draft`
+  - `push` draft writes require `content:write`
 
 ## Pull Command (CMS-80)
 
