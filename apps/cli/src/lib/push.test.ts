@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -39,6 +40,10 @@ function createSuccessResponse(data: RemoteDocument): Response {
       },
     },
   );
+}
+
+function hashRawContent(content: string): string {
+  return createHash("sha256").update(content).digest("hex");
 }
 
 test("push updates an existing manifest-tracked document via PUT", async () => {
@@ -258,6 +263,285 @@ test("push falls back to POST and rewrites manifest key when PUT target is missi
   });
 });
 
+test("push sends only changed documents and skips unchanged manifest entries", async () => {
+  await withTempDir(async (cwd) => {
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "marketing-site.staging.json",
+    );
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await mkdir(join(cwd, "content", "blog"), { recursive: true });
+
+    const changedContent = "# Changed\n";
+    const unchangedOneContent = "# Unchanged one\n";
+    const unchangedTwoContent = "# Unchanged two\n";
+
+    await writeFile(
+      join(cwd, "content/blog/changed.en.md"),
+      changedContent,
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, "content/blog/unchanged-one.en.md"),
+      unchangedOneContent,
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, "content/blog/unchanged-two.en.md"),
+      unchangedTwoContent,
+      "utf8",
+    );
+
+    await writeFile(
+      manifestPath,
+      JSON.stringify(
+        {
+          "doc-changed": {
+            path: "content/blog/changed.en.md",
+            format: "md",
+            draftRevision: 1,
+            publishedVersion: null,
+            hash: "outdated-hash",
+          },
+          "doc-unchanged-1": {
+            path: "content/blog/unchanged-one.en.md",
+            format: "md",
+            draftRevision: 4,
+            publishedVersion: null,
+            hash: hashRawContent(unchangedOneContent),
+          },
+          "doc-unchanged-2": {
+            path: "content/blog/unchanged-two.en.md",
+            format: "md",
+            draftRevision: 7,
+            publishedVersion: 2,
+            hash: hashRawContent(unchangedTwoContent),
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    let stdout = "";
+    let requestCount = 0;
+    const exitCode = await runMdcmsCli(["push", "--force"], {
+      cwd,
+      env: {} as NodeJS.ProcessEnv,
+      fetcher: async (input, init) => {
+        requestCount += 1;
+        assert.equal(
+          String(input).endsWith("/api/v1/content/doc-changed"),
+          true,
+        );
+        assert.equal(init?.method, "PUT");
+        return createSuccessResponse({
+          documentId: "doc-changed",
+          type: "BlogPost",
+          locale: "en",
+          path: "content/blog/changed",
+          format: "md",
+          draftRevision: 2,
+          publishedVersion: null,
+        });
+      },
+      loadConfig: async () => ({
+        config: {
+          serverUrl: "http://localhost:4000",
+          project: "marketing-site",
+          environment: "staging",
+          types: [
+            {
+              name: "BlogPost",
+              directory: "content/blog",
+              localized: true,
+            },
+          ],
+        },
+        configPath: join(cwd, "mdcms.config.ts"),
+      }),
+      stdout: {
+        write: (chunk) => {
+          stdout += chunk;
+        },
+      },
+      stderr: { write: () => undefined },
+      confirm: async () => true,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(requestCount, 1);
+    assert.equal(stdout.includes("Unchanged (skipped): 2"), true);
+  });
+});
+
+test("push exits successfully without API calls when no changed documents are found", async () => {
+  await withTempDir(async (cwd) => {
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "marketing-site.staging.json",
+    );
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await mkdir(join(cwd, "content", "blog"), { recursive: true });
+
+    const localContent = "# Stable document\n";
+    await writeFile(
+      join(cwd, "content/blog/stable.en.md"),
+      localContent,
+      "utf8",
+    );
+    await writeFile(
+      manifestPath,
+      JSON.stringify(
+        {
+          "doc-stable": {
+            path: "content/blog/stable.en.md",
+            format: "md",
+            draftRevision: 3,
+            publishedVersion: 1,
+            hash: hashRawContent(localContent),
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    let stdout = "";
+    let requestCount = 0;
+    let confirmCount = 0;
+    const exitCode = await runMdcmsCli(["push"], {
+      cwd,
+      env: {} as NodeJS.ProcessEnv,
+      fetcher: async () => {
+        requestCount += 1;
+        throw new Error("fetch should not be called");
+      },
+      loadConfig: async () => ({
+        config: {
+          serverUrl: "http://localhost:4000",
+          project: "marketing-site",
+          environment: "staging",
+          types: [
+            {
+              name: "BlogPost",
+              directory: "content/blog",
+              localized: true,
+            },
+          ],
+        },
+        configPath: join(cwd, "mdcms.config.ts"),
+      }),
+      stdout: {
+        write: (chunk) => {
+          stdout += chunk;
+        },
+      },
+      stderr: { write: () => undefined },
+      confirm: async () => {
+        confirmCount += 1;
+        return true;
+      },
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(requestCount, 0);
+    assert.equal(confirmCount, 0);
+    assert.equal(
+      stdout.includes("No changed manifest-tracked documents to push"),
+      true,
+    );
+  });
+});
+
+test("push treats missing manifest hash as changed and repairs hash after success", async () => {
+  await withTempDir(async (cwd) => {
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "marketing-site.staging.json",
+    );
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await mkdir(join(cwd, "content", "blog"), { recursive: true });
+
+    const localContent = "# Missing hash compatibility\n";
+    await writeFile(
+      join(cwd, "content/blog/missing-hash.en.md"),
+      localContent,
+      "utf8",
+    );
+    await writeFile(
+      manifestPath,
+      JSON.stringify(
+        {
+          "doc-legacy": {
+            path: "content/blog/missing-hash.en.md",
+            format: "md",
+            draftRevision: 1,
+            publishedVersion: null,
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    let requestCount = 0;
+    const exitCode = await runMdcmsCli(["push", "--force"], {
+      cwd,
+      env: {} as NodeJS.ProcessEnv,
+      fetcher: async () => {
+        requestCount += 1;
+        return createSuccessResponse({
+          documentId: "doc-legacy",
+          type: "BlogPost",
+          locale: "en",
+          path: "content/blog/missing-hash",
+          format: "md",
+          draftRevision: 2,
+          publishedVersion: null,
+        });
+      },
+      loadConfig: async () => ({
+        config: {
+          serverUrl: "http://localhost:4000",
+          project: "marketing-site",
+          environment: "staging",
+          types: [
+            {
+              name: "BlogPost",
+              directory: "content/blog",
+              localized: true,
+            },
+          ],
+        },
+        configPath: join(cwd, "mdcms.config.ts"),
+      }),
+      stdout: { write: () => undefined },
+      stderr: { write: () => undefined },
+      confirm: async () => true,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(requestCount, 1);
+
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+      string,
+      { hash?: string }
+    >;
+    assert.equal(typeof manifest["doc-legacy"]?.hash, "string");
+    assert.equal((manifest["doc-legacy"]?.hash ?? "").length > 0, true);
+  });
+});
+
 test("push fails with deterministic error on unsupported file extension", async () => {
   await withTempDir(async (cwd) => {
     const manifestPath = join(
@@ -359,6 +643,7 @@ test("push --dry-run prints plan without performing API calls", async () => {
     );
 
     let requestCount = 0;
+    let stdout = "";
     const exitCode = await runMdcmsCli(["push", "--dry-run"], {
       cwd,
       env: {} as NodeJS.ProcessEnv,
@@ -381,12 +666,17 @@ test("push --dry-run prints plan without performing API calls", async () => {
         },
         configPath: join(cwd, "mdcms.config.ts"),
       }),
-      stdout: { write: () => undefined },
+      stdout: {
+        write: (chunk) => {
+          stdout += chunk;
+        },
+      },
       stderr: { write: () => undefined },
       confirm: async () => true,
     });
 
     assert.equal(exitCode, 0);
     assert.equal(requestCount, 0);
+    assert.equal(stdout.includes("Unchanged (skipped): 0"), true);
   });
 });

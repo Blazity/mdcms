@@ -100,3 +100,29 @@ test("writeScopedManifestAtomic writes and loads strict scoped manifest", async 
     assert.equal(raw.includes('"doc-1"'), true);
   });
 });
+
+test("loadScopedManifest tolerates missing hash for legacy entries", async () => {
+  await withTempDir(async (cwd) => {
+    const manifestPath = resolveScopedManifestPath({
+      cwd,
+      project: "marketing-site",
+      environment: "staging",
+    });
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        "doc-legacy": {
+          path: "content/blog/legacy.en.md",
+          format: "md",
+          draftRevision: 1,
+          publishedVersion: null,
+        },
+      }),
+      "utf8",
+    );
+
+    const loaded = await loadScopedManifest(manifestPath);
+    assert.equal(loaded["doc-legacy"]?.hash, "");
+  });
+});
