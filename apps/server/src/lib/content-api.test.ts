@@ -5,7 +5,7 @@ import { createConsoleLogger } from "@mdcms/shared";
 import { eq } from "drizzle-orm";
 import postgres from "postgres";
 
-import { documentVersions } from "./db/schema.js";
+import { documentVersions, rbacGrants } from "./db/schema.js";
 import { createServerRequestHandler } from "./server.js";
 import { createServerRequestHandlerWithModules } from "./runtime-with-modules.js";
 import {
@@ -395,9 +395,26 @@ testWithDatabase(
           }),
         }),
       );
+      const loginBody = (await loginResponse.json()) as {
+        data: {
+          session: {
+            userId: string;
+          };
+        };
+      };
       assert.equal(loginResponse.status, 200);
       const cookie = loginResponse.headers.get("set-cookie");
       assert.ok(cookie);
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: loginBody.data.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:content-api",
+          createdByUserId: loginBody.data.session.userId,
+        })
+        .onConflictDoNothing();
 
       const createResponse = await handler(
         new Request("http://localhost/api/v1/content", {

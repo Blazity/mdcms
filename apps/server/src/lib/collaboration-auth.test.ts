@@ -72,6 +72,12 @@ function createAuthServiceStub(overrides: Partial<AuthService>): AuthService {
     async revokeApiKey() {
       throw new Error("unused");
     },
+    async revokeSelfApiKey() {
+      return {
+        revoked: true,
+        keyId: "api-key-1",
+      };
+    },
     async revokeAllUserSessions() {
       return 0;
     },
@@ -79,6 +85,43 @@ function createAuthServiceStub(overrides: Partial<AuthService>): AuthService {
       return {
         userId: "user-1",
         revokedSessions: 0,
+      };
+    },
+    async startCliLogin() {
+      return {
+        challengeId: "11111111-1111-4111-8111-111111111111",
+        authorizeUrl:
+          "http://localhost/api/v1/auth/cli/login/authorize?challenge=11111111-1111-4111-8111-111111111111&state=state-1234567890abcdef",
+        expiresAt: new Date(Date.now() + 600_000).toISOString(),
+      };
+    },
+    async authorizeCliLogin() {
+      return {
+        outcome: "redirect",
+        location:
+          "http://127.0.0.1:45123/callback?code=code-1234567890abcdef&state=state-1234567890abcdef",
+      };
+    },
+    async exchangeCliLogin(_input) {
+      return {
+        key: "mdcms_key_test",
+        metadata: {
+          id: "api-key-1",
+          label: "cli:test",
+          keyPrefix: "mdcms_key_test...",
+          createdByUserId: "user-1",
+          scopes: ["content:read"],
+          contextAllowlist: [
+            {
+              project: "marketing",
+              environment: "staging",
+            },
+          ],
+          createdAt: new Date().toISOString(),
+          expiresAt: null,
+          lastUsedAt: null,
+          revokedAt: null,
+        },
       };
     },
     async handleAuthRequest() {

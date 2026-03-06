@@ -118,6 +118,21 @@ test("schema snapshot includes CMS-11/CMS-12 core tables and columns", () => {
       "created_by_user_id",
       "created_at",
     ],
+    "public.cli_login_challenges": [
+      "id",
+      "project",
+      "environment",
+      "redirect_uri",
+      "requested_scopes",
+      "state_hash",
+      "authorization_code_hash",
+      "status",
+      "user_id",
+      "expires_at",
+      "authorized_at",
+      "used_at",
+      "created_at",
+    ],
     "public.rbac_grants": [
       "id",
       "user_id",
@@ -228,6 +243,8 @@ test("snapshot includes required named constraints and indexes", () => {
   const documentVersionsTable = snapshot.tables["public.document_versions"];
   const environmentsTable = snapshot.tables["public.environments"];
   const apiKeysTable = snapshot.tables["public.api_keys"];
+  const cliLoginChallengesTable =
+    snapshot.tables["public.cli_login_challenges"];
   const rbacGrantsTable = snapshot.tables["public.rbac_grants"];
   const authUsersTable = snapshot.tables["public.users"];
   const authSessionsTable = snapshot.tables["public.sessions"];
@@ -241,6 +258,10 @@ test("snapshot includes required named constraints and indexes", () => {
   );
   assert.ok(environmentsTable, "expected environments table in snapshot");
   assert.ok(apiKeysTable, "expected api_keys table in snapshot");
+  assert.ok(
+    cliLoginChallengesTable,
+    "expected cli_login_challenges table in snapshot",
+  );
   assert.ok(rbacGrantsTable, "expected rbac_grants table in snapshot");
   assert.ok(authUsersTable, "expected users table in snapshot");
   assert.ok(authSessionsTable, "expected sessions table in snapshot");
@@ -302,6 +323,19 @@ test("snapshot includes required named constraints and indexes", () => {
   assert.ok(
     apiKeysTable.indexes.idx_api_keys_created_by,
     "expected index idx_api_keys_created_by on api_keys",
+  );
+  assert.ok(
+    cliLoginChallengesTable.indexes.idx_cli_login_challenges_status_expires,
+    "expected index idx_cli_login_challenges_status_expires on cli_login_challenges",
+  );
+  assert.ok(
+    cliLoginChallengesTable.indexes.idx_cli_login_challenges_user,
+    "expected index idx_cli_login_challenges_user on cli_login_challenges",
+  );
+  assert.ok(
+    cliLoginChallengesTable.foreignKeys
+      .cli_login_challenges_user_id_users_id_fk,
+    "expected foreign key cli_login_challenges_user_id_users_id_fk on cli_login_challenges",
   );
   assert.ok(
     rbacGrantsTable.indexes.idx_rbac_grants_user_active,
