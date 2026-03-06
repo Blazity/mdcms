@@ -6,6 +6,7 @@ import { RuntimeError, type CliPreflightHook } from "@mdcms/shared";
 import { formatCliErrorEnvelope } from "./cli.js";
 import { type CliConfig, loadCliConfig } from "./config.js";
 import { createPullCommand } from "./pull.js";
+import { createPushCommand } from "./push.js";
 import {
   createCliRuntimeContextWithModules,
   type CliRuntimeContextWithModules,
@@ -75,7 +76,10 @@ export type RunMdcmsCliOptions = {
   runtimeWithModules?: CliRuntimeContextWithModules;
 };
 
-const DEFAULT_COMMANDS: CliCommand[] = [createPullCommand()];
+const DEFAULT_COMMANDS: CliCommand[] = [
+  createPullCommand(),
+  createPushCommand(),
+];
 
 function parseOptionalValue(
   value: string | undefined,

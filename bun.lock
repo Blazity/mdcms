@@ -19,6 +19,9 @@
     "apps/cli": {
       "name": "@mdcms/cli",
       "version": "0.0.1",
+      "bin": {
+        "mdcms": "./dist/bin/mdcms.js",
+      },
       "dependencies": {
         "@elysiajs/eden": "^1.4.8",
         "@mdcms/modules": "workspace:*",
@@ -26,6 +29,7 @@
         "@mdcms/shared": "workspace:*",
         "elysia": "^1.4.25",
         "tslib": "^2.3.0",
+        "yaml": "^2.8.2",
       },
     },
     "apps/server": {

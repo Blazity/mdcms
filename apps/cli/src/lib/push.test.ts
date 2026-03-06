@@ -1,0 +1,392 @@
+import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { test } from "node:test";
+
+import { runMdcmsCli } from "./framework.js";
+
+type RemoteDocument = {
+  documentId: string;
+  type: string;
+  locale: string;
+  path: string;
+  format: "md" | "mdx";
+  draftRevision: number;
+  publishedVersion: number | null;
+};
+
+async function withTempDir(run: (cwd: string) => Promise<void>): Promise<void> {
+  const cwd = await mkdtemp(join(tmpdir(), "mdcms-cli-push-"));
+
+  try {
+    await run(cwd);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+}
+
+function createSuccessResponse(data: RemoteDocument): Response {
+  return new Response(
+    JSON.stringify({
+      data,
+    }),
+    {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+      },
+    },
+  );
+}
+
+test("push updates an existing manifest-tracked document via PUT", async () => {
+  await withTempDir(async (cwd) => {
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "marketing-site.staging.json",
+    );
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeFile(
+      manifestPath,
+      JSON.stringify(
+        {
+          "doc-1": {
+            path: "content/blog/hello-world.en.md",
+            format: "md",
+            draftRevision: 1,
+            publishedVersion: 1,
+            hash: "old-hash",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const localPath = join(cwd, "content/blog/hello-world.en.md");
+    await mkdir(join(cwd, "content", "blog"), { recursive: true });
+    await writeFile(
+      localPath,
+      '---\ntitle: "Hello World"\n---\n\nUpdated draft body\n',
+      "utf8",
+    );
+
+    let requestCount = 0;
+    const exitCode = await runMdcmsCli(["push", "--force"], {
+      cwd,
+      env: {} as NodeJS.ProcessEnv,
+      fetcher: async (input, init) => {
+        requestCount += 1;
+        assert.equal(String(input).endsWith("/api/v1/content/doc-1"), true);
+        assert.equal(init?.method, "PUT");
+
+        const body = JSON.parse(String(init?.body)) as {
+          format: string;
+          body: string;
+          frontmatter: Record<string, unknown>;
+        };
+        assert.equal(body.format, "md");
+        assert.equal(body.body.includes("Updated draft body"), true);
+        assert.equal(body.frontmatter.title, "Hello World");
+
+        return createSuccessResponse({
+          documentId: "doc-1",
+          type: "BlogPost",
+          locale: "en",
+          path: "content/blog/hello-world",
+          format: "md",
+          draftRevision: 2,
+          publishedVersion: 1,
+        });
+      },
+      loadConfig: async () => ({
+        config: {
+          serverUrl: "http://localhost:4000",
+          project: "marketing-site",
+          environment: "staging",
+          types: [
+            {
+              name: "BlogPost",
+              directory: "content/blog",
+              localized: true,
+            },
+          ],
+        },
+        configPath: join(cwd, "mdcms.config.ts"),
+      }),
+      stdout: { write: () => undefined },
+      stderr: { write: () => undefined },
+      confirm: async () => true,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(requestCount, 1);
+
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+      string,
+      {
+        draftRevision: number;
+        hash: string;
+      }
+    >;
+
+    assert.equal(manifest["doc-1"]?.draftRevision, 2);
+    assert.notEqual(manifest["doc-1"]?.hash, "old-hash");
+  });
+});
+
+test("push falls back to POST and rewrites manifest key when PUT target is missing", async () => {
+  await withTempDir(async (cwd) => {
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "marketing-site.staging.json",
+    );
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeFile(
+      manifestPath,
+      JSON.stringify(
+        {
+          "doc-missing": {
+            path: "content/blog/new-post.en.md",
+            format: "md",
+            draftRevision: 1,
+            publishedVersion: null,
+            hash: "old-hash",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await mkdir(join(cwd, "content", "blog"), { recursive: true });
+    await writeFile(
+      join(cwd, "content/blog/new-post.en.md"),
+      '---\ntitle: "New Post"\n---\n\nHello\n',
+      "utf8",
+    );
+
+    let putCalls = 0;
+    let postCalls = 0;
+    const exitCode = await runMdcmsCli(["push", "--force"], {
+      cwd,
+      env: {} as NodeJS.ProcessEnv,
+      fetcher: async (input, init) => {
+        const url = String(input);
+
+        if (url.endsWith("/api/v1/content/doc-missing")) {
+          putCalls += 1;
+          assert.equal(init?.method, "PUT");
+          return new Response(
+            JSON.stringify({
+              code: "NOT_FOUND",
+              message: "Document not found.",
+            }),
+            {
+              status: 404,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        }
+
+        assert.equal(url.endsWith("/api/v1/content"), true);
+        postCalls += 1;
+        assert.equal(init?.method, "POST");
+
+        const body = JSON.parse(String(init?.body)) as {
+          type: string;
+          locale: string;
+          path: string;
+          format: string;
+        };
+
+        assert.equal(body.type, "BlogPost");
+        assert.equal(body.locale, "en");
+        assert.equal(body.path, "content/blog/new-post");
+        assert.equal(body.format, "md");
+
+        return createSuccessResponse({
+          documentId: "doc-created",
+          type: "BlogPost",
+          locale: "en",
+          path: "content/blog/new-post",
+          format: "md",
+          draftRevision: 1,
+          publishedVersion: null,
+        });
+      },
+      loadConfig: async () => ({
+        config: {
+          serverUrl: "http://localhost:4000",
+          project: "marketing-site",
+          environment: "staging",
+          types: [
+            {
+              name: "BlogPost",
+              directory: "content/blog",
+              localized: true,
+            },
+          ],
+        },
+        configPath: join(cwd, "mdcms.config.ts"),
+      }),
+      stdout: { write: () => undefined },
+      stderr: { write: () => undefined },
+      confirm: async () => true,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(putCalls, 1);
+    assert.equal(postCalls, 1);
+
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+      string,
+      { path: string }
+    >;
+
+    assert.equal(existsSync(join(cwd, "content/blog/new-post.en.md")), true);
+    assert.equal(manifest["doc-missing"], undefined);
+    assert.equal(manifest["doc-created"]?.path, "content/blog/new-post.en.md");
+  });
+});
+
+test("push fails with deterministic error on unsupported file extension", async () => {
+  await withTempDir(async (cwd) => {
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "marketing-site.staging.json",
+    );
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeFile(
+      manifestPath,
+      JSON.stringify(
+        {
+          "doc-1": {
+            path: "content/blog/hello-world.txt",
+            format: "md",
+            draftRevision: 1,
+            publishedVersion: null,
+            hash: "old-hash",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await mkdir(join(cwd, "content", "blog"), { recursive: true });
+    await writeFile(join(cwd, "content/blog/hello-world.txt"), "hello", "utf8");
+
+    let stderr = "";
+    const exitCode = await runMdcmsCli(["push", "--force"], {
+      cwd,
+      env: {} as NodeJS.ProcessEnv,
+      fetcher: async () => {
+        throw new Error("fetch should not be called");
+      },
+      loadConfig: async () => ({
+        config: {
+          serverUrl: "http://localhost:4000",
+          project: "marketing-site",
+          environment: "staging",
+          types: [
+            {
+              name: "BlogPost",
+              directory: "content/blog",
+              localized: true,
+            },
+          ],
+        },
+        configPath: join(cwd, "mdcms.config.ts"),
+      }),
+      stdout: { write: () => undefined },
+      stderr: {
+        write: (chunk) => {
+          stderr += chunk;
+        },
+      },
+      confirm: async () => true,
+    });
+
+    assert.equal(exitCode, 1);
+    assert.equal(stderr.includes("UNSUPPORTED_EXTENSION"), true);
+  });
+});
+
+test("push --dry-run prints plan without performing API calls", async () => {
+  await withTempDir(async (cwd) => {
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "marketing-site.staging.json",
+    );
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeFile(
+      manifestPath,
+      JSON.stringify(
+        {
+          "doc-1": {
+            path: "content/blog/hello-world.en.md",
+            format: "md",
+            draftRevision: 1,
+            publishedVersion: null,
+            hash: "old-hash",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await mkdir(join(cwd, "content", "blog"), { recursive: true });
+    await writeFile(
+      join(cwd, "content/blog/hello-world.en.md"),
+      "# Hello\n",
+      "utf8",
+    );
+
+    let requestCount = 0;
+    const exitCode = await runMdcmsCli(["push", "--dry-run"], {
+      cwd,
+      env: {} as NodeJS.ProcessEnv,
+      fetcher: async () => {
+        requestCount += 1;
+        throw new Error("fetch should not be called");
+      },
+      loadConfig: async () => ({
+        config: {
+          serverUrl: "http://localhost:4000",
+          project: "marketing-site",
+          environment: "staging",
+          types: [
+            {
+              name: "BlogPost",
+              directory: "content/blog",
+              localized: true,
+            },
+          ],
+        },
+        configPath: join(cwd, "mdcms.config.ts"),
+      }),
+      stdout: { write: () => undefined },
+      stderr: { write: () => undefined },
+      confirm: async () => true,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(requestCount, 0);
+  });
+});
