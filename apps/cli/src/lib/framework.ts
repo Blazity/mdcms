@@ -1,11 +1,15 @@
 import { stdin as processStdin, stdout as processStdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 
-import { RuntimeError } from "@mdcms/shared";
+import { RuntimeError, type CliPreflightHook } from "@mdcms/shared";
 
 import { formatCliErrorEnvelope } from "./cli.js";
 import { type CliConfig, loadCliConfig } from "./config.js";
 import { createPullCommand } from "./pull.js";
+import {
+  createCliRuntimeContextWithModules,
+  type CliRuntimeContextWithModules,
+} from "./runtime-with-modules.js";
 
 export type Writer = {
   write: (chunk: string) => unknown;
@@ -29,6 +33,7 @@ export type ParsedCliInvocation = {
 };
 
 export type CliCommandContext = {
+  runtime: CliRuntimeContextWithModules;
   cwd: string;
   env: NodeJS.ProcessEnv;
   config: CliConfig;
@@ -67,6 +72,7 @@ export type RunMdcmsCliOptions = {
   resolveStoredApiKey?: ResolveStoredApiKey;
   fetcher?: typeof fetch;
   confirm?: ConfirmPrompt;
+  runtimeWithModules?: CliRuntimeContextWithModules;
 };
 
 const DEFAULT_COMMANDS: CliCommand[] = [createPullCommand()];
@@ -345,6 +351,36 @@ async function defaultConfirmPrompt(message: string): Promise<boolean> {
   }
 }
 
+async function runPreflightHooks(
+  hooks: readonly CliPreflightHook[],
+  context: { actionId: string; input: unknown },
+): Promise<void> {
+  for (const hook of hooks) {
+    try {
+      await hook.run(context);
+    } catch (error) {
+      if (error instanceof RuntimeError) {
+        throw error;
+      }
+
+      throw new RuntimeError({
+        code: "CLI_PREFLIGHT_FAILED",
+        message: `Preflight hook "${hook.id}" failed.`,
+        statusCode: 500,
+        details:
+          error instanceof Error
+            ? {
+                hookId: hook.id,
+                cause: error.message,
+              }
+            : {
+                hookId: hook.id,
+              },
+      });
+    }
+  }
+}
+
 export async function runMdcmsCli(
   argv: string[],
   options: RunMdcmsCliOptions = {},
@@ -356,6 +392,8 @@ export async function runMdcmsCli(
   const commands = options.commands ?? DEFAULT_COMMANDS;
   const fetcher = options.fetcher ?? fetch;
   const confirm = options.confirm ?? defaultConfirmPrompt;
+  const runtimeWithModules =
+    options.runtimeWithModules ?? createCliRuntimeContextWithModules(env);
   const registry = createCommandRegistry(commands);
   const invocation = parseCliInvocation(argv);
 
@@ -394,7 +432,20 @@ export async function runMdcmsCli(
       requiresTarget: command.requiresTarget !== false,
     });
 
+    await runPreflightHooks(runtimeWithModules.preflightHooks, {
+      actionId: command.name,
+      input: {
+        commandName: command.name,
+        args: invocation.commandArgs,
+        target: {
+          project: resolved.project,
+          environment: resolved.environment,
+        },
+      },
+    });
+
     const result = await command.run({
+      runtime: runtimeWithModules,
       cwd,
       env,
       config,

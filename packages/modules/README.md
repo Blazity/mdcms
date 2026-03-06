@@ -26,6 +26,14 @@ Current seed modules:
 - Only local compile-time bundled modules are exported.
 - No runtime filesystem discovery is used.
 
+## Runtime Behavior
+
+- CLI preflight hooks are executed before command handlers.
+  - `core.system.default-preflight` validates action id presence.
+  - `domain.content.default-preflight` validates `pull` target context.
+- Module server routes return dynamic payloads (route + generation timestamp)
+  instead of fixed stub bodies.
+
 ## Build
 
 - `bun nx build modules`

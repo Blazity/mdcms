@@ -2,11 +2,45 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  RuntimeError,
+  createConsoleLogger,
+  type CliPreflightHook,
+} from "@mdcms/shared";
+
+import {
   parseCliInvocation,
   resolveExecutionContext,
   runMdcmsCli,
   type CliCommand,
 } from "./framework.js";
+import type { CliRuntimeContextWithModules } from "./runtime-with-modules.js";
+
+function createRuntimeWithPreflightHooks(
+  preflightHooks: readonly CliPreflightHook[],
+): CliRuntimeContextWithModules {
+  return {
+    env: {
+      NODE_ENV: "test",
+      LOG_LEVEL: "debug",
+      APP_VERSION: "1.0.0",
+      CLI_NAME: "mdcms",
+    },
+    logger: createConsoleLogger({
+      level: "trace",
+      sink: () => undefined,
+    }),
+    moduleLoadReport: {
+      evaluatedModuleIds: [],
+      loadedModuleIds: [],
+      skippedModuleIds: [],
+      loaded: [],
+      skipped: [],
+    },
+    actionAliases: [],
+    outputFormatters: [],
+    preflightHooks,
+  };
+}
 
 test("parseCliInvocation resolves global flags and command args", () => {
   const parsed = parseCliInvocation([
@@ -159,6 +193,7 @@ test("runMdcmsCli executes command with resolved target and auth context", async
     stderr: {
       write: () => undefined,
     },
+    runtimeWithModules: createRuntimeWithPreflightHooks([]),
   });
 
   assert.equal(exitCode, 0);
@@ -168,4 +203,94 @@ test("runMdcmsCli executes command with resolved target and auth context", async
     environment: "env-environment",
     apiKey: "env-api-key",
   });
+});
+
+test("runMdcmsCli executes preflight hooks before command execution", async () => {
+  const observed: string[] = [];
+  const command: CliCommand = {
+    name: "inspect",
+    description: "Inspect context",
+    run: async () => {
+      observed.push("command");
+      return 0;
+    },
+  };
+
+  const exitCode = await runMdcmsCli(["inspect"], {
+    commands: [command],
+    runtimeWithModules: createRuntimeWithPreflightHooks([
+      {
+        id: "core.system.test-preflight",
+        run: ({ actionId }) => {
+          observed.push(`hook:${actionId}`);
+        },
+      },
+    ]),
+    loadConfig: async () => ({
+      config: {
+        serverUrl: "http://config-server",
+        project: "config-project",
+        environment: "config-environment",
+      },
+      configPath: "/repo/mdcms.config.ts",
+    }),
+    stdout: {
+      write: () => undefined,
+    },
+    stderr: {
+      write: () => undefined,
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(observed, ["hook:inspect", "command"]);
+});
+
+test("runMdcmsCli fails deterministically when preflight hook throws", async () => {
+  let stderr = "";
+  let commandRuns = false;
+  const command: CliCommand = {
+    name: "inspect",
+    description: "Inspect context",
+    run: async () => {
+      commandRuns = true;
+      return 0;
+    },
+  };
+
+  const exitCode = await runMdcmsCli(["inspect"], {
+    commands: [command],
+    runtimeWithModules: createRuntimeWithPreflightHooks([
+      {
+        id: "domain.content.test-preflight",
+        run: () => {
+          throw new RuntimeError({
+            code: "CLI_PREFLIGHT_FAILED",
+            message: "Synthetic preflight failure.",
+            statusCode: 500,
+          });
+        },
+      },
+    ]),
+    loadConfig: async () => ({
+      config: {
+        serverUrl: "http://config-server",
+        project: "config-project",
+        environment: "config-environment",
+      },
+      configPath: "/repo/mdcms.config.ts",
+    }),
+    stdout: {
+      write: () => undefined,
+    },
+    stderr: {
+      write: (chunk) => {
+        stderr += chunk;
+      },
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(commandRuns, false);
+  assert.equal(stderr.includes("CLI_PREFLIGHT_FAILED"), true);
 });

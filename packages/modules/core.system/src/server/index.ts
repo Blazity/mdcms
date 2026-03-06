@@ -6,13 +6,28 @@ export const coreSystemServerSurface: ServerSurface<
 > = {
   mount: (app) => {
     const serverApp = app as {
-      get?: (path: string, handler: () => unknown) => unknown;
+      get?: (
+        path: string,
+        handler: (context: { request: Request }) => unknown,
+      ) => unknown;
     };
 
-    serverApp.get?.("/api/v1/modules/core-system/ping", () => ({
-      moduleId: "core.system",
-      status: "ok",
-    }));
+    serverApp.get?.("/api/v1/modules/core-system/ping", ({ request }) => {
+      let route = "/api/v1/modules/core-system/ping";
+
+      try {
+        route = new URL(request.url).pathname;
+      } catch {
+        route = "/api/v1/modules/core-system/ping";
+      }
+
+      return {
+        moduleId: "core.system",
+        status: "healthy",
+        route,
+        generatedAt: new Date().toISOString(),
+      };
+    });
   },
   actions: [
     {
@@ -36,8 +51,10 @@ export const coreSystemServerSurface: ServerSurface<
         properties: {
           moduleId: { type: "string" },
           status: { type: "string" },
+          route: { type: "string" },
+          generatedAt: { type: "string" },
         },
-        required: ["moduleId", "status"],
+        required: ["moduleId", "status", "route", "generatedAt"],
         additionalProperties: false,
       },
     },

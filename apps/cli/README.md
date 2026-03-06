@@ -9,6 +9,7 @@ CLI package boundary for MDCMS operator workflows.
 - Runtime command runner:
   - `runMdcmsCli(argv, options?)` in `src/lib/framework.ts`
   - deterministic parsing for global flags and command dispatch
+  - module preflight hooks execute before the command handler
 - Global target/auth flags:
   - `--project`
   - `--environment`
@@ -82,6 +83,8 @@ CLI package boundary for MDCMS operator workflows.
   - `skippedModuleIds`
   - structured skip reasons (`missing-surface`, `incompatible`, `invalid-package`)
 - `createCliRuntimeContextWithModules(...)` applies local aliases, output formatters, and preflight hooks from loaded modules.
+- CLI entrypoint (`src/bin/mdcms.ts`) boots runtime through `createCliRuntimeContextWithModules(...)` and injects it into `runMdcmsCli(...)`.
+- Preflight hooks are now part of real command execution flow and fail deterministically with `CLI_PREFLIGHT_FAILED`.
 - Runtime logs emit module load summary lines for loaded and skipped modules.
 
 ## Build
