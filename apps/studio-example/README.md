@@ -12,6 +12,8 @@ This sample app exists for CMS-47 verification.
 - `/` - host app page (no Studio mount expected)
 - `/admin` - Studio embed shell
 - `/admin/<any>` - Studio embed shell via catch-all route
+- `/demo/content` - raw content API demo list (draft scope)
+- `/demo/content/:documentId` - raw content API demo detail
 - Internal surfaces are mapped by first segment after `/admin`:
   - `/admin/dashboard`
 - `/admin/content`
@@ -47,6 +49,8 @@ Environment overrides:
 - `MDCMS_STUDIO_EXAMPLE_HOST` (default `127.0.0.1`)
 - `MDCMS_STUDIO_EXAMPLE_PORT` (default `4173`)
 - `DATABASE_URL` for `server:dev` (default `postgresql://mdcms:mdcms@localhost:5432/mdcms`)
+- `MDCMS_DEMO_API_KEY` for `/demo/content*` routes when no session cookie is
+  present
 
 Document shell locale can be provided via query parameter (forwarded as
 `X-MDCMS-Locale`), for example:
