@@ -1,6 +1,6 @@
 import {
   API_V1_BASE_PATH,
-  type ActionCatalogGetResponse,
+  type ActionCatalogItem,
   type ActionCatalogListResponse,
 } from "@mdcms/shared";
 import { Elysia } from "elysia";
@@ -12,16 +12,8 @@ export type ActionCatalogRouteHandlers = {
   getById: (context: {
     id: string;
     request: Request;
-  }) =>
-    | Promise<ActionCatalogGetResponse | Response>
-    | ActionCatalogGetResponse
-    | Response;
+  }) => Promise<ActionCatalogItem | Response> | ActionCatalogItem | Response;
 };
-
-/**
- * createActionCatalogContractApp defines the canonical `/api/v1/actions` route
- * contract owned by the server and consumed by Eden/Treaty clients.
- */
 export function createActionCatalogContractApp(
   handlers: ActionCatalogRouteHandlers,
 ) {

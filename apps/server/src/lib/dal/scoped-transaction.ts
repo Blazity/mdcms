@@ -2,20 +2,11 @@ import { assertContentScope, RuntimeError } from "@mdcms/shared";
 
 import type { DrizzleDatabase } from "../db.js";
 import type {
-  DatabaseExecutor,
   ScopedTransaction,
   ScopedTransactionCallback,
   ScopedTransactionOptions,
 } from "./types.js";
 
-/**
- * withScopedTransaction validates the content scope, then runs the callback
- * inside a Drizzle transaction with the given isolation level.
- *
- * - Scope is validated **before** acquiring a connection.
- * - The scope object is frozen to prevent mid-transaction mutation.
- * - RuntimeErrors propagate as-is; unexpected errors become TRANSACTION_FAILED.
- */
 export async function withScopedTransaction<T>(
   db: DrizzleDatabase,
   scope: unknown,
@@ -34,7 +25,7 @@ export async function withScopedTransaction<T>(
         // but lacks the $client property. The cast is safe for DAL operations.
         const stx: ScopedTransaction = {
           scope: frozenScope,
-          tx: tx as unknown as DatabaseExecutor,
+          tx: tx as unknown as DrizzleDatabase,
         };
         return callback(stx);
       },

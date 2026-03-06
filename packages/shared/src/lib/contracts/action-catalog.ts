@@ -38,7 +38,6 @@ export type ActionCatalogItem = {
 };
 
 export type ActionCatalogListResponse = ActionCatalogItem[];
-export type ActionCatalogGetResponse = ActionCatalogItem;
 
 export type ActionCatalogVisibilityPolicyContext = {
   action: ActionCatalogItem;

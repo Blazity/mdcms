@@ -19,10 +19,6 @@ export type CreateDatabaseConnectionOptions = {
   env?: NodeJS.ProcessEnv;
 };
 
-/**
- * createDatabaseConnection centralizes the baseline Drizzle + postgres.js
- * adapter wiring so downstream tasks can reuse one initialization path.
- */
 export function createDatabaseConnection(
   options: CreateDatabaseConnectionOptions = {},
 ): DatabaseConnection {

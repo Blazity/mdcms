@@ -32,7 +32,7 @@ export function buildCliModuleLoadReport(
     missingSurfaceDetails: "Module does not expose a cli surface.",
     mapLoadedModule: (modulePackage) => ({
       ...modulePackage,
-      cli: modulePackage.cli,
+      cli: modulePackage.cli!,
     }),
   });
 }

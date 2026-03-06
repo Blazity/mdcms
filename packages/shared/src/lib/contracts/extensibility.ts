@@ -9,14 +9,8 @@ import {
 export const EXTENSIBILITY_API_VERSION = "1" as const;
 export const HOST_BRIDGE_VERSION = "1" as const;
 
-/**
- * ModuleKind classifies first-party modules by runtime responsibility.
- */
 export type ModuleKind = "domain" | "core";
 
-/**
- * ModuleManifest is the shared server/cli module metadata contract.
- */
 export type ModuleManifest = {
   id: string;
   version: string;
@@ -26,70 +20,40 @@ export type ModuleManifest = {
   minCoreVersion?: string;
   maxCoreVersion?: string;
 };
-
-/**
- * ActionDefinition is the canonical action metadata contract exposed by modules.
- */
-export type ActionDefinition = ActionCatalogItem;
-
-/**
- * ServerSurface defines optional server runtime wiring exported by a module.
- */
 export type ServerSurface<App = unknown, AppDeps = unknown> = {
   mount: (app: App, deps: AppDeps) => void;
-  actions?: ActionDefinition[];
+  actions?: ActionCatalogItem[];
 };
 
-/**
- * CliActionAlias maps a local command alias to a backend action id.
- */
 export type CliActionAlias = {
   alias: string;
   actionId: string;
 };
 
-/**
- * CliOutputFormatter formats action output for human-readable CLI printing.
- */
 export type CliOutputFormatter = {
   actionId?: string;
   format: (output: unknown) => string;
 };
 
-/**
- * CliPreflightHook runs local checks before executing an action.
- */
 export type CliPreflightHook = {
   id: string;
   run: (context: { actionId: string; input: unknown }) => void | Promise<void>;
 };
 
-/**
- * CliSurface defines the action-based extensibility hooks supported by CLI.
- */
 export type CliSurface = {
   actionAliases?: CliActionAlias[];
   outputFormatters?: CliOutputFormatter[];
   preflightHooks?: CliPreflightHook[];
 };
 
-/**
- * MdcmsModulePackage is the unified module contract consumed by server and CLI.
- */
 export type MdcmsModulePackage<App = unknown, AppDeps = unknown> = {
   manifest: ModuleManifest;
   server?: ServerSurface<App, AppDeps>;
   cli?: CliSurface;
 };
 
-/**
- * StudioExecutionMode declares how the remote Studio runtime is executed.
- */
 export type StudioExecutionMode = "iframe" | "module";
 
-/**
- * StudioBootstrapManifest is the server-delivered Studio runtime bootstrap payload.
- */
 export type StudioBootstrapManifest = {
   apiVersion: typeof EXTENSIBILITY_API_VERSION;
   studioVersion: string;
@@ -104,9 +68,6 @@ export type StudioBootstrapManifest = {
   expiresAt: string;
 };
 
-/**
- * HostBridgeV1 is the minimal typed bridge exposed by the host app to Studio.
- */
 export type HostBridgeV1 = {
   version: typeof HOST_BRIDGE_VERSION;
   resolveComponent: (name: string) => unknown | null;
@@ -118,9 +79,6 @@ export type HostBridgeV1 = {
   }) => () => void;
 };
 
-/**
- * StudioMountContext provides runtime context required by a remote Studio module.
- */
 export type StudioMountContext = {
   apiBaseUrl: string;
   auth: {
@@ -130,24 +88,15 @@ export type StudioMountContext = {
   hostBridge: HostBridgeV1;
 };
 
-/**
- * RemoteStudioModule is the runtime-loaded Studio entry contract.
- */
 export type RemoteStudioModule = {
   mount: (container: unknown, ctx: StudioMountContext) => () => void;
 };
 
-/**
- * ModuleManifestCompatibilityOptions are runtime inputs for module compatibility checks.
- */
 export type ModuleManifestCompatibilityOptions = {
   coreVersion: string;
   supportedApiVersion?: string;
 };
 
-/**
- * StudioBootstrapCompatibilityOptions are runtime inputs for Studio bootstrap compatibility checks.
- */
 export type StudioBootstrapCompatibilityOptions = {
   studioPackageVersion: string;
   hostBridgeVersion: string;
@@ -477,10 +426,6 @@ function assertWithSchema<T>(
   throwValidationRuntimeError(code, path, parsed.error, fallbackMessage);
 }
 
-/**
- * assertModuleManifest validates module metadata used by server/cli bootstrap.
- * Unknown fields are rejected to keep module contracts deterministic.
- */
 export function assertModuleManifest(
   value: unknown,
   path = "manifest",
@@ -494,10 +439,6 @@ export function assertModuleManifest(
   );
 }
 
-/**
- * assertMdcmsModulePackage validates a bundled module contract and all nested
- * server/cli surface metadata.
- */
 export function assertMdcmsModulePackage(
   value: unknown,
   path = "module",
@@ -533,10 +474,6 @@ export function assertMdcmsModulePackage(
   }
 }
 
-/**
- * assertStudioBootstrapManifest validates the server-delivered Studio bootstrap
- * payload, including compatibility metadata and strict object shape checks.
- */
 export function assertStudioBootstrapManifest(
   value: unknown,
   path = "studioBootstrapManifest",
@@ -550,10 +487,6 @@ export function assertStudioBootstrapManifest(
   );
 }
 
-/**
- * assertHostBridgeV1 validates the minimum host bridge contract required by
- * Studio runtime module execution mode.
- */
 export function assertHostBridgeV1(
   value: unknown,
   path = "hostBridge",
@@ -567,10 +500,6 @@ export function assertHostBridgeV1(
   );
 }
 
-/**
- * assertStudioMountContext validates mount-time context for remote Studio
- * runtimes, including auth mode/token constraints.
- */
 export function assertStudioMountContext(
   value: unknown,
   path = "studioMountContext",
@@ -584,9 +513,6 @@ export function assertStudioMountContext(
   );
 }
 
-/**
- * assertRemoteStudioModule validates runtime-loaded Studio module entry shape.
- */
 export function assertRemoteStudioModule(
   value: unknown,
   path = "remoteStudioModule",
@@ -600,10 +526,6 @@ export function assertRemoteStudioModule(
   );
 }
 
-/**
- * assertModuleManifestCompatibility verifies module manifest compatibility
- * against the running MDCMS core version and supported API version.
- */
 export function assertModuleManifestCompatibility(
   manifest: ModuleManifest,
   options: ModuleManifestCompatibilityOptions,
@@ -671,10 +593,6 @@ export function assertModuleManifestCompatibility(
   }
 }
 
-/**
- * assertStudioBootstrapCompatibility validates Studio bootstrap compatibility
- * against local package and host bridge versions.
- */
 export function assertStudioBootstrapCompatibility(
   manifest: StudioBootstrapManifest,
   options: StudioBootstrapCompatibilityOptions,
@@ -741,16 +659,10 @@ export function assertStudioBootstrapCompatibility(
   }
 }
 
-/**
- * isModuleManifest is a non-throwing type guard for runtime checks.
- */
 export function isModuleManifest(value: unknown): value is ModuleManifest {
   return moduleManifestSchema.safeParse(value).success;
 }
 
-/**
- * isStudioBootstrapManifest is a non-throwing type guard for runtime checks.
- */
 export function isStudioBootstrapManifest(
   value: unknown,
 ): value is StudioBootstrapManifest {
