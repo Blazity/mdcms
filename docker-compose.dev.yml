@@ -58,8 +58,9 @@ services:
       MDCMS_DEMO_API_KEY: ${MDCMS_DEMO_API_KEY:-mdcms_key_demo_local_compose_seed_2026_read}
       MDCMS_DEMO_PROJECT: ${MDCMS_DEMO_PROJECT:-marketing-site}
       MDCMS_DEMO_ENVIRONMENT: ${MDCMS_DEMO_ENVIRONMENT:-staging}
-      MDCMS_DEMO_SEED_USER_EMAIL: ${MDCMS_DEMO_SEED_USER_EMAIL:-demo-seed@mdcms.local}
-      MDCMS_DEMO_SEED_USER_NAME: ${MDCMS_DEMO_SEED_USER_NAME:-Demo Seed User}
+      MDCMS_DEMO_SEED_USER_EMAIL: ${MDCMS_DEMO_SEED_USER_EMAIL:-demo@mdcms.local}
+      MDCMS_DEMO_SEED_USER_NAME: ${MDCMS_DEMO_SEED_USER_NAME:-Demo User}
+      MDCMS_DEMO_SEED_USER_PASSWORD: ${MDCMS_DEMO_SEED_USER_PASSWORD:-Demo12345!}
     volumes:
       - .:/workspace
       - workspace_node_modules:/workspace/node_modules

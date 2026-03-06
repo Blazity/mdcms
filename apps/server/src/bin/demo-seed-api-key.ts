@@ -1,17 +1,21 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
+import { RuntimeError } from "@mdcms/shared";
 
+import { createAuthService } from "../lib/auth.js";
 import { createDatabaseConnection } from "../lib/db.js";
-import { apiKeys, authUsers } from "../lib/db/schema.js";
+import { apiKeys, authUsers, rbacGrants } from "../lib/db/schema.js";
 
 const API_KEY_PREFIX = "mdcms_key_";
 const DEFAULT_DEMO_API_KEY = "mdcms_key_demo_local_compose_seed_2026_read";
-const DEFAULT_DEMO_USER_EMAIL = "demo-seed@mdcms.local";
-const DEFAULT_DEMO_USER_NAME = "Demo Seed User";
+const DEFAULT_DEMO_USER_EMAIL = "demo@mdcms.local";
+const DEFAULT_DEMO_USER_NAME = "Demo User";
+const DEFAULT_DEMO_USER_PASSWORD = "Demo12345!";
 const DEFAULT_DEMO_PROJECT = "marketing-site";
 const DEFAULT_DEMO_ENVIRONMENT = "staging";
 const DEMO_KEY_LABEL = "compose-dev-demo-content-read";
 const DEMO_KEY_SCOPES = ["content:read"] as const;
+const LOCAL_AUTH_ORIGIN = "http://localhost";
 
 function resolveEnv(name: string, fallback: string): string {
   const value = process.env[name]?.trim();
@@ -35,34 +39,109 @@ function assertDemoApiKeyFormat(apiKey: string): void {
   }
 }
 
+function toErrorText(input: unknown): string {
+  if (typeof input === "string") {
+    return input;
+  }
+
+  if (!input || typeof input !== "object") {
+    return String(input);
+  }
+
+  const record = input as Record<string, unknown>;
+  const message = record.message;
+  const code = record.code;
+  return `${typeof code === "string" ? `${code}: ` : ""}${typeof message === "string" ? message : JSON.stringify(input)}`;
+}
+
+async function parseJson(response: Response): Promise<unknown> {
+  return response.json().catch(() => undefined);
+}
+
 async function ensureDemoUser(input: {
   db: ReturnType<typeof createDatabaseConnection>["db"];
+  authService: ReturnType<typeof createAuthService>;
   email: string;
   name: string;
+  password: string;
 }): Promise<string> {
   const existing = await input.db.query.authUsers.findFirst({
     where: eq(authUsers.email, input.email),
   });
 
-  if (existing) {
+  const signUp = async (): Promise<string> => {
+    const response = await input.authService.handleAuthRequest(
+      new Request(`${LOCAL_AUTH_ORIGIN}/api/v1/auth/sign-up/email`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          email: input.email,
+          password: input.password,
+          name: input.name,
+        }),
+      }),
+    );
+
+    if (!response.ok) {
+      const payload = await parseJson(response);
+      throw new Error(
+        `failed to create demo login user (${response.status}): ${toErrorText(payload)}`,
+      );
+    }
+
+    const created = await input.db.query.authUsers.findFirst({
+      where: eq(authUsers.email, input.email),
+    });
+
+    if (!created) {
+      throw new Error("Demo login user was not persisted after sign-up.");
+    }
+
+    return created.id;
+  };
+
+  const canLogin = async (): Promise<boolean> => {
+    try {
+      await input.authService.login(
+        new Request(`${LOCAL_AUTH_ORIGIN}/api/v1/auth/login`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+        }),
+        input.email,
+        input.password,
+      );
+      return true;
+    } catch (error) {
+      if (
+        error instanceof RuntimeError &&
+        error.code === "AUTH_INVALID_CREDENTIALS"
+      ) {
+        return false;
+      }
+
+      throw error;
+    }
+  };
+
+  if (!existing) {
+    return signUp();
+  }
+
+  if (await canLogin()) {
     return existing.id;
   }
 
-  const [created] = await input.db
-    .insert(authUsers)
-    .values({
-      id: randomUUID(),
-      email: input.email,
-      name: input.name,
-      emailVerified: true,
-    })
-    .returning({ id: authUsers.id });
+  await input.db
+    .delete(apiKeys)
+    .where(eq(apiKeys.createdByUserId, existing.id));
+  await input.db.delete(rbacGrants).where(eq(rbacGrants.userId, existing.id));
+  await input.db.delete(authUsers).where(eq(authUsers.id, existing.id));
 
-  if (!created) {
-    throw new Error("Failed to create demo seed user.");
-  }
-
-  return created.id;
+  return signUp();
 }
 
 async function ensureDemoApiKey(input: {
@@ -125,6 +204,10 @@ async function main(): Promise<void> {
     "MDCMS_DEMO_SEED_USER_NAME",
     DEFAULT_DEMO_USER_NAME,
   );
+  const demoUserPassword = resolveEnv(
+    "MDCMS_DEMO_SEED_USER_PASSWORD",
+    DEFAULT_DEMO_USER_PASSWORD,
+  );
   const project = resolveEnv("MDCMS_DEMO_PROJECT", DEFAULT_DEMO_PROJECT);
   const environment = resolveEnv(
     "MDCMS_DEMO_ENVIRONMENT",
@@ -134,12 +217,18 @@ async function main(): Promise<void> {
   assertDemoApiKeyFormat(apiKey);
 
   const connection = createDatabaseConnection({ env: process.env });
+  const authService = createAuthService({
+    db: connection.db,
+    env: process.env,
+  });
 
   try {
     const userId = await ensureDemoUser({
       db: connection.db,
+      authService,
       email: demoUserEmail,
       name: demoUserName,
+      password: demoUserPassword,
     });
 
     await ensureDemoApiKey({
@@ -151,7 +240,7 @@ async function main(): Promise<void> {
     });
 
     console.info(
-      `[demo-seed] ensured demo API key for ${project}/${environment} (${toKeyPrefix(apiKey)})`,
+      `[demo-seed] ensured demo login user ${demoUserEmail} and demo API key for ${project}/${environment} (${toKeyPrefix(apiKey)})`,
     );
   } finally {
     await connection.close();

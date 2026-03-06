@@ -68,23 +68,24 @@ bun run compose:dev
 1. Start runtime + infra:
    - local process mode: `bun run dev` (requires local Postgres/Redis/MinIO/Mailhog)
    - container mode: `bun run compose:dev`
-2. Create demo user once (required for CLI login):
-   - `curl -sS -X POST http://localhost:4000/api/v1/auth/sign-up/email -H "content-type: application/json" -d '{"email":"demo@mdcms.local","password":"Demo12345!","name":"Demo User"}'`
-3. Authenticate CLI via browser flow:
+2. Authenticate CLI via browser flow:
    - `bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts login --config apps/studio-example/mdcms.config.ts`
-4. Pull current content to local files:
+3. Pull current content to local files:
    - `bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts pull --force`
-5. Edit one pulled `.md`/`.mdx` content file.
-6. Push local edits back:
+4. Edit one pulled `.md`/`.mdx` content file.
+5. Push local edits back:
    - `bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts push --force`
-7. Open:
+6. Open:
    - `http://127.0.0.1:4173/demo/content`
-8. Confirm the updated raw `frontmatter` and `body` are visible.
+7. Confirm the updated raw `frontmatter` and `body` are visible.
 
 Notes:
 
 - In `compose:dev`, `/demo/content*` uses a seeded default key, so no manual
   API-key copy is required for demo page reads.
+- `compose:dev` also seeds demo browser-login user defaults:
+  - email: `demo@mdcms.local`
+  - password: `Demo12345!`
 
 Current demo-track limitation:
 

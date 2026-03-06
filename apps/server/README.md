@@ -255,7 +255,9 @@ Backend API/runtime package boundary for MDCMS.
 - Demo seed defaults (override via env):  
   `MDCMS_DEMO_API_KEY=mdcms_key_demo_local_compose_seed_2026_read`,  
   `MDCMS_DEMO_PROJECT=marketing-site`,  
-  `MDCMS_DEMO_ENVIRONMENT=staging`.
+  `MDCMS_DEMO_ENVIRONMENT=staging`,  
+  `MDCMS_DEMO_SEED_USER_EMAIL=demo@mdcms.local`,  
+  `MDCMS_DEMO_SEED_USER_PASSWORD=Demo12345!`.
 
 ### Core Schema Baseline (CMS-11 + CMS-12)
 
