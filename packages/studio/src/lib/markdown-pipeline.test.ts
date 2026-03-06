@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { RuntimeError } from "@mdcms/shared";
+
 import {
+  extractMarkdownFromEditor,
   parseMarkdownToDocument,
   roundTripMarkdown,
   serializeDocumentToMarkdown,
@@ -41,4 +44,29 @@ test("markdown pipeline can serialize parsed document back to markdown", () => {
 
   assert.equal(typeof serialized, "string");
   assert.equal(serialized.length > 0, true);
+});
+
+test("markdown pipeline throws explicit error when serializer is unavailable", () => {
+  assert.throws(
+    () => extractMarkdownFromEditor({} as never),
+    (error: unknown) => {
+      assert.ok(error instanceof RuntimeError);
+      assert.equal(error.code, "MARKDOWN_SERIALIZATION_UNAVAILABLE");
+      return true;
+    },
+  );
+});
+
+test("markdown pipeline throws explicit error when serializer returns non-string", () => {
+  assert.throws(
+    () =>
+      extractMarkdownFromEditor({
+        getMarkdown: () => 42,
+      } as never),
+    (error: unknown) => {
+      assert.ok(error instanceof RuntimeError);
+      assert.equal(error.code, "MARKDOWN_SERIALIZATION_FAILED");
+      return true;
+    },
+  );
 });

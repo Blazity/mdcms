@@ -1,5 +1,6 @@
 import { Button } from "./ui/button.js";
 import { roundTripMarkdown } from "./markdown-pipeline.js";
+import type { StudioDocumentShell } from "./document-shell.js";
 
 export type StudioConfig = {
   project: string;
@@ -22,18 +23,7 @@ export type StudioProps = {
   state?: StudioShellState;
   errorMessage?: string;
   role?: StudioRole;
-  documentShell?: {
-    state: "loading" | "ready" | "error";
-    type: string;
-    documentId: string;
-    locale: string;
-    data?: {
-      path: string;
-      body: string;
-      updatedAt: string;
-    };
-    errorMessage?: string;
-  };
+  documentShell?: StudioDocumentShell;
 };
 
 export type StudioInternalRoute =
@@ -53,6 +43,30 @@ const ROUTE_LABELS: Record<StudioInternalRoute, string> = {
   environments: "Environments",
   users: "Users",
   settings: "Settings",
+};
+
+type StudioRoleCapabilities = {
+  canMutateContent: boolean;
+  hasAdminAccess: boolean;
+};
+
+const ROLE_CAPABILITIES: Record<StudioRole, StudioRoleCapabilities> = {
+  owner: {
+    canMutateContent: true,
+    hasAdminAccess: true,
+  },
+  admin: {
+    canMutateContent: true,
+    hasAdminAccess: true,
+  },
+  editor: {
+    canMutateContent: true,
+    hasAdminAccess: false,
+  },
+  viewer: {
+    canMutateContent: false,
+    hasAdminAccess: false,
+  },
 };
 
 function normalizeRoutePath(path: StudioProps["path"]): string[] {
@@ -133,15 +147,12 @@ export function Studio({
   role = "viewer",
   documentShell,
 }: StudioProps) {
-  const canWrite = role === "owner" || role === "admin" || role === "editor";
-  const canPublish = role === "owner" || role === "admin" || role === "editor";
-  const hasAdminAccess = role === "owner" || role === "admin";
-  const isViewerSafe = !canWrite;
+  const capabilities = ROLE_CAPABILITIES[role];
   const resolvedRoute = resolveInternalRoute(path);
   const routeRequiresAdmin =
     resolvedRoute.route === "users" || resolvedRoute.route === "settings";
   const effectiveState: StudioShellState =
-    state === "ready" && routeRequiresAdmin && !hasAdminAccess
+    state === "ready" && routeRequiresAdmin && !capabilities.hasAdminAccess
       ? "forbidden"
       : state === "ready" && resolvedRoute.isUnknown
         ? "empty"
@@ -185,8 +196,8 @@ export function Studio({
       data-mdcms-role={role}
       data-mdcms-route={resolvedRoute.route}
       data-mdcms-content-view={resolvedRoute.contentViewMode}
-      data-mdcms-can-write={canWrite ? "true" : "false"}
-      data-mdcms-can-publish={canPublish ? "true" : "false"}
+      data-mdcms-can-write={capabilities.canMutateContent ? "true" : "false"}
+      data-mdcms-can-publish={capabilities.canMutateContent ? "true" : "false"}
       className="mx-auto w-full max-w-5xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
     >
       <header className="mb-6 flex items-center justify-between gap-3">
@@ -324,7 +335,15 @@ export function Studio({
               {documentShell?.state === "loading" ? (
                 <div className="mt-2 text-slate-600">Loading document...</div>
               ) : documentShell?.state === "error" ? (
-                <div className="mt-2 text-red-700">
+                <div
+                  className="mt-2 text-red-700"
+                  data-mdcms-document-shell-error-code={
+                    documentShell.errorCode ?? "UNKNOWN_ERROR"
+                  }
+                >
+                  {documentShell.errorCode
+                    ? `${documentShell.errorCode}: `
+                    : ""}
                   {documentShell.errorMessage ?? "Failed to load document."}
                 </div>
               ) : documentShell?.data ? (
@@ -349,14 +368,14 @@ export function Studio({
           <div className="flex flex-wrap gap-2">
             <Button
               type="button"
-              disabled={!canWrite}
+              disabled={!capabilities.canMutateContent}
               data-mdcms-action="create-content"
             >
               New Document
             </Button>
             <Button
               type="button"
-              disabled={!canPublish}
+              disabled={!capabilities.canMutateContent}
               data-mdcms-action="publish-content"
               variant="outline"
             >
@@ -370,9 +389,9 @@ export function Studio({
         data-mdcms-capability="viewer-safe"
         className="mt-6 block text-xs text-slate-500"
       >
-        {isViewerSafe
-          ? "Viewer-safe mode: mutating actions remain disabled."
-          : "Role permits content mutations in this shell state."}
+        {capabilities.canMutateContent
+          ? "Role permits content mutations in this shell state."
+          : "Viewer-safe mode: mutating actions remain disabled."}
       </small>
     </section>
   );

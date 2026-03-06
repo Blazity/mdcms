@@ -439,6 +439,40 @@ test("loadStudioDocumentShell fetches draft content with scoped headers", async 
   assert.equal(result.data?.path, "blog/launch-notes");
 });
 
+test("loadStudioDocumentShell exposes typed error code for failed responses", async () => {
+  const result = await loadStudioDocumentShell(
+    {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+    },
+    {
+      type: "BlogPost",
+      documentId: "11111111-1111-4111-8111-111111111111",
+      locale: "en",
+    },
+    {
+      fetcher: async () =>
+        new Response(
+          JSON.stringify({
+            code: "FORBIDDEN",
+            message: "Document is outside of allowed scope.",
+          }),
+          {
+            status: 403,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+    },
+  );
+
+  assert.equal(result.state, "error");
+  assert.equal(result.errorCode, "FORBIDDEN");
+  assert.equal(result.errorMessage, "Document is outside of allowed scope.");
+});
+
 test("Studio renders document shell state for content document routes", () => {
   const node = Studio({
     config: {
@@ -455,6 +489,9 @@ test("Studio renders document shell state for content document routes", () => {
       documentId: "11111111-1111-4111-8111-111111111111",
       locale: "en",
       data: {
+        documentId: "11111111-1111-4111-8111-111111111111",
+        type: "BlogPost",
+        locale: "en",
         path: "blog/launch-notes",
         body: "# Launch Notes",
         updatedAt: "2026-03-04T10:00:00.000Z",
@@ -474,4 +511,33 @@ test("Studio renders document shell state for content document routes", () => {
     documentShellNode?.props?.["data-mdcms-editor-engine"],
     "tiptap-markdown",
   );
+});
+
+test("Studio renders document shell error code metadata", () => {
+  const node = Studio({
+    config: {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+    },
+    state: "ready",
+    role: "editor",
+    path: ["content", "BlogPost", "11111111-1111-4111-8111-111111111111"],
+    documentShell: {
+      state: "error",
+      type: "BlogPost",
+      documentId: "11111111-1111-4111-8111-111111111111",
+      locale: "en",
+      errorCode: "FORBIDDEN",
+      errorMessage: "Document is outside of allowed scope.",
+    },
+  });
+
+  const errorNode = findNodeByProp(
+    node,
+    "data-mdcms-document-shell-error-code",
+    "FORBIDDEN",
+  );
+
+  assert.ok(errorNode);
 });

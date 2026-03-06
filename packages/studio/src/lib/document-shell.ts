@@ -4,6 +4,14 @@ import type { StudioConfig } from "./studio-component.js";
 
 export type StudioDocumentShellState = "loading" | "ready" | "error";
 
+export type StudioDocumentShellErrorCode =
+  | "DOCUMENT_LOAD_FAILED"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "NOT_FOUND"
+  | "INTERNAL_ERROR"
+  | "UNKNOWN_ERROR";
+
 export type StudioDocumentShellData = {
   documentId: string;
   type: string;
@@ -19,6 +27,7 @@ export type StudioDocumentShell = {
   documentId: string;
   locale: string;
   data?: StudioDocumentShellData;
+  errorCode?: StudioDocumentShellErrorCode;
   errorMessage?: string;
 };
 
@@ -44,6 +53,53 @@ type ContentGetResponse = {
   code?: string;
   message?: string;
 };
+
+const STUDIO_DOCUMENT_SHELL_ERROR_CODES: ReadonlySet<StudioDocumentShellErrorCode> =
+  new Set([
+    "DOCUMENT_LOAD_FAILED",
+    "UNAUTHORIZED",
+    "FORBIDDEN",
+    "NOT_FOUND",
+    "INTERNAL_ERROR",
+    "UNKNOWN_ERROR",
+  ]);
+
+function normalizeDocumentShellErrorCode(
+  code: unknown,
+): StudioDocumentShellErrorCode {
+  if (
+    typeof code === "string" &&
+    STUDIO_DOCUMENT_SHELL_ERROR_CODES.has(code as StudioDocumentShellErrorCode)
+  ) {
+    return code as StudioDocumentShellErrorCode;
+  }
+
+  return "UNKNOWN_ERROR";
+}
+
+function toDocumentShellError(error: unknown): {
+  code: StudioDocumentShellErrorCode;
+  message: string;
+} {
+  if (error instanceof RuntimeError) {
+    return {
+      code: normalizeDocumentShellErrorCode(error.code),
+      message: error.message,
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      code: "UNKNOWN_ERROR",
+      message: error.message || "Failed to load document shell.",
+    };
+  }
+
+  return {
+    code: "UNKNOWN_ERROR",
+    message: "Failed to load document shell.",
+  };
+}
 
 /**
  * loadStudioDocumentShell fetches draft-scoped document content for the
@@ -104,14 +160,14 @@ export async function loadStudioDocumentShell(
       },
     };
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to load document shell.";
+    const failure = toDocumentShellError(error);
     return {
       state: "error",
       type: input.type,
       documentId: input.documentId,
       locale,
-      errorMessage: message,
+      errorCode: failure.code,
+      errorMessage: failure.message,
     };
   }
 }

@@ -1,3 +1,4 @@
+import { RuntimeError } from "@mdcms/shared";
 import { Editor, type JSONContent } from "@tiptap/core";
 import { Markdown } from "@tiptap/markdown";
 import StarterKit from "@tiptap/starter-kit";
@@ -45,12 +46,27 @@ function extractTextContent(node: JSONContent | undefined): string {
   return `${fromText}${fromChildren}`;
 }
 
-function extractMarkdown(editor: Editor): string {
+function assertMarkdownString(markdown: unknown, source: string): string {
+  if (typeof markdown === "string") {
+    return markdown;
+  }
+
+  throw new RuntimeError({
+    code: "MARKDOWN_SERIALIZATION_FAILED",
+    message: `TipTap markdown serializer (${source}) returned a non-string value.`,
+    statusCode: 500,
+  });
+}
+
+export function extractMarkdownFromEditor(editor: Editor): string {
   const maybeGetMarkdown = (editor as unknown as { getMarkdown?: () => string })
     .getMarkdown;
 
   if (typeof maybeGetMarkdown === "function") {
-    return maybeGetMarkdown.call(editor);
+    return assertMarkdownString(
+      maybeGetMarkdown.call(editor),
+      "editor.getMarkdown",
+    );
   }
 
   const markdownStorage = (
@@ -60,10 +76,17 @@ function extractMarkdown(editor: Editor): string {
   ).storage?.markdown;
 
   if (typeof markdownStorage?.getMarkdown === "function") {
-    return markdownStorage.getMarkdown();
+    return assertMarkdownString(
+      markdownStorage.getMarkdown(),
+      "editor.storage.markdown.getMarkdown",
+    );
   }
 
-  return "";
+  throw new RuntimeError({
+    code: "MARKDOWN_SERIALIZATION_UNAVAILABLE",
+    message: "TipTap markdown serializer is unavailable in this runtime.",
+    statusCode: 500,
+  });
 }
 
 export function parseMarkdownToDocument(markdown: string): JSONContent {
@@ -93,7 +116,7 @@ export function serializeDocumentToMarkdown(document: JSONContent): string {
   const editor = createMarkdownEditor(document);
 
   try {
-    return extractMarkdown(editor);
+    return extractMarkdownFromEditor(editor);
   } finally {
     editor.destroy();
   }

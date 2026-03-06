@@ -62,6 +62,9 @@ export default function AdminPage() {
     - `X-MDCMS-Locale`
 - `Studio` accepts `documentShell` data so host apps can render scoped
   load/error/ready shell states without losing route context.
+- Error states include typed `errorCode` values (`UNAUTHORIZED`, `FORBIDDEN`,
+  `NOT_FOUND`, `DOCUMENT_LOAD_FAILED`, `INTERNAL_ERROR`, `UNKNOWN_ERROR`) plus
+  an operator-facing `errorMessage`.
 
 ## TipTap Markdown Baseline (CMS-51)
 
@@ -73,6 +76,8 @@ export default function AdminPage() {
   - `parseMarkdownToDocument(markdown)`
   - `serializeDocumentToMarkdown(jsonDoc)`
   - `roundTripMarkdown(markdown)`
+- Serialization now fails with explicit runtime errors when TipTap markdown
+  serializer hooks are unavailable or return invalid data.
 - Round-trip stability is covered in unit tests to reduce phantom diff risk in
   downstream collaboration and autosave work.
 
