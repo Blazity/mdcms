@@ -9,7 +9,7 @@ import {
 
 export type ServerModuleAppDeps = Record<string, unknown>;
 
-type ServerModulePackage = MdcmsModulePackage<unknown, ServerModuleAppDeps>;
+type ServerModulePackage = MdcmsModulePackage;
 
 export type ServerModuleLoadReport = ModuleLoadReport<
   "server",
@@ -35,7 +35,7 @@ export function buildServerModuleLoadReport(
     missingSurfaceDetails: "Module does not expose a server surface.",
     mapLoadedModule: (modulePackage) => ({
       ...modulePackage,
-      server: modulePackage.server,
+      server: modulePackage.server!,
     }),
   });
 }

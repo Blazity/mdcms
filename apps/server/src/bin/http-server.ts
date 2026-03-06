@@ -21,7 +21,7 @@ const { handler } = createServerRequestHandlerWithModules({
 
 const server = Bun.serve({
   port: env.PORT,
-  fetch: (request: Request) => handler(request),
+  fetch: handler,
 });
 
 let isShuttingDown = false;
@@ -34,7 +34,6 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   isShuttingDown = true;
   console.info(`[server] received ${signal}, shutting down`);
   server.stop(true);
-  await Promise.resolve();
 }
 
 function registerSignalHandler(signal: NodeJS.Signals): void {

@@ -2,6 +2,7 @@ import {
   assertRequestTargetRouting,
   type TargetRoutingRequirement,
 } from "@mdcms/shared";
+import { resolvePathname } from "./http-utils.js";
 
 export type ScopedRoutePolicy = {
   prefix: string;
@@ -35,14 +36,6 @@ function matchesScopedPathPrefix(pathname: string, prefix: string): boolean {
   }
 
   return pathname.charAt(prefix.length) === "/";
-}
-
-function resolvePathname(request: Request): string {
-  try {
-    return new URL(request.url).pathname;
-  } catch {
-    return request.url;
-  }
 }
 
 export function resolvePathRoutingRequirement(

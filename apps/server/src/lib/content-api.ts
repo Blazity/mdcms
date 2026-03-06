@@ -1,10 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import {
-  RuntimeError,
-  resolveRequestTargetRouting,
-  serializeError,
-} from "@mdcms/shared";
+import { RuntimeError, resolveRequestTargetRouting } from "@mdcms/shared";
 import { and, eq, ne, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
@@ -16,10 +12,7 @@ import {
   projects,
 } from "./db/schema.js";
 import type { ApiKeyOperationScope, AuthorizationRequirement } from "./auth.js";
-
-/* ------------------------------------------------------------------ */
-/*  Zod schemas & derived types                                       */
-/* ------------------------------------------------------------------ */
+import { executeWithRuntimeErrorsHandled } from "./http-utils.js";
 
 const SortFieldSchema = z.enum(["createdAt", "updatedAt", "path"]);
 const SortOrderSchema = z.enum(["asc", "desc"]);
@@ -105,10 +98,6 @@ const DEFAULT_ACTOR = "00000000-0000-0000-0000-000000000001";
 function toScopeKey(project: string, environment: string): string {
   return `${project}::${environment}`;
 }
-
-/* ------------------------------------------------------------------ */
-/*  Schema-based parse helpers                                        */
-/* ------------------------------------------------------------------ */
 
 function parseQueryParam<T>(
   schema: z.ZodType<T>,
@@ -306,58 +295,6 @@ function pickScope(request: Request): { project: string; environment: string } {
     project: scope.project,
     environment: scope.environment,
   };
-}
-
-function isRuntimeErrorLike(error: unknown): error is RuntimeError {
-  if (error instanceof RuntimeError) {
-    return true;
-  }
-
-  if (typeof error !== "object" || error === null) {
-    return false;
-  }
-
-  const candidate = error as {
-    code?: unknown;
-    message?: unknown;
-    statusCode?: unknown;
-  };
-
-  return (
-    typeof candidate.code === "string" &&
-    typeof candidate.message === "string" &&
-    typeof candidate.statusCode === "number"
-  );
-}
-
-function toRuntimeErrorResponse(
-  error: RuntimeError,
-  request: Request,
-): Response {
-  const requestId = request.headers.get("x-request-id") ?? undefined;
-  const envelope = serializeError(error, { requestId });
-
-  return new Response(JSON.stringify(envelope), {
-    status: error.statusCode,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-    },
-  });
-}
-
-async function executeWithRuntimeErrorsHandled(
-  request: Request,
-  run: () => Promise<unknown>,
-): Promise<unknown> {
-  try {
-    return await run();
-  } catch (error) {
-    if (isRuntimeErrorLike(error)) {
-      return toRuntimeErrorResponse(error, request);
-    }
-
-    throw error;
-  }
 }
 
 function toDocumentResponse(

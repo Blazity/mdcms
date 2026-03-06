@@ -13,6 +13,7 @@ import { createActionCatalogContractApp } from "./action-catalog-contract.js";
 import { parseServerEnv } from "./env.js";
 import { toServerErrorResponse } from "./errors.js";
 import { createHealthzPayload } from "./health.js";
+import { createJsonResponse, resolvePathname } from "./http-utils.js";
 import { createTargetRoutingGuard } from "./target-routing-guard.js";
 
 export type ServerRequestHandler = (request: Request) => Promise<Response>;
@@ -37,15 +38,6 @@ export type ActionCatalogVisibilityPolicy = (
 const DEFAULT_ACTION_VISIBILITY_POLICY: ActionCatalogVisibilityPolicy = () =>
   true;
 
-function createJsonResponse(body: unknown, statusCode: number): Response {
-  return new Response(JSON.stringify(body), {
-    status: statusCode,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-    },
-  });
-}
-
 function createNotFoundError(method: string, path: string): RuntimeError {
   return new RuntimeError({
     code: "NOT_FOUND",
@@ -60,14 +52,6 @@ function createNotFoundError(method: string, path: string): RuntimeError {
 
 function createNotFoundResponse(): Response {
   return new Response("Route not found.", { status: 404 });
-}
-
-function resolvePathname(request: Request): string {
-  try {
-    return new URL(request.url).pathname;
-  } catch {
-    return request.url;
-  }
 }
 
 function normalizeActionCatalog(

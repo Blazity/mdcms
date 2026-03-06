@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 
-import { RuntimeError, serializeError } from "@mdcms/shared";
+import { RuntimeError } from "@mdcms/shared";
 import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -22,6 +22,10 @@ import {
   type RbacGrant,
   type RbacRole,
 } from "./rbac.js";
+import {
+  createJsonResponse,
+  executeWithRuntimeErrorsHandled,
+} from "./http-utils.js";
 
 export const API_KEY_OPERATION_SCOPES = [
   "content:read",
@@ -192,27 +196,6 @@ function assertNonEmptyString(value: unknown, field: string): string {
   }
 
   return value.trim();
-}
-
-function toJsonResponse(
-  body: unknown,
-  status: number,
-  headers: Record<string, string> = {},
-): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      ...headers,
-    },
-  });
-}
-
-function toErrorResponse(error: RuntimeError, request: Request): Response {
-  const requestId = request.headers.get("x-request-id") ?? undefined;
-  const body = serializeError(error, { requestId });
-
-  return toJsonResponse(body, error.statusCode);
 }
 
 function mapUnknownAuthError(
@@ -838,8 +821,16 @@ export function createAuthService(
         }
 
         const setCookie = response.headers.get("set-cookie");
+        if (!setCookie || setCookie.trim().length === 0) {
+          throw new RuntimeError({
+            code: "INTERNAL_ERROR",
+            message: "Auth provider did not return a session cookie.",
+            statusCode: 500,
+          });
+        }
+
         const cookiePair = extractCookiePair(setCookie);
-        const responseCookie = setCookie ?? cookiePair;
+        const responseCookie = setCookie;
         const session = (await auth.api.getSession({
           headers: new Headers({
             cookie: cookiePair,
@@ -1113,12 +1104,14 @@ export type MountAuthRoutesOptions = {
   authService: AuthService;
 };
 
-function handleRouteError(request: Request, error: unknown): Response {
-  if (error instanceof RuntimeError) {
-    return toErrorResponse(error, request);
+function requireSessionPayload(
+  session: StudioSession | undefined,
+): StudioSession {
+  if (!session) {
+    throw createUnauthorizedSessionError("A valid Studio session is required.");
   }
 
-  throw error;
+  return session;
 }
 
 export function mountAuthRoutes(
@@ -1127,8 +1120,8 @@ export function mountAuthRoutes(
 ): void {
   const authApp = app as AuthRouteApp;
 
-  authApp.post?.("/api/v1/auth/login", async ({ request, body }: any) => {
-    try {
+  authApp.post?.("/api/v1/auth/login", ({ request, body }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () => {
       const payload = (body ?? {}) as {
         email?: unknown;
         password?: unknown;
@@ -1137,7 +1130,7 @@ export function mountAuthRoutes(
       const password = assertNonEmptyString(payload.password, "password");
       const result = await options.authService.login(request, email, password);
 
-      return toJsonResponse(
+      return createJsonResponse(
         {
           data: {
             session: result.session,
@@ -1148,38 +1141,31 @@ export function mountAuthRoutes(
           "set-cookie": result.setCookie,
         },
       );
-    } catch (error) {
-      return handleRouteError(request, error);
-    }
-  });
+    }),
+  );
 
-  authApp.get?.("/api/v1/auth/session", async ({ request }: any) => {
-    try {
-      const session = await options.authService.getSession(request);
+  const mountSessionRoute = (path: string): void => {
+    authApp.get?.(path, ({ request }: any) =>
+      executeWithRuntimeErrorsHandled(request, async () => {
+        const session = requireSessionPayload(
+          await options.authService.getSession(request),
+        );
+        return {
+          data: {
+            session,
+          },
+        };
+      }),
+    );
+  };
 
-      if (!session) {
-        throw new RuntimeError({
-          code: "UNAUTHORIZED",
-          message: "A valid Studio session is required.",
-          statusCode: 401,
-        });
-      }
+  mountSessionRoute("/api/v1/auth/session");
 
-      return {
-        data: {
-          session,
-        },
-      };
-    } catch (error) {
-      return handleRouteError(request, error);
-    }
-  });
-
-  authApp.post?.("/api/v1/auth/logout", async ({ request }: any) => {
-    try {
+  authApp.post?.("/api/v1/auth/logout", ({ request }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () => {
       const result = await options.authService.logout(request);
 
-      return toJsonResponse(
+      return createJsonResponse(
         {
           data: {
             revoked: result.revoked,
@@ -1192,15 +1178,13 @@ export function mountAuthRoutes(
             }
           : {},
       );
-    } catch (error) {
-      return handleRouteError(request, error);
-    }
-  });
+    }),
+  );
 
   authApp.post?.(
     "/api/v1/auth/users/:userId/sessions/revoke-all",
-    async ({ request, params }: any) => {
-      try {
+    ({ request, params }: any) =>
+      executeWithRuntimeErrorsHandled(request, async () => {
         const result =
           await options.authService.revokeAllSessionsForUserByAdmin(
             request,
@@ -1210,25 +1194,20 @@ export function mountAuthRoutes(
         return {
           data: result,
         };
-      } catch (error) {
-        return handleRouteError(request, error);
-      }
-    },
+      }),
   );
 
-  authApp.get?.("/api/v1/auth/api-keys", async ({ request }: any) => {
-    try {
+  authApp.get?.("/api/v1/auth/api-keys", ({ request }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () => {
       const rows = await options.authService.listApiKeys(request);
       return {
         data: rows,
       };
-    } catch (error) {
-      return handleRouteError(request, error);
-    }
-  });
+    }),
+  );
 
-  authApp.post?.("/api/v1/auth/api-keys", async ({ request, body }: any) => {
-    try {
+  authApp.post?.("/api/v1/auth/api-keys", ({ request, body }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () => {
       const payload = (body ?? {}) as CreateApiKeyInput;
       const created = await options.authService.createApiKey(request, payload);
 
@@ -1238,15 +1217,13 @@ export function mountAuthRoutes(
           ...created.metadata,
         },
       };
-    } catch (error) {
-      return handleRouteError(request, error);
-    }
-  });
+    }),
+  );
 
   authApp.post?.(
     "/api/v1/auth/api-keys/:keyId/revoke",
-    async ({ request, params }: any) => {
-      try {
+    ({ request, params }: any) =>
+      executeWithRuntimeErrorsHandled(request, async () => {
         const metadata = await options.authService.revokeApiKey(
           request,
           params.keyId,
@@ -1255,10 +1232,7 @@ export function mountAuthRoutes(
         return {
           data: metadata,
         };
-      } catch (error) {
-        return handleRouteError(request, error);
-      }
-    },
+      }),
   );
 
   // Expose Better Auth native endpoints under /api/v1/auth/*
@@ -1271,25 +1245,5 @@ export function mountAuthRoutes(
   authApp.post?.("/api/v1/auth/sign-out", ({ request }: any) =>
     options.authService.handleAuthRequest(request),
   );
-  authApp.get?.("/api/v1/auth/get-session", async ({ request }: any) => {
-    try {
-      const session = await options.authService.getSession(request);
-
-      if (!session) {
-        throw new RuntimeError({
-          code: "UNAUTHORIZED",
-          message: "A valid Studio session is required.",
-          statusCode: 401,
-        });
-      }
-
-      return {
-        data: {
-          session,
-        },
-      };
-    } catch (error) {
-      return handleRouteError(request, error);
-    }
-  });
+  mountSessionRoute("/api/v1/auth/get-session");
 }
