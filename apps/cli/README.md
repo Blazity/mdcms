@@ -79,11 +79,14 @@ CLI package boundary for MDCMS operator workflows.
   - `--published` -> reserved and currently rejected with deterministic `INVALID_INPUT`
 - Behavior:
   - reads manifest-tracked files only from `.mdcms/manifests/<project>.<environment>.json`
+  - pushes only changed documents (hash mismatch against manifest, or missing/empty manifest hash)
+  - unchanged documents are skipped and never sent to API
   - parses local markdown into `{ frontmatter, body }`
   - derives content format from file extension (`.md` / `.mdx`)
   - updates known documents via `PUT /api/v1/content/:documentId`
   - if update target is missing, falls back to `POST /api/v1/content` and rewrites manifest key to the new `documentId`
   - writes updated draft revision/version/hash data back to the scoped manifest
+  - plan output includes changed entries and `Unchanged (skipped): <N>` summary
 - Current limitation:
   - active collaboration lock rejection semantics are deferred until CMS-53/CMS-82 closure
 

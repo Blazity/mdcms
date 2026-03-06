@@ -114,6 +114,14 @@ function parseScopedManifestEntry(
       ? null
       : assertInteger(publishedVersionRaw, `${documentId}.publishedVersion`);
 
+  const rawHash = candidate.hash;
+  const hash =
+    rawHash === undefined || rawHash === null
+      ? ""
+      : assertString(rawHash, `${documentId}.hash`, {
+          allowEmpty: true,
+        });
+
   return {
     path: assertString(candidate.path, `${documentId}.path`),
     format,
@@ -122,7 +130,7 @@ function parseScopedManifestEntry(
       `${documentId}.draftRevision`,
     ),
     publishedVersion,
-    hash: assertString(candidate.hash, `${documentId}.hash`),
+    hash,
   };
 }
 

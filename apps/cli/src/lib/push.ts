@@ -30,6 +30,12 @@ type PushCandidate = {
   hash: string;
 };
 
+type PushPlan = {
+  changedCandidates: PushCandidate[];
+  trackedCount: number;
+  unchangedCount: number;
+};
+
 type PushResult = {
   status: "updated" | "created" | "failed";
   documentId: string;
@@ -454,9 +460,13 @@ async function createDocumentFromLocalFile(
 function printPushPlan(
   context: CliCommandContext,
   candidates: PushCandidate[],
+  summary: {
+    trackedCount: number;
+    unchangedCount: number;
+  },
 ): void {
   context.stdout.write(
-    `Push plan for ${context.project}/${context.environment} (${candidates.length} tracked document(s)):\n`,
+    `Push plan for ${context.project}/${context.environment} (${candidates.length} changed / ${summary.trackedCount} tracked document(s)):\n`,
   );
 
   for (const candidate of candidates) {
@@ -464,6 +474,8 @@ function printPushPlan(
       `  - ${candidate.documentId} -> ${candidate.manifestEntry.path} (${candidate.format})\n`,
     );
   }
+
+  context.stdout.write(`Unchanged (skipped): ${summary.unchangedCount}\n`);
 }
 
 function printPushResults(
@@ -484,11 +496,13 @@ function printPushResults(
   }
 }
 
-async function buildPushCandidates(
+async function buildPushPlan(
   context: CliCommandContext,
   manifest: ScopedManifest,
-): Promise<PushCandidate[]> {
-  const candidates: PushCandidate[] = [];
+): Promise<PushPlan> {
+  const changedCandidates: PushCandidate[] = [];
+  let trackedCount = 0;
+  let unchangedCount = 0;
   const orderedDocumentIds = Object.keys(manifest).sort((left, right) =>
     left.localeCompare(right),
   );
@@ -499,6 +513,7 @@ async function buildPushCandidates(
     if (!manifestEntry) {
       continue;
     }
+    trackedCount += 1;
 
     const format = parseFileFormat(manifestEntry.path);
     const absolutePath = join(context.cwd, manifestEntry.path);
@@ -518,19 +533,32 @@ async function buildPushCandidates(
       throw error;
     });
 
+    const currentHash = hashContent(raw);
+    const manifestHash = manifestEntry.hash.trim();
+    const isChanged = manifestHash.length === 0 || manifestHash !== currentHash;
+
+    if (!isChanged) {
+      unchangedCount += 1;
+      continue;
+    }
+
     const parsed = parseMarkdownDocument(raw);
 
-    candidates.push({
+    changedCandidates.push({
       documentId,
       manifestEntry,
       format,
       frontmatter: parsed.frontmatter,
       body: parsed.body,
-      hash: hashContent(raw),
+      hash: currentHash,
     });
   }
 
-  return candidates;
+  return {
+    changedCandidates,
+    trackedCount,
+    unchangedCount,
+  };
 }
 
 async function applyPush(
@@ -638,24 +666,34 @@ export async function runPushCommand(
     environment: context.environment,
   });
   const manifest = await loadScopedManifest(manifestPath);
-  const candidates = await buildPushCandidates(context, manifest);
+  const pushPlan = await buildPushPlan(context, manifest);
 
-  if (candidates.length === 0) {
+  if (pushPlan.trackedCount === 0) {
     context.stdout.write(
       `No manifest-tracked documents found for ${context.project}/${context.environment}.\n`,
     );
     return 0;
   }
 
-  printPushPlan(context, candidates);
+  printPushPlan(context, pushPlan.changedCandidates, {
+    trackedCount: pushPlan.trackedCount,
+    unchangedCount: pushPlan.unchangedCount,
+  });
 
   if (options.dryRun) {
     return 0;
   }
 
+  if (pushPlan.changedCandidates.length === 0) {
+    context.stdout.write(
+      `No changed manifest-tracked documents to push for ${context.project}/${context.environment}.\n`,
+    );
+    return 0;
+  }
+
   if (!options.force) {
     const confirmed = await context.confirm(
-      `Push ${candidates.length} document(s) to ${context.project}/${context.environment}?`,
+      `Push ${pushPlan.changedCandidates.length} changed document(s) to ${context.project}/${context.environment}?`,
     );
 
     if (!confirmed) {
@@ -671,7 +709,7 @@ export async function runPushCommand(
     context,
     manifestPath,
     manifest,
-    candidates,
+    pushPlan.changedCandidates,
   );
   printPushResults(context, results);
 
