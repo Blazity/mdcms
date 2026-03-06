@@ -87,6 +87,24 @@ bun run compose:health
 
 The verification script boots the stack, waits for healthy services, validates `/healthz`, checks required host port mappings, verifies `pgdata` and `miniodata` persistence across restart, and tears everything down.
 
+## Demo Runbook (Pull + Push + Raw Content Page)
+
+1. Start the local stack:
+   - local-hosted dev: `bun run dev` (requires local infra dependencies)
+   - containerized dev: `bun run compose:dev`
+2. Pull content:
+   - `bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts pull --force`
+3. Edit one pulled `.md`/`.mdx` file.
+4. Push content back:
+   - `bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts push --force`
+5. Open:
+   - `http://127.0.0.1:4173/demo/content`
+6. Verify the page renders updated raw `frontmatter` and raw `body`.
+
+Current demo limitation:
+
+- collaboration-aware push rejection remains deferred until CMS-53/CMS-82 closure.
+
 ## SQL Migrations
 
 The DB adapter baseline uses Drizzle + `postgres.js` in `@mdcms/server`.

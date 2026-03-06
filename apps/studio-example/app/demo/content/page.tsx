@@ -74,11 +74,26 @@ async function fetchContentList(): Promise<ContentListResult> {
   url.searchParams.set("limit", "50");
   url.searchParams.set("offset", "0");
 
-  const response = await fetch(url, {
-    method: "GET",
-    headers: toRequestHeaders(),
-    cache: "no-store",
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: toRequestHeaders(),
+      cache: "no-store",
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      status: 502,
+      code: "REMOTE_ERROR",
+      message:
+        error instanceof Error
+          ? `Failed to reach content API: ${error.message}`
+          : "Failed to reach content API.",
+    };
+  }
+
   const body = (await response.json().catch(() => undefined)) as
     | {
         code?: unknown;

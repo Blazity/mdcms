@@ -77,11 +77,26 @@ async function fetchDocument(documentId: string): Promise<DocumentResult> {
   url.searchParams.set("environment", config.environment);
   url.searchParams.set("draft", "true");
 
-  const response = await fetch(url, {
-    method: "GET",
-    headers: toRequestHeaders(),
-    cache: "no-store",
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: toRequestHeaders(),
+      cache: "no-store",
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      status: 502,
+      code: "REMOTE_ERROR",
+      message:
+        error instanceof Error
+          ? `Failed to reach content API: ${error.message}`
+          : "Failed to reach content API.",
+    };
+  }
+
   const body = (await response.json().catch(() => undefined)) as
     | {
         code?: unknown;

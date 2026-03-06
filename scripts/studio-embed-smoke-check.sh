@@ -134,4 +134,18 @@ assert_not_contains \
   "data-testid=\"mdcms-studio-root\"" \
   "home route unexpectedly contained Studio root marker"
 
+echo "Verifying demo content route boot"
+demo_status="$(http_get_status "/demo/content")"
+[[ "$demo_status" == "200" ]] ||
+  fail "expected /demo/content status 200, got $demo_status"
+demo_body="$(http_get_body "/demo/content")"
+assert_contains \
+  "$demo_body" \
+  "Raw Content API Demo" \
+  "/demo/content response did not contain demo heading"
+assert_not_contains \
+  "$demo_body" \
+  "data-testid=\"mdcms-studio-root\"" \
+  "demo route unexpectedly contained Studio root marker"
+
 echo "Studio embed smoke check passed"

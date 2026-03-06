@@ -62,3 +62,22 @@ For a fully containerized dev loop (infra + migrations + app/server/studio watch
 ```bash
 bun run compose:dev
 ```
+
+## Demo Runbook (Pull -> Edit -> Push -> Verify)
+
+1. Start runtime + infra:
+   - local process mode: `bun run dev` (requires local Postgres/Redis/MinIO/Mailhog)
+   - container mode: `bun run compose:dev`
+2. Pull current content to local files:
+   - `bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts pull --force`
+3. Edit one pulled `.md`/`.mdx` content file.
+4. Push local edits back:
+   - `bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts push --force`
+5. Open:
+   - `http://127.0.0.1:4173/demo/content`
+6. Confirm the updated raw `frontmatter` and `body` are visible.
+
+Current demo-track limitation:
+
+- active-collaboration rejection for push is deferred until CMS-53/CMS-82
+  closure.

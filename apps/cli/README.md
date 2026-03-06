@@ -68,6 +68,18 @@ CLI package boundary for MDCMS operator workflows.
 - Current limitation:
   - active collaboration lock rejection semantics are deferred until CMS-53/CMS-82 closure
 
+### Demo E2E Usage
+
+From workspace root:
+
+```bash
+bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts pull --force
+# edit local content file(s)
+bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts push --force
+```
+
+Then verify results in the example app at `http://127.0.0.1:4173/demo/content`.
+
 ## Scoped Manifest Contract (CMS-81)
 
 - Manifest path is scope-specific:
