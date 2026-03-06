@@ -1,11 +1,10 @@
 import {
-  createConsoleLogger,
-  extendEnv,
-  parseCoreEnv,
-  serializeError,
+  createNamedRuntimeContext,
+  formatRuntimeErrorEnvelope,
+  resolveNamedRuntimeEnv,
   type CoreEnv,
   type ErrorEnvelope,
-  type Logger,
+  type RuntimeContext,
 } from "@mdcms/shared";
 
 /**
@@ -16,42 +15,30 @@ export type StudioEnv = CoreEnv & {
   STUDIO_NAME: string;
 };
 
-export type StudioRuntimeContext = {
-  env: StudioEnv;
-  logger: Logger;
-};
+export type StudioRuntimeContext = RuntimeContext<StudioEnv>;
 
 export function resolveStudioEnv(rawEnv: NodeJS.ProcessEnv): StudioEnv {
-  const core = parseCoreEnv(rawEnv);
-
-  return extendEnv(core, () => ({
-    STUDIO_NAME: rawEnv.STUDIO_NAME?.trim() || "studio",
+  return resolveNamedRuntimeEnv(rawEnv, ({ rawEnv: sourceEnv }) => ({
+    STUDIO_NAME: sourceEnv.STUDIO_NAME?.trim() || "studio",
   }));
 }
 
 export function createStudioRuntimeContext(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): StudioRuntimeContext {
-  const env = resolveStudioEnv(rawEnv);
-  const logger = createConsoleLogger({
-    level: env.LOG_LEVEL,
-    context: {
+  return createNamedRuntimeContext({
+    rawEnv,
+    resolveEnv: resolveStudioEnv,
+    loggerContext: (env) => ({
       runtime: "studio",
       studioName: env.STUDIO_NAME,
-    },
+    }),
   });
-
-  return {
-    env,
-    logger,
-  };
 }
 
 export function formatStudioErrorEnvelope(
   error: unknown,
   requestId?: string,
 ): ErrorEnvelope {
-  return serializeError(error, {
-    requestId,
-  });
+  return formatRuntimeErrorEnvelope(error, requestId);
 }

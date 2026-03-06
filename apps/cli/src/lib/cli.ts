@@ -1,11 +1,10 @@
 import {
-  createConsoleLogger,
-  extendEnv,
-  parseCoreEnv,
-  serializeError,
+  createNamedRuntimeContext,
+  formatRuntimeErrorEnvelope,
+  resolveNamedRuntimeEnv,
   type CoreEnv,
   type ErrorEnvelope,
-  type Logger,
+  type RuntimeContext,
 } from "@mdcms/shared";
 
 /**
@@ -16,42 +15,30 @@ export type CliEnv = CoreEnv & {
   CLI_NAME: string;
 };
 
-export type CliRuntimeContext = {
-  env: CliEnv;
-  logger: Logger;
-};
+export type CliRuntimeContext = RuntimeContext<CliEnv>;
 
 export function resolveCliEnv(rawEnv: NodeJS.ProcessEnv): CliEnv {
-  const core = parseCoreEnv(rawEnv);
-
-  return extendEnv(core, () => ({
-    CLI_NAME: rawEnv.CLI_NAME?.trim() || "mdcms",
+  return resolveNamedRuntimeEnv(rawEnv, ({ rawEnv: sourceEnv }) => ({
+    CLI_NAME: sourceEnv.CLI_NAME?.trim() || "mdcms",
   }));
 }
 
 export function createCliRuntimeContext(
   rawEnv: NodeJS.ProcessEnv = process.env,
 ): CliRuntimeContext {
-  const env = resolveCliEnv(rawEnv);
-  const logger = createConsoleLogger({
-    level: env.LOG_LEVEL,
-    context: {
+  return createNamedRuntimeContext({
+    rawEnv,
+    resolveEnv: resolveCliEnv,
+    loggerContext: (env) => ({
       runtime: "cli",
       cliName: env.CLI_NAME,
-    },
+    }),
   });
-
-  return {
-    env,
-    logger,
-  };
 }
 
 export function formatCliErrorEnvelope(
   error: unknown,
   requestId?: string,
 ): ErrorEnvelope {
-  return serializeError(error, {
-    requestId,
-  });
+  return formatRuntimeErrorEnvelope(error, requestId);
 }
