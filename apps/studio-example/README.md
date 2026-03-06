@@ -83,9 +83,15 @@ Notes:
 
 - In `compose:dev`, `/demo/content*` uses a seeded default key, so no manual
   API-key copy is required for demo page reads.
+- Seeded demo key is read-only for content reads (`content:read` +
+  `content:read:draft`) and does not allow draft mutations.
 - `compose:dev` also seeds demo browser-login user defaults:
   - email: `demo@mdcms.local`
   - password: `Demo12345!`
+- `apps/studio-example/mdcms.config.ts` includes ready `types` mappings for
+  `post` and `page`, so `pull/push` path mapping works out of the box.
+- `compose:dev` seeds example content in `marketing-site/staging` (posts/pages),
+  so first `mdcms pull` returns real files immediately.
 
 Current demo-track limitation:
 

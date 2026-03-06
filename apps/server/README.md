@@ -160,7 +160,7 @@ Backend API/runtime package boundary for MDCMS.
   - API keys are explicitly rejected for collaboration
   - only session auth is accepted
   - document must exist in requested `(project, environment)` scope
-  - RBAC must allow draft read/write on `documents.path`
+  - RBAC must allow both draft read (`content:read:draft`) and write (`content:write`) on `documents.path`
 - Deterministic collaboration close semantics for socket adapters:
   - `4401` for revoked/expired/missing session
   - `4403` for origin/scope/document/RBAC or API-key-forbidden conditions
@@ -181,7 +181,9 @@ Backend API/runtime package boundary for MDCMS.
   - optional expiry + revoke timestamps
 - Deny-by-default operation scopes enforced:
   - `content:read`
-  - `content:write:draft`
+  - `content:read:draft`
+  - `content:write`
+  - `content:write:draft` (legacy compatibility alias, write-only)
   - `content:publish`
   - `content:delete`
   - `schema:read`
@@ -209,6 +211,7 @@ Backend API/runtime package boundary for MDCMS.
 - Authorize/exchange behavior:
   - authorization requires valid browser session (or interactive email/password on authorize form)
   - one-time code exchange issues scoped API key for requested tuple
+  - login-generated default scopes are: `content:read`, `content:read:draft`, `content:write`
   - deterministic failure codes include:
     - `LOGIN_CHALLENGE_EXPIRED`
     - `LOGIN_CHALLENGE_USED`
@@ -250,7 +253,7 @@ Backend API/runtime package boundary for MDCMS.
 - Server package scripts:
   - `bun run --cwd apps/server db:generate` (generate SQL migrations from Drizzle schema)
   - `bun run --cwd apps/server db:migrate` (apply pending SQL migrations)
-  - `bun run --cwd apps/server demo:seed` (idempotently ensure compose demo API key + seed user)
+  - `bun run --cwd apps/server demo:seed` (idempotently ensure compose demo API key, demo user, and demo content set)
 - Docker Compose runs SQL migrations and `demo:seed` automatically through one-shot `db-migrate` before `server` starts accepting traffic.
 - Demo seed defaults (override via env):  
   `MDCMS_DEMO_API_KEY=mdcms_key_demo_local_compose_seed_2026_read`,  
@@ -258,6 +261,10 @@ Backend API/runtime package boundary for MDCMS.
   `MDCMS_DEMO_ENVIRONMENT=staging`,  
   `MDCMS_DEMO_SEED_USER_EMAIL=demo@mdcms.local`,  
   `MDCMS_DEMO_SEED_USER_PASSWORD=Demo12345!`.
+- Seed content set (in `MDCMS_DEMO_PROJECT/MDCMS_DEMO_ENVIRONMENT`):
+  - `post` / `content/posts/hello-mdcms` (`md`)
+  - `post` / `content/posts/pull-push-demo` (`md`)
+  - `page` / `content/pages/about` (`mdx`)
 
 ### Core Schema Baseline (CMS-11 + CMS-12)
 
