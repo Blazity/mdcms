@@ -21,6 +21,7 @@ services:
       MDCMS_STUDIO_EXAMPLE_PORT: ${MDCMS_STUDIO_EXAMPLE_PORT:-4173}
       NEXT_TELEMETRY_DISABLED: "1"
       WATCHPACK_POLLING: "true"
+      MDCMS_DEMO_API_KEY: ${MDCMS_DEMO_API_KEY:-mdcms_key_demo_local_compose_seed_2026_read}
     ports:
       - "4000:4000"
       - "4173:4173"
@@ -47,13 +48,18 @@ services:
       [
         "sh",
         "-lc",
-        "bun install --frozen-lockfile && bun run --cwd apps/server db:migrate",
+        "bun install --frozen-lockfile && bun run --cwd apps/server db:migrate && bun run --cwd apps/server demo:seed",
       ]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://mdcms:mdcms@postgres:5432/mdcms}
       NODE_ENV: ${NODE_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       APP_VERSION: ${APP_VERSION:-0.0.0}
+      MDCMS_DEMO_API_KEY: ${MDCMS_DEMO_API_KEY:-mdcms_key_demo_local_compose_seed_2026_read}
+      MDCMS_DEMO_PROJECT: ${MDCMS_DEMO_PROJECT:-marketing-site}
+      MDCMS_DEMO_ENVIRONMENT: ${MDCMS_DEMO_ENVIRONMENT:-staging}
+      MDCMS_DEMO_SEED_USER_EMAIL: ${MDCMS_DEMO_SEED_USER_EMAIL:-demo-seed@mdcms.local}
+      MDCMS_DEMO_SEED_USER_NAME: ${MDCMS_DEMO_SEED_USER_NAME:-Demo Seed User}
     volumes:
       - .:/workspace
       - workspace_node_modules:/workspace/node_modules

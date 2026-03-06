@@ -50,7 +50,7 @@ Environment overrides:
 - `MDCMS_STUDIO_EXAMPLE_PORT` (default `4173`)
 - `DATABASE_URL` for `server:dev` (default `postgresql://mdcms:mdcms@localhost:5432/mdcms`)
 - `MDCMS_DEMO_API_KEY` for `/demo/content*` routes when no session cookie is
-  present
+  present (in `compose:dev` it defaults to a seeded demo key)
 
 Document shell locale can be provided via query parameter (forwarded as
 `X-MDCMS-Locale`), for example:
@@ -68,14 +68,23 @@ bun run compose:dev
 1. Start runtime + infra:
    - local process mode: `bun run dev` (requires local Postgres/Redis/MinIO/Mailhog)
    - container mode: `bun run compose:dev`
-2. Pull current content to local files:
+2. Create demo user once (required for CLI login):
+   - `curl -sS -X POST http://localhost:4000/api/v1/auth/sign-up/email -H "content-type: application/json" -d '{"email":"demo@mdcms.local","password":"Demo12345!","name":"Demo User"}'`
+3. Authenticate CLI via browser flow:
+   - `bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts login --config apps/studio-example/mdcms.config.ts`
+4. Pull current content to local files:
    - `bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts pull --force`
-3. Edit one pulled `.md`/`.mdx` content file.
-4. Push local edits back:
+5. Edit one pulled `.md`/`.mdx` content file.
+6. Push local edits back:
    - `bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts push --force`
-5. Open:
+7. Open:
    - `http://127.0.0.1:4173/demo/content`
-6. Confirm the updated raw `frontmatter` and `body` are visible.
+8. Confirm the updated raw `frontmatter` and `body` are visible.
+
+Notes:
+
+- In `compose:dev`, `/demo/content*` uses a seeded default key, so no manual
+  API-key copy is required for demo page reads.
 
 Current demo-track limitation:
 

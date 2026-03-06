@@ -195,6 +195,29 @@ Backend API/runtime package boundary for MDCMS.
   - `migrations:run`
 - API keys authorize access only; explicit request routing (`project` + `environment`) remains mandatory.
 
+## CLI Browser Login Handshake (CMS-79)
+
+- Browser-based CLI auth endpoints:
+  - `POST /api/v1/auth/cli/login/start`
+  - `GET /api/v1/auth/cli/login/authorize`
+  - `POST /api/v1/auth/cli/login/authorize`
+  - `POST /api/v1/auth/cli/login/exchange`
+- Start endpoint requirements:
+  - validates tuple `(project, environment)`
+  - validates loopback `redirectUri` (`http://127.0.0.1|localhost|::1:<port>`)
+  - stores one-time challenge with TTL and hashed state
+- Authorize/exchange behavior:
+  - authorization requires valid browser session (or interactive email/password on authorize form)
+  - one-time code exchange issues scoped API key for requested tuple
+  - deterministic failure codes include:
+    - `LOGIN_CHALLENGE_EXPIRED`
+    - `LOGIN_CHALLENGE_USED`
+    - `INVALID_LOGIN_EXCHANGE`
+- Self-revoke endpoint:
+  - `POST /api/v1/auth/api-keys/self/revoke`
+  - uses Bearer API key from `Authorization` header
+  - revokes only the authenticated key instance
+
 ## Session Auth Endpoints (CMS-36)
 
 - Server-side Studio session auth is implemented with `better-auth` + Drizzle adapter.
@@ -227,7 +250,12 @@ Backend API/runtime package boundary for MDCMS.
 - Server package scripts:
   - `bun run --cwd apps/server db:generate` (generate SQL migrations from Drizzle schema)
   - `bun run --cwd apps/server db:migrate` (apply pending SQL migrations)
-- Docker Compose runs SQL migrations automatically through one-shot `db-migrate` before `server` starts accepting traffic.
+  - `bun run --cwd apps/server demo:seed` (idempotently ensure compose demo API key + seed user)
+- Docker Compose runs SQL migrations and `demo:seed` automatically through one-shot `db-migrate` before `server` starts accepting traffic.
+- Demo seed defaults (override via env):  
+  `MDCMS_DEMO_API_KEY=mdcms_key_demo_local_compose_seed_2026_read`,  
+  `MDCMS_DEMO_PROJECT=marketing-site`,  
+  `MDCMS_DEMO_ENVIRONMENT=staging`.
 
 ### Core Schema Baseline (CMS-11 + CMS-12)
 
