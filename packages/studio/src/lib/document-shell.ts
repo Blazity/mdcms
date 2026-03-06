@@ -1,6 +1,6 @@
 import { RuntimeError } from "@mdcms/shared";
 
-import type { StudioConfig } from "./studio-component.js";
+import type { MdcmsConfig } from "./studio-component.js";
 
 export type StudioDocumentShellState = "loading" | "ready" | "error";
 
@@ -106,7 +106,7 @@ function toDocumentShellError(error: unknown): {
  * `/admin/content/:type/:documentId` shell route with explicit target headers.
  */
 export async function loadStudioDocumentShell(
-  config: StudioConfig,
+  config: MdcmsConfig,
   input: LoadStudioDocumentShellInput,
   options: LoadStudioDocumentShellOptions = {},
 ): Promise<StudioDocumentShell> {

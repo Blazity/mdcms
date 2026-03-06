@@ -2,10 +2,17 @@ import { Button } from "./ui/button.js";
 import { roundTripMarkdown } from "./markdown-pipeline.js";
 import type { StudioDocumentShell } from "./document-shell.js";
 
-export type StudioConfig = {
+export type MdcmsContentTypeConfig = {
+  name: string;
+  directory?: string;
+  localized?: boolean;
+};
+
+export type MdcmsConfig = {
   project: string;
   serverUrl: string;
   environment: string;
+  types?: MdcmsContentTypeConfig[];
 };
 
 export type StudioRole = "owner" | "admin" | "editor" | "viewer";
@@ -18,7 +25,7 @@ export type StudioShellState =
   | "forbidden";
 
 export type StudioProps = {
-  config: StudioConfig;
+  config: MdcmsConfig;
   path?: string | string[];
   state?: StudioShellState;
   errorMessage?: string;

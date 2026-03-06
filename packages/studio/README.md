@@ -37,9 +37,9 @@ Host-embedded Studio package boundary for MDCMS.
 Usage:
 
 ```tsx
-import { Studio, type StudioConfig } from "@mdcms/studio";
+import { Studio, type MdcmsConfig } from "@mdcms/studio";
 
-const config: StudioConfig = {
+const config: MdcmsConfig = {
   project: "marketing-site",
   environment: "staging",
   serverUrl: "http://localhost:4000",
