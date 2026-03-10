@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import {
@@ -149,6 +151,65 @@ test("runMdcmsCli returns deterministic usage errors for unknown command", async
 
   assert.equal(exitCode, 1);
   assert.equal(stderr.includes("INVALID_USAGE: Unknown command"), true);
+});
+
+test("runMdcmsCli does not block config-optional commands when the default config file is missing", async () => {
+  const scratchRoot = join(process.cwd(), ".tmp");
+  await mkdir(scratchRoot, { recursive: true });
+  const cwd = await mkdtemp(join(scratchRoot, "mdcms-framework-"));
+  try {
+    let commandRan = false;
+    let loadConfigCalls = 0;
+    const command: CliCommand = {
+      name: "login",
+      description: "Authenticate",
+      requiresTarget: true,
+      requiresConfig: false,
+      run: async (context) => {
+        commandRan = true;
+        assert.equal(context.serverUrl, "http://localhost:4000");
+        assert.equal(context.project, "marketing-site");
+        assert.equal(context.environment, "staging");
+        return 0;
+      },
+    };
+
+    const exitCode = await runMdcmsCli(
+      [
+        "login",
+        "--server-url",
+        "http://localhost:4000",
+        "--project",
+        "marketing-site",
+        "--environment",
+        "staging",
+      ],
+      {
+        cwd,
+        commands: [command],
+        loadConfig: async () => {
+          loadConfigCalls += 1;
+          throw new RuntimeError({
+            code: "CONFIG_NOT_FOUND",
+            message: "Config missing in scratch repo.",
+            statusCode: 404,
+          });
+        },
+        stdout: {
+          write: () => undefined,
+        },
+        stderr: {
+          write: () => undefined,
+        },
+      },
+    );
+
+    assert.equal(exitCode, 0);
+    assert.equal(commandRan, true);
+    assert.equal(loadConfigCalls, 1);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
 });
 
 test("runMdcmsCli executes command with resolved target and auth context", async () => {

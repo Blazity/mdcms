@@ -1,4 +1,5 @@
 import { stdin as processStdin, stdout as processStdout } from "node:process";
+import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 
 import { RuntimeError, type CliPreflightHook } from "@mdcms/shared";
@@ -57,6 +58,7 @@ export type CliCommand = {
   name: string;
   description: string;
   requiresTarget?: boolean;
+  requiresConfig?: boolean;
   run: (context: CliCommandContext) => Promise<number | void> | number | void;
 };
 
@@ -66,13 +68,18 @@ export type ResolveStoredApiKey = (input: {
   environment: string;
 }) => Promise<string | undefined>;
 
+export type LoadCliConfig = (options: {
+  cwd: string;
+  configPath?: string;
+}) => Promise<{ config: CliConfig; configPath: string }>;
+
 export type RunMdcmsCliOptions = {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   stdout?: Writer;
   stderr?: Writer;
   commands?: CliCommand[];
-  loadConfig?: typeof loadCliConfig;
+  loadConfig?: LoadCliConfig;
   resolveStoredApiKey?: ResolveStoredApiKey;
   credentialStore?: CredentialStore;
   fetcher?: typeof fetch;
@@ -441,10 +448,35 @@ export async function runMdcmsCli(
 
   try {
     const loadConfig = options.loadConfig ?? loadCliConfig;
-    const { config, configPath } = await loadConfig({
+    let config: CliConfig = {
+      serverUrl: "",
+      project: "",
+      environment: "",
+    };
+    let configPath = resolve(
       cwd,
-      configPath: invocation.global.configPath,
-    });
+      invocation.global.configPath ?? "mdcms.config.ts",
+    );
+
+    try {
+      const loaded = await loadConfig({
+        cwd,
+        configPath: invocation.global.configPath,
+      });
+      config = loaded.config;
+      configPath = loaded.configPath;
+    } catch (error) {
+      const canProceedWithoutConfig =
+        command.requiresConfig === false &&
+        invocation.global.configPath === undefined &&
+        error instanceof RuntimeError &&
+        error.code === "CONFIG_NOT_FOUND";
+
+      if (!canProceedWithoutConfig) {
+        throw error;
+      }
+    }
+
     const resolved = await resolveExecutionContext({
       global: invocation.global,
       env,

@@ -282,6 +282,7 @@ export function createLoginCommand(options: LoginOptions = {}): CliCommand {
     name: "login",
     description: "Authenticate via browser flow and store scoped credentials",
     requiresTarget: true,
+    requiresConfig: false,
     run: async (context: CliCommandContext): Promise<number> => {
       const store =
         options.credentialStore ??

@@ -101,6 +101,394 @@ test("defineConfig/defineType/reference produce a normalized shared config", () 
   ]);
 });
 
+test("parseMdcmsConfig resolves environment overlays and env sugar deterministically", () => {
+  const blogPost = defineType("BlogPost", {
+    directory: "content/blog",
+    localized: true,
+    fields: {
+      title: z.string(),
+      slug: z.string(),
+      tags: z.array(z.string()).default([]),
+      featured: z.boolean().default(false).env("staging", "preview"),
+    },
+  });
+
+  const parsed = parseMdcmsConfig(
+    defineConfig({
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+      contentDirectories: ["content"],
+      locales: {
+        default: "en-US",
+        supported: ["en-US"],
+      },
+      types: [blogPost],
+      environments: {
+        production: {},
+        staging: {
+          extends: "production",
+          types: {
+            BlogPost: blogPost.extend({
+              modify: {
+                tags: z.array(z.string()).min(1),
+              },
+            }),
+          },
+        },
+      },
+    }),
+  );
+
+  assert.deepEqual(Object.keys(parsed.resolvedEnvironments), [
+    "production",
+    "staging",
+  ]);
+  assert.equal(parsed.types[0]?.fields.featured, undefined);
+  assert.equal(
+    parsed.resolvedEnvironments.production.types.BlogPost.fields.featured,
+    undefined,
+  );
+  assert.equal(
+    parsed.resolvedEnvironments.staging.types.BlogPost.fields.featured !==
+      undefined,
+    true,
+  );
+
+  const productionTags = parsed.resolvedEnvironments.production.types.BlogPost
+    .fields.tags as z.ZodType;
+  const stagingTags = parsed.resolvedEnvironments.staging.types.BlogPost.fields
+    .tags as z.ZodType;
+
+  assert.equal(productionTags.safeParse([]).success, true);
+  assert.equal(stagingTags.safeParse([]).success, false);
+  assert.equal(stagingTags.safeParse(["preview"]).success, true);
+});
+
+test("parseMdcmsConfig rejects environments that extend an unknown parent", () => {
+  const page = defineType("Page", {
+    fields: {
+      title: z.string(),
+    },
+  });
+
+  assert.throws(
+    () =>
+      parseMdcmsConfig(
+        defineConfig({
+          project: "marketing-site",
+          serverUrl: "http://localhost:4000",
+          types: [page],
+          environments: {
+            preview: {
+              extends: "staging",
+            },
+          },
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_CONFIG" &&
+      error.message.includes("environments.staging"),
+  );
+});
+
+test("parseMdcmsConfig rejects self-referential extends chains", () => {
+  const page = defineType("Page", {
+    fields: {
+      title: z.string(),
+    },
+  });
+
+  assert.throws(
+    () =>
+      parseMdcmsConfig(
+        defineConfig({
+          project: "marketing-site",
+          serverUrl: "http://localhost:4000",
+          types: [page],
+          environments: {
+            staging: {
+              extends: "staging",
+            },
+          },
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_CONFIG" &&
+      error.message.includes("staging -> staging"),
+  );
+});
+
+test("parseMdcmsConfig rejects circular extends chains", () => {
+  const page = defineType("Page", {
+    fields: {
+      title: z.string(),
+    },
+  });
+
+  assert.throws(
+    () =>
+      parseMdcmsConfig(
+        defineConfig({
+          project: "marketing-site",
+          serverUrl: "http://localhost:4000",
+          types: [page],
+          environments: {
+            staging: {
+              extends: "preview",
+            },
+            preview: {
+              extends: "staging",
+            },
+          },
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_CONFIG" &&
+      error.message.includes("staging") &&
+      error.message.includes("preview"),
+  );
+});
+
+test("parseMdcmsConfig rejects env sugar that conflicts with explicit add overlays", () => {
+  const page = defineType("Page", {
+    fields: {
+      title: z.string(),
+      featured: z.boolean().env("staging"),
+    },
+  });
+
+  assert.throws(
+    () =>
+      parseMdcmsConfig(
+        defineConfig({
+          project: "marketing-site",
+          serverUrl: "http://localhost:4000",
+          types: [page],
+          environments: {
+            staging: {
+              types: {
+                Page: page.extend({
+                  add: {
+                    featured: z.boolean(),
+                  },
+                }),
+              },
+            },
+          },
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_CONFIG" &&
+      error.message.includes("featured"),
+  );
+});
+
+test("parseMdcmsConfig rejects env sugar inside overlay add blocks", () => {
+  const page = defineType("Page", {
+    fields: {
+      title: z.string(),
+    },
+  });
+
+  assert.throws(
+    () =>
+      parseMdcmsConfig(
+        defineConfig({
+          project: "marketing-site",
+          serverUrl: "http://localhost:4000",
+          types: [page],
+          environments: {
+            staging: {
+              types: {
+                Page: page.extend({
+                  add: {
+                    featured: z.boolean().env("preview"),
+                  },
+                }),
+              },
+            },
+          },
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_CONFIG" &&
+      error.message.includes(".add.featured"),
+  );
+});
+
+test("parseMdcmsConfig rejects env sugar inside overlay modify blocks", () => {
+  const page = defineType("Page", {
+    fields: {
+      title: z.string(),
+    },
+  });
+
+  assert.throws(
+    () =>
+      parseMdcmsConfig(
+        defineConfig({
+          project: "marketing-site",
+          serverUrl: "http://localhost:4000",
+          types: [page],
+          environments: {
+            staging: {
+              types: {
+                Page: page.extend({
+                  modify: {
+                    title: z.string().env("preview"),
+                  },
+                }),
+              },
+            },
+          },
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_CONFIG" &&
+      error.message.includes(".modify.title"),
+  );
+});
+
+test("parseMdcmsConfig rejects add overlays for fields that already exist", () => {
+  const page = defineType("Page", {
+    fields: {
+      title: z.string(),
+    },
+  });
+
+  assert.throws(
+    () =>
+      parseMdcmsConfig(
+        defineConfig({
+          project: "marketing-site",
+          serverUrl: "http://localhost:4000",
+          types: [page],
+          environments: {
+            staging: {
+              types: {
+                Page: page.extend({
+                  add: {
+                    title: z.string().min(1),
+                  },
+                }),
+              },
+            },
+          },
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_CONFIG" &&
+      error.message.includes(".add.title"),
+  );
+});
+
+test("parseMdcmsConfig rejects modify overlays for missing fields", () => {
+  const page = defineType("Page", {
+    fields: {
+      title: z.string(),
+    },
+  });
+
+  assert.throws(
+    () =>
+      parseMdcmsConfig(
+        defineConfig({
+          project: "marketing-site",
+          serverUrl: "http://localhost:4000",
+          types: [page],
+          environments: {
+            staging: {
+              types: {
+                Page: page.extend({
+                  modify: {
+                    subtitle: z.string(),
+                  },
+                }),
+              },
+            },
+          },
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_CONFIG" &&
+      error.message.includes(".modify.subtitle"),
+  );
+});
+
+test("parseMdcmsConfig rejects omit overlays for missing fields", () => {
+  const page = defineType("Page", {
+    fields: {
+      title: z.string(),
+    },
+  });
+
+  assert.throws(
+    () =>
+      parseMdcmsConfig(
+        defineConfig({
+          project: "marketing-site",
+          serverUrl: "http://localhost:4000",
+          types: [page],
+          environments: {
+            staging: {
+              types: {
+                Page: page.extend({
+                  omit: ["subtitle"],
+                }),
+              },
+            },
+          },
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_CONFIG" &&
+      error.message.includes(".omit"),
+  );
+});
+
+test("parseMdcmsConfig rejects overlays for unknown types", () => {
+  const page = defineType("Page", {
+    fields: {
+      title: z.string(),
+    },
+  });
+
+  assert.throws(
+    () =>
+      parseMdcmsConfig(
+        defineConfig({
+          project: "marketing-site",
+          serverUrl: "http://localhost:4000",
+          types: [page],
+          environments: {
+            staging: {
+              types: {
+                MissingType: {
+                  add: {
+                    title: z.string(),
+                  },
+                },
+              },
+            },
+          },
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_CONFIG" &&
+      error.message.includes("MissingType"),
+  );
+});
+
 test("parseMdcmsConfig resolves implicit single-locale mode when no type is localized", () => {
   const parsed = parseMdcmsConfig(
     defineConfig({

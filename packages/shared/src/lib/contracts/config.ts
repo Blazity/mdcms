@@ -1,10 +1,28 @@
 import { z } from "zod";
+import type * as zodCore from "zod/v4/core";
 
 import { RuntimeError } from "../runtime/error.js";
 
 export const IMPLICIT_DEFAULT_LOCALE = "__mdcms_default__" as const;
 
 const REFERENCE_METADATA_KEY = "mdcms:reference";
+const ENVIRONMENT_TARGETS_METADATA_KEY = "mdcms:environmentTargets";
+
+declare module "zod" {
+  interface ZodType<
+    out Output = unknown,
+    out Input = unknown,
+    out Internals extends zodCore.$ZodTypeInternals<
+      Output,
+      Input
+    > = zodCore.$ZodTypeInternals<Output, Input>,
+  > {
+    env(...targets: string[]): this;
+  }
+}
+
+let envMethodInstalled = false;
+installEnvMethod();
 
 export type StandardSchemaLike<Input = unknown, Output = Input> = {
   readonly "~standard": {
@@ -33,6 +51,17 @@ export type MdcmsReferenceMetadata = {
 
 export type MdcmsFieldSchema = StandardSchemaLike;
 
+export type MdcmsTypeOverlay = {
+  add?: Record<string, MdcmsFieldSchema>;
+  modify?: Record<string, MdcmsFieldSchema>;
+  omit?: string[];
+};
+
+export type MdcmsEnvironmentDefinition = {
+  extends?: string;
+  types?: Record<string, MdcmsTypeOverlay>;
+};
+
 export type MdcmsTypeDefinition<
   TName extends string = string,
   TFields extends Record<string, MdcmsFieldSchema> = Record<
@@ -44,6 +73,7 @@ export type MdcmsTypeDefinition<
   directory?: string;
   localized?: boolean;
   fields: TFields;
+  extend(overlay: MdcmsTypeOverlay): MdcmsTypeOverlay;
 };
 
 export type MdcmsLocaleConfig = {
@@ -67,6 +97,7 @@ export type MdcmsConfig = {
   contentDirectories?: string[];
   locales?: MdcmsLocaleConfig;
   types?: MdcmsTypeDefinition[];
+  environments?: Record<string, MdcmsEnvironmentDefinition>;
   components?: MdcmsComponentRegistration[];
 };
 
@@ -83,6 +114,26 @@ export type ParsedMdcmsTypeDefinition = {
   localized: boolean;
   fields: Record<string, MdcmsFieldSchema>;
   referenceFields: Record<string, MdcmsReferenceMetadata>;
+  environmentFields: Record<
+    string,
+    { schema: MdcmsFieldSchema; targets: string[] }
+  >;
+};
+
+export type ParsedMdcmsTypeOverlay = {
+  add: Record<string, MdcmsFieldSchema>;
+  modify: Record<string, MdcmsFieldSchema>;
+  omit: string[];
+};
+
+export type ParsedMdcmsEnvironmentDefinition = {
+  extends?: string;
+  types: Record<string, ParsedMdcmsTypeOverlay>;
+};
+
+export type ParsedMdcmsResolvedEnvironment = {
+  extends?: string;
+  types: Record<string, ParsedMdcmsTypeDefinition>;
 };
 
 export type ParsedMdcmsComponentRegistration = {
@@ -100,6 +151,8 @@ export type ParsedMdcmsConfig = {
   contentDirectories: string[];
   locales: ParsedMdcmsLocaleConfig;
   types: ParsedMdcmsTypeDefinition[];
+  environments: Record<string, ParsedMdcmsEnvironmentDefinition>;
+  resolvedEnvironments: Record<string, ParsedMdcmsResolvedEnvironment>;
   components: ParsedMdcmsComponentRegistration[];
 };
 
@@ -123,6 +176,9 @@ export function defineType<
   return {
     name,
     ...definition,
+    extend(overlay) {
+      return overlay;
+    },
   };
 }
 
@@ -139,6 +195,7 @@ export function reference(targetType: string) {
 export function parseMdcmsConfig(raw: unknown): ParsedMdcmsConfig {
   const config = expectRecord(raw, "config");
   const types = parseTypes(config.types);
+  const environments = parseEnvironments(config.environments);
   const contentDirectories = parseContentDirectories(
     config.contentDirectories,
     types,
@@ -151,6 +208,8 @@ export function parseMdcmsConfig(raw: unknown): ParsedMdcmsConfig {
     contentDirectories,
     locales: parseLocales(config.locales, types),
     types,
+    environments,
+    resolvedEnvironments: resolveEnvironments(types, environments),
     components: parseComponents(config.components),
   };
 }
@@ -166,7 +225,10 @@ function parseTypes(value: unknown): ParsedMdcmsTypeDefinition[] {
 
   return value.map((entry, index) => {
     const typeConfig = expectRecord(entry, `types[${index}]`);
-    const fields = parseFields(typeConfig.fields, `types[${index}].fields`);
+    const parsedFields = parseFields(
+      typeConfig.fields,
+      `types[${index}].fields`,
+    );
 
     return {
       name: parseRequiredString(typeConfig.name, `types[${index}].name`),
@@ -179,8 +241,9 @@ function parseTypes(value: unknown): ParsedMdcmsTypeDefinition[] {
           typeConfig.localized,
           `types[${index}].localized`,
         ) ?? false,
-      fields,
-      referenceFields: extractReferenceFields(fields),
+      fields: parsedFields.fields,
+      referenceFields: extractReferenceFields(parsedFields.fields),
+      environmentFields: parsedFields.environmentFields,
     };
   });
 }
@@ -188,11 +251,23 @@ function parseTypes(value: unknown): ParsedMdcmsTypeDefinition[] {
 function parseFields(
   value: unknown,
   field: string,
-): Record<string, MdcmsFieldSchema> {
+): {
+  fields: Record<string, MdcmsFieldSchema>;
+  environmentFields: Record<
+    string,
+    { schema: MdcmsFieldSchema; targets: string[] }
+  >;
+} {
   const fields = expectRecord(value, field);
   const parsedEntries: [string, MdcmsFieldSchema][] = [];
+  const environmentEntries: [
+    string,
+    { schema: MdcmsFieldSchema; targets: string[] },
+  ][] = [];
 
-  for (const [key, schema] of Object.entries(fields)) {
+  for (const [key, schema] of Object.entries(fields).sort(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
     const schemaField = `${field}.${key}`;
 
     if (!isStandardSchemaLike(schema)) {
@@ -202,10 +277,365 @@ function parseFields(
       );
     }
 
+    const environmentTargets = findEnvironmentTargets(schema);
+    if (environmentTargets) {
+      environmentEntries.push([
+        key,
+        {
+          schema,
+          targets: environmentTargets,
+        },
+      ]);
+      continue;
+    }
+
     parsedEntries.push([key, schema]);
   }
 
+  return {
+    fields: Object.fromEntries(parsedEntries),
+    environmentFields: Object.fromEntries(environmentEntries),
+  };
+}
+
+function parseOverlayFields(
+  value: unknown,
+  field: string,
+): Record<string, MdcmsFieldSchema> {
+  if (value === undefined) {
+    return {};
+  }
+
+  const parsedFields = parseFields(value, field);
+
+  for (const fieldName of Object.keys(parsedFields.environmentFields)) {
+    throw invalidConfig(
+      `${field}.${fieldName}`,
+      "must not use .env() inside overlay field maps; define environment targeting on the base type instead.",
+    );
+  }
+
+  return parsedFields.fields;
+}
+
+function parseEnvironments(
+  value: unknown,
+): Record<string, ParsedMdcmsEnvironmentDefinition> {
+  if (value === undefined) {
+    return {};
+  }
+
+  const environments = expectRecord(value, "environments");
+  const parsedEntries: [string, ParsedMdcmsEnvironmentDefinition][] = [];
+
+  for (const [name, definition] of Object.entries(environments).sort(
+    ([left], [right]) => left.localeCompare(right),
+  )) {
+    const normalizedName = parseRequiredString(name, `environments.${name}`);
+    const environment = expectRecord(
+      definition,
+      `environments.${normalizedName}`,
+    );
+    const parsedTypes: [string, ParsedMdcmsTypeOverlay][] = [];
+    const typeDefinitions =
+      environment.types === undefined
+        ? {}
+        : expectRecord(
+            environment.types,
+            `environments.${normalizedName}.types`,
+          );
+
+    for (const [typeName, overlay] of Object.entries(typeDefinitions).sort(
+      ([left], [right]) => left.localeCompare(right),
+    )) {
+      const normalizedTypeName = parseRequiredString(
+        typeName,
+        `environments.${normalizedName}.types.${typeName}`,
+      );
+      const overlayConfig = expectRecord(
+        overlay,
+        `environments.${normalizedName}.types.${normalizedTypeName}`,
+      );
+
+      parsedTypes.push([
+        normalizedTypeName,
+        {
+          add: parseOverlayFields(
+            overlayConfig.add,
+            `environments.${normalizedName}.types.${normalizedTypeName}.add`,
+          ),
+          modify: parseOverlayFields(
+            overlayConfig.modify,
+            `environments.${normalizedName}.types.${normalizedTypeName}.modify`,
+          ),
+          omit: parseStringArray(
+            overlayConfig.omit,
+            `environments.${normalizedName}.types.${normalizedTypeName}.omit`,
+          ),
+        },
+      ]);
+    }
+
+    parsedEntries.push([
+      normalizedName,
+      {
+        extends: parseOptionalString(
+          environment.extends,
+          `environments.${normalizedName}.extends`,
+        ),
+        types: Object.fromEntries(parsedTypes),
+      },
+    ]);
+  }
+
   return Object.fromEntries(parsedEntries);
+}
+
+function resolveEnvironments(
+  types: readonly ParsedMdcmsTypeDefinition[],
+  environments: Record<string, ParsedMdcmsEnvironmentDefinition>,
+): Record<string, ParsedMdcmsResolvedEnvironment> {
+  if (Object.keys(environments).length === 0) {
+    return {};
+  }
+
+  const baseTypeMap = Object.fromEntries(
+    [...types]
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map((typeConfig) => [
+        typeConfig.name,
+        toResolvedTypeDefinition(typeConfig),
+      ]),
+  ) as Record<string, ParsedMdcmsTypeDefinition>;
+  const sugarOverlays = expandEnvironmentFieldSugar(types, environments);
+  const cache = new Map<string, ParsedMdcmsResolvedEnvironment>();
+
+  function resolveEnvironment(
+    name: string,
+    chain: string[] = [],
+  ): ParsedMdcmsResolvedEnvironment {
+    const cached = cache.get(name);
+    if (cached) {
+      return cached;
+    }
+
+    if (chain.includes(name)) {
+      throw invalidConfig(
+        `environments.${name}.extends`,
+        `contains a circular extends chain (${[...chain, name].join(" -> ")}).`,
+      );
+    }
+
+    const environment = environments[name];
+    if (!environment) {
+      throw invalidConfig(`environments.${name}`, "must be defined.");
+    }
+
+    const inheritedTypes = environment.extends
+      ? cloneTypeMap(
+          resolveEnvironment(environment.extends, [...chain, name]).types,
+        )
+      : cloneTypeMap(baseTypeMap);
+    const overlays = mergeOverlayMaps(
+      name,
+      sugarOverlays[name],
+      environment.types,
+    );
+
+    for (const [typeName, overlay] of Object.entries(overlays).sort(
+      ([left], [right]) => left.localeCompare(right),
+    )) {
+      const currentType = inheritedTypes[typeName] ?? baseTypeMap[typeName];
+
+      if (!currentType) {
+        throw invalidConfig(
+          `environments.${name}.types.${typeName}`,
+          "references a type that is not defined in config.types.",
+        );
+      }
+
+      inheritedTypes[typeName] = applyTypeOverlay(currentType, overlay, {
+        environment: name,
+        typeName,
+      });
+    }
+
+    const resolved: ParsedMdcmsResolvedEnvironment = {
+      extends: environment.extends,
+      types: Object.fromEntries(
+        Object.entries(inheritedTypes).sort(([left], [right]) =>
+          left.localeCompare(right),
+        ),
+      ),
+    };
+
+    cache.set(name, resolved);
+    return resolved;
+  }
+
+  return Object.fromEntries(
+    Object.keys(environments)
+      .sort((left, right) => left.localeCompare(right))
+      .map((name) => [name, resolveEnvironment(name)]),
+  );
+}
+
+function expandEnvironmentFieldSugar(
+  types: readonly ParsedMdcmsTypeDefinition[],
+  environments: Record<string, ParsedMdcmsEnvironmentDefinition>,
+): Record<string, Record<string, ParsedMdcmsTypeOverlay>> {
+  const environmentNames = new Set(Object.keys(environments));
+  const expanded: Record<string, Record<string, ParsedMdcmsTypeOverlay>> = {};
+
+  for (const typeConfig of types) {
+    for (const [fieldName, fieldDefinition] of Object.entries(
+      typeConfig.environmentFields,
+    )) {
+      for (const target of fieldDefinition.targets) {
+        if (!environmentNames.has(target)) {
+          continue;
+        }
+
+        expanded[target] ??= {};
+        expanded[target][typeConfig.name] ??= {
+          add: {},
+          modify: {},
+          omit: [],
+        };
+        expanded[target][typeConfig.name].add[fieldName] =
+          fieldDefinition.schema;
+      }
+    }
+  }
+
+  return expanded;
+}
+
+function mergeOverlayMaps(
+  environmentName: string,
+  left: Record<string, ParsedMdcmsTypeOverlay> | undefined,
+  right: Record<string, ParsedMdcmsTypeOverlay>,
+): Record<string, ParsedMdcmsTypeOverlay> {
+  const merged: Record<string, ParsedMdcmsTypeOverlay> = {};
+  const typeNames = new Set([
+    ...Object.keys(left ?? {}),
+    ...Object.keys(right),
+  ]);
+
+  for (const typeName of [...typeNames].sort((a, b) => a.localeCompare(b))) {
+    const leftAdd = left?.[typeName]?.add ?? {};
+    const rightAdd = right[typeName]?.add ?? {};
+
+    for (const fieldName of Object.keys(leftAdd)) {
+      if (fieldName in rightAdd) {
+        throw invalidConfig(
+          `environments.${environmentName}.types.${typeName}.add.${fieldName}`,
+          "conflicts with field-level .env() sugar; keep one source of truth for this added field.",
+        );
+      }
+    }
+
+    merged[typeName] = {
+      add: {
+        ...leftAdd,
+        ...rightAdd,
+      },
+      modify: {
+        ...(left?.[typeName]?.modify ?? {}),
+        ...(right[typeName]?.modify ?? {}),
+      },
+      omit: uniqueStrings([
+        ...(left?.[typeName]?.omit ?? []),
+        ...(right[typeName]?.omit ?? []),
+      ]).sort((a, b) => a.localeCompare(b)),
+    };
+  }
+
+  return merged;
+}
+
+function toResolvedTypeDefinition(
+  typeConfig: ParsedMdcmsTypeDefinition,
+): ParsedMdcmsTypeDefinition {
+  const fields = Object.fromEntries(
+    Object.entries(typeConfig.fields).sort(([left], [right]) =>
+      left.localeCompare(right),
+    ),
+  );
+
+  return {
+    name: typeConfig.name,
+    directory: typeConfig.directory,
+    localized: typeConfig.localized,
+    fields,
+    referenceFields: extractReferenceFields(fields),
+    environmentFields: {},
+  };
+}
+
+function cloneTypeMap(
+  typeMap: Record<string, ParsedMdcmsTypeDefinition>,
+): Record<string, ParsedMdcmsTypeDefinition> {
+  return Object.fromEntries(
+    Object.entries(typeMap).map(([typeName, typeConfig]) => [
+      typeName,
+      toResolvedTypeDefinition(typeConfig),
+    ]),
+  );
+}
+
+function applyTypeOverlay(
+  typeConfig: ParsedMdcmsTypeDefinition,
+  overlay: ParsedMdcmsTypeOverlay,
+  context?: { environment: string; typeName: string },
+): ParsedMdcmsTypeDefinition {
+  const fields = {
+    ...typeConfig.fields,
+  };
+
+  for (const [fieldName, schema] of Object.entries(overlay.add)) {
+    if (fieldName in fields) {
+      throw invalidConfig(
+        `environments.${context?.environment}.types.${context?.typeName}.add.${fieldName}`,
+        "cannot add a field that already exists in the inherited schema.",
+      );
+    }
+
+    fields[fieldName] = schema;
+  }
+
+  for (const [fieldName, schema] of Object.entries(overlay.modify)) {
+    if (!(fieldName in fields)) {
+      throw invalidConfig(
+        `environments.${context?.environment}.types.${context?.typeName}.modify.${fieldName}`,
+        "cannot modify a field that does not exist in the inherited schema.",
+      );
+    }
+
+    fields[fieldName] = schema;
+  }
+
+  for (const fieldName of overlay.omit) {
+    if (!(fieldName in fields)) {
+      throw invalidConfig(
+        `environments.${context?.environment}.types.${context?.typeName}.omit`,
+        `cannot omit unknown field "${fieldName}".`,
+      );
+    }
+
+    delete fields[fieldName];
+  }
+
+  return {
+    ...typeConfig,
+    fields: Object.fromEntries(
+      Object.entries(fields).sort(([left], [right]) =>
+        left.localeCompare(right),
+      ),
+    ),
+    referenceFields: extractReferenceFields(fields),
+    environmentFields: {},
+  };
 }
 
 function parseComponents(value: unknown): ParsedMdcmsComponentRegistration[] {
@@ -458,6 +888,45 @@ function extractReferenceFields(
   return Object.fromEntries(referenceEntries);
 }
 
+function findEnvironmentTargets(
+  schema: MdcmsFieldSchema,
+): string[] | undefined {
+  const stack: unknown[] = [schema];
+  const seen = new Set<object>();
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+
+    if (!current || typeof current !== "object" || seen.has(current)) {
+      continue;
+    }
+
+    seen.add(current);
+
+    const meta = readSchemaMetadata(current);
+    const candidate = isPlainObject(meta)
+      ? meta[ENVIRONMENT_TARGETS_METADATA_KEY]
+      : undefined;
+
+    if (
+      Array.isArray(candidate) &&
+      candidate.every((entry) => typeof entry === "string")
+    ) {
+      return [...candidate].sort((left, right) => left.localeCompare(right));
+    }
+
+    const definition = (current as { _def?: unknown })._def;
+
+    if (isPlainObject(definition)) {
+      for (const value of Object.values(definition)) {
+        stack.push(value);
+      }
+    }
+  }
+
+  return undefined;
+}
+
 function findReferenceMetadata(
   schema: MdcmsFieldSchema,
 ): MdcmsReferenceMetadata | undefined {
@@ -609,6 +1078,23 @@ function parseOptionalBoolean(
   return value;
 }
 
+function parseStringArray(value: unknown, field: string): string[] {
+  if (value === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(value)) {
+    throw invalidConfig(field, "must be an array.");
+  }
+
+  return uniqueStrings(
+    value.map((entry, index) =>
+      parseRequiredString(entry, `${field}[${index}]`),
+    ),
+    field,
+  ).sort((left, right) => left.localeCompare(right));
+}
+
 function uniqueStrings(values: readonly string[], field?: string): string[] {
   const result: string[] = [];
   const seen = new Set<string>();
@@ -651,4 +1137,44 @@ function invalidConfig(field: string, message: string): RuntimeError {
     statusCode: 400,
     details: { field },
   });
+}
+
+function installEnvMethod(): void {
+  if (envMethodInstalled) {
+    return;
+  }
+
+  for (const [key, value] of Object.entries(z)) {
+    if (
+      !/^_?Zod/.test(key) ||
+      typeof value !== "function" ||
+      typeof value.prototype !== "object" ||
+      value.prototype === null ||
+      "env" in value.prototype
+    ) {
+      continue;
+    }
+
+    Object.defineProperty(value.prototype, "env", {
+      configurable: true,
+      enumerable: false,
+      writable: true,
+      value(this: z.ZodType, ...targets: string[]) {
+        const existingMetadata = readSchemaMetadata(this);
+        const mergedMetadata = {
+          ...(isPlainObject(existingMetadata) ? existingMetadata : {}),
+          [ENVIRONMENT_TARGETS_METADATA_KEY]: uniqueStrings(
+            targets.map((target, index) =>
+              parseRequiredString(target, `env[${index}]`),
+            ),
+            "env",
+          ).sort((left, right) => left.localeCompare(right)),
+        };
+
+        return this.meta(mergedMetadata);
+      },
+    });
+  }
+
+  envMethodInstalled = true;
 }

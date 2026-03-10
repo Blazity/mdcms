@@ -23,12 +23,26 @@ export type CliConfig = Pick<
   locales?: ParsedMdcmsConfig["locales"];
   types?: CliContentTypeConfig[];
   components?: ParsedMdcmsConfig["components"];
+  environments?: ParsedMdcmsConfig["environments"];
+  resolvedEnvironments?: ParsedMdcmsConfig["resolvedEnvironments"];
 };
+
+export type LoadedCliConfig = CliConfig &
+  Pick<
+    ParsedMdcmsConfig,
+    | "contentDirectories"
+    | "locales"
+    | "components"
+    | "environments"
+    | "resolvedEnvironments"
+  > & {
+    types: CliContentTypeConfig[];
+  };
 
 export async function loadCliConfig(options: {
   cwd: string;
   configPath?: string;
-}): Promise<{ config: CliConfig; configPath: string }> {
+}): Promise<{ config: LoadedCliConfig; configPath: string }> {
   const configPath = resolve(
     options.cwd,
     options.configPath ?? "mdcms.config.ts",
@@ -50,7 +64,9 @@ export async function loadCliConfig(options: {
   );
 
   return {
-    config: parseMdcmsConfig(configModule.default ?? configModule),
+    config: parseMdcmsConfig(
+      configModule.default ?? configModule,
+    ) as LoadedCliConfig,
     configPath,
   };
 }

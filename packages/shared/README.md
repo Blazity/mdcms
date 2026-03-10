@@ -47,6 +47,27 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
   - `reference("TypeName")` returns a string validator with MDCMS reference
     metadata attached for downstream schema sync/registry work.
 
+## Environment Overlay Resolution (CMS-16)
+
+- Shared environment overlay authoring surface:
+  - `defineType(...).extend({ add, modify, omit })`
+  - field-level `.env("staging", "preview")` sugar on Zod-authored fields
+- `parseMdcmsConfig(...)` now parses:
+  - `environments`
+  - deterministic `resolvedEnvironments`
+- Resolver rules:
+  - base fields are shared by default
+  - `.env(...)` fields are expanded into environment-local `add` overlays
+  - `extends` chains resolve parent-first
+  - `add` requires a missing field
+  - `modify` requires an inherited field
+  - `omit` requires an inherited field
+- Invalid overlay authoring is rejected with `INVALID_CONFIG`, including:
+  - unknown `extends` targets
+  - circular inheritance
+  - `.env(...)` conflicts with explicit `add`
+  - `.env(...)` used inside overlay `add` / `modify` blocks
+
 ## Explicit Target Routing Contracts (CMS-14)
 
 - Routing constants:

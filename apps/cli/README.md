@@ -53,6 +53,43 @@ export default defineConfig({
   - localized types require explicit `locales`
   - if `locales` is omitted and no type is localized, CLI resolves implicit
     single-locale mode with `__mdcms_default__`
+  - `environments` overlays support `add`, `modify`, `omit`, `.env(...)`, and
+    `extends`
+  - loaded config now includes deterministic `resolvedEnvironments` from the
+    shared parser for downstream schema-sync consumers
+
+- Environment overlay example:
+
+```ts
+const blogPost = defineType("BlogPost", {
+  directory: "content/blog",
+  fields: {
+    title: z.string(),
+    tags: z.array(z.string()).default([]),
+    featured: z.boolean().default(false).env("staging"),
+  },
+});
+
+export default defineConfig({
+  project: "marketing-site",
+  serverUrl: "http://localhost:4000",
+  contentDirectories: ["content"],
+  types: [blogPost],
+  environments: {
+    production: {},
+    staging: {
+      extends: "production",
+      types: {
+        BlogPost: blogPost.extend({
+          modify: {
+            tags: z.array(z.string()).min(1),
+          },
+        }),
+      },
+    },
+  },
+});
+```
 
 ## CLI Runtime Framework (CMS-77)
 
