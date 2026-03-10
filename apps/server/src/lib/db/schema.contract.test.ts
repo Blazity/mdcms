@@ -220,6 +220,26 @@ test("schema snapshot includes CMS-11/CMS-12 core tables and columns", () => {
       "applied_by",
       "documents_affected",
     ],
+    "public.schema_syncs": [
+      "id",
+      "project_id",
+      "environment_id",
+      "schema_hash",
+      "raw_config_snapshot",
+      "extracted_components",
+      "synced_at",
+    ],
+    "public.schema_registry_entries": [
+      "id",
+      "project_id",
+      "environment_id",
+      "schema_type",
+      "directory",
+      "localized",
+      "schema_hash",
+      "resolved_schema",
+      "synced_at",
+    ],
   };
 
   for (const [tableName, requiredColumns] of Object.entries(
@@ -250,6 +270,9 @@ test("snapshot includes required named constraints and indexes", () => {
   const authSessionsTable = snapshot.tables["public.sessions"];
   const authAccountsTable = snapshot.tables["public.accounts"];
   const authVerificationsTable = snapshot.tables["public.verifications"];
+  const schemaSyncsTable = snapshot.tables["public.schema_syncs"];
+  const schemaRegistryEntriesTable =
+    snapshot.tables["public.schema_registry_entries"];
 
   assert.ok(documentsTable, "expected documents table in snapshot");
   assert.ok(
@@ -267,6 +290,11 @@ test("snapshot includes required named constraints and indexes", () => {
   assert.ok(authSessionsTable, "expected sessions table in snapshot");
   assert.ok(authAccountsTable, "expected accounts table in snapshot");
   assert.ok(authVerificationsTable, "expected verifications table in snapshot");
+  assert.ok(schemaSyncsTable, "expected schema_syncs table in snapshot");
+  assert.ok(
+    schemaRegistryEntriesTable,
+    "expected schema_registry_entries table in snapshot",
+  );
 
   for (const indexName of [
     "idx_documents_active_scope_type_locale_path",
@@ -372,6 +400,32 @@ test("snapshot includes required named constraints and indexes", () => {
   assert.ok(
     authVerificationsTable.indexes.idx_auth_verifications_identifier,
     "expected index idx_auth_verifications_identifier on verifications",
+  );
+  assert.ok(
+    schemaSyncsTable.uniqueConstraints.unique_schema_sync_per_environment,
+    "expected unique constraint unique_schema_sync_per_environment on schema_syncs",
+  );
+  assert.ok(
+    schemaSyncsTable.indexes.idx_schema_syncs_scope,
+    "expected index idx_schema_syncs_scope on schema_syncs",
+  );
+  assert.ok(
+    schemaSyncsTable.foreignKeys.fk_schema_syncs_env_project,
+    "expected foreign key fk_schema_syncs_env_project on schema_syncs",
+  );
+  assert.ok(
+    schemaRegistryEntriesTable.uniqueConstraints
+      .unique_schema_registry_entry_per_type,
+    "expected unique constraint unique_schema_registry_entry_per_type on schema_registry_entries",
+  );
+  assert.ok(
+    schemaRegistryEntriesTable.indexes.idx_schema_registry_entries_scope,
+    "expected index idx_schema_registry_entries_scope on schema_registry_entries",
+  );
+  assert.ok(
+    schemaRegistryEntriesTable.foreignKeys
+      .fk_schema_registry_entries_env_project,
+    "expected foreign key fk_schema_registry_entries_env_project on schema_registry_entries",
   );
 });
 

@@ -68,6 +68,27 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
   - `.env(...)` conflicts with explicit `add`
   - `.env(...)` used inside overlay `add` / `modify` blocks
 
+## Schema Registry Contracts (CMS-17)
+
+- Shared schema registry surface:
+  - `assertSchemaRegistryEntry(...)`
+  - `assertSchemaRegistrySyncPayload(...)`
+  - `serializeResolvedEnvironmentSchema(...)`
+- The registry sync model is latest-state only per `(project, environment)`:
+  - one environment-level sync payload
+  - one derived descriptive entry per schema type
+- `serializeResolvedEnvironmentSchema(...)` emits descriptive JSON snapshots, not
+  executable validators.
+  - supported shapes are the coarse Zod-backed field kinds used by MDCMS
+  - unsupported executable features such as custom `.refine(...)`,
+    transforms/pipes, and non-JSON payload members fail closed with
+    `INVALID_INPUT`
+- Error split:
+  - `INVALID_INPUT` (`400`) means the payload or serializer output is malformed,
+    unsupported, or not JSON-serializable
+  - `SCHEMA_INCOMPATIBLE` (`409`) is a server-side compatibility result when an
+    otherwise valid sync would conflict with existing content
+
 ## Explicit Target Routing Contracts (CMS-14)
 
 - Routing constants:

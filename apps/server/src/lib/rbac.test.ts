@@ -151,6 +151,53 @@ test("RBAC permission evaluation respects role capability mapping", () => {
   assert.equal(manageUsers.effectiveRole, "editor");
 });
 
+test("RBAC permission evaluation maps schema read/write to viewer/editor capabilities", () => {
+  const viewerGrants: RbacGrant[] = [
+    grant({
+      role: "viewer",
+      scope: { kind: "project", project: "marketing-site" },
+    }),
+  ];
+  const editorGrants: RbacGrant[] = [
+    grant({
+      role: "editor",
+      scope: { kind: "project", project: "marketing-site" },
+    }),
+  ];
+
+  const viewerSchemaRead = evaluatePermission({
+    grants: viewerGrants,
+    target: {
+      project: "marketing-site",
+      environment: "production",
+    },
+    action: "schema:read",
+  });
+  const viewerSchemaWrite = evaluatePermission({
+    grants: viewerGrants,
+    target: {
+      project: "marketing-site",
+      environment: "production",
+    },
+    action: "schema:write",
+  });
+  const editorSchemaWrite = evaluatePermission({
+    grants: editorGrants,
+    target: {
+      project: "marketing-site",
+      environment: "production",
+    },
+    action: "schema:write",
+  });
+
+  assert.equal(viewerSchemaRead.allowed, true);
+  assert.equal(viewerSchemaRead.effectiveRole, "viewer");
+  assert.equal(viewerSchemaWrite.allowed, false);
+  assert.equal(viewerSchemaWrite.effectiveRole, "viewer");
+  assert.equal(editorSchemaWrite.allowed, true);
+  assert.equal(editorSchemaWrite.effectiveRole, "editor");
+});
+
 test("RBAC rejects non-global Owner/Admin grants", () => {
   assert.throws(() =>
     evaluateEffectiveRole(

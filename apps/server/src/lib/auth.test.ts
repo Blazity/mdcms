@@ -5,7 +5,13 @@ import { createConsoleLogger } from "@mdcms/shared";
 import { eq } from "drizzle-orm";
 import postgres from "postgres";
 
-import { authSessions, cliLoginChallenges, rbacGrants } from "./db/schema.js";
+import {
+  authSessions,
+  cliLoginChallenges,
+  environments,
+  projects,
+  rbacGrants,
+} from "./db/schema.js";
 import { createServerRequestHandlerWithModules } from "./runtime-with-modules.js";
 
 const env = {
@@ -118,6 +124,63 @@ async function login(
   return {
     cookie: extractSetCookie(loginResponse),
     session: loginBody.data.session,
+  };
+}
+
+async function seedScope(
+  db: ReturnType<
+    typeof createServerRequestHandlerWithModules
+  >["dbConnection"]["db"],
+  scope: {
+    project: string;
+    environment: string;
+  },
+): Promise<void> {
+  await db
+    .insert(projects)
+    .values({
+      name: scope.project,
+      slug: scope.project,
+      createdBy: "00000000-0000-0000-0000-000000000001",
+    })
+    .onConflictDoNothing();
+
+  const project = await db.query.projects.findFirst({
+    where: eq(projects.slug, scope.project),
+  });
+  assert.ok(project);
+
+  await db
+    .insert(environments)
+    .values({
+      projectId: project.id,
+      name: scope.environment,
+      description: null,
+      createdBy: "00000000-0000-0000-0000-000000000001",
+    })
+    .onConflictDoNothing();
+}
+
+function createSchemaSyncPayload(schemaHash: string) {
+  return {
+    rawConfigSnapshot: {
+      project: "marketing-site",
+    },
+    resolvedSchema: {
+      Post: {
+        type: "Post",
+        directory: "content/posts",
+        localized: false,
+        fields: {
+          title: {
+            kind: "string",
+            required: true,
+            nullable: false,
+          },
+        },
+      },
+    },
+    schemaHash,
   };
 }
 
@@ -951,6 +1014,279 @@ testWithDatabase(
         };
       assert.equal(draftWriteForbiddenResponse.status, 403);
       assert.equal(draftWriteForbiddenBody.code, "FORBIDDEN");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "API key schema scopes require schema:read for GET and schema:write for PUT",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+    const scopeHeaders = {
+      "x-mdcms-project": "marketing-site",
+      "x-mdcms-environment": "production",
+    };
+
+    try {
+      await signUp(handler, {
+        email,
+        password,
+        name: "Schema Key User",
+      });
+      const loginResult = await login(handler, {
+        email,
+        password,
+      });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: loginResult.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:schema-api-key-owner",
+          createdByUserId: loginResult.session.userId,
+        })
+        .onConflictDoNothing();
+      await seedScope(dbConnection.db, {
+        project: "marketing-site",
+        environment: "production",
+      });
+
+      const readKeyResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          method: "POST",
+          headers: {
+            cookie: loginResult.cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            label: "schema-read",
+            scopes: ["schema:read"],
+            contextAllowlist: [
+              {
+                project: "marketing-site",
+                environment: "production",
+              },
+            ],
+          }),
+        }),
+      );
+      const readKeyBody = (await readKeyResponse.json()) as {
+        data: { key: string };
+      };
+      assert.equal(readKeyResponse.status, 200);
+
+      const writeKeyResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          method: "POST",
+          headers: {
+            cookie: loginResult.cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            label: "schema-write",
+            scopes: ["schema:write"],
+            contextAllowlist: [
+              {
+                project: "marketing-site",
+                environment: "production",
+              },
+            ],
+          }),
+        }),
+      );
+      const writeKeyBody = (await writeKeyResponse.json()) as {
+        data: { key: string };
+      };
+      assert.equal(writeKeyResponse.status, 200);
+
+      const getWithReadResponse = await handler(
+        new Request("http://localhost/api/v1/schema", {
+          headers: {
+            ...scopeHeaders,
+            authorization: `Bearer ${readKeyBody.data.key}`,
+          },
+        }),
+      );
+      assert.equal(getWithReadResponse.status, 200);
+
+      const putWithReadResponse = await handler(
+        new Request("http://localhost/api/v1/schema", {
+          method: "PUT",
+          headers: {
+            ...scopeHeaders,
+            authorization: `Bearer ${readKeyBody.data.key}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(createSchemaSyncPayload("schema-read-blocked")),
+        }),
+      );
+      const putWithReadBody = (await putWithReadResponse.json()) as {
+        code: string;
+      };
+      assert.equal(putWithReadResponse.status, 403);
+      assert.equal(putWithReadBody.code, "FORBIDDEN");
+
+      const getWithWriteResponse = await handler(
+        new Request("http://localhost/api/v1/schema", {
+          headers: {
+            ...scopeHeaders,
+            authorization: `Bearer ${writeKeyBody.data.key}`,
+          },
+        }),
+      );
+      const getWithWriteBody = (await getWithWriteResponse.json()) as {
+        code: string;
+      };
+      assert.equal(getWithWriteResponse.status, 403);
+      assert.equal(getWithWriteBody.code, "FORBIDDEN");
+
+      const putWithWriteResponse = await handler(
+        new Request("http://localhost/api/v1/schema", {
+          method: "PUT",
+          headers: {
+            ...scopeHeaders,
+            authorization: `Bearer ${writeKeyBody.data.key}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(createSchemaSyncPayload("schema-write-allowed")),
+        }),
+      );
+      assert.equal(putWithWriteResponse.status, 200);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "session RBAC gates schema routes with read-only viewer and write-capable editor scopes",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const ownerEmail = uniqueEmail();
+    const editorEmail = uniqueEmail();
+    const password = "Admin12345!";
+    const scopeHeaders = {
+      "x-mdcms-project": "marketing-site",
+      "x-mdcms-environment": "production",
+    };
+
+    try {
+      await signUp(handler, {
+        email: ownerEmail,
+        password,
+        name: "Bootstrap Owner",
+      });
+      const ownerLogin = await login(handler, {
+        email: ownerEmail,
+        password,
+      });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: ownerLogin.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:schema-session-owner",
+          createdByUserId: ownerLogin.session.userId,
+        })
+        .onConflictDoNothing();
+      await seedScope(dbConnection.db, {
+        project: "marketing-site",
+        environment: "production",
+      });
+
+      await signUp(handler, {
+        email: editorEmail,
+        password,
+        name: "Schema Scoped User",
+      });
+      const scopedLogin = await login(handler, {
+        email: editorEmail,
+        password,
+      });
+
+      const forbiddenReadResponse = await handler(
+        new Request("http://localhost/api/v1/schema", {
+          headers: {
+            ...scopeHeaders,
+            cookie: scopedLogin.cookie,
+          },
+        }),
+      );
+      const forbiddenReadBody = (await forbiddenReadResponse.json()) as {
+        code: string;
+      };
+      assert.equal(forbiddenReadResponse.status, 403);
+      assert.equal(forbiddenReadBody.code, "FORBIDDEN");
+
+      await dbConnection.db.insert(rbacGrants).values({
+        userId: scopedLogin.session.userId,
+        role: "viewer",
+        scopeKind: "project",
+        project: "marketing-site",
+        source: "test:schema-session-viewer",
+        createdByUserId: ownerLogin.session.userId,
+      });
+
+      const allowedReadResponse = await handler(
+        new Request("http://localhost/api/v1/schema", {
+          headers: {
+            ...scopeHeaders,
+            cookie: scopedLogin.cookie,
+          },
+        }),
+      );
+      assert.equal(allowedReadResponse.status, 200);
+
+      const viewerWriteResponse = await handler(
+        new Request("http://localhost/api/v1/schema", {
+          method: "PUT",
+          headers: {
+            ...scopeHeaders,
+            cookie: scopedLogin.cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(createSchemaSyncPayload("viewer-write-blocked")),
+        }),
+      );
+      const viewerWriteBody = (await viewerWriteResponse.json()) as {
+        code: string;
+      };
+      assert.equal(viewerWriteResponse.status, 403);
+      assert.equal(viewerWriteBody.code, "FORBIDDEN");
+
+      await dbConnection.db.insert(rbacGrants).values({
+        userId: scopedLogin.session.userId,
+        role: "editor",
+        scopeKind: "project",
+        project: "marketing-site",
+        source: "test:schema-session-editor",
+        createdByUserId: ownerLogin.session.userId,
+      });
+
+      const editorWriteResponse = await handler(
+        new Request("http://localhost/api/v1/schema", {
+          method: "PUT",
+          headers: {
+            ...scopeHeaders,
+            cookie: scopedLogin.cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(createSchemaSyncPayload("editor-write-allowed")),
+        }),
+      );
+      assert.equal(editorWriteResponse.status, 200);
     } finally {
       await dbConnection.close();
     }

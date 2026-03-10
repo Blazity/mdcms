@@ -58,6 +58,24 @@ export default defineConfig({
   - loaded config now includes deterministic `resolvedEnvironments` from the
     shared parser for downstream schema-sync consumers
 
+## Schema Registry Sync Model (CMS-17)
+
+- Resolved CLI config is the source for schema registry sync payloads sent to
+  `/api/v1/schema`.
+- Syncs are latest-state only per `(project, environment)`:
+  - the uploaded payload replaces the stored environment sync head
+  - the server derives one registry entry per content type from that payload
+- The synced schema is descriptive JSON, not an executable validator.
+  - supported field shapes are serialized from the resolved Zod-backed config
+  - unsupported executable validator features such as `.refine(...)`,
+    transforms, and non-JSON values are rejected as `INVALID_INPUT` before the
+    registry can be updated
+- Server-side compatibility errors stay distinct from malformed payload errors:
+  - `INVALID_INPUT` (`400`) => unsupported or malformed sync payload
+  - `SCHEMA_INCOMPATIBLE` (`409`) => valid payload would require a content
+    migration first, for example removing a type with documents or making a
+    field newly required
+
 - Environment overlay example:
 
 ```ts

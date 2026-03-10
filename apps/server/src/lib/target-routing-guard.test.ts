@@ -24,6 +24,7 @@ function createHandler() {
       };
 
       serverApp.get?.("/api/v1/content", () => ({ route: "content" }));
+      serverApp.get?.("/api/v1/schema", () => ({ route: "schema" }));
       serverApp.get?.("/api/v1/environments", () => ({
         route: "environments",
       }));
@@ -52,6 +53,22 @@ test("environment-scoped endpoint accepts explicit headers", async () => {
   assert.equal(body.route, "content");
 });
 
+test("schema endpoint accepts explicit headers", async () => {
+  const handler = createHandler();
+  const response = await handler(
+    new Request("http://localhost/api/v1/schema", {
+      headers: {
+        [MDCMS_PROJECT_HEADER]: "marketing-site",
+        [MDCMS_ENVIRONMENT_HEADER]: "staging",
+      },
+    }),
+  );
+  const body = (await response.json()) as Record<string, unknown>;
+
+  assert.equal(response.status, 200);
+  assert.equal(body.route, "schema");
+});
+
 test("environment-scoped endpoint accepts explicit query parameters", async () => {
   const handler = createHandler();
   const response = await handler(
@@ -70,6 +87,15 @@ test("environment-scoped endpoint rejects missing routing", async () => {
   const response = await handler(
     new Request("http://localhost/api/v1/content"),
   );
+  const body = (await response.json()) as Record<string, unknown>;
+
+  assert.equal(response.status, 400);
+  assert.equal(body.code, "MISSING_TARGET_ROUTING");
+});
+
+test("schema endpoint rejects missing routing", async () => {
+  const handler = createHandler();
+  const response = await handler(new Request("http://localhost/api/v1/schema"));
   const body = (await response.json()) as Record<string, unknown>;
 
   assert.equal(response.status, 400);
@@ -136,6 +162,25 @@ test("scoped endpoint rejects header/query routing mismatches", async () => {
   const response = await handler(
     new Request(
       "http://localhost/api/v1/content?project=docs-site&environment=staging",
+      {
+        headers: {
+          [MDCMS_PROJECT_HEADER]: "marketing-site",
+          [MDCMS_ENVIRONMENT_HEADER]: "staging",
+        },
+      },
+    ),
+  );
+  const body = (await response.json()) as Record<string, unknown>;
+
+  assert.equal(response.status, 400);
+  assert.equal(body.code, "TARGET_ROUTING_MISMATCH");
+});
+
+test("schema endpoint rejects header/query routing mismatches", async () => {
+  const handler = createHandler();
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/schema?project=docs-site&environment=staging",
       {
         headers: {
           [MDCMS_PROJECT_HEADER]: "marketing-site",

@@ -12,6 +12,10 @@ import {
   createDatabaseContentStore,
   mountContentApiRoutes,
 } from "./content-api.js";
+import {
+  createDatabaseSchemaStore,
+  mountSchemaApiRoutes,
+} from "./schema-api.js";
 import { createAuthService, mountAuthRoutes } from "./auth.js";
 import { mountCollaborationRoutes } from "./collaboration-auth.js";
 
@@ -71,6 +75,7 @@ export function createServerRequestHandlerWithModules(
     });
   const authService = createAuthService({ db: dbConnection.db, env: rawEnv });
   const contentStore = createDatabaseContentStore({ db: dbConnection.db });
+  const schemaStore = createDatabaseSchemaStore({ db: dbConnection.db });
   const actions = collectServerModuleActions(moduleLoadReport);
   const moduleDeps = { ...(options.moduleDeps ?? {}), dal };
 
@@ -83,6 +88,11 @@ export function createServerRequestHandlerWithModules(
       mountAuthRoutes(app, { authService });
       mountContentApiRoutes(app, {
         store: contentStore,
+        authorize: (request, requirement) =>
+          authService.authorizeRequest(request, requirement),
+      });
+      mountSchemaApiRoutes(app, {
+        store: schemaStore,
         authorize: (request, requirement) =>
           authService.authorizeRequest(request, requirement),
       });

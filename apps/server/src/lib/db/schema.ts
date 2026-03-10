@@ -231,6 +231,71 @@ export const environments = pgTable(
   ],
 );
 
+export const schemaSyncs = pgTable(
+  "schema_syncs",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    projectId: uuid()
+      .notNull()
+      .references(() => projects.id),
+    environmentId: uuid()
+      .notNull()
+      .references(() => environments.id),
+    schemaHash: text().notNull(),
+    rawConfigSnapshot: jsonb().notNull(),
+    extractedComponents: jsonb(),
+    syncedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("unique_schema_sync_per_environment").on(
+      table.projectId,
+      table.environmentId,
+    ),
+    foreignKey({
+      name: "fk_schema_syncs_env_project",
+      columns: [table.environmentId, table.projectId],
+      foreignColumns: [environments.id, environments.projectId],
+    }),
+    index("idx_schema_syncs_scope").on(table.projectId, table.environmentId),
+  ],
+);
+
+export const schemaRegistryEntries = pgTable(
+  "schema_registry_entries",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    projectId: uuid()
+      .notNull()
+      .references(() => projects.id),
+    environmentId: uuid()
+      .notNull()
+      .references(() => environments.id),
+    schemaType: text().notNull(),
+    directory: text().notNull(),
+    localized: boolean().notNull(),
+    schemaHash: text().notNull(),
+    resolvedSchema: jsonb().notNull(),
+    syncedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("unique_schema_registry_entry_per_type").on(
+      table.projectId,
+      table.environmentId,
+      table.schemaType,
+    ),
+    foreignKey({
+      name: "fk_schema_registry_entries_env_project",
+      columns: [table.environmentId, table.projectId],
+      foreignColumns: [environments.id, environments.projectId],
+    }),
+    index("idx_schema_registry_entries_scope").on(
+      table.projectId,
+      table.environmentId,
+      table.schemaType,
+    ),
+  ],
+);
+
 export const documentVersions = pgTable(
   "document_versions",
   {

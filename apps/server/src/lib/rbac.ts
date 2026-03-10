@@ -45,6 +45,8 @@ export type RbacAction =
   | "content:publish"
   | "content:unpublish"
   | "content:delete"
+  | "schema:read"
+  | "schema:write"
   | "user:manage"
   | "settings:manage";
 
@@ -56,7 +58,7 @@ const ROLE_RANK: Record<RbacRole, number> = {
 };
 
 const ROLE_ACTIONS: Record<RbacRole, readonly RbacAction[]> = {
-  viewer: ["content:read"],
+  viewer: ["content:read", "schema:read"],
   editor: [
     "content:read",
     "content:read:draft",
@@ -64,6 +66,8 @@ const ROLE_ACTIONS: Record<RbacRole, readonly RbacAction[]> = {
     "content:publish",
     "content:unpublish",
     "content:delete",
+    "schema:read",
+    "schema:write",
   ],
   admin: [
     "content:read",
@@ -72,6 +76,8 @@ const ROLE_ACTIONS: Record<RbacRole, readonly RbacAction[]> = {
     "content:publish",
     "content:unpublish",
     "content:delete",
+    "schema:read",
+    "schema:write",
     "user:manage",
     "settings:manage",
   ],
@@ -82,6 +88,8 @@ const ROLE_ACTIONS: Record<RbacRole, readonly RbacAction[]> = {
     "content:publish",
     "content:unpublish",
     "content:delete",
+    "schema:read",
+    "schema:write",
     "user:manage",
     "settings:manage",
   ],

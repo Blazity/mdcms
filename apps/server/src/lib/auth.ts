@@ -609,6 +609,14 @@ function toRbacAction(requiredScope: ApiKeyOperationScope): RbacAction | null {
     return "content:delete";
   }
 
+  if (requiredScope === "schema:read") {
+    return "schema:read";
+  }
+
+  if (requiredScope === "schema:write") {
+    return "schema:write";
+  }
+
   return null;
 }
 
