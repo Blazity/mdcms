@@ -166,6 +166,7 @@ export type AuthService = {
     setCookie: string;
   }>;
   getSession: (request: Request) => Promise<StudioSession | undefined>;
+  requireAdminSession: (request: Request) => Promise<StudioSession>;
   logout: (request: Request) => Promise<{
     revoked: boolean;
     setCookie?: string;
@@ -1189,6 +1190,10 @@ export function createAuthService(
 
     async getSession(request) {
       return getSessionIfAvailable(request);
+    },
+
+    async requireAdminSession(request) {
+      return assertAdminSession(request);
     },
 
     async logout(request) {

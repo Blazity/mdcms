@@ -7,3 +7,4 @@ export * from "./lib/env.js";
 export * from "./lib/errors.js";
 export * from "./lib/health.js";
 export * from "./lib/db.js";
+export * from "./lib/environments-api.js";

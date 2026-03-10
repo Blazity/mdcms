@@ -13,6 +13,10 @@ import {
 } from "./db/schema.js";
 import type { ApiKeyOperationScope, AuthorizationRequirement } from "./auth.js";
 import { executeWithRuntimeErrorsHandled } from "./http-utils.js";
+import {
+  DEFAULT_ENVIRONMENT_NAME,
+  ensureProjectProvisioned,
+} from "./project-provisioning.js";
 
 const SortFieldSchema = z.enum(["createdAt", "updatedAt", "path"]);
 const SortOrderSchema = z.enum(["asc", "desc"]);
@@ -971,18 +975,12 @@ export function createDatabaseContentStore(
     });
 
     if (!project && createIfMissing) {
-      await db
-        .insert(projects)
-        .values({
-          name: scope.project,
-          slug: scope.project,
-          createdBy: DEFAULT_ACTOR,
-        })
-        .onConflictDoNothing();
-
-      project = await db.query.projects.findFirst({
-        where: eq(projects.slug, scope.project),
+      const provisioned = await ensureProjectProvisioned(db, {
+        project: scope.project,
       });
+      project = {
+        id: provisioned.projectId,
+      } as typeof projects.$inferSelect;
     }
 
     if (!project) {
@@ -996,20 +994,18 @@ export function createDatabaseContentStore(
       ),
     });
 
-    if (!environment && createIfMissing) {
-      await db
-        .insert(environments)
-        .values({
-          projectId: project.id,
-          name: scope.environment,
-          description: null,
-          createdBy: DEFAULT_ACTOR,
-        })
-        .onConflictDoNothing();
+    if (
+      !environment &&
+      createIfMissing &&
+      scope.environment === DEFAULT_ENVIRONMENT_NAME
+    ) {
+      const provisioned = await ensureProjectProvisioned(db, {
+        project: scope.project,
+      });
 
       environment = await db.query.environments.findFirst({
         where: and(
-          eq(environments.projectId, project.id),
+          eq(environments.projectId, provisioned.projectId),
           eq(environments.name, scope.environment),
         ),
       });

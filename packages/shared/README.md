@@ -68,6 +68,24 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
   - `.env(...)` conflicts with explicit `add`
   - `.env(...)` used inside overlay `add` / `modify` blocks
 
+## Environment Management Contracts (CMS-18)
+
+- Shared environment management surface:
+  - `EnvironmentSummary`
+  - `EnvironmentCreateInput`
+  - `assertEnvironmentSummary(...)`
+  - `assertEnvironmentCreateInput(...)`
+- `EnvironmentSummary` is the canonical admin-facing environment payload:
+  - `id`
+  - `project`
+  - `name`
+  - `extends`
+  - `isDefault`
+  - `createdAt`
+- Environment management remains config-authoritative:
+  - valid environment names come from `mdcms.config.ts`
+  - `extends` metadata is derived from config, not authored in the database
+
 ## Schema Registry Contracts (CMS-17)
 
 - Shared schema registry surface:

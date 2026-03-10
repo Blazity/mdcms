@@ -42,6 +42,9 @@ function createAuthServiceStub(overrides: Partial<AuthService>): AuthService {
     async getSession() {
       return session;
     },
+    async requireAdminSession() {
+      return session;
+    },
     async logout() {
       return {
         revoked: true,

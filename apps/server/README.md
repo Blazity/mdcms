@@ -61,6 +61,23 @@ Backend API/runtime package boundary for MDCMS.
 - `createServerRequestHandlerWithModules(...)` composes module load report + mounts + action catalog into the server runtime.
 - Runtime logs emit module load summary lines for loaded and skipped modules.
 
+## Environment API Endpoints (CMS-18)
+
+- Environment routes are mounted under `/api/v1/environments`.
+- Implemented endpoints:
+  - `GET /api/v1/environments`
+  - `POST /api/v1/environments`
+  - `DELETE /api/v1/environments/:id`
+- Environment management rules:
+  - explicit `project` routing is required
+  - authenticated Studio session required
+  - global `owner` or `admin` only
+  - valid environment names and `extends` chains are derived from
+    `mdcms.config.ts`
+  - project provisioning guarantees a default `production` environment
+  - deleting `production` or any environment with content/schema state returns
+    deterministic `CONFLICT` (`409`)
+
 ## Content API Endpoints (CMS-21)
 
 - Content routes are mounted under `/api/v1/content` in the server runtime.

@@ -18,6 +18,12 @@ import {
 } from "./schema-api.js";
 import { createAuthService, mountAuthRoutes } from "./auth.js";
 import { mountCollaborationRoutes } from "./collaboration-auth.js";
+import {
+  createDatabaseEnvironmentStore,
+  mountEnvironmentApiRoutes,
+} from "./environments-api.js";
+import { loadServerConfig } from "./config.js";
+import type { ParsedMdcmsConfig } from "@mdcms/shared";
 
 import {
   collectServerModuleActions,
@@ -30,6 +36,9 @@ import {
 export type CreateServerRequestHandlerWithModulesOptions = {
   env?: NodeJS.ProcessEnv;
   logger?: Logger;
+  config?: ParsedMdcmsConfig;
+  configPath?: string;
+  cwd?: string;
   moduleDeps?: ServerModuleAppDeps;
   moduleLoadReport?: ServerModuleLoadReport;
   serverOptions?: Omit<
@@ -76,6 +85,23 @@ export function createServerRequestHandlerWithModules(
   const authService = createAuthService({ db: dbConnection.db, env: rawEnv });
   const contentStore = createDatabaseContentStore({ db: dbConnection.db });
   const schemaStore = createDatabaseSchemaStore({ db: dbConnection.db });
+  let configPromise: Promise<ParsedMdcmsConfig | undefined> | undefined;
+  const getConfig = () => {
+    if (options.config) {
+      return Promise.resolve(options.config);
+    }
+
+    configPromise ??= loadServerConfig({
+      cwd: options.cwd,
+      configPath: options.configPath,
+    }).then((loaded) => loaded?.config);
+
+    return configPromise;
+  };
+  const environmentStore = createDatabaseEnvironmentStore({
+    db: dbConnection.db,
+    getConfig,
+  });
   const actions = collectServerModuleActions(moduleLoadReport);
   const moduleDeps = { ...(options.moduleDeps ?? {}), dal };
 
@@ -95,6 +121,10 @@ export function createServerRequestHandlerWithModules(
         store: schemaStore,
         authorize: (request, requirement) =>
           authService.authorizeRequest(request, requirement),
+      });
+      mountEnvironmentApiRoutes(app, {
+        store: environmentStore,
+        authorizeAdmin: (request) => authService.requireAdminSession(request),
       });
       mountCollaborationRoutes(app, {
         authService,
