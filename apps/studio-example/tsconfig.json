@@ -23,6 +23,9 @@
   "exclude": ["node_modules"],
   "references": [
     {
+      "path": "../cli"
+    },
+    {
       "path": "../../packages/studio"
     }
   ]

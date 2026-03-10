@@ -1,18 +1,11 @@
+import type { MdcmsConfig as SharedMdcmsConfig } from "@mdcms/shared";
+
 import { Button } from "./ui/button.js";
 import { roundTripMarkdown } from "./markdown-pipeline.js";
 import type { StudioDocumentShell } from "./document-shell.js";
 
-export type MdcmsContentTypeConfig = {
-  name: string;
-  directory?: string;
-  localized?: boolean;
-};
-
-export type MdcmsConfig = {
-  project: string;
-  serverUrl: string;
+export type MdcmsConfig = SharedMdcmsConfig & {
   environment: string;
-  types?: MdcmsContentTypeConfig[];
 };
 
 export type StudioRole = "owner" | "admin" | "editor" | "viewer";

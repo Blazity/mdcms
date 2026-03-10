@@ -2,6 +2,58 @@
 
 CLI package boundary for MDCMS operator workflows.
 
+## Config Authoring Contract (CMS-15)
+
+- Public authoring helpers are exported from `@mdcms/cli`:
+  - `defineConfig(...)`
+  - `defineType(...)`
+  - `reference(...)`
+- `mdcms.config.ts` remains the code-first schema source of truth.
+- Minimal example:
+
+```ts
+import { defineConfig, defineType, reference } from "@mdcms/cli";
+import { z } from "zod";
+
+export default defineConfig({
+  project: "marketing-site",
+  environment: "staging",
+  serverUrl: "http://localhost:4000",
+  contentDirectories: ["content"],
+  types: [
+    defineType("Author", {
+      directory: "content/authors",
+      fields: {
+        name: z.string().min(1),
+      },
+    }),
+    defineType("BlogPost", {
+      directory: "content/blog",
+      localized: true,
+      fields: {
+        title: z.string().min(1),
+        author: reference("Author"),
+      },
+    }),
+  ],
+  locales: {
+    default: "en-US",
+    supported: ["en-US", "fr"],
+    aliases: {
+      en_us: "en-US",
+    },
+  },
+});
+```
+
+- Validation/normalization rules enforced by the shared parser:
+  - `project` and `serverUrl` are required trimmed strings
+  - `environment` is an optional default-routing value
+  - `contentDirectories` must cover every configured type directory
+  - localized types require explicit `locales`
+  - if `locales` is omitted and no type is localized, CLI resolves implicit
+    single-locale mode with `__mdcms_default__`
+
 ## CLI Runtime Framework (CMS-77)
 
 - Executable entrypoint:

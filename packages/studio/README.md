@@ -37,18 +37,20 @@ Host-embedded Studio package boundary for MDCMS.
 Usage:
 
 ```tsx
-import { Studio, type MdcmsConfig } from "@mdcms/studio";
-
-const config: MdcmsConfig = {
-  project: "marketing-site",
-  environment: "staging",
-  serverUrl: "http://localhost:4000",
-};
+import config from "../../apps/studio-example/mdcms.config";
+import { Studio } from "@mdcms/studio";
 
 export default function AdminPage() {
   return <Studio config={config} path={["content", "posts"]} />;
 }
 ```
+
+- `config.environment` is required by the Studio shell even though the shared
+  `mdcms.config.ts` contract keeps it optional for CLI default-routing use
+  cases.
+- The recommended host-app setup is to keep a single `mdcms.config.ts`
+  authored with `defineConfig(...)` from `@mdcms/cli`, then pass that object to
+  Studio.
 
 ## Document Shell Route (CMS-50)
 

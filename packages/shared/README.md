@@ -22,6 +22,31 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
 - `assertActionCatalogItem(...)` and `assertActionCatalogList(...)` validate action catalog payload shape and inline schema object shape at runtime.
 - Route ownership for Eden/Treaty contract typing lives in `@mdcms/server`, while payload contracts and validators remain in `@mdcms/shared`.
 
+## Config Contract + Normalization (CMS-15)
+
+- Shared config authoring surface:
+  - `defineConfig(...)`
+  - `defineType(...)`
+  - `reference(...)`
+  - `parseMdcmsConfig(...)`
+- `parseMdcmsConfig(...)` is the canonical validator/normalizer for
+  `mdcms.config.ts`.
+- Field validators must implement the Standard Schema interface; Zod is the
+  primary supported authoring library.
+- Locale behavior:
+  - localized types require explicit `locales`
+  - locale tags are trimmed, `_` is converted to `-`, and casing is canonicalized
+  - `__mdcms_default__` is reserved for implicit single-locale mode only
+  - if no type is localized and `locales` is omitted, the effective locale
+    contract becomes `{ default: "__mdcms_default__", supported: ["__mdcms_default__"] }`
+- Managed directory behavior:
+  - `contentDirectories` is normalized to unique project-relative paths
+  - every configured type directory must be equal to or nested under one
+    `contentDirectories` entry
+- Reference fields:
+  - `reference("TypeName")` returns a string validator with MDCMS reference
+    metadata attached for downstream schema sync/registry work.
+
 ## Explicit Target Routing Contracts (CMS-14)
 
 - Routing constants:

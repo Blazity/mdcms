@@ -89,7 +89,8 @@ Notes:
   - email: `demo@mdcms.local`
   - password: `Demo12345!`
 - `apps/studio-example/mdcms.config.ts` includes ready `types` mappings for
-  `post` and `page`, so `pull/push` path mapping works out of the box.
+  `post`, `author`, and `page`, and uses the shared `defineConfig(...)`
+  contract from `@mdcms/cli`, so `pull/push` path mapping works out of the box.
 - `compose:dev` seeds example content in `marketing-site/staging` (posts/pages),
   so first `mdcms pull` returns real files immediately.
 
