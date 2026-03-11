@@ -5,7 +5,12 @@ import { and, eq, ne, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import type { DrizzleDatabase } from "./db.js";
-import { documents, documentVersions } from "./db/schema.js";
+import {
+  documents,
+  documentVersions,
+  schemaRegistryEntries,
+  schemaSyncs,
+} from "./db/schema.js";
 import type { ApiKeyOperationScope, AuthorizationRequirement } from "./auth.js";
 import { executeWithRuntimeErrorsHandled } from "./http-utils.js";
 import { resolveProjectEnvironmentScope } from "./project-provisioning.js";
@@ -70,6 +75,9 @@ type ContentWritePayload = {
   format?: string;
   frontmatter?: Record<string, unknown>;
   body?: string;
+  // When provided on create, the new document becomes a locale variant
+  // in the source document's translation group.
+  sourceDocumentId?: string;
   createdBy?: string;
   updatedBy?: string;
 };
@@ -93,6 +101,10 @@ const DEFAULT_ACTOR = "00000000-0000-0000-0000-000000000001";
 
 function toScopeKey(project: string, environment: string): string {
   return `${project}::${environment}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseQueryParam<T>(
@@ -324,12 +336,66 @@ function toIsoString(value: unknown): string {
     : new Date(value as any).toISOString();
 }
 
-function isUniqueViolation(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) {
-    return false;
+function getDatabaseErrorObjects(
+  error: unknown,
+): Array<Record<string, unknown>> {
+  const objects: Array<Record<string, unknown>> = [];
+  const seen = new Set<object>();
+  let current = error;
+
+  while (
+    typeof current === "object" &&
+    current !== null &&
+    !seen.has(current as object)
+  ) {
+    objects.push(current as Record<string, unknown>);
+    seen.add(current as object);
+    current = (current as { cause?: unknown }).cause;
   }
 
-  return (error as { code?: string }).code === "23505";
+  return objects;
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return getDatabaseErrorObjects(error).some(
+    (candidate) => candidate.code === "23505",
+  );
+}
+
+function getUniqueConstraintName(error: unknown): string | undefined {
+  for (const candidate of getDatabaseErrorObjects(error)) {
+    const constraint = candidate.constraint_name ?? candidate.constraint;
+
+    if (typeof constraint === "string") {
+      return constraint;
+    }
+  }
+
+  return undefined;
+}
+
+function readSupportedLocales(
+  rawConfigSnapshot: unknown,
+): Set<string> | undefined {
+  if (!isRecord(rawConfigSnapshot)) {
+    return undefined;
+  }
+
+  const locales = rawConfigSnapshot.locales;
+  if (!isRecord(locales) || !Array.isArray(locales.supported)) {
+    return undefined;
+  }
+
+  const supportedLocales = locales.supported.filter(
+    (locale): locale is string =>
+      typeof locale === "string" && locale.trim().length > 0,
+  );
+
+  if (supportedLocales.length === 0) {
+    return undefined;
+  }
+
+  return new Set(supportedLocales);
 }
 
 function toContentDocument(
@@ -497,6 +563,28 @@ export function createInMemoryContentStore(): ContentStore {
     return undefined;
   }
 
+  function findTranslationLocaleConflict(
+    store: Map<string, ContentDocument>,
+    input: {
+      translationGroupId: string;
+      locale: string;
+      documentId?: string;
+    },
+  ): ContentDocument | undefined {
+    for (const candidate of store.values()) {
+      if (
+        candidate.documentId !== input.documentId &&
+        candidate.translationGroupId === input.translationGroupId &&
+        candidate.locale === input.locale &&
+        candidate.isDeleted === false
+      ) {
+        return candidate;
+      }
+    }
+
+    return undefined;
+  }
+
   function resolveReadDocument(input: {
     document: ContentDocument;
     draft: boolean;
@@ -559,11 +647,43 @@ export function createInMemoryContentStore(): ContentStore {
       const path = assertRequiredString(payload.path, "path");
       const type = assertRequiredString(payload.type, "type");
       const locale = assertRequiredString(payload.locale, "locale");
+      const sourceDocumentId = parseOptionalString(
+        payload.sourceDocumentId,
+        "sourceDocumentId",
+      );
       const body = assertRequiredString(payload.body, "body", {
         allowEmpty: true,
       });
       const frontmatter = assertJsonObject(payload.frontmatter, "frontmatter");
       const format = parseContentFormat(payload.format);
+      const sourceDocument = sourceDocumentId
+        ? store.get(sourceDocumentId)
+        : undefined;
+
+      if (sourceDocumentId && (!sourceDocument || sourceDocument.isDeleted)) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: sourceDocumentId,
+          },
+        });
+      }
+
+      if (sourceDocument && sourceDocument.type !== type) {
+        throw new RuntimeError({
+          code: "INVALID_INPUT",
+          message:
+            'Field "type" must match the source document type when creating a translation variant.',
+          statusCode: 400,
+          details: {
+            field: "type",
+            sourceDocumentId,
+          },
+        });
+      }
+
       const conflict = findPathConflict(store, { path, locale });
 
       if (conflict) {
@@ -580,11 +700,32 @@ export function createInMemoryContentStore(): ContentStore {
         });
       }
 
+      const translationGroupId =
+        sourceDocument?.translationGroupId ?? randomUUID();
+      const translationConflict = findTranslationLocaleConflict(store, {
+        translationGroupId,
+        locale,
+      });
+
+      if (translationConflict) {
+        throw new RuntimeError({
+          code: "TRANSLATION_VARIANT_CONFLICT",
+          message:
+            "A non-deleted document with the same translation group and locale already exists.",
+          statusCode: 409,
+          details: {
+            conflictDocumentId: translationConflict.documentId,
+            translationGroupId,
+            locale,
+          },
+        });
+      }
+
       const now = new Date().toISOString();
       const actor = payload.createdBy?.trim() || DEFAULT_ACTOR;
       const document: ContentDocument = {
         documentId: randomUUID(),
-        translationGroupId: randomUUID(),
+        translationGroupId,
         project: scope.project,
         environment: scope.environment,
         path,
@@ -783,6 +924,26 @@ export function createInMemoryContentStore(): ContentStore {
           details: {
             conflictDocumentId: conflict.documentId,
             path: nextPath,
+            locale: nextLocale,
+          },
+        });
+      }
+
+      const translationConflict = findTranslationLocaleConflict(store, {
+        translationGroupId: existing.translationGroupId,
+        locale: nextLocale,
+        documentId: normalizedDocumentId,
+      });
+
+      if (translationConflict) {
+        throw new RuntimeError({
+          code: "TRANSLATION_VARIANT_CONFLICT",
+          message:
+            "A non-deleted document with the same translation group and locale already exists.",
+          statusCode: 409,
+          details: {
+            conflictDocumentId: translationConflict.documentId,
+            translationGroupId: existing.translationGroupId,
             locale: nextLocale,
           },
         });
@@ -999,6 +1160,81 @@ export function createDatabaseContentStore(
     });
   }
 
+  async function findTranslationLocaleConflict(
+    scopeIds: { projectId: string; environmentId: string },
+    input: {
+      translationGroupId: string;
+      locale: string;
+      documentId?: string;
+    },
+  ): Promise<typeof documents.$inferSelect | undefined> {
+    const baseConditions: SQL[] = [
+      eq(documents.projectId, scopeIds.projectId),
+      eq(documents.environmentId, scopeIds.environmentId),
+      eq(documents.translationGroupId, input.translationGroupId),
+      eq(documents.locale, input.locale),
+      eq(documents.isDeleted, false),
+    ];
+
+    if (input.documentId) {
+      baseConditions.push(ne(documents.documentId, input.documentId));
+    }
+
+    return db.query.documents.findFirst({
+      where: and(...baseConditions),
+    });
+  }
+
+  async function resolveSourceDocument(
+    scopeIds: { projectId: string; environmentId: string },
+    sourceDocumentId: string,
+  ): Promise<typeof documents.$inferSelect | undefined> {
+    return db.query.documents.findFirst({
+      where: and(
+        eq(documents.projectId, scopeIds.projectId),
+        eq(documents.environmentId, scopeIds.environmentId),
+        eq(documents.documentId, sourceDocumentId),
+        eq(documents.isDeleted, false),
+      ),
+    });
+  }
+
+  async function resolveVariantLocalePolicy(
+    scopeIds: { projectId: string; environmentId: string },
+    type: string,
+  ): Promise<
+    | {
+        localized: boolean;
+        supportedLocales?: Set<string>;
+      }
+    | undefined
+  > {
+    const [schemaEntry, schemaSync] = await Promise.all([
+      db.query.schemaRegistryEntries.findFirst({
+        where: and(
+          eq(schemaRegistryEntries.projectId, scopeIds.projectId),
+          eq(schemaRegistryEntries.environmentId, scopeIds.environmentId),
+          eq(schemaRegistryEntries.schemaType, type),
+        ),
+      }),
+      db.query.schemaSyncs.findFirst({
+        where: and(
+          eq(schemaSyncs.projectId, scopeIds.projectId),
+          eq(schemaSyncs.environmentId, scopeIds.environmentId),
+        ),
+      }),
+    ]);
+
+    if (!schemaEntry) {
+      return undefined;
+    }
+
+    return {
+      localized: schemaEntry.localized,
+      supportedLocales: readSupportedLocales(schemaSync?.rawConfigSnapshot),
+    };
+  }
+
   async function resolvePublishedSnapshot(
     scopeIds: { projectId: string; environmentId: string },
     headRow: typeof documents.$inferSelect,
@@ -1140,6 +1376,10 @@ export function createDatabaseContentStore(
       const path = assertRequiredString(payload.path, "path");
       const type = assertRequiredString(payload.type, "type");
       const locale = assertRequiredString(payload.locale, "locale");
+      const sourceDocumentId = parseOptionalString(
+        payload.sourceDocumentId,
+        "sourceDocumentId",
+      );
       const body = assertRequiredString(payload.body, "body", {
         allowEmpty: true,
       });
@@ -1153,6 +1393,75 @@ export function createDatabaseContentStore(
           message: "Requested project/environment target does not exist.",
           statusCode: 404,
         });
+      }
+
+      const sourceDocument = sourceDocumentId
+        ? await resolveSourceDocument(scopeIds, sourceDocumentId)
+        : undefined;
+
+      if (sourceDocumentId && !sourceDocument) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: sourceDocumentId,
+          },
+        });
+      }
+
+      if (sourceDocument && sourceDocument.schemaType !== type) {
+        throw new RuntimeError({
+          code: "INVALID_INPUT",
+          message:
+            'Field "type" must match the source document type when creating a translation variant.',
+          statusCode: 400,
+          details: {
+            field: "type",
+            sourceDocumentId,
+          },
+        });
+      }
+
+      if (sourceDocument) {
+        const variantLocalePolicy = await resolveVariantLocalePolicy(
+          scopeIds,
+          type,
+        );
+
+        if (variantLocalePolicy && !variantLocalePolicy.localized) {
+          throw new RuntimeError({
+            code: "INVALID_INPUT",
+            message:
+              'Field "sourceDocumentId" can only be used with localized schema types.',
+            statusCode: 400,
+            details: {
+              field: "sourceDocumentId",
+              sourceDocumentId,
+              type,
+            },
+          });
+        }
+
+        if (
+          variantLocalePolicy?.supportedLocales &&
+          !variantLocalePolicy.supportedLocales.has(locale)
+        ) {
+          throw new RuntimeError({
+            code: "INVALID_INPUT",
+            message:
+              'Field "locale" must resolve to a supported locale when creating a translation variant.',
+            statusCode: 400,
+            details: {
+              field: "locale",
+              locale,
+              sourceDocumentId,
+              supportedLocales: [...variantLocalePolicy.supportedLocales].sort(
+                (left, right) => left.localeCompare(right),
+              ),
+            },
+          });
+        }
       }
 
       const conflict = await findPathConflict(scopeIds, {
@@ -1174,6 +1483,30 @@ export function createDatabaseContentStore(
         });
       }
 
+      const translationGroupId =
+        sourceDocument?.translationGroupId ?? randomUUID();
+      const translationConflict = await findTranslationLocaleConflict(
+        scopeIds,
+        {
+          translationGroupId,
+          locale,
+        },
+      );
+
+      if (translationConflict) {
+        throw new RuntimeError({
+          code: "TRANSLATION_VARIANT_CONFLICT",
+          message:
+            "A non-deleted document with the same translation group and locale already exists.",
+          statusCode: 409,
+          details: {
+            conflictDocumentId: translationConflict.documentId,
+            translationGroupId,
+            locale,
+          },
+        });
+      }
+
       const actor = payload.createdBy?.trim() || DEFAULT_ACTOR;
 
       try {
@@ -1181,7 +1514,7 @@ export function createDatabaseContentStore(
           .insert(documents)
           .values({
             documentId: randomUUID(),
-            translationGroupId: randomUUID(),
+            translationGroupId,
             projectId: scopeIds.projectId,
             environmentId: scopeIds.environmentId,
             path,
@@ -1210,6 +1543,63 @@ export function createDatabaseContentStore(
         return toContentDocument(scope, created);
       } catch (error) {
         if (isUniqueViolation(error)) {
+          const pathConflict = await findPathConflict(scopeIds, {
+            path,
+            locale,
+          });
+
+          if (pathConflict) {
+            throw new RuntimeError({
+              code: "CONTENT_PATH_CONFLICT",
+              message:
+                "A non-deleted document with the same path and locale already exists.",
+              statusCode: 409,
+              details: {
+                conflictDocumentId: pathConflict.documentId,
+                path,
+                locale,
+              },
+            });
+          }
+
+          const translationConflict = await findTranslationLocaleConflict(
+            scopeIds,
+            {
+              translationGroupId,
+              locale,
+            },
+          );
+
+          if (translationConflict) {
+            throw new RuntimeError({
+              code: "TRANSLATION_VARIANT_CONFLICT",
+              message:
+                "A non-deleted document with the same translation group and locale already exists.",
+              statusCode: 409,
+              details: {
+                conflictDocumentId: translationConflict.documentId,
+                translationGroupId,
+                locale,
+              },
+            });
+          }
+
+          if (
+            getUniqueConstraintName(error) ===
+            "uniq_documents_active_translation_locale"
+          ) {
+            throw new RuntimeError({
+              code: "TRANSLATION_VARIANT_CONFLICT",
+              message:
+                "A non-deleted document with the same translation group and locale already exists.",
+              statusCode: 409,
+              details: {
+                translationGroupId,
+                locale,
+              },
+            });
+          }
+
           throw new RuntimeError({
             code: "CONTENT_PATH_CONFLICT",
             message:
@@ -1420,6 +1810,29 @@ export function createDatabaseContentStore(
         });
       }
 
+      const translationConflict = await findTranslationLocaleConflict(
+        scopeIds,
+        {
+          translationGroupId: existing.translationGroupId,
+          locale: nextLocale,
+          documentId: normalizedDocumentId,
+        },
+      );
+
+      if (translationConflict) {
+        throw new RuntimeError({
+          code: "TRANSLATION_VARIANT_CONFLICT",
+          message:
+            "A non-deleted document with the same translation group and locale already exists.",
+          statusCode: 409,
+          details: {
+            conflictDocumentId: translationConflict.documentId,
+            translationGroupId: existing.translationGroupId,
+            locale: nextLocale,
+          },
+        });
+      }
+
       try {
         const [updated] = await db
           .update(documents)
@@ -1463,6 +1876,65 @@ export function createDatabaseContentStore(
         return toContentDocument(scope, updated);
       } catch (error) {
         if (isUniqueViolation(error)) {
+          const pathConflict = await findPathConflict(scopeIds, {
+            path: nextPath,
+            locale: nextLocale,
+            documentId: normalizedDocumentId,
+          });
+
+          if (pathConflict) {
+            throw new RuntimeError({
+              code: "CONTENT_PATH_CONFLICT",
+              message:
+                "A non-deleted document with the same path and locale already exists.",
+              statusCode: 409,
+              details: {
+                conflictDocumentId: pathConflict.documentId,
+                path: nextPath,
+                locale: nextLocale,
+              },
+            });
+          }
+
+          const translationConflict = await findTranslationLocaleConflict(
+            scopeIds,
+            {
+              translationGroupId: existing.translationGroupId,
+              locale: nextLocale,
+              documentId: normalizedDocumentId,
+            },
+          );
+
+          if (translationConflict) {
+            throw new RuntimeError({
+              code: "TRANSLATION_VARIANT_CONFLICT",
+              message:
+                "A non-deleted document with the same translation group and locale already exists.",
+              statusCode: 409,
+              details: {
+                conflictDocumentId: translationConflict.documentId,
+                translationGroupId: existing.translationGroupId,
+                locale: nextLocale,
+              },
+            });
+          }
+
+          if (
+            getUniqueConstraintName(error) ===
+            "uniq_documents_active_translation_locale"
+          ) {
+            throw new RuntimeError({
+              code: "TRANSLATION_VARIANT_CONFLICT",
+              message:
+                "A non-deleted document with the same translation group and locale already exists.",
+              statusCode: 409,
+              details: {
+                translationGroupId: existing.translationGroupId,
+                locale: nextLocale,
+              },
+            });
+          }
+
           throw new RuntimeError({
             code: "CONTENT_PATH_CONFLICT",
             message:

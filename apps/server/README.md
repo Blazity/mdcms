@@ -106,6 +106,16 @@ Backend API/runtime package boundary for MDCMS.
 - Content endpoints are deny-by-default and require either:
   - valid Studio session cookie, or
   - valid API key with required operation scope + allowed `(project, environment)` tuple.
+- `POST /api/v1/content` also supports locale-variant creation for CMS-20:
+  - omit `sourceDocumentId` to create a brand new logical document with a fresh
+    `translationGroupId`
+  - provide `sourceDocumentId` to create a new locale variant in the source
+    document's translation group
+  - missing, out-of-scope, or soft-deleted sources return `NOT_FOUND` (`404`)
+  - duplicate active locales inside one translation group return
+    `TRANSLATION_VARIANT_CONFLICT` (`409`)
+  - when synced schema registry data is present for the source type, variant
+    creation is limited to localized types and supported locales
 
 ## Session Auth Endpoints (CMS-36)
 
