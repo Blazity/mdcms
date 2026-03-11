@@ -13,14 +13,9 @@ import { and, eq, sql } from "drizzle-orm";
 
 import type { ApiKeyOperationScope, AuthorizationRequirement } from "./auth.js";
 import type { DrizzleDatabase } from "./db.js";
-import {
-  documents,
-  environments,
-  projects,
-  schemaRegistryEntries,
-  schemaSyncs,
-} from "./db/schema.js";
+import { documents, schemaRegistryEntries, schemaSyncs } from "./db/schema.js";
 import { executeWithRuntimeErrorsHandled } from "./http-utils.js";
+import { resolveProjectEnvironmentScope } from "./project-provisioning.js";
 
 type SchemaRouteApp = {
   get?: (path: string, handler: (ctx: any) => unknown) => SchemaRouteApp;
@@ -414,28 +409,18 @@ async function resolveScopeIds(
   db: DrizzleDatabase,
   scope: { project: string; environment: string },
 ): Promise<ScopeIds | undefined> {
-  const project = await db.query.projects.findFirst({
-    where: eq(projects.slug, scope.project),
+  const resolvedScope = await resolveProjectEnvironmentScope(db, {
+    project: scope.project,
+    environment: scope.environment,
   });
 
-  if (!project) {
-    return undefined;
-  }
-
-  const environment = await db.query.environments.findFirst({
-    where: and(
-      eq(environments.projectId, project.id),
-      eq(environments.name, scope.environment),
-    ),
-  });
-
-  if (!environment) {
+  if (!resolvedScope) {
     return undefined;
   }
 
   return {
-    projectId: project.id,
-    environmentId: environment.id,
+    projectId: resolvedScope.project.id,
+    environmentId: resolvedScope.environment.id,
   };
 }
 

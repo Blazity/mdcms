@@ -470,3 +470,151 @@ testWithDatabase(
     }
   },
 );
+
+testWithDatabase(
+  "content API keeps documents isolated across routed projects",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env: dbEnv,
+      logger,
+    });
+    const email = `content-scope-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@mdcms.local`;
+    const password = "Admin12345!";
+
+    try {
+      const signUpResponse = await handler(
+        new Request("http://localhost/api/v1/auth/sign-up/email", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            password,
+            name: "Scoped Content User",
+          }),
+        }),
+      );
+      assert.equal(signUpResponse.status, 200);
+
+      const loginResponse = await handler(
+        new Request("http://localhost/api/v1/auth/login", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            password,
+          }),
+        }),
+      );
+      const loginBody = (await loginResponse.json()) as {
+        data: {
+          session: {
+            userId: string;
+          };
+        };
+      };
+      assert.equal(loginResponse.status, 200);
+      const cookie = loginResponse.headers.get("set-cookie");
+      assert.ok(cookie);
+
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: loginBody.data.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:content-api-scope",
+          createdByUserId: loginBody.data.session.userId,
+        })
+        .onConflictDoNothing();
+
+      const marketingCreateResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: {
+            ...scopeHeaders,
+            cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            path: `blog/scope-marketing-${Date.now()}`,
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "scope-marketing" },
+            body: "marketing body",
+          }),
+        }),
+      );
+      const marketingDocument = (await marketingCreateResponse.json()) as {
+        data: { documentId: string };
+      };
+      assert.equal(marketingCreateResponse.status, 200);
+
+      const docsScopeHeaders = {
+        "x-mdcms-project": "docs-site",
+        "x-mdcms-environment": "production",
+      };
+      const docsCreateResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: {
+            ...docsScopeHeaders,
+            cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            path: `docs/scope-${Date.now()}`,
+            type: "Page",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "scope-docs" },
+            body: "docs body",
+          }),
+        }),
+      );
+      assert.equal(docsCreateResponse.status, 200);
+
+      const wrongProjectGetResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${marketingDocument.data.documentId}?draft=true`,
+          {
+            headers: {
+              ...docsScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const wrongProjectGetBody = (await wrongProjectGetResponse.json()) as {
+        code: string;
+      };
+      assert.equal(wrongProjectGetResponse.status, 404);
+      assert.equal(wrongProjectGetBody.code, "NOT_FOUND");
+
+      const wrongProjectDeleteResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${marketingDocument.data.documentId}`,
+          {
+            method: "DELETE",
+            headers: {
+              ...docsScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const wrongProjectDeleteBody =
+        (await wrongProjectDeleteResponse.json()) as {
+          code: string;
+        };
+      assert.equal(wrongProjectDeleteResponse.status, 404);
+      assert.equal(wrongProjectDeleteBody.code, "NOT_FOUND");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);

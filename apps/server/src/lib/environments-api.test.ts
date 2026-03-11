@@ -524,3 +524,81 @@ testWithDatabase(
     }
   },
 );
+
+testWithDatabase(
+  "environments API returns not found when deleting an environment from another project",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+      config: testConfig,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+    const primaryProject = uniqueProject("env-primary");
+    const foreignProject = uniqueProject("env-foreign");
+
+    try {
+      await signUp(handler, { email, password });
+      const cookie = await login(handler, { email, password });
+
+      const primaryCreateResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/environments?project=${primaryProject}`,
+          {
+            method: "POST",
+            headers: {
+              cookie,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              name: "staging",
+              extends: "production",
+            }),
+          },
+        ),
+      );
+      assert.equal(primaryCreateResponse.status, 200);
+
+      const foreignCreateResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/environments?project=${foreignProject}`,
+          {
+            method: "POST",
+            headers: {
+              cookie,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              name: "preview",
+              extends: "staging",
+            }),
+          },
+        ),
+      );
+      const foreignCreateBody = (await foreignCreateResponse.json()) as {
+        data: EnvironmentSummary;
+      };
+      assert.equal(foreignCreateResponse.status, 200);
+
+      const deleteResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/environments/${foreignCreateBody.data.id}?project=${primaryProject}`,
+          {
+            method: "DELETE",
+            headers: {
+              cookie,
+            },
+          },
+        ),
+      );
+      const deleteBody = (await deleteResponse.json()) as {
+        code: string;
+      };
+      assert.equal(deleteResponse.status, 404);
+      assert.equal(deleteBody.code, "NOT_FOUND");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);

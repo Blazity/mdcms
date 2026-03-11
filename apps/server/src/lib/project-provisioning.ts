@@ -13,7 +13,24 @@ export type ProjectProvisioningResult = {
   createdProductionEnvironment: boolean;
 };
 
+export type ProjectEnvironmentScope = {
+  project: typeof projects.$inferSelect;
+  environment: typeof environments.$inferSelect;
+};
+
 type DatabaseLike = DrizzleDatabase;
+
+async function findEnvironmentByProjectAndName(
+  db: DatabaseLike,
+  input: { projectId: string; environment: string },
+): Promise<typeof environments.$inferSelect | undefined> {
+  return db.query.environments.findFirst({
+    where: and(
+      eq(environments.projectId, input.projectId),
+      eq(environments.name, input.environment),
+    ),
+  });
+}
 
 export async function ensureProjectProvisioned(
   db: DatabaseLike,
@@ -99,5 +116,66 @@ export async function findProjectBySlug(
 ): Promise<typeof projects.$inferSelect | undefined> {
   return db.query.projects.findFirst({
     where: eq(projects.slug, project),
+  });
+}
+
+export async function resolveProjectEnvironmentScope(
+  db: DatabaseLike,
+  input: {
+    project: string;
+    environment: string;
+    createIfMissing?: boolean;
+  },
+): Promise<ProjectEnvironmentScope | undefined> {
+  let project = await findProjectBySlug(db, input.project);
+
+  if (!project && input.createIfMissing) {
+    await ensureProjectProvisioned(db, { project: input.project });
+    project = await findProjectBySlug(db, input.project);
+  }
+
+  if (!project) {
+    return undefined;
+  }
+
+  let environment = await findEnvironmentByProjectAndName(db, {
+    projectId: project.id,
+    environment: input.environment,
+  });
+
+  if (
+    !environment &&
+    input.createIfMissing &&
+    input.environment === DEFAULT_ENVIRONMENT_NAME
+  ) {
+    await ensureProjectProvisioned(db, { project: input.project });
+    environment = await findEnvironmentByProjectAndName(db, {
+      projectId: project.id,
+      environment: input.environment,
+    });
+  }
+
+  if (!environment) {
+    return undefined;
+  }
+
+  return { project, environment };
+}
+
+export async function findEnvironmentByProjectAndId(
+  db: DatabaseLike,
+  input: { project: string; environmentId: string },
+): Promise<typeof environments.$inferSelect | undefined> {
+  const project = await findProjectBySlug(db, input.project);
+
+  if (!project) {
+    return undefined;
+  }
+
+  return db.query.environments.findFirst({
+    where: and(
+      eq(environments.projectId, project.id),
+      eq(environments.id, input.environmentId),
+    ),
   });
 }

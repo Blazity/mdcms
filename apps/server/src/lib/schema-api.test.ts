@@ -895,3 +895,69 @@ testWithDatabase(
     }
   },
 );
+
+testWithDatabase(
+  "schema API keeps registry state isolated across projects",
+  async () => {
+    const { handler, dbConnection } = createHandler();
+    const marketingScope = createScope();
+    const docsScope = createScope();
+
+    try {
+      await seedScope(dbConnection, marketingScope);
+      await seedScope(dbConnection, docsScope);
+
+      const marketingHeaders = toScopeHeaders(marketingScope);
+      const docsHeaders = toScopeHeaders(docsScope);
+
+      const syncResponse = await handler(
+        new Request("http://localhost/api/v1/schema", {
+          method: "PUT",
+          headers: {
+            ...marketingHeaders,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(
+            createSyncPayload({
+              schemaHash: "hash-marketing",
+              resolvedSchema: {
+                Post: createRegistryType({
+                  type: "Post",
+                  directory: "content/posts",
+                  fields: {
+                    title: createField({ kind: "string" }),
+                  },
+                }),
+              },
+            }),
+          ),
+        }),
+      );
+      assert.equal(syncResponse.status, 200);
+
+      const foreignListResponse = await handler(
+        new Request("http://localhost/api/v1/schema", {
+          headers: docsHeaders,
+        }),
+      );
+      const foreignListBody = (await foreignListResponse.json()) as {
+        data: unknown[];
+      };
+      assert.equal(foreignListResponse.status, 200);
+      assert.deepEqual(foreignListBody.data, []);
+
+      const foreignGetResponse = await handler(
+        new Request("http://localhost/api/v1/schema/Post", {
+          headers: docsHeaders,
+        }),
+      );
+      const foreignGetBody = (await foreignGetResponse.json()) as {
+        code: string;
+      };
+      assert.equal(foreignGetResponse.status, 404);
+      assert.equal(foreignGetBody.code, "NOT_FOUND");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);

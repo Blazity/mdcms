@@ -5,18 +5,10 @@ import { and, eq, ne, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import type { DrizzleDatabase } from "./db.js";
-import {
-  documents,
-  documentVersions,
-  environments,
-  projects,
-} from "./db/schema.js";
+import { documents, documentVersions } from "./db/schema.js";
 import type { ApiKeyOperationScope, AuthorizationRequirement } from "./auth.js";
 import { executeWithRuntimeErrorsHandled } from "./http-utils.js";
-import {
-  DEFAULT_ENVIRONMENT_NAME,
-  ensureProjectProvisioned,
-} from "./project-provisioning.js";
+import { resolveProjectEnvironmentScope } from "./project-provisioning.js";
 
 const SortFieldSchema = z.enum(["createdAt", "updatedAt", "path"]);
 const SortOrderSchema = z.enum(["asc", "desc"]);
@@ -970,54 +962,19 @@ export function createDatabaseContentStore(
     scope: { project: string; environment: string },
     createIfMissing: boolean,
   ): Promise<{ projectId: string; environmentId: string } | undefined> {
-    let project = await db.query.projects.findFirst({
-      where: eq(projects.slug, scope.project),
+    const resolvedScope = await resolveProjectEnvironmentScope(db, {
+      project: scope.project,
+      environment: scope.environment,
+      createIfMissing,
     });
 
-    if (!project && createIfMissing) {
-      const provisioned = await ensureProjectProvisioned(db, {
-        project: scope.project,
-      });
-      project = {
-        id: provisioned.projectId,
-      } as typeof projects.$inferSelect;
-    }
-
-    if (!project) {
-      return undefined;
-    }
-
-    let environment = await db.query.environments.findFirst({
-      where: and(
-        eq(environments.projectId, project.id),
-        eq(environments.name, scope.environment),
-      ),
-    });
-
-    if (
-      !environment &&
-      createIfMissing &&
-      scope.environment === DEFAULT_ENVIRONMENT_NAME
-    ) {
-      const provisioned = await ensureProjectProvisioned(db, {
-        project: scope.project,
-      });
-
-      environment = await db.query.environments.findFirst({
-        where: and(
-          eq(environments.projectId, provisioned.projectId),
-          eq(environments.name, scope.environment),
-        ),
-      });
-    }
-
-    if (!environment) {
+    if (!resolvedScope) {
       return undefined;
     }
 
     return {
-      projectId: project.id,
-      environmentId: environment.id,
+      projectId: resolvedScope.project.id,
+      environmentId: resolvedScope.environment.id,
     };
   }
 

@@ -22,6 +22,7 @@ import {
   DEFAULT_ENVIRONMENT_NAME,
   DEFAULT_PROVISION_ACTOR,
   ensureProjectProvisioned,
+  findEnvironmentByProjectAndId,
   findProjectBySlug,
 } from "./project-provisioning.js";
 
@@ -343,11 +344,9 @@ export function createDatabaseEnvironmentStore(
         });
       }
 
-      const environmentRow = await db.query.environments.findFirst({
-        where: and(
-          eq(environments.projectId, projectRow.id),
-          eq(environments.id, normalizedEnvironmentId),
-        ),
+      const environmentRow = await findEnvironmentByProjectAndId(db, {
+        project: normalizedProject,
+        environmentId: normalizedEnvironmentId,
       });
 
       if (!environmentRow) {
