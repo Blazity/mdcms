@@ -18,6 +18,7 @@ import { resolveProjectEnvironmentScope } from "./project-provisioning.js";
 const SortFieldSchema = z.enum(["createdAt", "updatedAt", "path"]);
 const SortOrderSchema = z.enum(["asc", "desc"]);
 const ContentFormatSchema = z.enum(["md", "mdx"]);
+const RestoreTargetStatusSchema = z.enum(["draft", "published"]);
 
 const JsonObjectSchema = z
   .record(z.string(), z.unknown())
@@ -26,6 +27,7 @@ const JsonObjectSchema = z
 type SortField = z.infer<typeof SortFieldSchema>;
 type SortOrder = z.infer<typeof SortOrderSchema>;
 type ContentFormat = z.infer<typeof ContentFormatSchema>;
+type RestoreTargetStatus = z.infer<typeof RestoreTargetStatusSchema>;
 
 type ContentDocument = {
   documentId: string;
@@ -47,6 +49,39 @@ type ContentDocument = {
   createdAt: string;
   updatedBy: string;
   updatedAt: string;
+};
+
+type ContentVersionSummary = {
+  documentId: string;
+  translationGroupId: string;
+  project: string;
+  environment: string;
+  version: number;
+  path: string;
+  type: string;
+  locale: string;
+  format: ContentFormat;
+  publishedAt: string;
+  publishedBy: string;
+  changeSummary?: string;
+};
+
+type ContentVersionDocument = ContentVersionSummary & {
+  frontmatter: Record<string, unknown>;
+  body: string;
+};
+
+type ContentPublishedSnapshot = {
+  version: number;
+  path: string;
+  type: string;
+  locale: string;
+  format: ContentFormat;
+  frontmatter: Record<string, unknown>;
+  body: string;
+  publishedAt: string;
+  publishedBy: string;
+  changeSummary?: string;
 };
 
 type ContentListQuery = {
@@ -86,6 +121,10 @@ type ContentPublishPayload = {
   changeSummary?: unknown;
   change_summary?: unknown;
   actorId?: unknown;
+};
+
+type ContentRestoreVersionPayload = ContentPublishPayload & {
+  targetStatus?: unknown;
 };
 
 type ContentRouteApp = {
@@ -197,6 +236,27 @@ function parsePositiveInt(
   });
 }
 
+function parsePathInt(value: unknown, field: string): number {
+  const result = z
+    .string()
+    .trim()
+    .regex(/^\d+$/, { message: "must be an integer" })
+    .transform((candidate) => Number(candidate))
+    .pipe(z.number().int().min(1))
+    .safeParse(value);
+
+  if (result.success) {
+    return result.data;
+  }
+
+  throw new RuntimeError({
+    code: "INVALID_INPUT",
+    message: `Field "${field}" must be a positive integer.`,
+    statusCode: 400,
+    details: { field, value },
+  });
+}
+
 function parseSortField(value: string | undefined): SortField {
   if (value === undefined || value.trim().length === 0) return "updatedAt";
   return parseQueryParam(
@@ -283,6 +343,33 @@ function parseOptionalString(
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function parseRestoreTargetStatus(
+  value: unknown,
+  field = "targetStatus",
+): RestoreTargetStatus {
+  if (value === undefined || value === null) {
+    return "draft";
+  }
+
+  const result = z
+    .string()
+    .trim()
+    .toLowerCase()
+    .pipe(RestoreTargetStatusSchema)
+    .safeParse(value);
+
+  if (result.success) {
+    return result.data;
+  }
+
+  throw new RuntimeError({
+    code: "INVALID_INPUT",
+    message: 'Field "targetStatus" must be "draft" or "published".',
+    statusCode: 400,
+    details: { field, value },
+  });
+}
+
 function pickScope(request: Request): { project: string; environment: string } {
   const scope = resolveRequestTargetRouting(request);
 
@@ -327,6 +414,35 @@ function toDocumentResponse(
     createdBy: document.createdBy,
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
+  };
+}
+
+function toVersionSummaryResponse(
+  document: ContentVersionSummary,
+): Record<string, unknown> {
+  return {
+    documentId: document.documentId,
+    translationGroupId: document.translationGroupId,
+    project: document.project,
+    environment: document.environment,
+    version: document.version,
+    path: document.path,
+    type: document.type,
+    locale: document.locale,
+    format: document.format,
+    publishedAt: document.publishedAt,
+    publishedBy: document.publishedBy,
+    changeSummary: document.changeSummary,
+  };
+}
+
+function toVersionDocumentResponse(
+  document: ContentVersionDocument,
+): Record<string, unknown> {
+  return {
+    ...toVersionSummaryResponse(document),
+    frontmatter: document.frontmatter,
+    body: document.body,
   };
 }
 
@@ -425,6 +541,46 @@ function toContentDocument(
   };
 }
 
+function toContentVersionDocument(
+  scope: { project: string; environment: string },
+  row: typeof documentVersions.$inferSelect,
+): ContentVersionDocument {
+  return {
+    documentId: row.documentId,
+    translationGroupId: row.translationGroupId,
+    project: scope.project,
+    environment: scope.environment,
+    version: row.version,
+    path: row.path,
+    type: row.schemaType,
+    locale: row.locale,
+    format: row.contentFormat as ContentFormat,
+    publishedAt: toIsoString(row.publishedAt),
+    publishedBy: row.publishedBy,
+    changeSummary: row.changeSummary ?? undefined,
+    frontmatter: row.frontmatter as Record<string, unknown>,
+    body: row.body,
+  };
+}
+
+function buildContentPathConflict(input: {
+  path: string;
+  locale: string;
+  conflictDocumentId?: string;
+}): RuntimeError {
+  return new RuntimeError({
+    code: "CONTENT_PATH_CONFLICT",
+    message:
+      "A non-deleted document with the same path and locale already exists.",
+    statusCode: 409,
+    details: {
+      conflictDocumentId: input.conflictDocumentId,
+      path: input.path,
+      locale: input.locale,
+    },
+  });
+}
+
 export type ContentStore = {
   create: (
     scope: { project: string; environment: string },
@@ -453,6 +609,29 @@ export type ContentStore = {
     scope: { project: string; environment: string },
     documentId: string,
   ) => Promise<ContentDocument>;
+  restore: (
+    scope: { project: string; environment: string },
+    documentId: string,
+  ) => Promise<ContentDocument>;
+  listVersions: (
+    scope: { project: string; environment: string },
+    documentId: string,
+  ) => Promise<ContentVersionSummary[]>;
+  getVersion: (
+    scope: { project: string; environment: string },
+    documentId: string,
+    version: number,
+  ) => Promise<ContentVersionDocument>;
+  restoreVersion: (
+    scope: { project: string; environment: string },
+    documentId: string,
+    version: number,
+    input: {
+      targetStatus: RestoreTargetStatus;
+      changeSummary?: string;
+      actorId?: string;
+    },
+  ) => Promise<ContentDocument>;
   publish: (
     scope: { project: string; environment: string },
     documentId: string,
@@ -474,24 +653,7 @@ export function createInMemoryContentStore(): ContentStore {
   const scopedDocs = new Map<string, Map<string, ContentDocument>>();
   const scopedPublishedSnapshots = new Map<
     string,
-    Map<
-      string,
-      Map<
-        number,
-        {
-          version: number;
-          path: string;
-          type: string;
-          locale: string;
-          format: ContentFormat;
-          frontmatter: Record<string, unknown>;
-          body: string;
-          publishedAt: string;
-          publishedBy: string;
-          changeSummary?: string;
-        }
-      >
-    >
+    Map<string, Map<number, ContentPublishedSnapshot>>
   >();
 
   function getScopeStore(scope: {
@@ -512,24 +674,7 @@ export function createInMemoryContentStore(): ContentStore {
   function getScopePublishedSnapshots(scope: {
     project: string;
     environment: string;
-  }): Map<
-    string,
-    Map<
-      number,
-      {
-        version: number;
-        path: string;
-        type: string;
-        locale: string;
-        format: ContentFormat;
-        frontmatter: Record<string, unknown>;
-        body: string;
-        publishedAt: string;
-        publishedBy: string;
-        changeSummary?: string;
-      }
-    >
-  > {
+  }): Map<string, Map<number, ContentPublishedSnapshot>> {
     const key = toScopeKey(scope.project, scope.environment);
     let store = scopedPublishedSnapshots.get(key);
 
@@ -588,24 +733,7 @@ export function createInMemoryContentStore(): ContentStore {
   function resolveReadDocument(input: {
     document: ContentDocument;
     draft: boolean;
-    publishedSnapshots: Map<
-      string,
-      Map<
-        number,
-        {
-          version: number;
-          path: string;
-          type: string;
-          locale: string;
-          format: ContentFormat;
-          frontmatter: Record<string, unknown>;
-          body: string;
-          publishedAt: string;
-          publishedBy: string;
-          changeSummary?: string;
-        }
-      >
-    >;
+    publishedSnapshots: Map<string, Map<number, ContentPublishedSnapshot>>;
   }): ContentDocument | undefined {
     if (input.draft) {
       return input.document;
@@ -639,6 +767,51 @@ export function createInMemoryContentStore(): ContentStore {
       updatedAt: snapshot.publishedAt,
       updatedBy: snapshot.publishedBy,
     };
+  }
+
+  function toVersionSummary(
+    scope: { project: string; environment: string },
+    document: ContentDocument,
+    snapshot: ContentPublishedSnapshot,
+  ): ContentVersionSummary {
+    return {
+      documentId: document.documentId,
+      translationGroupId: document.translationGroupId,
+      project: scope.project,
+      environment: scope.environment,
+      version: snapshot.version,
+      path: snapshot.path,
+      type: snapshot.type,
+      locale: snapshot.locale,
+      format: snapshot.format,
+      publishedAt: snapshot.publishedAt,
+      publishedBy: snapshot.publishedBy,
+      changeSummary: snapshot.changeSummary,
+    };
+  }
+
+  function toVersionDocument(
+    scope: { project: string; environment: string },
+    document: ContentDocument,
+    snapshot: ContentPublishedSnapshot,
+  ): ContentVersionDocument {
+    return {
+      ...toVersionSummary(scope, document, snapshot),
+      frontmatter: snapshot.frontmatter,
+      body: snapshot.body,
+    };
+  }
+
+  function getNextVersionNumber(
+    snapshots: Map<number, ContentPublishedSnapshot>,
+  ): number {
+    return (
+      [...snapshots.keys()].reduce(
+        (maxVersion, candidateVersion) =>
+          candidateVersion > maxVersion ? candidateVersion : maxVersion,
+        0,
+      ) + 1
+    );
   }
 
   return {
@@ -1013,6 +1186,237 @@ export function createInMemoryContentStore(): ContentStore {
       return deleted;
     },
 
+    async restore(scope, documentId) {
+      const store = getScopeStore(scope);
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const existing = store.get(normalizedDocumentId);
+
+      if (!existing) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const conflict = findPathConflict(store, {
+        path: existing.path,
+        locale: existing.locale,
+        documentId: normalizedDocumentId,
+      });
+
+      if (conflict) {
+        throw new RuntimeError({
+          code: "CONTENT_PATH_CONFLICT",
+          message:
+            "A non-deleted document with the same path and locale already exists.",
+          statusCode: 409,
+          details: {
+            conflictDocumentId: conflict.documentId,
+            path: existing.path,
+            locale: existing.locale,
+          },
+        });
+      }
+
+      const restored: ContentDocument = {
+        ...existing,
+        isDeleted: false,
+        updatedBy: DEFAULT_ACTOR,
+        updatedAt: new Date().toISOString(),
+      };
+      store.set(normalizedDocumentId, restored);
+
+      return restored;
+    },
+
+    async listVersions(scope, documentId) {
+      const store = getScopeStore(scope);
+      const publishedSnapshots = getScopePublishedSnapshots(scope);
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const existing = store.get(normalizedDocumentId);
+
+      if (!existing) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const snapshots = [
+        ...(publishedSnapshots.get(normalizedDocumentId)?.values() ?? []),
+      ].sort((left, right) => right.version - left.version);
+
+      return snapshots.map((snapshot) =>
+        toVersionSummary(scope, existing, snapshot),
+      );
+    },
+
+    async getVersion(scope, documentId, version) {
+      const store = getScopeStore(scope);
+      const publishedSnapshots = getScopePublishedSnapshots(scope);
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const existing = store.get(normalizedDocumentId);
+
+      if (!existing) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const snapshot = publishedSnapshots
+        .get(normalizedDocumentId)
+        ?.get(version);
+
+      if (!snapshot) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Version not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+            version,
+          },
+        });
+      }
+
+      return toVersionDocument(scope, existing, snapshot);
+    },
+
+    async restoreVersion(scope, documentId, version, input) {
+      const store = getScopeStore(scope);
+      const publishedSnapshots = getScopePublishedSnapshots(scope);
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const existing = store.get(normalizedDocumentId);
+
+      if (!existing) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const documentSnapshots =
+        publishedSnapshots.get(normalizedDocumentId) ?? new Map();
+      if (!publishedSnapshots.has(normalizedDocumentId)) {
+        publishedSnapshots.set(normalizedDocumentId, documentSnapshots);
+      }
+
+      const snapshot = documentSnapshots.get(version);
+
+      if (!snapshot) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Version not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+            version,
+          },
+        });
+      }
+
+      const conflict = findPathConflict(store, {
+        path: snapshot.path,
+        locale: snapshot.locale,
+        documentId: normalizedDocumentId,
+      });
+
+      if (conflict) {
+        throw new RuntimeError({
+          code: "CONTENT_PATH_CONFLICT",
+          message:
+            "A non-deleted document with the same path and locale already exists.",
+          statusCode: 409,
+          details: {
+            conflictDocumentId: conflict.documentId,
+            path: snapshot.path,
+            locale: snapshot.locale,
+          },
+        });
+      }
+
+      const actorId = input.actorId?.trim() || DEFAULT_ACTOR;
+      const now = new Date().toISOString();
+
+      if (input.targetStatus === "published") {
+        const nextVersion = getNextVersionNumber(documentSnapshots);
+
+        documentSnapshots.set(nextVersion, {
+          ...snapshot,
+          version: nextVersion,
+          publishedAt: now,
+          publishedBy: actorId,
+          changeSummary: input.changeSummary,
+        });
+
+        const restored: ContentDocument = {
+          ...existing,
+          path: snapshot.path,
+          type: snapshot.type,
+          locale: snapshot.locale,
+          format: snapshot.format,
+          frontmatter: snapshot.frontmatter,
+          body: snapshot.body,
+          isDeleted: false,
+          hasUnpublishedChanges: false,
+          version: nextVersion,
+          publishedVersion: nextVersion,
+          draftRevision: existing.draftRevision + 1,
+          updatedBy: actorId,
+          updatedAt: now,
+        };
+        store.set(normalizedDocumentId, restored);
+        return restored;
+      }
+
+      const restored: ContentDocument = {
+        ...existing,
+        path: snapshot.path,
+        type: snapshot.type,
+        locale: snapshot.locale,
+        format: snapshot.format,
+        frontmatter: snapshot.frontmatter,
+        body: snapshot.body,
+        isDeleted: false,
+        hasUnpublishedChanges: true,
+        draftRevision: existing.draftRevision + 1,
+        updatedBy: actorId,
+        updatedAt: now,
+      };
+      store.set(normalizedDocumentId, restored);
+
+      return restored;
+    },
+
     async publish(scope, documentId, input) {
       const store = getScopeStore(scope);
       const publishedSnapshots = getScopePublishedSnapshots(scope);
@@ -1039,12 +1443,7 @@ export function createInMemoryContentStore(): ContentStore {
         publishedSnapshots.set(normalizedDocumentId, documentSnapshots);
       }
 
-      const latestVersion = [...documentSnapshots.keys()].reduce(
-        (maxVersion, candidateVersion) =>
-          candidateVersion > maxVersion ? candidateVersion : maxVersion,
-        0,
-      );
-      const nextVersion = latestVersion + 1;
+      const nextVersion = getNextVersionNumber(documentSnapshots);
       const actorId = input.actorId?.trim() || DEFAULT_ACTOR;
       const now = new Date().toISOString();
 
@@ -1281,6 +1680,82 @@ export function createDatabaseContentStore(
       updatedBy: headRow.updatedBy,
       updatedAt: toIsoString(versionRow.publishedAt),
     };
+  }
+
+  async function resolveHeadRow(
+    scopeIds: { projectId: string; environmentId: string },
+    documentId: string,
+  ): Promise<typeof documents.$inferSelect | undefined> {
+    return db.query.documents.findFirst({
+      where: and(
+        eq(documents.projectId, scopeIds.projectId),
+        eq(documents.environmentId, scopeIds.environmentId),
+        eq(documents.documentId, documentId),
+      ),
+    });
+  }
+
+  async function resolveVersionRow(
+    scopeIds: { projectId: string; environmentId: string },
+    documentId: string,
+    version: number,
+  ): Promise<typeof documentVersions.$inferSelect | undefined> {
+    return db.query.documentVersions.findFirst({
+      where: and(
+        eq(documentVersions.projectId, scopeIds.projectId),
+        eq(documentVersions.environmentId, scopeIds.environmentId),
+        eq(documentVersions.documentId, documentId),
+        eq(documentVersions.version, version),
+      ),
+    });
+  }
+
+  async function getNextVersionNumber(
+    tx: DrizzleDatabase,
+    documentId: string,
+  ): Promise<number> {
+    const [latestVersionRow] = await tx
+      .select({
+        value: sql<number>`coalesce(max(${documentVersions.version}), 0)`,
+      })
+      .from(documentVersions)
+      .where(eq(documentVersions.documentId, documentId));
+
+    return (latestVersionRow?.value ?? 0) + 1;
+  }
+
+  async function insertPublishedVersionRow(
+    tx: DrizzleDatabase,
+    input: {
+      headRow: typeof documents.$inferSelect;
+      snapshot: {
+        path: string;
+        type: string;
+        locale: string;
+        format: ContentFormat;
+        frontmatter: Record<string, unknown>;
+        body: string;
+      };
+      version: number;
+      actorId: string;
+      changeSummary?: string;
+    },
+  ): Promise<void> {
+    await tx.insert(documentVersions).values({
+      documentId: input.headRow.documentId,
+      translationGroupId: input.headRow.translationGroupId,
+      projectId: input.headRow.projectId,
+      environmentId: input.headRow.environmentId,
+      schemaType: input.snapshot.type,
+      locale: input.snapshot.locale,
+      contentFormat: input.snapshot.format,
+      path: input.snapshot.path,
+      body: input.snapshot.body,
+      frontmatter: input.snapshot.frontmatter,
+      version: input.version,
+      publishedBy: input.actorId,
+      changeSummary: input.changeSummary ?? null,
+    });
   }
 
   function applyListFilters(
@@ -2001,6 +2476,345 @@ export function createDatabaseContentStore(
       return toContentDocument(scope, updated);
     },
 
+    async restore(scope, documentId) {
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const existing = await resolveHeadRow(scopeIds, normalizedDocumentId);
+
+      if (!existing) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const conflict = await findPathConflict(scopeIds, {
+        path: existing.path,
+        locale: existing.locale,
+        documentId: normalizedDocumentId,
+      });
+
+      if (conflict) {
+        throw buildContentPathConflict({
+          conflictDocumentId: conflict.documentId,
+          path: existing.path,
+          locale: existing.locale,
+        });
+      }
+
+      if (!existing.isDeleted) {
+        return toContentDocument(scope, existing);
+      }
+
+      const [updated] = await db
+        .update(documents)
+        .set({
+          isDeleted: false,
+          updatedBy: DEFAULT_ACTOR,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(documents.projectId, scopeIds.projectId),
+            eq(documents.environmentId, scopeIds.environmentId),
+            eq(documents.documentId, normalizedDocumentId),
+          ),
+        )
+        .returning();
+
+      if (!updated) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      return toContentDocument(scope, updated);
+    },
+
+    async listVersions(scope, documentId) {
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const existing = await resolveHeadRow(scopeIds, normalizedDocumentId);
+
+      if (!existing) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const rows = await db
+        .select()
+        .from(documentVersions)
+        .where(
+          and(
+            eq(documentVersions.projectId, scopeIds.projectId),
+            eq(documentVersions.environmentId, scopeIds.environmentId),
+            eq(documentVersions.documentId, normalizedDocumentId),
+          ),
+        );
+
+      return rows
+        .sort((left, right) => right.version - left.version)
+        .map((row) => toContentVersionDocument(scope, row));
+    },
+
+    async getVersion(scope, documentId, version) {
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const existing = await resolveHeadRow(scopeIds, normalizedDocumentId);
+
+      if (!existing) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const versionRow = await resolveVersionRow(
+        scopeIds,
+        normalizedDocumentId,
+        version,
+      );
+
+      if (!versionRow) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Version not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+            version,
+          },
+        });
+      }
+
+      return toContentVersionDocument(scope, versionRow);
+    },
+
+    async restoreVersion(scope, documentId, version, input) {
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const existing = await resolveHeadRow(scopeIds, normalizedDocumentId);
+
+      if (!existing) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const versionRow = await resolveVersionRow(
+        scopeIds,
+        normalizedDocumentId,
+        version,
+      );
+
+      if (!versionRow) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Version not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+            version,
+          },
+        });
+      }
+
+      const conflict = await findPathConflict(scopeIds, {
+        path: versionRow.path,
+        locale: versionRow.locale,
+        documentId: normalizedDocumentId,
+      });
+
+      if (conflict) {
+        throw buildContentPathConflict({
+          conflictDocumentId: conflict.documentId,
+          path: versionRow.path,
+          locale: versionRow.locale,
+        });
+      }
+
+      const actorId = input.actorId?.trim() || DEFAULT_ACTOR;
+      const restoredDocument = await db.transaction(async (tx) => {
+        const baseUpdate = {
+          path: versionRow.path,
+          schemaType: versionRow.schemaType,
+          locale: versionRow.locale,
+          contentFormat: versionRow.contentFormat as ContentFormat,
+          frontmatter: versionRow.frontmatter as Record<string, unknown>,
+          body: versionRow.body,
+          isDeleted: false,
+          draftRevision: existing.draftRevision + 1,
+          updatedBy: actorId,
+          updatedAt: new Date(),
+        };
+
+        if (input.targetStatus === "published") {
+          const nextVersion = await getNextVersionNumber(
+            tx as unknown as DrizzleDatabase,
+            normalizedDocumentId,
+          );
+
+          await insertPublishedVersionRow(tx as unknown as DrizzleDatabase, {
+            headRow: existing,
+            snapshot: {
+              path: versionRow.path,
+              type: versionRow.schemaType,
+              locale: versionRow.locale,
+              format: versionRow.contentFormat as ContentFormat,
+              frontmatter: versionRow.frontmatter as Record<string, unknown>,
+              body: versionRow.body,
+            },
+            version: nextVersion,
+            actorId,
+            changeSummary: input.changeSummary,
+          });
+
+          const [updated] = await tx
+            .update(documents)
+            .set({
+              ...baseUpdate,
+              publishedVersion: nextVersion,
+              hasUnpublishedChanges: false,
+            })
+            .where(
+              and(
+                eq(documents.projectId, scopeIds.projectId),
+                eq(documents.environmentId, scopeIds.environmentId),
+                eq(documents.documentId, normalizedDocumentId),
+              ),
+            )
+            .returning();
+
+          if (!updated) {
+            throw new RuntimeError({
+              code: "NOT_FOUND",
+              message: "Document not found.",
+              statusCode: 404,
+              details: {
+                documentId: normalizedDocumentId,
+              },
+            });
+          }
+
+          return updated;
+        }
+
+        const [updated] = await tx
+          .update(documents)
+          .set({
+            ...baseUpdate,
+            hasUnpublishedChanges: true,
+          })
+          .where(
+            and(
+              eq(documents.projectId, scopeIds.projectId),
+              eq(documents.environmentId, scopeIds.environmentId),
+              eq(documents.documentId, normalizedDocumentId),
+            ),
+          )
+          .returning();
+
+        if (!updated) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+            details: {
+              documentId: normalizedDocumentId,
+            },
+          });
+        }
+
+        return updated;
+      });
+
+      return toContentDocument(scope, restoredDocument);
+    },
+
     async publish(scope, documentId, input) {
       const normalizedDocumentId = assertRequiredString(
         documentId,
@@ -2041,28 +2855,24 @@ export function createDatabaseContentStore(
 
       const actorId = input.actorId?.trim() || DEFAULT_ACTOR;
       const publishedDocument = await db.transaction(async (tx) => {
-        const [latestVersionRow] = await tx
-          .select({
-            value: sql<number>`coalesce(max(${documentVersions.version}), 0)`,
-          })
-          .from(documentVersions)
-          .where(eq(documentVersions.documentId, normalizedDocumentId));
-        const nextVersion = (latestVersionRow?.value ?? 0) + 1;
+        const nextVersion = await getNextVersionNumber(
+          tx as unknown as DrizzleDatabase,
+          normalizedDocumentId,
+        );
 
-        await tx.insert(documentVersions).values({
-          documentId: existing.documentId,
-          translationGroupId: existing.translationGroupId,
-          projectId: existing.projectId,
-          environmentId: existing.environmentId,
-          schemaType: existing.schemaType,
-          locale: existing.locale,
-          contentFormat: existing.contentFormat,
-          path: existing.path,
-          body: existing.body,
-          frontmatter: existing.frontmatter,
+        await insertPublishedVersionRow(tx as unknown as DrizzleDatabase, {
+          headRow: existing,
+          snapshot: {
+            path: existing.path,
+            type: existing.schemaType,
+            locale: existing.locale,
+            format: existing.contentFormat as ContentFormat,
+            frontmatter: existing.frontmatter as Record<string, unknown>,
+            body: existing.body,
+          },
           version: nextVersion,
-          publishedBy: actorId,
-          changeSummary: input.changeSummary ?? null,
+          actorId,
+          changeSummary: input.changeSummary,
         });
 
         const [updated] = await tx
@@ -2244,6 +3054,120 @@ export function mountContentApiRoutes(
     },
   );
 
+  contentApp.get?.(
+    "/api/v1/content/:documentId/versions",
+    ({ request, params }: any) => {
+      return executeWithRuntimeErrorsHandled(request, async () => {
+        const scope = pickScope(request);
+
+        await options.authorize(request, {
+          requiredScope: "content:read",
+          project: scope.project,
+          environment: scope.environment,
+        });
+
+        const existing = await options.store.getById(scope, params.documentId, {
+          draft: true,
+        });
+
+        if (!existing) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+            details: {
+              documentId: params.documentId,
+            },
+          });
+        }
+
+        await options.authorize(request, {
+          requiredScope: "content:read",
+          project: scope.project,
+          environment: scope.environment,
+          documentPath: existing.path,
+        });
+
+        const versions = await options.store.listVersions(
+          scope,
+          params.documentId,
+        );
+
+        for (const path of new Set(versions.map((version) => version.path))) {
+          if (path !== existing.path) {
+            await options.authorize(request, {
+              requiredScope: "content:read",
+              project: scope.project,
+              environment: scope.environment,
+              documentPath: path,
+            });
+          }
+        }
+
+        return {
+          data: versions.map((version) => toVersionSummaryResponse(version)),
+        };
+      });
+    },
+  );
+
+  contentApp.get?.(
+    "/api/v1/content/:documentId/versions/:version",
+    ({ request, params }: any) => {
+      return executeWithRuntimeErrorsHandled(request, async () => {
+        const scope = pickScope(request);
+        const version = parsePathInt(params.version, "version");
+
+        await options.authorize(request, {
+          requiredScope: "content:read",
+          project: scope.project,
+          environment: scope.environment,
+        });
+
+        const existing = await options.store.getById(scope, params.documentId, {
+          draft: true,
+        });
+
+        if (!existing) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+            details: {
+              documentId: params.documentId,
+            },
+          });
+        }
+
+        await options.authorize(request, {
+          requiredScope: "content:read",
+          project: scope.project,
+          environment: scope.environment,
+          documentPath: existing.path,
+        });
+
+        const versionDocument = await options.store.getVersion(
+          scope,
+          params.documentId,
+          version,
+        );
+
+        if (versionDocument.path !== existing.path) {
+          await options.authorize(request, {
+            requiredScope: "content:read",
+            project: scope.project,
+            environment: scope.environment,
+            documentPath: versionDocument.path,
+          });
+        }
+
+        return {
+          data: toVersionDocumentResponse(versionDocument),
+        };
+      });
+    },
+  );
+
   contentApp.post?.("/api/v1/content", ({ request, body }: any) => {
     return executeWithRuntimeErrorsHandled(request, async () => {
       const scope = pickScope(request);
@@ -2315,6 +3239,126 @@ export function mountContentApiRoutes(
           scope,
           params.documentId,
           payload,
+        );
+
+        return {
+          data: toDocumentResponse(document),
+        };
+      });
+    },
+  );
+
+  contentApp.post?.(
+    "/api/v1/content/:documentId/restore",
+    ({ request, params }: any) => {
+      return executeWithRuntimeErrorsHandled(request, async () => {
+        const scope = pickScope(request);
+
+        await options.authorize(request, {
+          requiredScope: "content:write",
+          project: scope.project,
+          environment: scope.environment,
+        });
+
+        const existing = await options.store.getById(scope, params.documentId, {
+          draft: true,
+        });
+
+        if (!existing) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+            details: {
+              documentId: params.documentId,
+            },
+          });
+        }
+
+        await options.authorize(request, {
+          requiredScope: "content:write",
+          project: scope.project,
+          environment: scope.environment,
+          documentPath: existing.path,
+        });
+
+        const document = await options.store.restore(scope, params.documentId);
+
+        return {
+          data: toDocumentResponse(document),
+        };
+      });
+    },
+  );
+
+  contentApp.post?.(
+    "/api/v1/content/:documentId/versions/:version/restore",
+    ({ request, params, body }: any) => {
+      return executeWithRuntimeErrorsHandled(request, async () => {
+        const scope = pickScope(request);
+        const payload = (body ?? {}) as ContentRestoreVersionPayload;
+        const targetStatus = parseRestoreTargetStatus(payload.targetStatus);
+        const requiredScope =
+          targetStatus === "published" ? "content:publish" : "content:write";
+        const version = parsePathInt(params.version, "version");
+
+        await options.authorize(request, {
+          requiredScope,
+          project: scope.project,
+          environment: scope.environment,
+        });
+
+        const existing = await options.store.getById(scope, params.documentId, {
+          draft: true,
+        });
+
+        if (!existing) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+            details: {
+              documentId: params.documentId,
+            },
+          });
+        }
+
+        await options.authorize(request, {
+          requiredScope,
+          project: scope.project,
+          environment: scope.environment,
+          documentPath: existing.path,
+        });
+
+        const versionDocument = await options.store.getVersion(
+          scope,
+          params.documentId,
+          version,
+        );
+
+        if (versionDocument.path !== existing.path) {
+          await options.authorize(request, {
+            requiredScope,
+            project: scope.project,
+            environment: scope.environment,
+            documentPath: versionDocument.path,
+          });
+        }
+
+        const changeSummary = parseOptionalString(
+          payload.changeSummary ?? payload.change_summary,
+          "changeSummary",
+        );
+        const actorId = parseOptionalString(payload.actorId, "actorId");
+        const document = await options.store.restoreVersion(
+          scope,
+          params.documentId,
+          version,
+          {
+            targetStatus,
+            changeSummary,
+            actorId,
+          },
         );
 
         return {

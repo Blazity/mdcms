@@ -84,9 +84,13 @@ Backend API/runtime package boundary for MDCMS.
 - Implemented endpoints:
   - `GET /api/v1/content`
   - `GET /api/v1/content/:documentId`
+  - `GET /api/v1/content/:documentId/versions`
+  - `GET /api/v1/content/:documentId/versions/:version`
   - `POST /api/v1/content`
   - `PUT /api/v1/content/:documentId`
   - `DELETE /api/v1/content/:documentId`
+  - `POST /api/v1/content/:documentId/restore`
+  - `POST /api/v1/content/:documentId/versions/:version/restore`
   - `POST /api/v1/content/:documentId/publish`
   - `POST /api/v1/content/:documentId/unpublish`
 - List endpoint query contract supports:
@@ -101,6 +105,14 @@ Backend API/runtime package boundary for MDCMS.
   - publish appends immutable row to `document_versions`, updates `documents.published_version`, and sets `documents.has_unpublished_changes = FALSE`.
   - unpublish clears `documents.published_version` and sets `documents.has_unpublished_changes = TRUE`.
   - publish accepts optional `change_summary` (or `changeSummary`) request field and stores it in `document_versions.change_summary`.
+- Restore/version-history semantics:
+  - `POST /api/v1/content/:documentId/restore` is exact undelete of the current head row. It clears `documents.is_deleted`, preserves the current head content and `published_version`, and does not append a new immutable version row.
+  - `GET /api/v1/content/:documentId/versions` returns immutable publish history for the routed document in descending version order.
+  - `GET /api/v1/content/:documentId/versions/:version` returns one immutable publish snapshot.
+  - `POST /api/v1/content/:documentId/versions/:version/restore` restores a historical snapshot back into the mutable head.
+  - version restore defaults to `targetStatus=draft`, which updates only the mutable head row, keeps existing `published_version`, and marks `documents.has_unpublished_changes = TRUE`.
+  - `targetStatus=published` appends a fresh immutable version row at HEAD, updates `documents.published_version`, and leaves history strictly linear and append-only.
+  - restore flows return deterministic `CONTENT_PATH_CONFLICT` (`409`) when reactivating a head row or restoring a version would collide with an active `(project, environment, locale, path)` tuple.
 - Content storage is DB-backed (`documents` table), not process memory.
 - List/integer query parsing is strict (`limit=1abc` is rejected with `INVALID_QUERY_PARAM`).
 - Content endpoints are deny-by-default and require either:

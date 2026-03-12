@@ -941,6 +941,593 @@ test("content API supports draft/publish/unpublish lifecycle", async () => {
   assert.equal(getDeletedBody.code, "NOT_FOUND");
 });
 
+test("content API restore undeletes the current head without appending a version", async () => {
+  const handler = createHandler();
+
+  const createResponse = await handler(
+    new Request("http://localhost/api/v1/content", {
+      method: "POST",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "blog/restore-me",
+        type: "BlogPost",
+        locale: "en",
+        format: "md",
+        frontmatter: { slug: "restore-me", title: "Restore Me" },
+        body: "restore me body",
+      }),
+    }),
+  );
+  const created = (await createResponse.json()) as {
+    data: { documentId: string };
+  };
+
+  assert.equal(createResponse.status, 200);
+
+  const publishResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/publish`,
+      {
+        method: "POST",
+        headers: {
+          ...scopeHeaders,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          changeSummary: "Publish before trash",
+        }),
+      },
+    ),
+  );
+  const published = (await publishResponse.json()) as {
+    data: { publishedVersion: number | null };
+  };
+
+  assert.equal(publishResponse.status, 200);
+  assert.equal(published.data.publishedVersion, 1);
+
+  const deleteResponse = await handler(
+    new Request(`http://localhost/api/v1/content/${created.data.documentId}`, {
+      method: "DELETE",
+      headers: scopeHeaders,
+    }),
+  );
+
+  assert.equal(deleteResponse.status, 200);
+
+  const restoreResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/restore`,
+      {
+        method: "POST",
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const restoreBody = (await restoreResponse.json()) as {
+    data: {
+      isDeleted: boolean;
+      publishedVersion: number | null;
+      body: string;
+    };
+  };
+
+  assert.equal(restoreResponse.status, 200);
+  assert.equal(restoreBody.data.isDeleted, false);
+  assert.equal(restoreBody.data.publishedVersion, 1);
+  assert.equal(restoreBody.data.body, "restore me body");
+
+  const versionsResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/versions`,
+      {
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const versionsBody = (await versionsResponse.json()) as {
+    data: Array<{ version: number }>;
+  };
+
+  assert.equal(versionsResponse.status, 200);
+  assert.equal(versionsBody.data.length, 1);
+  assert.equal(versionsBody.data[0]?.version, 1);
+
+  const publishedReadResponse = await handler(
+    new Request(`http://localhost/api/v1/content/${created.data.documentId}`, {
+      headers: scopeHeaders,
+    }),
+  );
+  const publishedReadBody = (await publishedReadResponse.json()) as {
+    data: { body: string };
+  };
+
+  assert.equal(publishedReadResponse.status, 200);
+  assert.equal(publishedReadBody.data.body, "restore me body");
+});
+
+test("content API restore returns CONTENT_PATH_CONFLICT when undelete collides with an active path", async () => {
+  const handler = createHandler();
+
+  const trashedCreateResponse = await handler(
+    new Request("http://localhost/api/v1/content", {
+      method: "POST",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "blog/conflict-path",
+        type: "BlogPost",
+        locale: "en",
+        format: "md",
+        frontmatter: { slug: "conflict-path" },
+        body: "trashed body",
+      }),
+    }),
+  );
+  const trashedDocument = (await trashedCreateResponse.json()) as {
+    data: { documentId: string };
+  };
+
+  assert.equal(trashedCreateResponse.status, 200);
+
+  const deleteResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${trashedDocument.data.documentId}`,
+      {
+        method: "DELETE",
+        headers: scopeHeaders,
+      },
+    ),
+  );
+
+  assert.equal(deleteResponse.status, 200);
+
+  const conflictingCreateResponse = await handler(
+    new Request("http://localhost/api/v1/content", {
+      method: "POST",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "blog/conflict-path",
+        type: "BlogPost",
+        locale: "en",
+        format: "md",
+        frontmatter: { slug: "conflict-path-live" },
+        body: "live body",
+      }),
+    }),
+  );
+
+  assert.equal(conflictingCreateResponse.status, 200);
+
+  const restoreResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${trashedDocument.data.documentId}/restore`,
+      {
+        method: "POST",
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const restoreBody = (await restoreResponse.json()) as {
+    code: string;
+    details?: { path?: string; locale?: string; conflictDocumentId?: string };
+  };
+
+  assert.equal(restoreResponse.status, 409);
+  assert.equal(restoreBody.code, "CONTENT_PATH_CONFLICT");
+  assert.equal(restoreBody.details?.path, "blog/conflict-path");
+  assert.equal(restoreBody.details?.locale, "en");
+  assert.ok(restoreBody.details?.conflictDocumentId);
+});
+
+test("content API returns version history summaries and immutable snapshots", async () => {
+  const handler = createHandler();
+
+  const createResponse = await handler(
+    new Request("http://localhost/api/v1/content", {
+      method: "POST",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "blog/version-history",
+        type: "BlogPost",
+        locale: "en",
+        format: "md",
+        frontmatter: { slug: "version-history", title: "Version One" },
+        body: "version one body",
+      }),
+    }),
+  );
+  const created = (await createResponse.json()) as {
+    data: { documentId: string };
+  };
+
+  assert.equal(createResponse.status, 200);
+
+  const firstPublishResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/publish`,
+      {
+        method: "POST",
+        headers: {
+          ...scopeHeaders,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          changeSummary: "Version one",
+        }),
+      },
+    ),
+  );
+
+  assert.equal(firstPublishResponse.status, 200);
+
+  const updateResponse = await handler(
+    new Request(`http://localhost/api/v1/content/${created.data.documentId}`, {
+      method: "PUT",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "blog/version-history-updated",
+        frontmatter: { slug: "version-history", title: "Version Two" },
+        body: "version two body",
+      }),
+    }),
+  );
+
+  assert.equal(updateResponse.status, 200);
+
+  const secondPublishResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/publish`,
+      {
+        method: "POST",
+        headers: {
+          ...scopeHeaders,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          changeSummary: "Version two",
+        }),
+      },
+    ),
+  );
+
+  assert.equal(secondPublishResponse.status, 200);
+
+  const versionsResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/versions`,
+      {
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const versionsBody = (await versionsResponse.json()) as {
+    data: Array<{
+      version: number;
+      path: string;
+      changeSummary?: string;
+    }>;
+  };
+
+  assert.equal(versionsResponse.status, 200);
+  assert.equal(versionsBody.data.length, 2);
+  assert.equal(versionsBody.data[0]?.version, 2);
+  assert.equal(versionsBody.data[0]?.path, "blog/version-history-updated");
+  assert.equal(versionsBody.data[0]?.changeSummary, "Version two");
+  assert.equal(versionsBody.data[1]?.version, 1);
+  assert.equal(versionsBody.data[1]?.path, "blog/version-history");
+  assert.equal(versionsBody.data[1]?.changeSummary, "Version one");
+
+  const versionOneResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/versions/1`,
+      {
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const versionOneBody = (await versionOneResponse.json()) as {
+    data: {
+      version: number;
+      path: string;
+      body: string;
+      frontmatter: { title?: string };
+      changeSummary?: string;
+    };
+  };
+
+  assert.equal(versionOneResponse.status, 200);
+  assert.equal(versionOneBody.data.version, 1);
+  assert.equal(versionOneBody.data.path, "blog/version-history");
+  assert.equal(versionOneBody.data.body, "version one body");
+  assert.equal(versionOneBody.data.frontmatter.title, "Version One");
+  assert.equal(versionOneBody.data.changeSummary, "Version one");
+});
+
+test("content API restores a historical version to draft state by default", async () => {
+  const handler = createHandler();
+
+  const createResponse = await handler(
+    new Request("http://localhost/api/v1/content", {
+      method: "POST",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "blog/restore-draft",
+        type: "BlogPost",
+        locale: "en",
+        format: "md",
+        frontmatter: { slug: "restore-draft", title: "Draft Version One" },
+        body: "draft version one body",
+      }),
+    }),
+  );
+  const created = (await createResponse.json()) as {
+    data: { documentId: string };
+  };
+
+  assert.equal(createResponse.status, 200);
+
+  const firstPublishResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/publish`,
+      {
+        method: "POST",
+        headers: {
+          ...scopeHeaders,
+          "content-type": "application/json",
+        },
+      },
+    ),
+  );
+
+  assert.equal(firstPublishResponse.status, 200);
+
+  const updateResponse = await handler(
+    new Request(`http://localhost/api/v1/content/${created.data.documentId}`, {
+      method: "PUT",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "blog/restore-draft-updated",
+        frontmatter: { slug: "restore-draft", title: "Draft Version Two" },
+        body: "draft version two body",
+      }),
+    }),
+  );
+
+  assert.equal(updateResponse.status, 200);
+
+  const secondPublishResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/publish`,
+      {
+        method: "POST",
+        headers: {
+          ...scopeHeaders,
+          "content-type": "application/json",
+        },
+      },
+    ),
+  );
+
+  assert.equal(secondPublishResponse.status, 200);
+
+  const restoreResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/versions/1/restore`,
+      {
+        method: "POST",
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const restoreBody = (await restoreResponse.json()) as {
+    data: {
+      body: string;
+      path: string;
+      publishedVersion: number | null;
+      hasUnpublishedChanges: boolean;
+    };
+  };
+
+  assert.equal(restoreResponse.status, 200);
+  assert.equal(restoreBody.data.body, "draft version one body");
+  assert.equal(restoreBody.data.path, "blog/restore-draft");
+  assert.equal(restoreBody.data.publishedVersion, 2);
+  assert.equal(restoreBody.data.hasUnpublishedChanges, true);
+
+  const publishedReadResponse = await handler(
+    new Request(`http://localhost/api/v1/content/${created.data.documentId}`, {
+      headers: scopeHeaders,
+    }),
+  );
+  const publishedReadBody = (await publishedReadResponse.json()) as {
+    data: { body: string; path: string };
+  };
+
+  assert.equal(publishedReadResponse.status, 200);
+  assert.equal(publishedReadBody.data.body, "draft version two body");
+  assert.equal(publishedReadBody.data.path, "blog/restore-draft-updated");
+
+  const versionsResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/versions`,
+      {
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const versionsBody = (await versionsResponse.json()) as {
+    data: Array<{ version: number }>;
+  };
+
+  assert.equal(versionsResponse.status, 200);
+  assert.equal(versionsBody.data.length, 2);
+  assert.equal(versionsBody.data[0]?.version, 2);
+  assert.equal(versionsBody.data[1]?.version, 1);
+});
+
+test("content API restores a historical version to published state when requested", async () => {
+  const handler = createHandler();
+
+  const createResponse = await handler(
+    new Request("http://localhost/api/v1/content", {
+      method: "POST",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "blog/restore-published",
+        type: "BlogPost",
+        locale: "en",
+        format: "md",
+        frontmatter: { slug: "restore-published", title: "Published One" },
+        body: "published one body",
+      }),
+    }),
+  );
+  const created = (await createResponse.json()) as {
+    data: { documentId: string };
+  };
+
+  assert.equal(createResponse.status, 200);
+
+  const firstPublishResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/publish`,
+      {
+        method: "POST",
+        headers: {
+          ...scopeHeaders,
+          "content-type": "application/json",
+        },
+      },
+    ),
+  );
+
+  assert.equal(firstPublishResponse.status, 200);
+
+  const updateResponse = await handler(
+    new Request(`http://localhost/api/v1/content/${created.data.documentId}`, {
+      method: "PUT",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "blog/restore-published-updated",
+        frontmatter: { slug: "restore-published", title: "Published Two" },
+        body: "published two body",
+      }),
+    }),
+  );
+
+  assert.equal(updateResponse.status, 200);
+
+  const secondPublishResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/publish`,
+      {
+        method: "POST",
+        headers: {
+          ...scopeHeaders,
+          "content-type": "application/json",
+        },
+      },
+    ),
+  );
+
+  assert.equal(secondPublishResponse.status, 200);
+
+  const restoreResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/versions/1/restore`,
+      {
+        method: "POST",
+        headers: {
+          ...scopeHeaders,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          targetStatus: "published",
+          changeSummary: "Republish v1",
+        }),
+      },
+    ),
+  );
+  const restoreBody = (await restoreResponse.json()) as {
+    data: {
+      body: string;
+      path: string;
+      publishedVersion: number | null;
+      version: number;
+      hasUnpublishedChanges: boolean;
+    };
+  };
+
+  assert.equal(restoreResponse.status, 200);
+  assert.equal(restoreBody.data.body, "published one body");
+  assert.equal(restoreBody.data.path, "blog/restore-published");
+  assert.equal(restoreBody.data.publishedVersion, 3);
+  assert.equal(restoreBody.data.version, 3);
+  assert.equal(restoreBody.data.hasUnpublishedChanges, false);
+
+  const versionsResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/versions`,
+      {
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const versionsBody = (await versionsResponse.json()) as {
+    data: Array<{ version: number }>;
+  };
+
+  assert.equal(versionsResponse.status, 200);
+  assert.equal(versionsBody.data.length, 3);
+  assert.equal(versionsBody.data[0]?.version, 3);
+  assert.equal(versionsBody.data[1]?.version, 2);
+  assert.equal(versionsBody.data[2]?.version, 1);
+
+  const latestVersionResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/versions/3`,
+      {
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const latestVersionBody = (await latestVersionResponse.json()) as {
+    data: { body: string; path: string; changeSummary?: string };
+  };
+
+  assert.equal(latestVersionResponse.status, 200);
+  assert.equal(latestVersionBody.data.body, "published one body");
+  assert.equal(latestVersionBody.data.path, "blog/restore-published");
+  assert.equal(latestVersionBody.data.changeSummary, "Republish v1");
+});
+
 test("content API enforces list query validation and routing requirements", async () => {
   const handler = createHandler();
 
@@ -2012,6 +2599,262 @@ testWithDatabase(
       assert.equal(versionRows.length, 1);
       assert.equal(versionRows[0]?.changeSummary, "Ship release v1");
       assert.equal(versionRows[0]?.version, 1);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API DB restore returns CONTENT_PATH_CONFLICT when undelete collides with an active path",
+  async () => {
+    const { handler, dbConnection, cookie } = await createDatabaseTestContext(
+      "test:content-api-db-restore-conflict",
+    );
+
+    try {
+      const trashedCreateResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: {
+            ...scopeHeaders,
+            cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            path: `blog/db-restore-conflict-${Date.now()}`,
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "db-restore-conflict" },
+            body: "trashed body",
+          }),
+        }),
+      );
+      const trashedDocument = (await trashedCreateResponse.json()) as {
+        data: { documentId: string; path: string };
+      };
+
+      assert.equal(trashedCreateResponse.status, 200);
+
+      const deleteResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${trashedDocument.data.documentId}`,
+          {
+            method: "DELETE",
+            headers: {
+              ...scopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+
+      assert.equal(deleteResponse.status, 200);
+
+      const conflictingCreateResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: {
+            ...scopeHeaders,
+            cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            path: trashedDocument.data.path,
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "db-restore-conflict-live" },
+            body: "live body",
+          }),
+        }),
+      );
+      const conflictingDocument = (await conflictingCreateResponse.json()) as {
+        data: { documentId: string };
+      };
+
+      assert.equal(conflictingCreateResponse.status, 200);
+
+      const restoreResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${trashedDocument.data.documentId}/restore`,
+          {
+            method: "POST",
+            headers: {
+              ...scopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const restoreBody = (await restoreResponse.json()) as {
+        code: string;
+        details?: {
+          conflictDocumentId?: string;
+          path?: string;
+          locale?: string;
+        };
+      };
+
+      assert.equal(restoreResponse.status, 409);
+      assert.equal(restoreBody.code, "CONTENT_PATH_CONFLICT");
+      assert.equal(
+        restoreBody.details?.conflictDocumentId,
+        conflictingDocument.data.documentId,
+      );
+      assert.equal(restoreBody.details?.path, trashedDocument.data.path);
+      assert.equal(restoreBody.details?.locale, "en");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API DB restore version with targetStatus=published appends a new immutable version",
+  async () => {
+    const { handler, dbConnection, cookie } = await createDatabaseTestContext(
+      "test:content-api-db-restore-version-published",
+    );
+
+    try {
+      const createResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: {
+            ...scopeHeaders,
+            cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            path: `blog/db-restore-version-${Date.now()}`,
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "db-restore-version", title: "Version One" },
+            body: "version one body",
+          }),
+        }),
+      );
+      const created = (await createResponse.json()) as {
+        data: { documentId: string; path: string };
+      };
+
+      assert.equal(createResponse.status, 200);
+
+      const firstPublishResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${created.data.documentId}/publish`,
+          {
+            method: "POST",
+            headers: {
+              ...scopeHeaders,
+              cookie,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              changeSummary: "Version one",
+            }),
+          },
+        ),
+      );
+
+      assert.equal(firstPublishResponse.status, 200);
+
+      const updateResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${created.data.documentId}`,
+          {
+            method: "PUT",
+            headers: {
+              ...scopeHeaders,
+              cookie,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              path: `${created.data.path}-updated`,
+              frontmatter: {
+                slug: "db-restore-version",
+                title: "Version Two",
+              },
+              body: "version two body",
+            }),
+          },
+        ),
+      );
+
+      assert.equal(updateResponse.status, 200);
+
+      const secondPublishResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${created.data.documentId}/publish`,
+          {
+            method: "POST",
+            headers: {
+              ...scopeHeaders,
+              cookie,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              changeSummary: "Version two",
+            }),
+          },
+        ),
+      );
+
+      assert.equal(secondPublishResponse.status, 200);
+
+      const restoreResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${created.data.documentId}/versions/1/restore`,
+          {
+            method: "POST",
+            headers: {
+              ...scopeHeaders,
+              cookie,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              targetStatus: "published",
+              change_summary: "Republish version one",
+            }),
+          },
+        ),
+      );
+      const restoreBody = (await restoreResponse.json()) as {
+        data: {
+          publishedVersion: number | null;
+          version: number;
+          path: string;
+          body: string;
+          hasUnpublishedChanges: boolean;
+        };
+      };
+
+      assert.equal(restoreResponse.status, 200);
+      assert.equal(restoreBody.data.publishedVersion, 3);
+      assert.equal(restoreBody.data.version, 3);
+      assert.equal(restoreBody.data.path, created.data.path);
+      assert.equal(restoreBody.data.body, "version one body");
+      assert.equal(restoreBody.data.hasUnpublishedChanges, false);
+
+      const versionRows = await dbConnection.db
+        .select()
+        .from(documentVersions)
+        .where(eq(documentVersions.documentId, created.data.documentId));
+
+      versionRows.sort((left, right) => left.version - right.version);
+
+      assert.equal(versionRows.length, 3);
+      assert.equal(versionRows[0]?.version, 1);
+      assert.equal(versionRows[0]?.body, "version one body");
+      assert.equal(versionRows[1]?.version, 2);
+      assert.equal(versionRows[1]?.body, "version two body");
+      assert.equal(versionRows[2]?.version, 3);
+      assert.equal(versionRows[2]?.path, created.data.path);
+      assert.equal(versionRows[2]?.body, "version one body");
+      assert.equal(versionRows[2]?.changeSummary, "Republish version one");
     } finally {
       await dbConnection.close();
     }
