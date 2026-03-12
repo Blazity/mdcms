@@ -1,0 +1,1481 @@
+import { randomUUID } from "node:crypto";
+
+import { RuntimeError } from "@mdcms/shared";
+import { and, eq, ne, sql, type SQL } from "drizzle-orm";
+
+import type { DrizzleDatabase } from "../db.js";
+import {
+  documents,
+  documentVersions,
+  schemaRegistryEntries,
+  schemaSyncs,
+} from "../db/schema.js";
+import { resolveProjectEnvironmentScope } from "../project-provisioning.js";
+
+import {
+  DEFAULT_ACTOR,
+  DEFAULT_LIMIT,
+  MAX_LIMIT,
+  type ContentDocument,
+  type ContentFormat,
+  type ContentScope,
+  type ContentStore,
+  type CreateDatabaseContentStoreOptions,
+  type SortField,
+  type SortOrder,
+} from "./types.js";
+import {
+  assertJsonObject,
+  assertRequiredString,
+  parseBoolean,
+  parseContentFormat,
+  parseOptionalString,
+  parsePositiveInt,
+  parseSortField,
+  parseSortOrder,
+} from "./parsing.js";
+import {
+  buildContentPathConflict,
+  getUniqueConstraintName,
+  isUniqueViolation,
+  readSupportedLocales,
+  toContentDocument,
+  toContentVersionDocument,
+  toIsoString,
+} from "./responses.js";
+
+export function createDatabaseContentStore(
+  options: CreateDatabaseContentStoreOptions,
+): ContentStore {
+  const { db } = options;
+
+  async function resolveScopeIds(
+    scope: ContentScope,
+    createIfMissing: boolean,
+  ): Promise<{ projectId: string; environmentId: string } | undefined> {
+    const resolvedScope = await resolveProjectEnvironmentScope(db, {
+      project: scope.project,
+      environment: scope.environment,
+      createIfMissing,
+    });
+
+    if (!resolvedScope) {
+      return undefined;
+    }
+
+    return {
+      projectId: resolvedScope.project.id,
+      environmentId: resolvedScope.environment.id,
+    };
+  }
+
+  async function findPathConflict(
+    scopeIds: { projectId: string; environmentId: string },
+    input: { path: string; locale: string; documentId?: string },
+  ): Promise<typeof documents.$inferSelect | undefined> {
+    const baseConditions: SQL[] = [
+      eq(documents.projectId, scopeIds.projectId),
+      eq(documents.environmentId, scopeIds.environmentId),
+      eq(documents.path, input.path),
+      eq(documents.locale, input.locale),
+      eq(documents.isDeleted, false),
+    ];
+
+    if (input.documentId) {
+      baseConditions.push(ne(documents.documentId, input.documentId));
+    }
+
+    return db.query.documents.findFirst({
+      where: and(...baseConditions),
+    });
+  }
+
+  async function findTranslationLocaleConflict(
+    scopeIds: { projectId: string; environmentId: string },
+    input: {
+      translationGroupId: string;
+      locale: string;
+      documentId?: string;
+    },
+  ): Promise<typeof documents.$inferSelect | undefined> {
+    const baseConditions: SQL[] = [
+      eq(documents.projectId, scopeIds.projectId),
+      eq(documents.environmentId, scopeIds.environmentId),
+      eq(documents.translationGroupId, input.translationGroupId),
+      eq(documents.locale, input.locale),
+      eq(documents.isDeleted, false),
+    ];
+
+    if (input.documentId) {
+      baseConditions.push(ne(documents.documentId, input.documentId));
+    }
+
+    return db.query.documents.findFirst({
+      where: and(...baseConditions),
+    });
+  }
+
+  async function resolveSourceDocument(
+    scopeIds: { projectId: string; environmentId: string },
+    sourceDocumentId: string,
+  ): Promise<typeof documents.$inferSelect | undefined> {
+    return db.query.documents.findFirst({
+      where: and(
+        eq(documents.projectId, scopeIds.projectId),
+        eq(documents.environmentId, scopeIds.environmentId),
+        eq(documents.documentId, sourceDocumentId),
+        eq(documents.isDeleted, false),
+      ),
+    });
+  }
+
+  async function resolveVariantLocalePolicy(
+    scopeIds: { projectId: string; environmentId: string },
+    type: string,
+  ): Promise<
+    | {
+        localized: boolean;
+        supportedLocales?: Set<string>;
+      }
+    | undefined
+  > {
+    const [schemaEntry, schemaSync] = await Promise.all([
+      db.query.schemaRegistryEntries.findFirst({
+        where: and(
+          eq(schemaRegistryEntries.projectId, scopeIds.projectId),
+          eq(schemaRegistryEntries.environmentId, scopeIds.environmentId),
+          eq(schemaRegistryEntries.schemaType, type),
+        ),
+      }),
+      db.query.schemaSyncs.findFirst({
+        where: and(
+          eq(schemaSyncs.projectId, scopeIds.projectId),
+          eq(schemaSyncs.environmentId, scopeIds.environmentId),
+        ),
+      }),
+    ]);
+
+    if (!schemaEntry) {
+      return undefined;
+    }
+
+    return {
+      localized: schemaEntry.localized,
+      supportedLocales: readSupportedLocales(schemaSync?.rawConfigSnapshot),
+    };
+  }
+
+  async function resolvePublishedSnapshot(
+    scopeIds: { projectId: string; environmentId: string },
+    headRow: typeof documents.$inferSelect,
+  ): Promise<ContentDocument | undefined> {
+    if (
+      headRow.isDeleted ||
+      headRow.publishedVersion === null ||
+      headRow.publishedVersion === undefined
+    ) {
+      return undefined;
+    }
+
+    const versionRow = await db.query.documentVersions.findFirst({
+      where: and(
+        eq(documentVersions.projectId, scopeIds.projectId),
+        eq(documentVersions.environmentId, scopeIds.environmentId),
+        eq(documentVersions.documentId, headRow.documentId),
+        eq(documentVersions.version, headRow.publishedVersion),
+      ),
+    });
+
+    if (!versionRow) {
+      return undefined;
+    }
+
+    return {
+      documentId: headRow.documentId,
+      translationGroupId: headRow.translationGroupId,
+      project: "",
+      environment: "",
+      path: versionRow.path,
+      type: versionRow.schemaType,
+      locale: versionRow.locale,
+      format: versionRow.contentFormat as ContentFormat,
+      isDeleted: headRow.isDeleted,
+      hasUnpublishedChanges: headRow.hasUnpublishedChanges,
+      version: versionRow.version,
+      publishedVersion: headRow.publishedVersion,
+      draftRevision: headRow.draftRevision,
+      frontmatter: versionRow.frontmatter as Record<string, unknown>,
+      body: versionRow.body,
+      createdBy: headRow.createdBy,
+      createdAt: toIsoString(headRow.createdAt),
+      updatedBy: headRow.updatedBy,
+      updatedAt: toIsoString(versionRow.publishedAt),
+    };
+  }
+
+  async function resolveHeadRow(
+    scopeIds: { projectId: string; environmentId: string },
+    documentId: string,
+  ): Promise<typeof documents.$inferSelect | undefined> {
+    return db.query.documents.findFirst({
+      where: and(
+        eq(documents.projectId, scopeIds.projectId),
+        eq(documents.environmentId, scopeIds.environmentId),
+        eq(documents.documentId, documentId),
+      ),
+    });
+  }
+
+  async function resolveVersionRow(
+    scopeIds: { projectId: string; environmentId: string },
+    documentId: string,
+    version: number,
+  ): Promise<typeof documentVersions.$inferSelect | undefined> {
+    return db.query.documentVersions.findFirst({
+      where: and(
+        eq(documentVersions.projectId, scopeIds.projectId),
+        eq(documentVersions.environmentId, scopeIds.environmentId),
+        eq(documentVersions.documentId, documentId),
+        eq(documentVersions.version, version),
+      ),
+    });
+  }
+
+  async function getNextVersionNumber(
+    tx: DrizzleDatabase,
+    documentId: string,
+  ): Promise<number> {
+    const [latestVersionRow] = await tx
+      .select({
+        value: sql<number>`coalesce(max(${documentVersions.version}), 0)`,
+      })
+      .from(documentVersions)
+      .where(eq(documentVersions.documentId, documentId));
+
+    return (latestVersionRow?.value ?? 0) + 1;
+  }
+
+  async function insertPublishedVersionRow(
+    tx: DrizzleDatabase,
+    input: {
+      headRow: typeof documents.$inferSelect;
+      snapshot: {
+        path: string;
+        type: string;
+        locale: string;
+        format: ContentFormat;
+        frontmatter: Record<string, unknown>;
+        body: string;
+      };
+      version: number;
+      actorId: string;
+      changeSummary?: string;
+    },
+  ): Promise<void> {
+    await tx.insert(documentVersions).values({
+      documentId: input.headRow.documentId,
+      translationGroupId: input.headRow.translationGroupId,
+      projectId: input.headRow.projectId,
+      environmentId: input.headRow.environmentId,
+      schemaType: input.snapshot.type,
+      locale: input.snapshot.locale,
+      contentFormat: input.snapshot.format,
+      path: input.snapshot.path,
+      body: input.snapshot.body,
+      frontmatter: input.snapshot.frontmatter,
+      version: input.version,
+      publishedBy: input.actorId,
+      changeSummary: input.changeSummary ?? null,
+    });
+  }
+
+  function applyListFilters(
+    document: ContentDocument,
+    query: {
+      type?: string;
+      path?: string;
+      locale?: string;
+      slug?: string;
+      published?: boolean;
+      isDeleted?: boolean;
+      hasUnpublishedChanges?: boolean;
+      q?: string;
+    },
+  ): boolean {
+    if (query.type && document.type !== query.type) {
+      return false;
+    }
+
+    if (query.path && !document.path.startsWith(query.path)) {
+      return false;
+    }
+
+    if (query.locale && document.locale !== query.locale) {
+      return false;
+    }
+
+    if (
+      query.slug &&
+      String(document.frontmatter.slug ?? "").trim() !== query.slug
+    ) {
+      return false;
+    }
+
+    if (query.published !== undefined) {
+      const isPublished = document.publishedVersion !== null;
+
+      if (isPublished !== query.published) {
+        return false;
+      }
+    }
+
+    if (
+      query.isDeleted !== undefined &&
+      document.isDeleted !== query.isDeleted
+    ) {
+      return false;
+    }
+
+    if (
+      query.hasUnpublishedChanges !== undefined &&
+      document.hasUnpublishedChanges !== query.hasUnpublishedChanges
+    ) {
+      return false;
+    }
+
+    if (query.q) {
+      const haystack =
+        `${document.path}\n${document.body}\n${JSON.stringify(document.frontmatter)}`.toLowerCase();
+
+      if (!haystack.includes(query.q)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function sortDocuments(
+    rows: ContentDocument[],
+    sort: SortField,
+    order: SortOrder,
+  ): ContentDocument[] {
+    rows.sort((left, right) => {
+      let compared = 0;
+
+      if (sort === "path") {
+        compared = left.path.localeCompare(right.path);
+      } else if (sort === "createdAt") {
+        compared = left.createdAt.localeCompare(right.createdAt);
+      } else {
+        compared = left.updatedAt.localeCompare(right.updatedAt);
+      }
+
+      return order === "asc" ? compared : compared * -1;
+    });
+
+    return rows;
+  }
+
+  return {
+    async create(scope, payload) {
+      const path = assertRequiredString(payload.path, "path");
+      const type = assertRequiredString(payload.type, "type");
+      const locale = assertRequiredString(payload.locale, "locale");
+      const sourceDocumentId = parseOptionalString(
+        payload.sourceDocumentId,
+        "sourceDocumentId",
+      );
+      const body = assertRequiredString(payload.body, "body", {
+        allowEmpty: true,
+      });
+      const frontmatter = assertJsonObject(payload.frontmatter, "frontmatter");
+      const format = parseContentFormat(payload.format);
+      const scopeIds = await resolveScopeIds(scope, true);
+
+      if (!scopeIds) {
+        throw new RuntimeError({
+          code: "INVALID_TARGET_ROUTING",
+          message: "Requested project/environment target does not exist.",
+          statusCode: 404,
+        });
+      }
+
+      const sourceDocument = sourceDocumentId
+        ? await resolveSourceDocument(scopeIds, sourceDocumentId)
+        : undefined;
+
+      if (sourceDocumentId && !sourceDocument) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: sourceDocumentId,
+          },
+        });
+      }
+
+      if (sourceDocument && sourceDocument.schemaType !== type) {
+        throw new RuntimeError({
+          code: "INVALID_INPUT",
+          message:
+            'Field "type" must match the source document type when creating a translation variant.',
+          statusCode: 400,
+          details: {
+            field: "type",
+            sourceDocumentId,
+          },
+        });
+      }
+
+      if (sourceDocument) {
+        const variantLocalePolicy = await resolveVariantLocalePolicy(
+          scopeIds,
+          type,
+        );
+
+        if (variantLocalePolicy && !variantLocalePolicy.localized) {
+          throw new RuntimeError({
+            code: "INVALID_INPUT",
+            message:
+              'Field "sourceDocumentId" can only be used with localized schema types.',
+            statusCode: 400,
+            details: {
+              field: "sourceDocumentId",
+              sourceDocumentId,
+              type,
+            },
+          });
+        }
+
+        if (
+          variantLocalePolicy?.supportedLocales &&
+          !variantLocalePolicy.supportedLocales.has(locale)
+        ) {
+          throw new RuntimeError({
+            code: "INVALID_INPUT",
+            message:
+              'Field "locale" must resolve to a supported locale when creating a translation variant.',
+            statusCode: 400,
+            details: {
+              field: "locale",
+              locale,
+              sourceDocumentId,
+              supportedLocales: [...variantLocalePolicy.supportedLocales].sort(
+                (left, right) => left.localeCompare(right),
+              ),
+            },
+          });
+        }
+      }
+
+      const conflict = await findPathConflict(scopeIds, {
+        path,
+        locale,
+      });
+
+      if (conflict) {
+        throw new RuntimeError({
+          code: "CONTENT_PATH_CONFLICT",
+          message:
+            "A non-deleted document with the same path and locale already exists.",
+          statusCode: 409,
+          details: {
+            conflictDocumentId: conflict.documentId,
+            path,
+            locale,
+          },
+        });
+      }
+
+      const translationGroupId =
+        sourceDocument?.translationGroupId ?? randomUUID();
+      const translationConflict = await findTranslationLocaleConflict(
+        scopeIds,
+        {
+          translationGroupId,
+          locale,
+        },
+      );
+
+      if (translationConflict) {
+        throw new RuntimeError({
+          code: "TRANSLATION_VARIANT_CONFLICT",
+          message:
+            "A non-deleted document with the same translation group and locale already exists.",
+          statusCode: 409,
+          details: {
+            conflictDocumentId: translationConflict.documentId,
+            translationGroupId,
+            locale,
+          },
+        });
+      }
+
+      const actor = payload.createdBy?.trim() || DEFAULT_ACTOR;
+
+      try {
+        const [created] = await db
+          .insert(documents)
+          .values({
+            documentId: randomUUID(),
+            translationGroupId,
+            projectId: scopeIds.projectId,
+            environmentId: scopeIds.environmentId,
+            path,
+            schemaType: type,
+            locale,
+            contentFormat: format,
+            body,
+            frontmatter,
+            isDeleted: false,
+            hasUnpublishedChanges: true,
+            publishedVersion: null,
+            draftRevision: 1,
+            createdBy: actor,
+            updatedBy: actor,
+          })
+          .returning();
+
+        if (!created) {
+          throw new RuntimeError({
+            code: "INTERNAL_ERROR",
+            message: "Failed to create content document.",
+            statusCode: 500,
+          });
+        }
+
+        return toContentDocument(scope, created);
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          const pathConflict = await findPathConflict(scopeIds, {
+            path,
+            locale,
+          });
+
+          if (pathConflict) {
+            throw new RuntimeError({
+              code: "CONTENT_PATH_CONFLICT",
+              message:
+                "A non-deleted document with the same path and locale already exists.",
+              statusCode: 409,
+              details: {
+                conflictDocumentId: pathConflict.documentId,
+                path,
+                locale,
+              },
+            });
+          }
+
+          const translationConflict = await findTranslationLocaleConflict(
+            scopeIds,
+            {
+              translationGroupId,
+              locale,
+            },
+          );
+
+          if (translationConflict) {
+            throw new RuntimeError({
+              code: "TRANSLATION_VARIANT_CONFLICT",
+              message:
+                "A non-deleted document with the same translation group and locale already exists.",
+              statusCode: 409,
+              details: {
+                conflictDocumentId: translationConflict.documentId,
+                translationGroupId,
+                locale,
+              },
+            });
+          }
+
+          if (
+            getUniqueConstraintName(error) ===
+            "uniq_documents_active_translation_locale"
+          ) {
+            throw new RuntimeError({
+              code: "TRANSLATION_VARIANT_CONFLICT",
+              message:
+                "A non-deleted document with the same translation group and locale already exists.",
+              statusCode: 409,
+              details: {
+                translationGroupId,
+                locale,
+              },
+            });
+          }
+
+          throw new RuntimeError({
+            code: "CONTENT_PATH_CONFLICT",
+            message:
+              "A non-deleted document with the same path and locale already exists.",
+            statusCode: 409,
+            details: {
+              path,
+              locale,
+            },
+          });
+        }
+
+        throw error;
+      }
+    },
+
+    async list(scope, query) {
+      const limit = parsePositiveInt(query.limit, "limit", {
+        defaultValue: DEFAULT_LIMIT,
+        min: 1,
+        max: MAX_LIMIT,
+      });
+      const offset = parsePositiveInt(query.offset, "offset", {
+        defaultValue: 0,
+        min: 0,
+      });
+      const published = parseBoolean(query.published, "published");
+      const isDeleted = parseBoolean(query.isDeleted, "isDeleted");
+      const hasUnpublishedChanges = parseBoolean(
+        query.hasUnpublishedChanges,
+        "hasUnpublishedChanges",
+      );
+      const draft = parseBoolean(query.draft, "draft") === true;
+
+      const sort = parseSortField(query.sort);
+      const order = parseSortOrder(query.order);
+      const normalizedType = query.type?.trim();
+      const normalizedPath = query.path?.trim();
+      const normalizedLocale = query.locale?.trim();
+      const normalizedSlug = query.slug?.trim();
+      const normalizedQ = query.q?.trim().toLowerCase();
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        return {
+          rows: [],
+          total: 0,
+          limit,
+          offset,
+        };
+      }
+
+      const headRows = await db
+        .select()
+        .from(documents)
+        .where(
+          and(
+            eq(documents.projectId, scopeIds.projectId),
+            eq(documents.environmentId, scopeIds.environmentId),
+          ),
+        );
+
+      const resolvedRows: ContentDocument[] = [];
+
+      for (const row of headRows) {
+        if (draft) {
+          resolvedRows.push(toContentDocument(scope, row));
+          continue;
+        }
+
+        const publishedSnapshot = await resolvePublishedSnapshot(scopeIds, row);
+
+        if (publishedSnapshot) {
+          resolvedRows.push({
+            ...publishedSnapshot,
+            project: scope.project,
+            environment: scope.environment,
+          });
+        }
+      }
+
+      const filteredRows = resolvedRows.filter((document) =>
+        applyListFilters(document, {
+          type: normalizedType,
+          path: normalizedPath,
+          locale: normalizedLocale,
+          slug: normalizedSlug,
+          published,
+          isDeleted,
+          hasUnpublishedChanges,
+          q: normalizedQ,
+        }),
+      );
+
+      const sortedRows = sortDocuments(filteredRows, sort, order);
+
+      return {
+        rows: sortedRows.slice(offset, offset + limit),
+        total: sortedRows.length,
+        limit,
+        offset,
+      };
+    },
+
+    async getById(scope, documentId, options) {
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        return undefined;
+      }
+
+      const row = await resolveHeadRow(scopeIds, normalizedDocumentId);
+
+      if (!row) {
+        return undefined;
+      }
+
+      if (options?.draft === true) {
+        return toContentDocument(scope, row);
+      }
+
+      const publishedSnapshot = await resolvePublishedSnapshot(scopeIds, row);
+
+      if (!publishedSnapshot) {
+        return undefined;
+      }
+
+      return {
+        ...publishedSnapshot,
+        project: scope.project,
+        environment: scope.environment,
+      };
+    },
+
+    async update(scope, documentId, payload) {
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const existing = await resolveHeadRow(scopeIds, normalizedDocumentId);
+
+      if (!existing || existing.isDeleted) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const nextPath =
+        payload.path !== undefined
+          ? assertRequiredString(payload.path, "path")
+          : existing.path;
+      const nextLocale =
+        payload.locale !== undefined
+          ? assertRequiredString(payload.locale, "locale")
+          : existing.locale;
+      const conflict = await findPathConflict(scopeIds, {
+        path: nextPath,
+        locale: nextLocale,
+        documentId: normalizedDocumentId,
+      });
+
+      if (conflict) {
+        throw new RuntimeError({
+          code: "CONTENT_PATH_CONFLICT",
+          message:
+            "A non-deleted document with the same path and locale already exists.",
+          statusCode: 409,
+          details: {
+            conflictDocumentId: conflict.documentId,
+            path: nextPath,
+            locale: nextLocale,
+          },
+        });
+      }
+
+      const translationConflict = await findTranslationLocaleConflict(
+        scopeIds,
+        {
+          translationGroupId: existing.translationGroupId,
+          locale: nextLocale,
+          documentId: normalizedDocumentId,
+        },
+      );
+
+      if (translationConflict) {
+        throw new RuntimeError({
+          code: "TRANSLATION_VARIANT_CONFLICT",
+          message:
+            "A non-deleted document with the same translation group and locale already exists.",
+          statusCode: 409,
+          details: {
+            conflictDocumentId: translationConflict.documentId,
+            translationGroupId: existing.translationGroupId,
+            locale: nextLocale,
+          },
+        });
+      }
+
+      try {
+        const [updated] = await db
+          .update(documents)
+          .set({
+            path: nextPath,
+            schemaType:
+              payload.type !== undefined
+                ? assertRequiredString(payload.type, "type")
+                : existing.schemaType,
+            locale: nextLocale,
+            contentFormat:
+              payload.format !== undefined
+                ? parseContentFormat(payload.format)
+                : existing.contentFormat,
+            frontmatter:
+              payload.frontmatter !== undefined
+                ? assertJsonObject(payload.frontmatter, "frontmatter")
+                : existing.frontmatter,
+            body:
+              payload.body !== undefined
+                ? assertRequiredString(payload.body, "body", {
+                    allowEmpty: true,
+                  })
+                : existing.body,
+            hasUnpublishedChanges: true,
+            draftRevision: sql`${documents.draftRevision} + 1`,
+            updatedBy: payload.updatedBy?.trim() || DEFAULT_ACTOR,
+            updatedAt: new Date(),
+          })
+          .where(eq(documents.documentId, normalizedDocumentId))
+          .returning();
+
+        if (!updated) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+          });
+        }
+
+        return toContentDocument(scope, updated);
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          const pathConflict = await findPathConflict(scopeIds, {
+            path: nextPath,
+            locale: nextLocale,
+            documentId: normalizedDocumentId,
+          });
+
+          if (pathConflict) {
+            throw new RuntimeError({
+              code: "CONTENT_PATH_CONFLICT",
+              message:
+                "A non-deleted document with the same path and locale already exists.",
+              statusCode: 409,
+              details: {
+                conflictDocumentId: pathConflict.documentId,
+                path: nextPath,
+                locale: nextLocale,
+              },
+            });
+          }
+
+          const translationConflict = await findTranslationLocaleConflict(
+            scopeIds,
+            {
+              translationGroupId: existing.translationGroupId,
+              locale: nextLocale,
+              documentId: normalizedDocumentId,
+            },
+          );
+
+          if (translationConflict) {
+            throw new RuntimeError({
+              code: "TRANSLATION_VARIANT_CONFLICT",
+              message:
+                "A non-deleted document with the same translation group and locale already exists.",
+              statusCode: 409,
+              details: {
+                conflictDocumentId: translationConflict.documentId,
+                translationGroupId: existing.translationGroupId,
+                locale: nextLocale,
+              },
+            });
+          }
+
+          if (
+            getUniqueConstraintName(error) ===
+            "uniq_documents_active_translation_locale"
+          ) {
+            throw new RuntimeError({
+              code: "TRANSLATION_VARIANT_CONFLICT",
+              message:
+                "A non-deleted document with the same translation group and locale already exists.",
+              statusCode: 409,
+              details: {
+                translationGroupId: existing.translationGroupId,
+                locale: nextLocale,
+              },
+            });
+          }
+
+          throw new RuntimeError({
+            code: "CONTENT_PATH_CONFLICT",
+            message:
+              "A non-deleted document with the same path and locale already exists.",
+            statusCode: 409,
+            details: {
+              path: nextPath,
+              locale: nextLocale,
+            },
+          });
+        }
+
+        throw error;
+      }
+    },
+
+    async softDelete(scope, documentId) {
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const [updated] = await db
+        .update(documents)
+        .set({
+          isDeleted: true,
+          hasUnpublishedChanges: true,
+          draftRevision: sql`${documents.draftRevision} + 1`,
+          updatedBy: DEFAULT_ACTOR,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(documents.projectId, scopeIds.projectId),
+            eq(documents.environmentId, scopeIds.environmentId),
+            eq(documents.documentId, normalizedDocumentId),
+          ),
+        )
+        .returning();
+
+      if (!updated) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      return toContentDocument(scope, updated);
+    },
+
+    async restore(scope, documentId) {
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const existing = await resolveHeadRow(scopeIds, normalizedDocumentId);
+
+      if (!existing) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const conflict = await findPathConflict(scopeIds, {
+        path: existing.path,
+        locale: existing.locale,
+        documentId: normalizedDocumentId,
+      });
+
+      if (conflict) {
+        throw buildContentPathConflict({
+          conflictDocumentId: conflict.documentId,
+          path: existing.path,
+          locale: existing.locale,
+        });
+      }
+
+      if (!existing.isDeleted) {
+        return toContentDocument(scope, existing);
+      }
+
+      const [updated] = await db
+        .update(documents)
+        .set({
+          isDeleted: false,
+          updatedBy: DEFAULT_ACTOR,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(documents.projectId, scopeIds.projectId),
+            eq(documents.environmentId, scopeIds.environmentId),
+            eq(documents.documentId, normalizedDocumentId),
+          ),
+        )
+        .returning();
+
+      if (!updated) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      return toContentDocument(scope, updated);
+    },
+
+    async listVersions(scope, documentId) {
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const existing = await resolveHeadRow(scopeIds, normalizedDocumentId);
+
+      if (!existing) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const rows = await db
+        .select()
+        .from(documentVersions)
+        .where(
+          and(
+            eq(documentVersions.projectId, scopeIds.projectId),
+            eq(documentVersions.environmentId, scopeIds.environmentId),
+            eq(documentVersions.documentId, normalizedDocumentId),
+          ),
+        );
+
+      return rows
+        .sort((left, right) => right.version - left.version)
+        .map((row) => toContentVersionDocument(scope, row));
+    },
+
+    async getVersion(scope, documentId, version) {
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const existing = await resolveHeadRow(scopeIds, normalizedDocumentId);
+
+      if (!existing) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const versionRow = await resolveVersionRow(
+        scopeIds,
+        normalizedDocumentId,
+        version,
+      );
+
+      if (!versionRow) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Version not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+            version,
+          },
+        });
+      }
+
+      return toContentVersionDocument(scope, versionRow);
+    },
+
+    async restoreVersion(scope, documentId, version, input) {
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const existing = await resolveHeadRow(scopeIds, normalizedDocumentId);
+
+      if (!existing) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const versionRow = await resolveVersionRow(
+        scopeIds,
+        normalizedDocumentId,
+        version,
+      );
+
+      if (!versionRow) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Version not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+            version,
+          },
+        });
+      }
+
+      const conflict = await findPathConflict(scopeIds, {
+        path: versionRow.path,
+        locale: versionRow.locale,
+        documentId: normalizedDocumentId,
+      });
+
+      if (conflict) {
+        throw buildContentPathConflict({
+          conflictDocumentId: conflict.documentId,
+          path: versionRow.path,
+          locale: versionRow.locale,
+        });
+      }
+
+      const actorId = input.actorId?.trim() || DEFAULT_ACTOR;
+      const restoredDocument = await db.transaction(async (tx) => {
+        const baseUpdate = {
+          path: versionRow.path,
+          schemaType: versionRow.schemaType,
+          locale: versionRow.locale,
+          contentFormat: versionRow.contentFormat as ContentFormat,
+          frontmatter: versionRow.frontmatter as Record<string, unknown>,
+          body: versionRow.body,
+          isDeleted: false,
+          draftRevision: existing.draftRevision + 1,
+          updatedBy: actorId,
+          updatedAt: new Date(),
+        };
+
+        if (input.targetStatus === "published") {
+          const nextVersion = await getNextVersionNumber(
+            tx as unknown as DrizzleDatabase,
+            normalizedDocumentId,
+          );
+
+          await insertPublishedVersionRow(tx as unknown as DrizzleDatabase, {
+            headRow: existing,
+            snapshot: {
+              path: versionRow.path,
+              type: versionRow.schemaType,
+              locale: versionRow.locale,
+              format: versionRow.contentFormat as ContentFormat,
+              frontmatter: versionRow.frontmatter as Record<string, unknown>,
+              body: versionRow.body,
+            },
+            version: nextVersion,
+            actorId,
+            changeSummary: input.changeSummary,
+          });
+
+          const [updated] = await tx
+            .update(documents)
+            .set({
+              ...baseUpdate,
+              publishedVersion: nextVersion,
+              hasUnpublishedChanges: false,
+            })
+            .where(
+              and(
+                eq(documents.projectId, scopeIds.projectId),
+                eq(documents.environmentId, scopeIds.environmentId),
+                eq(documents.documentId, normalizedDocumentId),
+              ),
+            )
+            .returning();
+
+          if (!updated) {
+            throw new RuntimeError({
+              code: "NOT_FOUND",
+              message: "Document not found.",
+              statusCode: 404,
+              details: {
+                documentId: normalizedDocumentId,
+              },
+            });
+          }
+
+          return updated;
+        }
+
+        const [updated] = await tx
+          .update(documents)
+          .set({
+            ...baseUpdate,
+            hasUnpublishedChanges: true,
+          })
+          .where(
+            and(
+              eq(documents.projectId, scopeIds.projectId),
+              eq(documents.environmentId, scopeIds.environmentId),
+              eq(documents.documentId, normalizedDocumentId),
+            ),
+          )
+          .returning();
+
+        if (!updated) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+            details: {
+              documentId: normalizedDocumentId,
+            },
+          });
+        }
+
+        return updated;
+      });
+
+      return toContentDocument(scope, restoredDocument);
+    },
+
+    async publish(scope, documentId, input) {
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const existing = await db.query.documents.findFirst({
+        where: and(
+          eq(documents.projectId, scopeIds.projectId),
+          eq(documents.environmentId, scopeIds.environmentId),
+          eq(documents.documentId, normalizedDocumentId),
+          eq(documents.isDeleted, false),
+        ),
+      });
+
+      if (!existing) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const actorId = input.actorId?.trim() || DEFAULT_ACTOR;
+      const publishedDocument = await db.transaction(async (tx) => {
+        const nextVersion = await getNextVersionNumber(
+          tx as unknown as DrizzleDatabase,
+          normalizedDocumentId,
+        );
+
+        await insertPublishedVersionRow(tx as unknown as DrizzleDatabase, {
+          headRow: existing,
+          snapshot: {
+            path: existing.path,
+            type: existing.schemaType,
+            locale: existing.locale,
+            format: existing.contentFormat as ContentFormat,
+            frontmatter: existing.frontmatter as Record<string, unknown>,
+            body: existing.body,
+          },
+          version: nextVersion,
+          actorId,
+          changeSummary: input.changeSummary,
+        });
+
+        const [updated] = await tx
+          .update(documents)
+          .set({
+            publishedVersion: nextVersion,
+            hasUnpublishedChanges: false,
+            updatedBy: actorId,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(documents.projectId, scopeIds.projectId),
+              eq(documents.environmentId, scopeIds.environmentId),
+              eq(documents.documentId, normalizedDocumentId),
+            ),
+          )
+          .returning();
+
+        if (!updated) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+            details: {
+              documentId: normalizedDocumentId,
+            },
+          });
+        }
+
+        return updated;
+      });
+
+      return toContentDocument(scope, publishedDocument);
+    },
+
+    async unpublish(scope, documentId, input) {
+      const normalizedDocumentId = assertRequiredString(
+        documentId,
+        "documentId",
+      );
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      const actorId = input.actorId?.trim() || DEFAULT_ACTOR;
+      const [updated] = await db
+        .update(documents)
+        .set({
+          publishedVersion: null,
+          hasUnpublishedChanges: true,
+          updatedBy: actorId,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(documents.projectId, scopeIds.projectId),
+            eq(documents.environmentId, scopeIds.environmentId),
+            eq(documents.documentId, normalizedDocumentId),
+            eq(documents.isDeleted, false),
+          ),
+        )
+        .returning();
+
+      if (!updated) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Document not found.",
+          statusCode: 404,
+          details: {
+            documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      return toContentDocument(scope, updated);
+    },
+  };
+}
