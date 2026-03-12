@@ -224,6 +224,7 @@ export function mountContentApiRoutes(
   contentApp.post?.("/api/v1/content", ({ request, body }: any) => {
     return executeWithRuntimeErrorsHandled(request, async () => {
       const scope = pickScope(request);
+      await options.requireCsrf(request);
       const payload = (body ?? {}) as ContentWritePayload;
       const requestedPath =
         typeof payload.path === "string" ? payload.path.trim() : undefined;
@@ -247,6 +248,7 @@ export function mountContentApiRoutes(
     ({ request, params, body }: any) => {
       return executeWithRuntimeErrorsHandled(request, async () => {
         const scope = pickScope(request);
+        await options.requireCsrf(request);
         const payload = (body ?? {}) as ContentWritePayload;
 
         await options.authorize(request, {
@@ -306,6 +308,7 @@ export function mountContentApiRoutes(
     ({ request, params }: any) => {
       return executeWithRuntimeErrorsHandled(request, async () => {
         const scope = pickScope(request);
+        await options.requireCsrf(request);
 
         await options.authorize(request, {
           requiredScope: "content:write",
@@ -349,6 +352,7 @@ export function mountContentApiRoutes(
     ({ request, params, body }: any) => {
       return executeWithRuntimeErrorsHandled(request, async () => {
         const scope = pickScope(request);
+        await options.requireCsrf(request);
         const payload = (body ?? {}) as ContentRestoreVersionPayload;
         const targetStatus = parseRestoreTargetStatus(payload.targetStatus);
         const requiredScope =
@@ -426,6 +430,7 @@ export function mountContentApiRoutes(
     ({ request, params, body }: any) => {
       return executeWithRuntimeErrorsHandled(request, async () => {
         const scope = pickScope(request);
+        await options.requireCsrf(request);
         await options.authorize(request, {
           requiredScope: "content:publish",
           project: scope.project,
@@ -476,6 +481,7 @@ export function mountContentApiRoutes(
     ({ request, params, body }: any) => {
       return executeWithRuntimeErrorsHandled(request, async () => {
         const scope = pickScope(request);
+        await options.requireCsrf(request);
         await options.authorize(request, {
           requiredScope: "content:publish",
           project: scope.project,
@@ -525,6 +531,7 @@ export function mountContentApiRoutes(
     ({ request, params }: any) => {
       return executeWithRuntimeErrorsHandled(request, async () => {
         const scope = pickScope(request);
+        await options.requireCsrf(request);
         await options.authorize(request, {
           requiredScope: "content:delete",
           project: scope.project,

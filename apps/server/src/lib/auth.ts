@@ -51,6 +51,9 @@ const LEGACY_CONTENT_WRITE_DRAFT_SCOPE = "content:write:draft";
 const SESSION_INACTIVITY_TIMEOUT_SECONDS = 2 * 60 * 60;
 const SESSION_ABSOLUTE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const CLI_LOGIN_CHALLENGE_TTL_MS = 10 * 60 * 1000;
+const CSRF_COOKIE_NAME = "mdcms_csrf";
+const CSRF_HEADER_NAME = "x-mdcms-csrf-token";
+const CSRF_TOKEN_BYTES = 24;
 const CLI_LOGIN_DEFAULT_SCOPES: readonly ApiKeyOperationScope[] = [
   "content:read",
   "content:read:draft",
@@ -171,10 +174,14 @@ export type AuthService = {
     revoked: boolean;
     setCookie?: string;
   }>;
+  signOut: (request: Request) => Promise<Response>;
   authorizeRequest: (
     request: Request,
     requirement: AuthorizationRequirement,
   ) => Promise<AuthorizedRequest>;
+  requireCsrfProtection: (request: Request) => Promise<void>;
+  issueCsrfCookie: () => string;
+  clearCsrfCookie: () => string;
   createApiKey: (
     request: Request,
     input: CreateApiKeyInput,
@@ -315,6 +322,105 @@ function extractCookiePair(setCookieHeader: string | null): string {
   }
 
   return pair.trim();
+}
+
+function appendSetCookieHeaders(
+  ...values: Array<string | null | undefined>
+): string | undefined {
+  const normalized = values
+    .flatMap(
+      (value) =>
+        value
+          ?.split(/,(?=\s*[A-Za-z0-9_-]+=)/)
+          .map((part) => part.trim())
+          .filter((part) => part.length > 0) ?? [],
+    )
+    .filter((value, index, array) => array.indexOf(value) === index);
+
+  return normalized.length > 0 ? normalized.join(", ") : undefined;
+}
+
+function serializeCookie(input: {
+  name: string;
+  value: string;
+  path?: string;
+  sameSite?: "Strict" | "Lax" | "None";
+  secure?: boolean;
+  httpOnly?: boolean;
+  maxAge?: number;
+}): string {
+  const parts = [`${input.name}=${input.value}`];
+
+  if (input.path) {
+    parts.push(`Path=${input.path}`);
+  }
+
+  if (input.maxAge !== undefined) {
+    parts.push(`Max-Age=${input.maxAge}`);
+  }
+
+  if (input.sameSite) {
+    parts.push(`SameSite=${input.sameSite}`);
+  }
+
+  if (input.secure) {
+    parts.push("Secure");
+  }
+
+  if (input.httpOnly) {
+    parts.push("HttpOnly");
+  }
+
+  return parts.join("; ");
+}
+
+function readCookieValue(request: Request, name: string): string | undefined {
+  const cookieHeader = request.headers.get("cookie");
+
+  if (!cookieHeader) {
+    return undefined;
+  }
+
+  for (const candidate of cookieHeader.split(";")) {
+    const trimmed = candidate.trim();
+
+    if (trimmed.startsWith(`${name}=`)) {
+      return trimmed.slice(name.length + 1);
+    }
+  }
+
+  return undefined;
+}
+
+function isStateChangingMethod(method: string): boolean {
+  const normalized = method.trim().toUpperCase();
+  return (
+    normalized.length > 0 &&
+    normalized !== "GET" &&
+    normalized !== "HEAD" &&
+    normalized !== "OPTIONS"
+  );
+}
+
+function withSetCookie(
+  response: Response,
+  setCookie: string | undefined,
+): Response {
+  if (!setCookie) {
+    return response;
+  }
+
+  const headers = new Headers(response.headers);
+  headers.set(
+    "set-cookie",
+    appendSetCookieHeaders(headers.get("set-cookie"), setCookie) ?? setCookie,
+  );
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 function extractBearerToken(
@@ -673,6 +779,28 @@ export function createAuthService(
     ((session: StudioSession) =>
       adminAllowlist.userIds.has(session.userId) ||
       adminAllowlist.emails.has(session.email.toLowerCase()));
+
+  function createCsrfCookie(): string {
+    return serializeCookie({
+      name: CSRF_COOKIE_NAME,
+      value: randomBytes(CSRF_TOKEN_BYTES).toString("base64url"),
+      path: "/",
+      sameSite: "Strict",
+      secure: useSecureCookies,
+      maxAge: SESSION_INACTIVITY_TIMEOUT_SECONDS,
+    });
+  }
+
+  function createClearedCsrfCookie(): string {
+    return serializeCookie({
+      name: CSRF_COOKIE_NAME,
+      value: "",
+      path: "/",
+      sameSite: "Strict",
+      secure: useSecureCookies,
+      maxAge: 0,
+    });
+  }
 
   const auth = betterAuth({
     appName: "mdcms",
@@ -1158,7 +1286,8 @@ export function createAuthService(
 
       return {
         session: studioSession,
-        setCookie,
+        setCookie:
+          appendSetCookieHeaders(setCookie, createCsrfCookie()) ?? setCookie,
       };
     } catch (error) {
       mapUnknownAuthError(
@@ -1183,6 +1312,35 @@ export function createAuthService(
     }
   }
 
+  async function assertCsrfProtection(request: Request): Promise<void> {
+    if (!isStateChangingMethod(request.method)) {
+      return;
+    }
+
+    // API-key requests are not susceptible to browser-driven CSRF.
+    if (extractBearerToken(request.headers.get("authorization"))) {
+      return;
+    }
+
+    const session = await getSessionIfAvailable(request);
+
+    if (!session) {
+      return;
+    }
+
+    const cookieToken = readCookieValue(request, CSRF_COOKIE_NAME);
+    const headerToken = request.headers.get(CSRF_HEADER_NAME)?.trim();
+
+    if (!cookieToken || !headerToken || cookieToken !== headerToken) {
+      throw new RuntimeError({
+        code: "FORBIDDEN",
+        message:
+          "Valid CSRF token is required for session-authenticated state-changing requests.",
+        statusCode: 403,
+      });
+    }
+  }
+
   return {
     async login(request, email, password) {
       return loginWithEmailPassword(request, email, password);
@@ -1204,8 +1362,18 @@ export function createAuthService(
 
       return {
         revoked: response.status < 400,
-        setCookie: response.headers.get("set-cookie") ?? undefined,
+        setCookie: appendSetCookieHeaders(
+          response.headers.get("set-cookie"),
+          createClearedCsrfCookie(),
+        ),
       };
+    },
+
+    async signOut(request) {
+      return withSetCookie(
+        await auth.handler(request),
+        createClearedCsrfCookie(),
+      );
     },
 
     async authorizeRequest(request, requirement) {
@@ -1289,6 +1457,18 @@ export function createAuthService(
           role,
         } satisfies SessionPrincipal,
       };
+    },
+
+    async requireCsrfProtection(request) {
+      await assertCsrfProtection(request);
+    },
+
+    issueCsrfCookie() {
+      return createCsrfCookie();
+    },
+
+    clearCsrfCookie() {
+      return createClearedCsrfCookie();
     },
 
     async createApiKey(request, input) {
@@ -1665,11 +1845,17 @@ export function mountAuthRoutes(
         const session = requireSessionPayload(
           await options.authService.getSession(request),
         );
-        return {
-          data: {
-            session,
+        return createJsonResponse(
+          {
+            data: {
+              session,
+            },
           },
-        };
+          200,
+          {
+            "set-cookie": options.authService.issueCsrfCookie(),
+          },
+        );
       }),
     );
   };
@@ -1678,6 +1864,7 @@ export function mountAuthRoutes(
 
   authApp.post?.("/api/v1/auth/logout", ({ request }: any) =>
     executeWithRuntimeErrorsHandled(request, async () => {
+      await options.authService.requireCsrfProtection(request);
       const result = await options.authService.logout(request);
 
       return createJsonResponse(
@@ -1700,6 +1887,7 @@ export function mountAuthRoutes(
     "/api/v1/auth/users/:userId/sessions/revoke-all",
     ({ request, params }: any) =>
       executeWithRuntimeErrorsHandled(request, async () => {
+        await options.authService.requireCsrfProtection(request);
         const result =
           await options.authService.revokeAllSessionsForUserByAdmin(
             request,
@@ -1723,6 +1911,7 @@ export function mountAuthRoutes(
 
   authApp.post?.("/api/v1/auth/api-keys", ({ request, body }: any) =>
     executeWithRuntimeErrorsHandled(request, async () => {
+      await options.authService.requireCsrfProtection(request);
       const payload = (body ?? {}) as CreateApiKeyInput;
       const created = await options.authService.createApiKey(request, payload);
 
@@ -1739,6 +1928,7 @@ export function mountAuthRoutes(
     "/api/v1/auth/api-keys/:keyId/revoke",
     ({ request, params }: any) =>
       executeWithRuntimeErrorsHandled(request, async () => {
+        await options.authService.requireCsrfProtection(request);
         const metadata = await options.authService.revokeApiKey(
           request,
           params.keyId,
@@ -1911,7 +2101,10 @@ export function mountAuthRoutes(
     options.authService.handleAuthRequest(request),
   );
   authApp.post?.("/api/v1/auth/sign-out", ({ request }: any) =>
-    options.authService.handleAuthRequest(request),
+    executeWithRuntimeErrorsHandled(request, async () => {
+      await options.authService.requireCsrfProtection(request);
+      return options.authService.signOut(request);
+    }),
   );
   mountSessionRoute("/api/v1/auth/get-session");
 }

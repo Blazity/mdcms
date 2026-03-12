@@ -116,15 +116,18 @@ export function createServerRequestHandlerWithModules(
         store: contentStore,
         authorize: (request, requirement) =>
           authService.authorizeRequest(request, requirement),
+        requireCsrf: (request) => authService.requireCsrfProtection(request),
       });
       mountSchemaApiRoutes(app, {
         store: schemaStore,
         authorize: (request, requirement) =>
           authService.authorizeRequest(request, requirement),
+        requireCsrf: (request) => authService.requireCsrfProtection(request),
       });
       mountEnvironmentApiRoutes(app, {
         store: environmentStore,
         authorizeAdmin: (request) => authService.requireAdminSession(request),
+        requireCsrf: (request) => authService.requireCsrfProtection(request),
       });
       mountCollaborationRoutes(app, {
         authService,

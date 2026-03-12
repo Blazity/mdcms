@@ -51,9 +51,14 @@ export type EnvironmentAdminAuthorizer = (
   request: Request,
 ) => Promise<StudioSession | void>;
 
+export type EnvironmentRequestCsrfProtector = (
+  request: Request,
+) => Promise<void>;
+
 export type MountEnvironmentApiRoutesOptions = {
   store: EnvironmentStore;
   authorizeAdmin: EnvironmentAdminAuthorizer;
+  requireCsrf: EnvironmentRequestCsrfProtector;
 };
 
 export type CreateDatabaseEnvironmentStoreOptions = {
@@ -474,6 +479,7 @@ export function mountEnvironmentApiRoutes(
   environmentApp.post?.("/api/v1/environments", ({ request, body }: any) => {
     return executeWithRuntimeErrorsHandled(request, async () => {
       const project = pickProject(request);
+      await options.requireCsrf(request);
       await options.authorizeAdmin(request);
 
       const payload = (body ?? {}) as unknown;
@@ -490,6 +496,7 @@ export function mountEnvironmentApiRoutes(
     ({ request, params }: any) => {
       return executeWithRuntimeErrorsHandled(request, async () => {
         const project = pickProject(request);
+        await options.requireCsrf(request);
         await options.authorizeAdmin(request);
         const environmentId = assertRequiredString(params.id, "id");
 

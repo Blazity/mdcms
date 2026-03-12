@@ -207,7 +207,10 @@ export type ContentRequestAuthorizer = (
   requirement: AuthorizationRequirement,
 ) => Promise<unknown>;
 
+export type ContentRequestCsrfProtector = (request: Request) => Promise<void>;
+
 export type MountContentApiRoutesOptions = {
   store: ContentStore;
   authorize: ContentRequestAuthorizer;
+  requireCsrf: ContentRequestCsrfProtector;
 };

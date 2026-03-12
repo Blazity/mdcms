@@ -58,6 +58,47 @@ function extractSetCookie(response: Response): string {
   return header;
 }
 
+function splitSetCookieHeader(header: string): string[] {
+  return header
+    .split(/,(?=\s*[A-Za-z0-9_-]+=)/)
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+}
+
+function toCookieHeader(setCookie: string): string {
+  return splitSetCookieHeader(setCookie)
+    .map((value) => value.split(";")[0]?.trim() ?? "")
+    .filter((value) => value.length > 0)
+    .join("; ");
+}
+
+function extractCookieValue(
+  setCookie: string,
+  name: string,
+): string | undefined {
+  return splitSetCookieHeader(setCookie)
+    .map((value) => value.split(";")[0]?.trim() ?? "")
+    .find((value) => value.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
+}
+
+function createCsrfHeaders(
+  loginResult: {
+    cookie: string;
+    setCookie: string;
+  },
+  headers: Record<string, string> = {},
+): Record<string, string> {
+  const csrfToken = extractCookieValue(loginResult.setCookie, "mdcms_csrf");
+  assert.ok(csrfToken);
+
+  return {
+    cookie: loginResult.cookie,
+    "x-mdcms-csrf-token": csrfToken,
+    ...headers,
+  };
+}
+
 async function signUp(
   handler: (request: Request) => Promise<Response>,
   input: {
@@ -91,6 +132,7 @@ async function login(
   },
 ): Promise<{
   cookie: string;
+  setCookie: string;
   session: {
     id: string;
     userId: string;
@@ -121,8 +163,10 @@ async function login(
   };
 
   assert.equal(loginResponse.status, 200);
+  const setCookie = extractSetCookie(loginResponse);
   return {
-    cookie: extractSetCookie(loginResponse),
+    cookie: toCookieHeader(setCookie),
+    setCookie,
     session: loginBody.data.session,
   };
 }
@@ -161,10 +205,13 @@ async function seedScope(
     .onConflictDoNothing();
 }
 
-function createSchemaSyncPayload(schemaHash: string) {
+function createSchemaSyncPayload(
+  schemaHash: string,
+  project = "marketing-site",
+) {
   return {
     rawConfigSnapshot: {
-      project: "marketing-site",
+      project,
     },
     resolvedSchema: {
       Post: {
@@ -226,10 +273,11 @@ testWithDatabase(
       const loginBody = (await loginResponse.json()) as {
         data: { session: { email: string } };
       };
-      const cookie = extractSetCookie(loginResponse);
+      const setCookie = extractSetCookie(loginResponse);
+      const cookie = toCookieHeader(setCookie);
 
       assert.equal(loginResponse.status, 200);
-      assert.equal(cookie.includes("session_token="), true);
+      assert.equal(setCookie.includes("session_token="), true);
       assert.equal(loginBody.data.session.email, email);
 
       const sessionResponse = await handler(
@@ -245,6 +293,40 @@ testWithDatabase(
 
       assert.equal(sessionResponse.status, 200);
       assert.equal(sessionBody.data.session.email, email);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "auth login and session bootstrap issue a CSRF cookie for Studio mutations",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+
+    try {
+      await signUp(handler, { email, password });
+      const loginResult = await login(handler, { email, password });
+
+      assert.ok(extractCookieValue(loginResult.setCookie, "mdcms_csrf"));
+
+      const sessionResponse = await handler(
+        new Request("http://localhost/api/v1/auth/session", {
+          headers: {
+            cookie: loginResult.cookie,
+          },
+        }),
+      );
+
+      assert.equal(sessionResponse.status, 200);
+      assert.ok(
+        extractCookieValue(extractSetCookie(sessionResponse), "mdcms_csrf"),
+      );
     } finally {
       await dbConnection.close();
     }
@@ -280,10 +362,10 @@ testWithDatabase(
         password,
       });
 
-      assert.equal(secureLogin.cookie.includes("HttpOnly"), true);
-      assert.equal(secureLogin.cookie.includes("SameSite=Strict"), true);
-      assert.equal(secureLogin.cookie.includes("Path=/"), true);
-      assert.equal(secureLogin.cookie.includes("Secure"), true);
+      assert.equal(secureLogin.setCookie.includes("HttpOnly"), true);
+      assert.equal(secureLogin.setCookie.includes("SameSite=Strict"), true);
+      assert.equal(secureLogin.setCookie.includes("Path=/"), true);
+      assert.equal(secureLogin.setCookie.includes("Secure"), true);
 
       await signUp(insecureHandlerBundle.handler, {
         email: insecureOverrideEmail,
@@ -294,10 +376,10 @@ testWithDatabase(
         password,
       });
 
-      assert.equal(insecureLogin.cookie.includes("HttpOnly"), true);
-      assert.equal(insecureLogin.cookie.includes("SameSite=Strict"), true);
-      assert.equal(insecureLogin.cookie.includes("Path=/"), true);
-      assert.equal(insecureLogin.cookie.includes("Secure"), false);
+      assert.equal(insecureLogin.setCookie.includes("HttpOnly"), true);
+      assert.equal(insecureLogin.setCookie.includes("SameSite=Strict"), true);
+      assert.equal(insecureLogin.setCookie.includes("Path=/"), true);
+      assert.equal(insecureLogin.setCookie.includes("Secure"), false);
     } finally {
       await secureHandlerBundle.dbConnection.close();
       await insecureHandlerBundle.dbConnection.close();
@@ -350,26 +432,13 @@ testWithDatabase("auth logout revokes an active session", async () => {
       }),
     );
 
-    const loginResponse = await handler(
-      new Request("http://localhost/api/v1/auth/login", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
-      }),
-    );
-    const cookie = extractSetCookie(loginResponse);
+    const loginResult = await login(handler, { email, password });
+    const cookie = loginResult.cookie;
 
     const logoutResponse = await handler(
       new Request("http://localhost/api/v1/auth/logout", {
         method: "POST",
-        headers: {
-          cookie,
-        },
+        headers: createCsrfHeaders(loginResult),
       }),
     );
     const logoutBody = (await logoutResponse.json()) as {
@@ -395,6 +464,140 @@ testWithDatabase("auth logout revokes an active session", async () => {
     await dbConnection.close();
   }
 });
+
+testWithDatabase(
+  "auth API key creation rejects missing or mismatched CSRF tokens and accepts the issued token",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+
+    try {
+      await signUp(handler, {
+        email,
+        password,
+        name: "CSRF Test User",
+      });
+      const loginResult = await login(handler, {
+        email,
+        password,
+      });
+
+      const missingHeaderResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          method: "POST",
+          headers: {
+            cookie: loginResult.cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            label: "csrf-missing-header",
+            scopes: ["content:read"],
+            contextAllowlist: [
+              { project: "marketing-site", environment: "production" },
+            ],
+          }),
+        }),
+      );
+      const missingHeaderBody = (await missingHeaderResponse.json()) as {
+        code: string;
+      };
+
+      assert.equal(missingHeaderResponse.status, 403);
+      assert.equal(missingHeaderBody.code, "FORBIDDEN");
+
+      const mismatchedResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          method: "POST",
+          headers: {
+            cookie: `${loginResult.cookie}; mdcms_csrf=csrf-cookie-token`,
+            "content-type": "application/json",
+            "x-mdcms-csrf-token": "csrf-header-token",
+          },
+          body: JSON.stringify({
+            label: "csrf-mismatch",
+            scopes: ["content:read"],
+            contextAllowlist: [
+              { project: "marketing-site", environment: "production" },
+            ],
+          }),
+        }),
+      );
+      const mismatchedBody = (await mismatchedResponse.json()) as {
+        code: string;
+      };
+
+      assert.equal(mismatchedResponse.status, 403);
+      assert.equal(mismatchedBody.code, "FORBIDDEN");
+
+      const csrfToken = extractCookieValue(loginResult.setCookie, "mdcms_csrf");
+      assert.ok(csrfToken);
+
+      const matchingResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          method: "POST",
+          headers: {
+            cookie: loginResult.cookie,
+            "content-type": "application/json",
+            "x-mdcms-csrf-token": csrfToken,
+          },
+          body: JSON.stringify({
+            label: "csrf-match",
+            scopes: ["content:read"],
+            contextAllowlist: [
+              { project: "marketing-site", environment: "production" },
+            ],
+          }),
+        }),
+      );
+
+      assert.equal(matchingResponse.status, 200);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "auth logout clears the CSRF cookie alongside the session cookie",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+
+    try {
+      await signUp(handler, {
+        email,
+        password,
+        name: "Logout CSRF User",
+      });
+      const loginResult = await login(handler, {
+        email,
+        password,
+      });
+
+      const logoutResponse = await handler(
+        new Request("http://localhost/api/v1/auth/logout", {
+          method: "POST",
+          headers: createCsrfHeaders(loginResult),
+        }),
+      );
+      const logoutSetCookie = extractSetCookie(logoutResponse);
+
+      assert.equal(logoutResponse.status, 200);
+      assert.equal(logoutSetCookie.includes("mdcms_csrf="), true);
+      assert.equal(logoutSetCookie.includes("Max-Age=0"), true);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
 
 testWithDatabase(
   "auth session expires after inactivity timeout semantics are enforced",
@@ -630,9 +833,7 @@ testWithDatabase(
           `http://localhost/api/v1/auth/users/${targetLogin.session.userId}/sessions/revoke-all`,
           {
             method: "POST",
-            headers: {
-              cookie: editorLogin.cookie,
-            },
+            headers: createCsrfHeaders(editorLogin),
           },
         ),
       );
@@ -647,9 +848,7 @@ testWithDatabase(
           "http://localhost/api/v1/auth/users/user-not-found/sessions/revoke-all",
           {
             method: "POST",
-            headers: {
-              cookie: adminLogin.cookie,
-            },
+            headers: createCsrfHeaders(adminLogin),
           },
         ),
       );
@@ -662,9 +861,7 @@ testWithDatabase(
           `http://localhost/api/v1/auth/users/${targetLogin.session.userId}/sessions/revoke-all`,
           {
             method: "POST",
-            headers: {
-              cookie: adminLogin.cookie,
-            },
+            headers: createCsrfHeaders(adminLogin),
           },
         ),
       );
@@ -720,27 +917,18 @@ testWithDatabase(
         }),
       );
 
-      const loginResponse = await handler(
-        new Request("http://localhost/api/v1/auth/login", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            email,
-            password,
-          }),
-        }),
-      );
-      const cookie = extractSetCookie(loginResponse);
+      const loginResult = await login(handler, {
+        email,
+        password,
+      });
+      const cookie = loginResult.cookie;
 
       const readKeyResponse = await handler(
         new Request("http://localhost/api/v1/auth/api-keys", {
           method: "POST",
-          headers: {
-            cookie,
+          headers: createCsrfHeaders(loginResult, {
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             label: "read-only",
             scopes: ["content:read"],
@@ -797,9 +985,7 @@ testWithDatabase(
           `http://localhost/api/v1/auth/api-keys/${readKeyBody.data.id}/revoke`,
           {
             method: "POST",
-            headers: {
-              cookie,
-            },
+            headers: createCsrfHeaders(loginResult),
           },
         ),
       );
@@ -867,12 +1053,11 @@ testWithDatabase(
       const createDocumentResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
-            cookie: loginResult.cookie,
+          headers: createCsrfHeaders(loginResult, {
             "x-mdcms-project": "marketing-site",
             "x-mdcms-environment": "production",
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `content/posts/scope-test-${Date.now()}`,
             type: "post",
@@ -894,10 +1079,9 @@ testWithDatabase(
       const legacyWriteKeyResponse = await handler(
         new Request("http://localhost/api/v1/auth/api-keys", {
           method: "POST",
-          headers: {
-            cookie: loginResult.cookie,
+          headers: createCsrfHeaders(loginResult, {
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             label: "legacy-write-only",
             scopes: ["content:write:draft"],
@@ -956,10 +1140,9 @@ testWithDatabase(
       const draftReadKeyResponse = await handler(
         new Request("http://localhost/api/v1/auth/api-keys", {
           method: "POST",
-          headers: {
-            cookie: loginResult.cookie,
+          headers: createCsrfHeaders(loginResult, {
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             label: "draft-read-only",
             scopes: ["content:read:draft"],
@@ -1029,9 +1212,13 @@ testWithDatabase(
     });
     const email = uniqueEmail();
     const password = "Admin12345!";
+    const scope = {
+      project: `schema-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      environment: `env-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    };
     const scopeHeaders = {
-      "x-mdcms-project": "marketing-site",
-      "x-mdcms-environment": "production",
+      "x-mdcms-project": scope.project,
+      "x-mdcms-environment": scope.environment,
     };
 
     try {
@@ -1055,24 +1242,23 @@ testWithDatabase(
         })
         .onConflictDoNothing();
       await seedScope(dbConnection.db, {
-        project: "marketing-site",
-        environment: "production",
+        project: scope.project,
+        environment: scope.environment,
       });
 
       const readKeyResponse = await handler(
         new Request("http://localhost/api/v1/auth/api-keys", {
           method: "POST",
-          headers: {
-            cookie: loginResult.cookie,
+          headers: createCsrfHeaders(loginResult, {
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             label: "schema-read",
             scopes: ["schema:read"],
             contextAllowlist: [
               {
-                project: "marketing-site",
-                environment: "production",
+                project: scope.project,
+                environment: scope.environment,
               },
             ],
           }),
@@ -1086,17 +1272,16 @@ testWithDatabase(
       const writeKeyResponse = await handler(
         new Request("http://localhost/api/v1/auth/api-keys", {
           method: "POST",
-          headers: {
-            cookie: loginResult.cookie,
+          headers: createCsrfHeaders(loginResult, {
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             label: "schema-write",
             scopes: ["schema:write"],
             contextAllowlist: [
               {
-                project: "marketing-site",
-                environment: "production",
+                project: scope.project,
+                environment: scope.environment,
               },
             ],
           }),
@@ -1125,7 +1310,9 @@ testWithDatabase(
             authorization: `Bearer ${readKeyBody.data.key}`,
             "content-type": "application/json",
           },
-          body: JSON.stringify(createSchemaSyncPayload("schema-read-blocked")),
+          body: JSON.stringify(
+            createSchemaSyncPayload("schema-read-blocked", scope.project),
+          ),
         }),
       );
       const putWithReadBody = (await putWithReadResponse.json()) as {
@@ -1156,7 +1343,9 @@ testWithDatabase(
             authorization: `Bearer ${writeKeyBody.data.key}`,
             "content-type": "application/json",
           },
-          body: JSON.stringify(createSchemaSyncPayload("schema-write-allowed")),
+          body: JSON.stringify(
+            createSchemaSyncPayload("schema-write-allowed", scope.project),
+          ),
         }),
       );
       assert.equal(putWithWriteResponse.status, 200);
@@ -1176,9 +1365,13 @@ testWithDatabase(
     const ownerEmail = uniqueEmail();
     const editorEmail = uniqueEmail();
     const password = "Admin12345!";
+    const scope = {
+      project: `schema-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      environment: `env-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    };
     const scopeHeaders = {
-      "x-mdcms-project": "marketing-site",
-      "x-mdcms-environment": "production",
+      "x-mdcms-project": scope.project,
+      "x-mdcms-environment": scope.environment,
     };
 
     try {
@@ -1202,8 +1395,8 @@ testWithDatabase(
         })
         .onConflictDoNothing();
       await seedScope(dbConnection.db, {
-        project: "marketing-site",
-        environment: "production",
+        project: scope.project,
+        environment: scope.environment,
       });
 
       await signUp(handler, {
@@ -1234,7 +1427,7 @@ testWithDatabase(
         userId: scopedLogin.session.userId,
         role: "viewer",
         scopeKind: "project",
-        project: "marketing-site",
+        project: scope.project,
         source: "test:schema-session-viewer",
         createdByUserId: ownerLogin.session.userId,
       });
@@ -1252,12 +1445,13 @@ testWithDatabase(
       const viewerWriteResponse = await handler(
         new Request("http://localhost/api/v1/schema", {
           method: "PUT",
-          headers: {
+          headers: createCsrfHeaders(scopedLogin, {
             ...scopeHeaders,
-            cookie: scopedLogin.cookie,
             "content-type": "application/json",
-          },
-          body: JSON.stringify(createSchemaSyncPayload("viewer-write-blocked")),
+          }),
+          body: JSON.stringify(
+            createSchemaSyncPayload("viewer-write-blocked", scope.project),
+          ),
         }),
       );
       const viewerWriteBody = (await viewerWriteResponse.json()) as {
@@ -1270,7 +1464,7 @@ testWithDatabase(
         userId: scopedLogin.session.userId,
         role: "editor",
         scopeKind: "project",
-        project: "marketing-site",
+        project: scope.project,
         source: "test:schema-session-editor",
         createdByUserId: ownerLogin.session.userId,
       });
@@ -1278,12 +1472,13 @@ testWithDatabase(
       const editorWriteResponse = await handler(
         new Request("http://localhost/api/v1/schema", {
           method: "PUT",
-          headers: {
+          headers: createCsrfHeaders(scopedLogin, {
             ...scopeHeaders,
-            cookie: scopedLogin.cookie,
             "content-type": "application/json",
-          },
-          body: JSON.stringify(createSchemaSyncPayload("editor-write-allowed")),
+          }),
+          body: JSON.stringify(
+            createSchemaSyncPayload("editor-write-allowed", scope.project),
+          ),
         }),
       );
       assert.equal(editorWriteResponse.status, 200);

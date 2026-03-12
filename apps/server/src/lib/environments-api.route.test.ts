@@ -39,6 +39,7 @@ test("environment routes list project-scoped environments for admin sessions", a
           },
         },
         authorizeAdmin: async () => undefined,
+        requireCsrf: async () => undefined,
       });
     },
   });
@@ -80,6 +81,7 @@ test("environment routes reject create requests without admin privileges", async
             message: "Admin privileges are required to manage environments.",
           });
         },
+        requireCsrf: async () => undefined,
       });
     },
   });

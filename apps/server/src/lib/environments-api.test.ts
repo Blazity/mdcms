@@ -6,7 +6,12 @@ import { createConsoleLogger, parseMdcmsConfig } from "@mdcms/shared";
 import { and, eq } from "drizzle-orm";
 import postgres from "postgres";
 
-import { documents, environments, schemaSyncs } from "./db/schema.js";
+import {
+  documents,
+  environments,
+  rbacGrants,
+  schemaSyncs,
+} from "./db/schema.js";
 import { createServerRequestHandlerWithModules } from "./runtime-with-modules.js";
 
 const env = {
@@ -98,7 +103,13 @@ async function login(
     email: string;
     password: string;
   },
-): Promise<string> {
+): Promise<{
+  cookie: string;
+  setCookie: string;
+  session: {
+    userId: string;
+  };
+}> {
   const response = await handler(
     new Request("http://localhost/api/v1/auth/login", {
       method: "POST",
@@ -110,9 +121,82 @@ async function login(
   );
 
   assert.equal(response.status, 200);
-  const cookie = response.headers.get("set-cookie");
-  assert.ok(cookie);
-  return cookie;
+  const setCookie = response.headers.get("set-cookie");
+  assert.ok(setCookie);
+  const body = (await response.json()) as {
+    data: {
+      session: {
+        userId: string;
+      };
+    };
+  };
+
+  return {
+    cookie: toCookieHeader(setCookie),
+    setCookie,
+    session: body.data.session,
+  };
+}
+
+function splitSetCookieHeader(header: string): string[] {
+  return header
+    .split(/,(?=\s*[A-Za-z0-9_-]+=)/)
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+}
+
+function toCookieHeader(setCookie: string): string {
+  return splitSetCookieHeader(setCookie)
+    .map((value) => value.split(";")[0]?.trim() ?? "")
+    .filter((value) => value.length > 0)
+    .join("; ");
+}
+
+function extractCookieValue(
+  setCookie: string,
+  name: string,
+): string | undefined {
+  return splitSetCookieHeader(setCookie)
+    .map((value) => value.split(";")[0]?.trim() ?? "")
+    .find((value) => value.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
+}
+
+function createCsrfHeaders(
+  loginResult: {
+    cookie: string;
+    setCookie: string;
+  },
+  headers: Record<string, string> = {},
+): Record<string, string> {
+  const csrfToken = extractCookieValue(loginResult.setCookie, "mdcms_csrf");
+  assert.ok(csrfToken);
+
+  return {
+    cookie: loginResult.cookie,
+    "x-mdcms-csrf-token": csrfToken,
+    ...headers,
+  };
+}
+
+async function grantGlobalOwner(
+  db: ReturnType<
+    typeof createServerRequestHandlerWithModules
+  >["dbConnection"]["db"],
+  userId: string,
+  source: string,
+  createdByUserId = userId,
+) {
+  await db
+    .insert(rbacGrants)
+    .values({
+      userId,
+      role: "owner",
+      scopeKind: "global",
+      source,
+      createdByUserId,
+    })
+    .onConflictDoNothing();
 }
 
 type EnvironmentSummary = {
@@ -138,15 +222,19 @@ testWithDatabase(
 
     try {
       await signUp(handler, { email, password });
-      const cookie = await login(handler, { email, password });
+      const loginResult = await login(handler, { email, password });
+      await grantGlobalOwner(
+        dbConnection.db,
+        loginResult.session.userId,
+        "test:environments-success-owner",
+      );
 
       const createResponse = await handler(
         new Request(`http://localhost/api/v1/environments?project=${project}`, {
           method: "POST",
-          headers: {
-            cookie,
+          headers: createCsrfHeaders(loginResult, {
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             name: "staging",
             extends: "production",
@@ -166,7 +254,7 @@ testWithDatabase(
       const listResponse = await handler(
         new Request(`http://localhost/api/v1/environments?project=${project}`, {
           headers: {
-            cookie,
+            cookie: loginResult.cookie,
           },
         }),
       );
@@ -219,6 +307,67 @@ testWithDatabase(
 );
 
 testWithDatabase(
+  "environments API rejects session mutations without CSRF and accepts matching tokens",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+      config: testConfig,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+    const project = uniqueProject("env-csrf");
+
+    try {
+      await signUp(handler, { email, password });
+      const loginResult = await login(handler, { email, password });
+      await grantGlobalOwner(
+        dbConnection.db,
+        loginResult.session.userId,
+        "test:environments-csrf-owner",
+      );
+
+      const missingHeaderResponse = await handler(
+        new Request(`http://localhost/api/v1/environments?project=${project}`, {
+          method: "POST",
+          headers: {
+            cookie: loginResult.cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            name: "staging",
+            extends: "production",
+          }),
+        }),
+      );
+      const missingHeaderBody = (await missingHeaderResponse.json()) as {
+        code: string;
+      };
+
+      assert.equal(missingHeaderResponse.status, 403);
+      assert.equal(missingHeaderBody.code, "FORBIDDEN");
+
+      const matchingResponse = await handler(
+        new Request(`http://localhost/api/v1/environments?project=${project}`, {
+          method: "POST",
+          headers: createCsrfHeaders(loginResult, {
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            name: "staging",
+            extends: "production",
+          }),
+        }),
+      );
+
+      assert.equal(matchingResponse.status, 200);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
   "environments API rejects duplicate names, unknown config environments, and extends mismatches",
   async () => {
     const { handler, dbConnection } = createServerRequestHandlerWithModules({
@@ -232,15 +381,19 @@ testWithDatabase(
 
     try {
       await signUp(handler, { email, password });
-      const cookie = await login(handler, { email, password });
+      const loginResult = await login(handler, { email, password });
+      await grantGlobalOwner(
+        dbConnection.db,
+        loginResult.session.userId,
+        "test:environments-invalid-owner",
+      );
 
       const firstCreateResponse = await handler(
         new Request(`http://localhost/api/v1/environments?project=${project}`, {
           method: "POST",
-          headers: {
-            cookie,
+          headers: createCsrfHeaders(loginResult, {
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             name: "staging",
             extends: "production",
@@ -252,10 +405,9 @@ testWithDatabase(
       const duplicateResponse = await handler(
         new Request(`http://localhost/api/v1/environments?project=${project}`, {
           method: "POST",
-          headers: {
-            cookie,
+          headers: createCsrfHeaders(loginResult, {
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             name: "staging",
             extends: "production",
@@ -272,10 +424,9 @@ testWithDatabase(
       const unknownResponse = await handler(
         new Request(`http://localhost/api/v1/environments?project=${project}`, {
           method: "POST",
-          headers: {
-            cookie,
+          headers: createCsrfHeaders(loginResult, {
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             name: "qa",
           }),
@@ -289,10 +440,9 @@ testWithDatabase(
       const mismatchedExtendsResponse = await handler(
         new Request(`http://localhost/api/v1/environments?project=${project}`, {
           method: "POST",
-          headers: {
-            cookie,
+          headers: createCsrfHeaders(loginResult, {
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             name: "preview",
             extends: "production",
@@ -326,15 +476,19 @@ testWithDatabase(
 
     try {
       await signUp(handler, { email, password });
-      const cookie = await login(handler, { email, password });
+      const loginResult = await login(handler, { email, password });
+      await grantGlobalOwner(
+        dbConnection.db,
+        loginResult.session.userId,
+        "test:environments-delete-owner",
+      );
 
       const createStagingResponse = await handler(
         new Request(`http://localhost/api/v1/environments?project=${project}`, {
           method: "POST",
-          headers: {
-            cookie,
+          headers: createCsrfHeaders(loginResult, {
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             name: "staging",
             extends: "production",
@@ -349,10 +503,9 @@ testWithDatabase(
       const createPreviewResponse = await handler(
         new Request(`http://localhost/api/v1/environments?project=${project}`, {
           method: "POST",
-          headers: {
-            cookie,
+          headers: createCsrfHeaders(loginResult, {
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             name: "preview",
             extends: "staging",
@@ -367,7 +520,7 @@ testWithDatabase(
       const productionListResponse = await handler(
         new Request(`http://localhost/api/v1/environments?project=${project}`, {
           headers: {
-            cookie,
+            cookie: loginResult.cookie,
           },
         }),
       );
@@ -426,9 +579,7 @@ testWithDatabase(
           `http://localhost/api/v1/environments/${productionEnvironment.id}?project=${project}`,
           {
             method: "DELETE",
-            headers: {
-              cookie,
-            },
+            headers: createCsrfHeaders(loginResult),
           },
         ),
       );
@@ -444,9 +595,7 @@ testWithDatabase(
           `http://localhost/api/v1/environments/${createStagingBody.data.id}?project=${project}`,
           {
             method: "DELETE",
-            headers: {
-              cookie,
-            },
+            headers: createCsrfHeaders(loginResult),
           },
         ),
       );
@@ -462,9 +611,7 @@ testWithDatabase(
           `http://localhost/api/v1/environments/${createPreviewBody.data.id}?project=${project}`,
           {
             method: "DELETE",
-            headers: {
-              cookie,
-            },
+            headers: createCsrfHeaders(loginResult),
           },
         ),
       );
@@ -502,8 +649,13 @@ testWithDatabase(
         name: "Editor User",
       });
 
-      await login(handler, { email: ownerEmail, password });
-      const editorCookie = await login(handler, {
+      const ownerLogin = await login(handler, { email: ownerEmail, password });
+      await grantGlobalOwner(
+        dbConnection.db,
+        ownerLogin.session.userId,
+        "test:environments-auth-owner",
+      );
+      const editorLogin = await login(handler, {
         email: editorEmail,
         password,
       });
@@ -511,7 +663,7 @@ testWithDatabase(
       const response = await handler(
         new Request(`http://localhost/api/v1/environments?project=${project}`, {
           headers: {
-            cookie: editorCookie,
+            cookie: editorLogin.cookie,
           },
         }),
       );
@@ -540,17 +692,21 @@ testWithDatabase(
 
     try {
       await signUp(handler, { email, password });
-      const cookie = await login(handler, { email, password });
+      const loginResult = await login(handler, { email, password });
+      await grantGlobalOwner(
+        dbConnection.db,
+        loginResult.session.userId,
+        "test:environments-project-owner",
+      );
 
       const primaryCreateResponse = await handler(
         new Request(
           `http://localhost/api/v1/environments?project=${primaryProject}`,
           {
             method: "POST",
-            headers: {
-              cookie,
+            headers: createCsrfHeaders(loginResult, {
               "content-type": "application/json",
-            },
+            }),
             body: JSON.stringify({
               name: "staging",
               extends: "production",
@@ -565,10 +721,9 @@ testWithDatabase(
           `http://localhost/api/v1/environments?project=${foreignProject}`,
           {
             method: "POST",
-            headers: {
-              cookie,
+            headers: createCsrfHeaders(loginResult, {
               "content-type": "application/json",
-            },
+            }),
             body: JSON.stringify({
               name: "preview",
               extends: "staging",
@@ -586,9 +741,7 @@ testWithDatabase(
           `http://localhost/api/v1/environments/${foreignCreateBody.data.id}?project=${primaryProject}`,
           {
             method: "DELETE",
-            headers: {
-              cookie,
-            },
+            headers: createCsrfHeaders(loginResult),
           },
         ),
       );

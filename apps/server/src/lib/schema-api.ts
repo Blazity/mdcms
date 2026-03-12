@@ -65,9 +65,12 @@ export type SchemaRequestAuthorizer = (
   requirement: AuthorizationRequirement,
 ) => Promise<unknown>;
 
+export type SchemaRequestCsrfProtector = (request: Request) => Promise<void>;
+
 export type MountSchemaApiRoutesOptions = {
   store: SchemaRegistryStore;
   authorize: SchemaRequestAuthorizer;
+  requireCsrf: SchemaRequestCsrfProtector;
 };
 
 export type CreateDatabaseSchemaStoreOptions = {
@@ -815,6 +818,7 @@ export function mountSchemaApiRoutes(
   schemaApp.put?.("/api/v1/schema", ({ request, body }: any) => {
     return executeWithRuntimeErrorsHandled(request, async () => {
       const scope = pickScope(request);
+      await options.requireCsrf(request);
       const payload = (body ?? {}) as unknown;
 
       assertSchemaRegistrySyncPayload(payload);

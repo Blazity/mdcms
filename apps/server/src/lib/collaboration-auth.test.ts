@@ -50,6 +50,9 @@ function createAuthServiceStub(overrides: Partial<AuthService>): AuthService {
         revoked: true,
       };
     },
+    async signOut() {
+      return new Response(null, { status: 204 });
+    },
     async authorizeRequest(
       _request: Request,
       _requirement: AuthorizationRequirement,
@@ -62,6 +65,15 @@ function createAuthServiceStub(overrides: Partial<AuthService>): AuthService {
           role: "editor",
         },
       };
+    },
+    async requireCsrfProtection() {
+      return undefined;
+    },
+    issueCsrfCookie() {
+      return "mdcms_csrf=fake";
+    },
+    clearCsrfCookie() {
+      return "mdcms_csrf=; Max-Age=0";
     },
     async createApiKey(
       _request: Request,

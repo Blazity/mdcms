@@ -11,9 +11,11 @@ import {
   documents,
   environments,
   projects,
+  rbacGrants,
   schemaRegistryEntries,
   schemaSyncs,
 } from "./db/schema.js";
+import { createServerRequestHandlerWithModules } from "./runtime-with-modules.js";
 import {
   createDatabaseSchemaStore,
   mountSchemaApiRoutes,
@@ -71,10 +73,121 @@ function createScope() {
   };
 }
 
+function uniqueEmail(): string {
+  return `schema-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@mdcms.local`;
+}
+
 function toScopeHeaders(scope: { project: string; environment: string }) {
   return {
     "x-mdcms-project": scope.project,
     "x-mdcms-environment": scope.environment,
+  };
+}
+
+async function signUp(
+  handler: (request: Request) => Promise<Response>,
+  input: {
+    email: string;
+    password: string;
+    name?: string;
+  },
+): Promise<void> {
+  const response = await handler(
+    new Request("http://localhost/api/v1/auth/sign-up/email", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        email: input.email,
+        password: input.password,
+        name: input.name ?? "Schema Test User",
+      }),
+    }),
+  );
+
+  assert.equal(response.status, 200);
+}
+
+async function login(
+  handler: (request: Request) => Promise<Response>,
+  input: {
+    email: string;
+    password: string;
+  },
+): Promise<{
+  cookie: string;
+  setCookie: string;
+  session: {
+    userId: string;
+  };
+}> {
+  const response = await handler(
+    new Request("http://localhost/api/v1/auth/login", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  const setCookie = response.headers.get("set-cookie");
+  assert.ok(setCookie);
+  const body = (await response.json()) as {
+    data: {
+      session: {
+        userId: string;
+      };
+    };
+  };
+
+  return {
+    cookie: toCookieHeader(setCookie),
+    setCookie,
+    session: body.data.session,
+  };
+}
+
+function splitSetCookieHeader(header: string): string[] {
+  return header
+    .split(/,(?=\s*[A-Za-z0-9_-]+=)/)
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+}
+
+function toCookieHeader(setCookie: string): string {
+  return splitSetCookieHeader(setCookie)
+    .map((value) => value.split(";")[0]?.trim() ?? "")
+    .filter((value) => value.length > 0)
+    .join("; ");
+}
+
+function extractCookieValue(
+  setCookie: string,
+  name: string,
+): string | undefined {
+  return splitSetCookieHeader(setCookie)
+    .map((value) => value.split(";")[0]?.trim() ?? "")
+    .find((value) => value.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
+}
+
+function createCsrfHeaders(
+  loginResult: {
+    cookie: string;
+    setCookie: string;
+  },
+  headers: Record<string, string> = {},
+): Record<string, string> {
+  const csrfToken = extractCookieValue(loginResult.setCookie, "mdcms_csrf");
+  assert.ok(csrfToken);
+
+  return {
+    cookie: loginResult.cookie,
+    "x-mdcms-csrf-token": csrfToken,
+    ...headers,
   };
 }
 
@@ -237,6 +350,7 @@ function createValidationHandler() {
       mountSchemaApiRoutes(app, {
         store,
         authorize: async () => undefined,
+        requireCsrf: async () => undefined,
       });
     },
   });
@@ -264,6 +378,7 @@ function createHandler() {
         authorize: async (_request, requirement) => {
           authCalls.push(requirement.requiredScope);
         },
+        requireCsrf: async () => undefined,
       });
     },
   });
@@ -332,6 +447,88 @@ test("schema API rejects localized schema sync payloads without explicit support
   );
   assert.equal(getSyncCallCount(), 0);
 });
+
+testWithDatabase(
+  "schema API rejects session writes without CSRF and accepts matching tokens",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env: dbEnv,
+      logger,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+    const scope = createScope();
+    const scopeHeaders = toScopeHeaders(scope);
+    const payload = createSyncPayload({
+      schemaHash: "csrf-hash-1",
+      resolvedSchema: {
+        Post: createRegistryType({
+          type: "Post",
+          directory: "content/posts",
+          fields: {
+            title: createField({ kind: "string" }),
+          },
+        }),
+      },
+    });
+
+    try {
+      await signUp(handler, {
+        email,
+        password,
+        name: "Schema CSRF User",
+      });
+      const loginResult = await login(handler, {
+        email,
+        password,
+      });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: loginResult.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:schema-csrf-owner",
+          createdByUserId: loginResult.session.userId,
+        })
+        .onConflictDoNothing();
+      await seedScope(dbConnection, scope);
+
+      const missingHeaderResponse = await handler(
+        new Request("http://localhost/api/v1/schema", {
+          method: "PUT",
+          headers: {
+            ...scopeHeaders,
+            cookie: loginResult.cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        }),
+      );
+      const missingHeaderBody = (await missingHeaderResponse.json()) as {
+        code: string;
+      };
+
+      assert.equal(missingHeaderResponse.status, 403);
+      assert.equal(missingHeaderBody.code, "FORBIDDEN");
+
+      const matchingResponse = await handler(
+        new Request("http://localhost/api/v1/schema", {
+          method: "PUT",
+          headers: createCsrfHeaders(loginResult, {
+            ...scopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify(payload),
+        }),
+      );
+
+      assert.equal(matchingResponse.status, 200);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
 
 testWithDatabase(
   "schema API persists one sync row, returns per-type entries, and exposes reads by type",
@@ -488,7 +685,7 @@ testWithDatabase(
       assert.equal(getBody.data.type, "Post");
       assert.equal(getBody.data.directory, "content/posts");
       assert.equal(getBody.data.localized, true);
-      assert.deepEqual(Object.keys(getBody.data.resolvedSchema.fields), [
+      assert.deepEqual(Object.keys(getBody.data.resolvedSchema.fields).sort(), [
         "author",
         "title",
       ]);

@@ -66,6 +66,47 @@ const scopeHeaders = {
   "x-mdcms-environment": "production",
 };
 
+function splitSetCookieHeader(header: string): string[] {
+  return header
+    .split(/,(?=\s*[A-Za-z0-9_-]+=)/)
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+}
+
+function toCookieHeader(setCookie: string): string {
+  return splitSetCookieHeader(setCookie)
+    .map((value) => value.split(";")[0]?.trim() ?? "")
+    .filter((value) => value.length > 0)
+    .join("; ");
+}
+
+function extractCookieValue(
+  setCookie: string,
+  name: string,
+): string | undefined {
+  return splitSetCookieHeader(setCookie)
+    .map((value) => value.split(";")[0]?.trim() ?? "")
+    .find((value) => value.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
+}
+
+function createCsrfHeaders(
+  session: {
+    cookie: string;
+    setCookie: string;
+  },
+  headers: Record<string, string> = {},
+): Record<string, string> {
+  const csrfToken = extractCookieValue(session.setCookie, "mdcms_csrf");
+  assert.ok(csrfToken);
+
+  return {
+    cookie: session.cookie,
+    "x-mdcms-csrf-token": csrfToken,
+    ...headers,
+  };
+}
+
 function createHandler() {
   const store = createInMemoryContentStore();
 
@@ -75,6 +116,7 @@ function createHandler() {
       mountContentApiRoutes(app, {
         store,
         authorize: async () => undefined,
+        requireCsrf: async () => undefined,
       });
     },
     now: () => new Date("2026-03-02T10:00:00.000Z"),
@@ -141,8 +183,9 @@ async function createDatabaseTestContext(
 
     assert.equal(loginResponse.status, 200);
 
-    const cookie = loginResponse.headers.get("set-cookie");
-    assert.ok(cookie);
+    const setCookie = loginResponse.headers.get("set-cookie");
+    assert.ok(setCookie);
+    const cookie = toCookieHeader(setCookie);
 
     await dbConnection.db
       .insert(rbacGrants)
@@ -159,6 +202,9 @@ async function createDatabaseTestContext(
       handler,
       dbConnection,
       cookie,
+      setCookie,
+      csrfHeaders: (headers: Record<string, string> = {}) =>
+        createCsrfHeaders({ cookie, setCookie }, headers),
     };
   } catch (error) {
     await dbConnection.close();
@@ -256,6 +302,105 @@ async function seedSchemaRegistryScope(
       });
   }
 }
+
+testWithDatabase(
+  "content API rejects session mutations without CSRF, accepts matching CSRF, and exempts API key writes",
+  async () => {
+    const { handler, dbConnection, cookie, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-csrf");
+
+    try {
+      const missingHeaderResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: {
+            ...scopeHeaders,
+            cookie,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            path: `blog/csrf-missing-${Date.now()}`,
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "csrf-missing" },
+            body: "missing header",
+          }),
+        }),
+      );
+      const missingHeaderBody = (await missingHeaderResponse.json()) as {
+        code: string;
+      };
+
+      assert.equal(missingHeaderResponse.status, 403);
+      assert.equal(missingHeaderBody.code, "FORBIDDEN");
+
+      const allowedSessionResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...scopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            path: `blog/csrf-session-${Date.now()}`,
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "csrf-session" },
+            body: "session allowed",
+          }),
+        }),
+      );
+
+      assert.equal(allowedSessionResponse.status, 200);
+
+      const apiKeyResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          method: "POST",
+          headers: csrfHeaders({
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            label: "content-csrf-write",
+            scopes: ["content:write"],
+            contextAllowlist: [
+              { project: "marketing-site", environment: "production" },
+            ],
+          }),
+        }),
+      );
+      const apiKeyBody = (await apiKeyResponse.json()) as {
+        data: { key: string };
+      };
+
+      assert.equal(apiKeyResponse.status, 200);
+
+      const apiKeyCreateResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: {
+            ...scopeHeaders,
+            authorization: `Bearer ${apiKeyBody.data.key}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            path: `blog/csrf-api-key-${Date.now()}`,
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "csrf-api-key" },
+            body: "api key allowed",
+          }),
+        }),
+      );
+
+      assert.equal(apiKeyCreateResponse.status, 200);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
 
 test("content API supports create/list filters/sort/pagination", async () => {
   const handler = createHandler();
@@ -1791,19 +1936,17 @@ testWithDatabase(
 testWithDatabase(
   "content API DB create reuses translationGroupId for sourceDocumentId variants",
   async () => {
-    const { handler, dbConnection, cookie } = await createDatabaseTestContext(
-      "test:content-api-db-variant",
-    );
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-db-variant");
 
     try {
       const sourceCreateResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/db-source-${Date.now()}`,
             type: "BlogPost",
@@ -1823,11 +1966,10 @@ testWithDatabase(
       const variantCreateResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/db-variant-${Date.now()}`,
             type: "BlogPost",
@@ -1861,19 +2003,19 @@ testWithDatabase(
 testWithDatabase(
   "content API DB update returns TRANSLATION_VARIANT_CONFLICT for variant locale collisions",
   async () => {
-    const { handler, dbConnection, cookie } = await createDatabaseTestContext(
-      "test:content-api-db-update-translation-conflict",
-    );
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext(
+        "test:content-api-db-update-translation-conflict",
+      );
 
     try {
       const sourceCreateResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/db-update-source-${Date.now()}`,
             type: "BlogPost",
@@ -1892,11 +2034,10 @@ testWithDatabase(
       const frVariantResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/db-update-fr-${Date.now()}`,
             type: "BlogPost",
@@ -1913,11 +2054,10 @@ testWithDatabase(
       const deVariantResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/db-update-de-${Date.now()}`,
             type: "BlogPost",
@@ -1939,11 +2079,10 @@ testWithDatabase(
           `http://localhost/api/v1/content/${deVariantCreated.data.documentId}`,
           {
             method: "PUT",
-            headers: {
+            headers: csrfHeaders({
               ...scopeHeaders,
-              cookie,
               "content-type": "application/json",
-            },
+            }),
             body: JSON.stringify({
               locale: "fr",
             }),
@@ -1965,19 +2104,17 @@ testWithDatabase(
 testWithDatabase(
   "content API DB create returns CONTENT_PATH_CONFLICT when a variant path and locale are already taken",
   async () => {
-    const { handler, dbConnection, cookie } = await createDatabaseTestContext(
-      "test:content-api-db-path-conflict",
-    );
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-db-path-conflict");
 
     try {
       const sourceCreateResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/db-path-conflict-source-${Date.now()}`,
             type: "BlogPost",
@@ -1997,11 +2134,10 @@ testWithDatabase(
       const existingLocaleResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/db-path-conflict-target-${Date.now()}`,
             type: "BlogPost",
@@ -2021,11 +2157,10 @@ testWithDatabase(
       const variantCreateResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: existingLocaleCreated.data.path,
             type: "BlogPost",
@@ -2052,19 +2187,17 @@ testWithDatabase(
 testWithDatabase(
   "content API DB create rejects duplicate locale variants in the same translation group",
   async () => {
-    const { handler, dbConnection, cookie } = await createDatabaseTestContext(
-      "test:content-api-db-duplicate-locale",
-    );
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-db-duplicate-locale");
 
     try {
       const sourceCreateResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/db-duplicate-source-${Date.now()}`,
             type: "BlogPost",
@@ -2084,11 +2217,10 @@ testWithDatabase(
       const firstVariantResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/db-duplicate-first-${Date.now()}`,
             type: "BlogPost",
@@ -2106,11 +2238,10 @@ testWithDatabase(
       const duplicateVariantResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/db-duplicate-second-${Date.now()}`,
             type: "BlogPost",
@@ -2137,19 +2268,17 @@ testWithDatabase(
 testWithDatabase(
   "content API DB create returns NOT_FOUND for missing or cross-scope sourceDocumentId",
   async () => {
-    const { handler, dbConnection, cookie } = await createDatabaseTestContext(
-      "test:content-api-db-not-found",
-    );
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-db-not-found");
 
     try {
       const missingSourceResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/db-missing-source-${Date.now()}`,
             type: "BlogPost",
@@ -2171,11 +2300,10 @@ testWithDatabase(
       const sourceCreateResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/db-cross-scope-source-${Date.now()}`,
             type: "BlogPost",
@@ -2199,11 +2327,10 @@ testWithDatabase(
       const crossScopeVariantResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...docsScopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `docs/db-cross-scope-${Date.now()}`,
             type: "BlogPost",
@@ -2231,19 +2358,17 @@ testWithDatabase(
 testWithDatabase(
   "content API DB create returns NOT_FOUND for soft-deleted sourceDocumentId",
   async () => {
-    const { handler, dbConnection, cookie } = await createDatabaseTestContext(
-      "test:content-api-db-soft-delete",
-    );
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-db-soft-delete");
 
     try {
       const sourceCreateResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/db-soft-delete-source-${Date.now()}`,
             type: "BlogPost",
@@ -2265,10 +2390,9 @@ testWithDatabase(
           `http://localhost/api/v1/content/${sourceCreated.data.documentId}`,
           {
             method: "DELETE",
-            headers: {
+            headers: csrfHeaders({
               ...scopeHeaders,
-              cookie,
-            },
+            }),
           },
         ),
       );
@@ -2278,11 +2402,10 @@ testWithDatabase(
       const variantCreateResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/db-soft-delete-variant-${Date.now()}`,
             type: "BlogPost",
@@ -2309,19 +2432,17 @@ testWithDatabase(
 testWithDatabase(
   "content API DB create returns INVALID_INPUT for source type mismatch",
   async () => {
-    const { handler, dbConnection, cookie } = await createDatabaseTestContext(
-      "test:content-api-db-type-mismatch",
-    );
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-db-type-mismatch");
 
     try {
       const sourceCreateResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/db-type-source-${Date.now()}`,
             type: "BlogPost",
@@ -2341,11 +2462,10 @@ testWithDatabase(
       const variantCreateResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `page/db-type-mismatch-${Date.now()}`,
             type: "Page",
@@ -2537,8 +2657,11 @@ testWithDatabase(
         };
       };
       assert.equal(loginResponse.status, 200);
-      const cookie = loginResponse.headers.get("set-cookie");
-      assert.ok(cookie);
+      const setCookie = loginResponse.headers.get("set-cookie");
+      assert.ok(setCookie);
+      const cookie = toCookieHeader(setCookie);
+      const csrfHeaders = (headers: Record<string, string> = {}) =>
+        createCsrfHeaders({ cookie, setCookie }, headers);
       await dbConnection.db
         .insert(rbacGrants)
         .values({
@@ -2553,11 +2676,10 @@ testWithDatabase(
       const createResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/change-summary-${Date.now()}`,
             type: "BlogPost",
@@ -2578,11 +2700,10 @@ testWithDatabase(
           `http://localhost/api/v1/content/${created.data.documentId}/publish`,
           {
             method: "POST",
-            headers: {
+            headers: csrfHeaders({
               ...scopeHeaders,
-              cookie,
               "content-type": "application/json",
-            },
+            }),
             body: JSON.stringify({
               change_summary: "Ship release v1",
             }),
@@ -2608,19 +2729,17 @@ testWithDatabase(
 testWithDatabase(
   "content API DB restore returns CONTENT_PATH_CONFLICT when undelete collides with an active path",
   async () => {
-    const { handler, dbConnection, cookie } = await createDatabaseTestContext(
-      "test:content-api-db-restore-conflict",
-    );
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-db-restore-conflict");
 
     try {
       const trashedCreateResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/db-restore-conflict-${Date.now()}`,
             type: "BlogPost",
@@ -2642,10 +2761,9 @@ testWithDatabase(
           `http://localhost/api/v1/content/${trashedDocument.data.documentId}`,
           {
             method: "DELETE",
-            headers: {
+            headers: csrfHeaders({
               ...scopeHeaders,
-              cookie,
-            },
+            }),
           },
         ),
       );
@@ -2655,11 +2773,10 @@ testWithDatabase(
       const conflictingCreateResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: trashedDocument.data.path,
             type: "BlogPost",
@@ -2681,10 +2798,9 @@ testWithDatabase(
           `http://localhost/api/v1/content/${trashedDocument.data.documentId}/restore`,
           {
             method: "POST",
-            headers: {
+            headers: csrfHeaders({
               ...scopeHeaders,
-              cookie,
-            },
+            }),
           },
         ),
       );
@@ -2714,19 +2830,19 @@ testWithDatabase(
 testWithDatabase(
   "content API DB restore version with targetStatus=published appends a new immutable version",
   async () => {
-    const { handler, dbConnection, cookie } = await createDatabaseTestContext(
-      "test:content-api-db-restore-version-published",
-    );
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext(
+        "test:content-api-db-restore-version-published",
+      );
 
     try {
       const createResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/db-restore-version-${Date.now()}`,
             type: "BlogPost",
@@ -2748,11 +2864,10 @@ testWithDatabase(
           `http://localhost/api/v1/content/${created.data.documentId}/publish`,
           {
             method: "POST",
-            headers: {
+            headers: csrfHeaders({
               ...scopeHeaders,
-              cookie,
               "content-type": "application/json",
-            },
+            }),
             body: JSON.stringify({
               changeSummary: "Version one",
             }),
@@ -2767,11 +2882,10 @@ testWithDatabase(
           `http://localhost/api/v1/content/${created.data.documentId}`,
           {
             method: "PUT",
-            headers: {
+            headers: csrfHeaders({
               ...scopeHeaders,
-              cookie,
               "content-type": "application/json",
-            },
+            }),
             body: JSON.stringify({
               path: `${created.data.path}-updated`,
               frontmatter: {
@@ -2791,11 +2905,10 @@ testWithDatabase(
           `http://localhost/api/v1/content/${created.data.documentId}/publish`,
           {
             method: "POST",
-            headers: {
+            headers: csrfHeaders({
               ...scopeHeaders,
-              cookie,
               "content-type": "application/json",
-            },
+            }),
             body: JSON.stringify({
               changeSummary: "Version two",
             }),
@@ -2810,11 +2923,10 @@ testWithDatabase(
           `http://localhost/api/v1/content/${created.data.documentId}/versions/1/restore`,
           {
             method: "POST",
-            headers: {
+            headers: csrfHeaders({
               ...scopeHeaders,
-              cookie,
               "content-type": "application/json",
-            },
+            }),
             body: JSON.stringify({
               targetStatus: "published",
               change_summary: "Republish version one",
@@ -2907,8 +3019,11 @@ testWithDatabase(
         };
       };
       assert.equal(loginResponse.status, 200);
-      const cookie = loginResponse.headers.get("set-cookie");
-      assert.ok(cookie);
+      const setCookie = loginResponse.headers.get("set-cookie");
+      assert.ok(setCookie);
+      const cookie = toCookieHeader(setCookie);
+      const csrfHeaders = (headers: Record<string, string> = {}) =>
+        createCsrfHeaders({ cookie, setCookie }, headers);
 
       await dbConnection.db
         .insert(rbacGrants)
@@ -2924,11 +3039,10 @@ testWithDatabase(
       const marketingCreateResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...scopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `blog/scope-marketing-${Date.now()}`,
             type: "BlogPost",
@@ -2951,11 +3065,10 @@ testWithDatabase(
       const docsCreateResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
-          headers: {
+          headers: csrfHeaders({
             ...docsScopeHeaders,
-            cookie,
             "content-type": "application/json",
-          },
+          }),
           body: JSON.stringify({
             path: `docs/scope-${Date.now()}`,
             type: "Page",
@@ -2990,10 +3103,9 @@ testWithDatabase(
           `http://localhost/api/v1/content/${marketingDocument.data.documentId}`,
           {
             method: "DELETE",
-            headers: {
+            headers: csrfHeaders({
               ...docsScopeHeaders,
-              cookie,
-            },
+            }),
           },
         ),
       );
