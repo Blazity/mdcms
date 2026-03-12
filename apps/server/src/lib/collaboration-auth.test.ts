@@ -35,6 +35,7 @@ function createAuthServiceStub(overrides: Partial<AuthService>): AuthService {
   return {
     async login() {
       return {
+        outcome: "success",
         session,
         setCookie: "session_token=fake",
       };

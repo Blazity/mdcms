@@ -1,0 +1,354 @@
+---
+status: live
+canonical: true
+created: 2026-03-11
+last_updated: 2026-03-11
+legacy_sections:
+  - 6
+  - 6.1
+  - 6.2
+  - 6.2.1
+  - 6.5
+  - 11
+  - 23.2.3
+  - 23.2.4
+  - 24.1
+  - 24.3
+  - 24.4
+---
+
+# SPEC-005 Auth, Authorization, and Request Routing
+
+This is the live canonical document under `docs/`.
+
+## REST API Boundary
+
+This spec owns the shared HTTP boundary rules for authentication, target routing, response envelopes, and the normative auth-related endpoint contracts. Domain-specific endpoint families are owned by their corresponding domain specs.
+
+## Contract Template (Normative)
+
+Every endpoint contract in this section specifies:
+
+- Method and path
+- Auth mode (`public`, `session`, `api_key`, or `session_or_api_key`)
+- Required operation scope (if any)
+- Required target routing context (`project` / `environment`)
+- Request schema
+- Success response schema
+- Deterministic error mapping
+
+## Base URL
+
+`{MDCMS_SERVER_URL}/api/v1`
+
+## Authentication
+
+MDCMS supports two auth modes:
+
+- **Studio/browser clients:** session authentication (better-auth).
+- **SDK/CLI/machine clients:** API key authentication.
+- **Post-MVP collaboration WebSocket:** Studio session authentication only (API keys are not accepted).
+
+API key format:
+
+```
+Authorization: Bearer mdcms_key_xxxxxxxxxxxx
+```
+
+Draft content access requires `draft=true` plus `content:read:draft` permission:
+
+```
+GET /api/v1/content?type=BlogPost&draft=true
+```
+
+API keys are access-control objects, not routing objects. Each key stores an allowlist of `(project, environment)` tuples.
+
+### Explicit Target Routing
+
+All environment-scoped requests (content, schema, environments, migrations, and any future search/webhook/collaboration routes) must explicitly include both target project and target environment. Project-scoped management requests (e.g., create/list environments) must include explicit project target.
+
+Media assets are project-scoped (reusable across environments), and any future media API requests still carry explicit `(project, environment)` routing for authorization and request consistency.
+
+Supported request forms:
+
+```
+X-MDCMS-Project: marketing-site
+X-MDCMS-Environment: staging
+```
+
+or query parameters (`?project=marketing-site&environment=staging`).
+
+The server rejects requests missing explicit target routing, even when the caller uses a scoped key.
+
+Deterministic routing errors:
+
+- `MISSING_TARGET_ROUTING` (`400`) means the required project/environment routing context was not provided.
+- `TARGET_ROUTING_MISMATCH` (`400`) means routing context was provided, but it does not match the caller's authorized `(project, environment)` allowlist or the resolved target resource.
+
+For post-MVP collaboration WebSocket connections, use query parameters on connect:
+
+```
+wss://<host>/api/v1/collaboration?project=marketing-site&environment=staging&documentId=<uuid>
+```
+
+The browser must send a valid Studio session cookie; API keys are not accepted on that endpoint.
+
+## Response Format
+
+```json
+{
+  "data": {
+    "documentId": "uuid",
+    "translationGroupId": "uuid",
+    "project": "marketing-site",
+    "environment": "production",
+    "path": "blog/hello-world",
+    "type": "BlogPost",
+    "locale": "en",
+    "format": "md",
+    "isDeleted": false,
+    "hasUnpublishedChanges": false,
+    "version": 5,
+    "publishedVersion": 5,
+    "draftRevision": 42,
+    "frontmatter": {
+      "title": "Hello World",
+      "slug": "hello-world",
+      "author": { "$ref": "uuid", "type": "Author" },
+      "tags": ["intro", "tutorial"]
+    },
+    "body": "# Hello World\n\nThis is my first blog post...",
+    "createdBy": "uuid",
+    "createdAt": "2026-02-12T10:00:00Z",
+    "updatedAt": "2026-02-12T12:30:00Z"
+  }
+}
+```
+
+`locale` is always a string in API responses. In implicit single-locale mode (no explicit `locales` config), API responses return the reserved internal locale token `__mdcms_default__`. `format` indicates whether the content is stored/synced as `md` or `mdx`.
+
+List responses include pagination metadata:
+
+```json
+{
+  "data": [...],
+  "pagination": {
+    "total": 142,
+    "limit": 20,
+    "offset": 0,
+    "hasMore": true
+  }
+}
+```
+
+## Authentication & Authorization
+
+### User Authentication
+
+Implemented via **better-auth**.
+
+**Supported methods:**
+
+- **Email + password** — Required. Always available.
+- **SSO (OIDC + SAML)** — Required for MVP. OIDC is the default recommended provider profile. SAML is supported in MVP behind a beta flag and must be enabled per instance where provider support is needed.
+- Enterprise providers supported include Okta, Azure AD, Google Workspace, Auth0.
+
+Authentication state is managed via sessions. The Studio communicates with the backend over the same session.
+
+#### Session Security
+
+- Session cookies are `httpOnly`, `Secure`, `SameSite=Strict`, and scoped to `/`.
+- Session lifetime: 2h rolling inactivity timeout with a 12h absolute max age.
+- Session IDs rotate on sign-in and privilege changes.
+- CSRF token required for Studio state-changing requests.
+- Failed password login attempts apply exponential backoff keyed by normalized email.
+- Password-entry routes protected by this backoff are `POST /api/v1/auth/login` and `POST /api/v1/auth/cli/login/authorize` when credentials are submitted.
+- Invalid credentials outside active backoff return `AUTH_INVALID_CREDENTIALS` (`401`).
+- Active backoff rejects password-entry requests with `AUTH_BACKOFF_ACTIVE` (`429`) and `Retry-After`.
+- Successful password sign-in resets the stored backoff state.
+- A quiet window of 15 minutes without failed attempts resets the backoff state.
+- MVP backoff schedule is capped exponential delay: `1s`, `2s`, `4s`, `8s`, `16s`, `32s`.
+- Per-user session revocation is supported (`logout` invalidates current session; owner/admin can revoke all active sessions).
+
+#### CSRF Enforcement (Normative)
+
+- Session-authenticated `POST`, `PUT`, `PATCH`, and `DELETE` requests require CSRF validation.
+- The server sets a readable `mdcms_csrf` cookie.
+- Clients must echo the same token value in the `x-mdcms-csrf-token` header.
+- CSRF validation succeeds only when a valid session cookie is present and the `mdcms_csrf` cookie matches the `x-mdcms-csrf-token` header value.
+- Read-only requests (`GET`, `HEAD`, `OPTIONS`) are exempt.
+- API-key authenticated requests are exempt.
+- Public auth flows are exempt: `/api/v1/auth/login`, `/api/v1/auth/sign-up/email`, `/api/v1/auth/sign-in/email`, and `/api/v1/auth/cli/login/*`.
+- CSRF validation failures return `FORBIDDEN` (`403`) with message `Valid CSRF token is required for session-authenticated state-changing requests.`
+
+#### Collaboration Socket Authentication (Post-MVP)
+
+Collaboration sockets are deferred to Post-MVP. When implemented, they are authenticated with the same Studio session cookie (not API keys):
+
+- Connect URL: `/api/v1/collaboration?project=...&environment=...&documentId=...`
+- `Origin` must match the configured Studio allowlist.
+- Session cookie is validated through better-auth during the WebSocket handshake.
+- Target document must belong to the requested `(project, environment)` scope.
+- Folder/path RBAC (`documents.path`) is evaluated before subscribing the socket to the document room.
+- Revoked/expired sessions are disconnected immediately with `4401`; authorization failures return `4403`.
+
+### API Authentication
+
+Machine-to-machine access (SDK, CI/CD) uses API keys:
+
+- API keys are generated in the Studio UI under Settings.
+- Each key has a name, creation date, optional expiration, and owner audit metadata.
+- Keys are prefixed for identification: `mdcms_key_xxxxxxxxxxxx`.
+- The `?draft=true` query parameter requires an API key with `content:read:draft`.
+- Keys are scoped as an allowlist of `(project, environment)` tuples.
+- Keys authorize access only; they do not select routing targets.
+- API keys are not accepted by the collaboration WebSocket endpoint.
+
+#### API Key Scope Model
+
+- Scope is defined at two levels:
+  - **Context**: `(project, environment)` tuple allowlist.
+  - **Permission**: operation-level scope values.
+- Required minimum operations:
+  - `content:read`
+  - `content:read:draft`
+  - `content:write`
+  - `content:write:draft` (legacy compatibility alias for write-only behavior)
+  - `content:publish`
+  - `content:delete`
+  - `schema:read`
+  - `schema:write`
+  - `media:upload`
+  - `media:delete`
+  - `webhooks:read`
+  - `webhooks:write`
+  - `environments:clone`
+  - `environments:promote`
+- `migrations:run`
+- Scopes are deny-by-default: a key without an operation scope cannot perform that action.
+- Public routes and session-only routes may specify required scope `none`; operation scopes apply only to API-key-capable routes.
+- Keys are hashed at rest and never retrievable after creation.
+- On creation, keys are shown once and user confirms secure storage.
+- Key rotation creates a new key and disables old key by `revoked_at` timestamp.
+- Optional API key labels support operational ownership (`ci`, `bot`, `editorial`, etc.).
+- Breaking compatibility note: legacy keys with only `content:write:draft` no longer satisfy draft-read authorization; they satisfy write operations only.
+
+#### CLI Browser Login/Logout Handshake (CMS-79)
+
+`cms login` is implemented as a browser-based authorization code flow, not as direct credential entry in CLI.
+
+**Flow (normative):**
+
+1. CLI calls `POST /api/v1/auth/cli/login/start` with:
+   - `project`, `environment`
+   - `redirectUri` (loopback HTTP only: `127.0.0.1` / `localhost` / `::1`, explicit port required)
+   - `state` (caller-generated anti-CSRF token)
+   - optional `scopes` (defaults applied when omitted)
+2. Server creates a persisted login challenge:
+   - TTL: 10 minutes
+   - stores hashed `state`
+   - status lifecycle: `pending` -> `authorized` -> `exchanged`
+3. CLI opens `authorizeUrl` in browser:
+   - `GET /api/v1/auth/cli/login/authorize`
+   - if no active browser session, server returns login form
+4. Browser authorization:
+   - `POST /api/v1/auth/cli/login/authorize` validates session or performs sign-in
+   - on success server issues one-time auth code and redirects to loopback callback: `redirectUri?code=...&state=...`
+5. CLI exchanges code:
+   - `POST /api/v1/auth/cli/login/exchange` with `challengeId`, `state`, `code`
+   - server validates challenge TTL, state hash, single-use code semantics, and returns API key + metadata
+6. CLI stores credential profile under `(serverUrl, project, environment)` tuple.
+
+**CLI auth defaults and precedence:**
+
+- Login-generated API keys default to scopes: `content:read`, `content:read:draft`, `content:write`.
+- CLI auth precedence is: `--api-key` > `MDCMS_API_KEY` > stored profile.
+
+**Deterministic failure semantics:**
+
+- `INVALID_INPUT` (400) — malformed payload, invalid redirect URI, missing fields
+- `UNAUTHORIZED` (401) — invalid credentials/session where required
+- `FORBIDDEN` (403) — policy-denied operation
+- `NOT_FOUND` (404) — unknown challenge or key id when applicable
+- `LOGIN_CHALLENGE_EXPIRED` (410) — challenge expired before exchange
+- `LOGIN_CHALLENGE_USED` (409) — challenge or code already consumed
+- `INVALID_LOGIN_EXCHANGE` (400) — state mismatch, wrong code, or invalid challenge status for exchange
+
+`cms logout` clears local tuple credentials and calls `POST /api/v1/auth/api-keys/self/revoke` using the stored bearer token when available.
+
+Studio traffic uses session authentication and the same authorization layer.
+
+### Authorization (Role-Based, Per-Folder)
+
+**Roles:**
+
+| Role       | Capabilities                                                                                                                        |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **Owner**  | Full access. Cannot be removed. Manages instance-level settings, billing (future SaaS), and can assign all roles. One per instance. |
+| **Admin**  | User management, settings, schema viewing, all content operations. Can assign Editor and Viewer roles.                              |
+| **Editor** | Create, edit, publish, unpublish, and delete content. Limited to assigned folders.                                                  |
+| **Viewer** | Read-only access to CMS dashboard. Can view content but not modify. Limited to assigned folders.                                    |
+
+**Folder-level assignment:**
+
+- Roles are assigned per user per logical content path prefix (e.g., "Alice is an Editor for `blog/*`", where `blog/*` maps to `documents.path`).
+- A user can have different roles for different folders.
+- Permissions cascade: access to `blog/` includes access to `blog/posts/`, `blog/drafts/`, etc.
+- If multiple grants apply, the most permissive grant wins.
+- Admin and Owner roles are instance-wide (not folder-scoped).
+
+### Project-Scoped and Global Authorization
+
+Permissions can be assigned at two levels:
+
+- **Global (instance-wide):** a role assigned globally applies to all projects that exist on the instance, including future projects.
+- **Project-scoped:** a role assigned to a specific project applies only to that project. A user may therefore have different roles on different projects.
+
+When both global and project-scoped roles exist, the most permissive applicable role wins for that project.
+
+API keys follow the same project/environment scoping model through tuple allowlists:
+
+- a global key is represented as an allowlist containing all `(project, environment)` tuples
+- a restricted key contains only explicitly granted tuples
+- request routing remains explicit; keys authorize access but do not select the route target
+
+---
+
+## Authentication, Session, and API Key Endpoints
+
+**CSRF note (normative):**
+
+- Session-authenticated `POST`, `PUT`, `PATCH`, and `DELETE` requests in this endpoint family require `mdcms_csrf` cookie plus matching `x-mdcms-csrf-token` header, except for `/api/v1/auth/login`, `/api/v1/auth/sign-up/email`, `/api/v1/auth/sign-in/email`, and `/api/v1/auth/cli/login/*`.
+- API-key authenticated routes in this endpoint family are exempt from CSRF validation.
+- CSRF validation failures return `FORBIDDEN` (`403`).
+
+| Method | Path                                             | Auth Mode             | Required Scope | Target Routing | Request                                                     | Success                                                 | Deterministic Errors                                                                                                 |
+| ------ | ------------------------------------------------ | --------------------- | -------------- | -------------- | ----------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/v1/auth/login`                             | public                | none           | none           | JSON: `{ email, password }`                                 | `200` `{ data: { session } }` + `set-cookie`            | `INVALID_INPUT` (`400`), `AUTH_INVALID_CREDENTIALS` (`401`), `AUTH_BACKOFF_ACTIVE` (`429`), `INTERNAL_ERROR` (`500`) |
+| GET    | `/api/v1/auth/session`                           | session               | none           | none           | session cookie                                              | `200` `{ data: { session } }`                           | `UNAUTHORIZED` (`401`)                                                                                               |
+| GET    | `/api/v1/auth/get-session`                       | session               | none           | none           | session cookie                                              | `200` `{ data: { session } }`                           | `UNAUTHORIZED` (`401`)                                                                                               |
+| POST   | `/api/v1/auth/logout`                            | session               | none           | none           | session cookie                                              | `200` `{ data: { revoked: boolean } }`                  | `INTERNAL_ERROR` (`500`)                                                                                             |
+| POST   | `/api/v1/auth/users/:userId/sessions/revoke-all` | session (admin/owner) | none           | none           | `userId` path param                                         | `200` `{ data: { userId, revokedSessions } }`           | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                     |
+| GET    | `/api/v1/auth/api-keys`                          | session               | none           | none           | session cookie                                              | `200` `{ data: ApiKeyMetadata[] }`                      | `UNAUTHORIZED` (`401`)                                                                                               |
+| POST   | `/api/v1/auth/api-keys`                          | session               | none           | none           | JSON: `{ label, scopes[], contextAllowlist[], expiresAt? }` | `200` `{ data: { key, ...metadata } }` (key shown once) | `UNAUTHORIZED` (`401`), `INVALID_INPUT` (`400`), `INTERNAL_ERROR` (`500`)                                            |
+| POST   | `/api/v1/auth/api-keys/:keyId/revoke`            | session               | none           | none           | `keyId` path param                                          | `200` `{ data: ApiKeyMetadata }`                        | `UNAUTHORIZED` (`401`), `NOT_FOUND` (`404`)                                                                          |
+| POST   | `/api/v1/auth/api-keys/self/revoke`              | api_key               | none           | none           | `Authorization: Bearer <mdcms_key_...>`                     | `200` `{ data: { revoked: true, keyId } }`              | `UNAUTHORIZED` (`401`)                                                                                               |
+| POST   | `/api/v1/auth/sign-up/email`                     | public                | none           | none           | better-auth sign-up payload                                 | better-auth success payload                             | better-auth deterministic auth/provider errors                                                                       |
+| POST   | `/api/v1/auth/sign-in/email`                     | public                | none           | none           | better-auth sign-in payload                                 | better-auth success payload                             | better-auth deterministic auth/provider errors                                                                       |
+| POST   | `/api/v1/auth/sign-out`                          | session               | none           | none           | better-auth sign-out payload                                | better-auth sign-out payload                            | better-auth deterministic auth/provider errors                                                                       |
+
+## CMS-79 CLI Browser Login Endpoints
+
+| Method | Path                               | Auth Mode              | Required Scope | Target Routing | Request                                                                                     | Success                                                                                                                                   | Deterministic Errors                                                                                                                                                                        |
+| ------ | ---------------------------------- | ---------------------- | -------------- | -------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/v1/auth/cli/login/start`     | public                 | none           | none           | JSON: `{ project, environment, redirectUri, state, scopes? }`                               | `200` `{ data: { challengeId, authorizeUrl, expiresAt } }`                                                                                | `INVALID_INPUT` (`400`), `INTERNAL_ERROR` (`500`)                                                                                                                                           |
+| GET    | `/api/v1/auth/cli/login/authorize` | public (session-aware) | none           | none           | query: `challenge`, `state`                                                                 | `200` HTML login form when session missing; or `302` JSON `{ data: { redirectTo } }` + `Location` when authorization succeeds immediately | `NOT_FOUND` (`404`), `LOGIN_CHALLENGE_EXPIRED` (`410`), `LOGIN_CHALLENGE_USED` (`409`), `INVALID_LOGIN_EXCHANGE` (`400`)                                                                    |
+| POST   | `/api/v1/auth/cli/login/authorize` | public (session-aware) | none           | none           | query: `challenge`, `state`; credentials via form or JSON `{ email, password }` when needed | `302` JSON `{ data: { redirectTo } }` + `Location`; may also set session cookie                                                           | `AUTH_INVALID_CREDENTIALS` (`401`), `AUTH_BACKOFF_ACTIVE` (`429`), `NOT_FOUND` (`404`), `LOGIN_CHALLENGE_EXPIRED` (`410`), `LOGIN_CHALLENGE_USED` (`409`), `INVALID_LOGIN_EXCHANGE` (`400`) |
+| POST   | `/api/v1/auth/cli/login/exchange`  | public                 | none           | none           | JSON: `{ challengeId, state, code }`                                                        | `200` `{ data: { key, ...ApiKeyMetadata } }`                                                                                              | `INVALID_INPUT` (`400`), `NOT_FOUND` (`404`), `LOGIN_CHALLENGE_EXPIRED` (`410`), `LOGIN_CHALLENGE_USED` (`409`), `INVALID_LOGIN_EXCHANGE` (`400`)                                           |
+
+**CMS-79 one-time semantics (normative):**
+
+- Challenge TTL is 10 minutes.
+- `state` is validated against stored hash.
+- Authorization code is single-use.
+- Exchange succeeds only for `authorized` challenge state and then transitions challenge to `exchanged`.

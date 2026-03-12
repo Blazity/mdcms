@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 
-import { RuntimeError } from "@mdcms/shared";
+import { RuntimeError, serializeError } from "@mdcms/shared";
 import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -10,6 +10,7 @@ import type { DrizzleDatabase } from "./db.js";
 import {
   apiKeys,
   authAccounts,
+  authLoginBackoffs,
   authUsers,
   authSessions,
   authVerifications,
@@ -51,6 +52,8 @@ const LEGACY_CONTENT_WRITE_DRAFT_SCOPE = "content:write:draft";
 const SESSION_INACTIVITY_TIMEOUT_SECONDS = 2 * 60 * 60;
 const SESSION_ABSOLUTE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const CLI_LOGIN_CHALLENGE_TTL_MS = 10 * 60 * 1000;
+const LOGIN_BACKOFF_RESET_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_BACKOFF_DELAYS_SECONDS = [1, 2, 4, 8, 16, 32] as const;
 const CSRF_COOKIE_NAME = "mdcms_csrf";
 const CSRF_HEADER_NAME = "x-mdcms-csrf-token";
 const CSRF_TOKEN_BYTES = 24;
@@ -148,6 +151,10 @@ export type CliLoginAuthorizeResult =
       state: string;
     }
   | {
+      outcome: "throttled";
+      retryAfterSeconds: number;
+    }
+  | {
       outcome: "redirect";
       location: string;
       setCookie?: string;
@@ -164,10 +171,7 @@ export type AuthService = {
     request: Request,
     email: string,
     password: string,
-  ) => Promise<{
-    session: StudioSession;
-    setCookie: string;
-  }>;
+  ) => Promise<PasswordLoginResult>;
   getSession: (request: Request) => Promise<StudioSession | undefined>;
   requireAdminSession: (request: Request) => Promise<StudioSession>;
   logout: (request: Request) => Promise<{
@@ -221,6 +225,17 @@ type BetterAuthLikeSession = {
     email?: unknown;
   };
 };
+
+type PasswordLoginResult =
+  | {
+      outcome: "success";
+      session: StudioSession;
+      setCookie: string;
+    }
+  | {
+      outcome: "throttled";
+      retryAfterSeconds: number;
+    };
 
 type AuthRouteApp = {
   get?: (path: string, handler: (ctx: any) => unknown) => AuthRouteApp;
@@ -278,28 +293,6 @@ function assertNonEmptyString(value: unknown, field: string): string {
   }
 
   return value.trim();
-}
-
-function mapUnknownAuthError(
-  error: unknown,
-  code: string,
-  message: string,
-): never {
-  if (error instanceof RuntimeError) {
-    throw error;
-  }
-
-  throw new RuntimeError({
-    code,
-    message,
-    statusCode: 401,
-    details:
-      error instanceof Error
-        ? {
-            cause: error.message,
-          }
-        : undefined,
-  });
 }
 
 function extractCookiePair(setCookieHeader: string | null): string {
@@ -760,6 +753,55 @@ function createUnauthorizedSessionError(message: string): RuntimeError {
   });
 }
 
+function normalizeLoginBackoffKey(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function getLoginBackoffDelaySeconds(failureCount: number): number {
+  const index = Math.max(0, failureCount - 1);
+  return (
+    LOGIN_BACKOFF_DELAYS_SECONDS[
+      Math.min(index, LOGIN_BACKOFF_DELAYS_SECONDS.length - 1)
+    ] ?? LOGIN_BACKOFF_DELAYS_SECONDS[LOGIN_BACKOFF_DELAYS_SECONDS.length - 1]
+  );
+}
+
+function hasLoginBackoffWindowExpired(
+  row: typeof authLoginBackoffs.$inferSelect,
+  nowMs: number,
+): boolean {
+  return nowMs - row.lastFailedAt.getTime() >= LOGIN_BACKOFF_RESET_WINDOW_MS;
+}
+
+function getRetryAfterSeconds(nextAllowedAt: Date, nowMs: number): number {
+  return Math.max(1, Math.ceil((nextAllowedAt.getTime() - nowMs) / 1000));
+}
+
+function createAuthBackoffError(retryAfterSeconds: number): RuntimeError {
+  return new RuntimeError({
+    code: "AUTH_BACKOFF_ACTIVE",
+    message: `Too many failed login attempts. Retry after ${retryAfterSeconds} seconds.`,
+    statusCode: 429,
+    details: {
+      retryAfterSeconds,
+    },
+  });
+}
+
+function createAuthBackoffResponse(
+  request: Request,
+  retryAfterSeconds: number,
+): Response {
+  const requestId = request.headers.get("x-request-id") ?? undefined;
+  return createJsonResponse(
+    serializeError(createAuthBackoffError(retryAfterSeconds), { requestId }),
+    429,
+    {
+      "retry-after": String(retryAfterSeconds),
+    },
+  );
+}
+
 export type CreateAuthServiceOptions = {
   db: DrizzleDatabase;
   env?: NodeJS.ProcessEnv;
@@ -837,6 +879,94 @@ export function createAuthService(
       enabled: false,
     },
   });
+
+  async function findLoginBackoff(
+    loginKey: string,
+  ): Promise<typeof authLoginBackoffs.$inferSelect | undefined> {
+    const [row] = await options.db
+      .select()
+      .from(authLoginBackoffs)
+      .where(eq(authLoginBackoffs.loginKey, loginKey));
+
+    return row;
+  }
+
+  async function clearLoginBackoff(loginKey: string): Promise<void> {
+    await options.db
+      .delete(authLoginBackoffs)
+      .where(eq(authLoginBackoffs.loginKey, loginKey));
+  }
+
+  async function getActiveLoginBackoff(
+    loginKey: string,
+    nowMs = Date.now(),
+  ): Promise<{ retryAfterSeconds: number } | undefined> {
+    const row = await findLoginBackoff(loginKey);
+
+    if (!row) {
+      return undefined;
+    }
+
+    if (hasLoginBackoffWindowExpired(row, nowMs)) {
+      await clearLoginBackoff(loginKey);
+      return undefined;
+    }
+
+    if (row.nextAllowedAt.getTime() <= nowMs) {
+      return undefined;
+    }
+
+    return {
+      retryAfterSeconds: getRetryAfterSeconds(row.nextAllowedAt, nowMs),
+    };
+  }
+
+  async function recordFailedLoginAttempt(
+    loginKey: string,
+    nowMs = Date.now(),
+  ): Promise<void> {
+    const now = new Date(nowMs);
+    await options.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${loginKey}))`,
+      );
+
+      const [existing] = await tx
+        .select()
+        .from(authLoginBackoffs)
+        .where(eq(authLoginBackoffs.loginKey, loginKey));
+      const expired = existing
+        ? hasLoginBackoffWindowExpired(existing, nowMs)
+        : true;
+      const seededExisting = existing && !expired ? existing : undefined;
+      const failureCount = seededExisting ? seededExisting.failureCount + 1 : 1;
+      const nextAllowedAt = new Date(
+        nowMs + getLoginBackoffDelaySeconds(failureCount) * 1000,
+      );
+
+      await tx
+        .insert(authLoginBackoffs)
+        .values({
+          loginKey,
+          failureCount,
+          firstFailedAt: seededExisting?.firstFailedAt ?? now,
+          lastFailedAt: now,
+          nextAllowedAt,
+          createdAt: seededExisting?.createdAt ?? now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: authLoginBackoffs.loginKey,
+          set: {
+            failureCount,
+            firstFailedAt: seededExisting?.firstFailedAt ?? now,
+            lastFailedAt: now,
+            nextAllowedAt,
+            updatedAt: now,
+          },
+        });
+    });
+  }
 
   function toRbacGrant(row: typeof rbacGrants.$inferSelect): RbacGrant {
     if (row.role === "owner" || row.role === "admin") {
@@ -1231,71 +1361,78 @@ export function createAuthService(
     request: Request,
     email: string,
     password: string,
-  ): Promise<{ session: StudioSession; setCookie: string }> {
-    try {
-      const response = await auth.api.signInEmail({
-        headers: request.headers,
-        body: {
-          email,
-          password,
-        },
-        asResponse: true,
-      });
+  ): Promise<PasswordLoginResult> {
+    // MDCMS owns failed-attempt backoff here because server-side auth.api
+    // calls are outside Better Auth's built-in rate limiter.
+    const loginKey = normalizeLoginBackoffKey(email);
+    const activeBackoff = await getActiveLoginBackoff(loginKey);
 
-      if (response.status >= 400) {
-        throw new RuntimeError({
-          code: "AUTH_INVALID_CREDENTIALS",
-          message: "Email or password is invalid.",
-          statusCode: 401,
-        });
-      }
-
-      const setCookie = response.headers.get("set-cookie");
-      if (!setCookie || setCookie.trim().length === 0) {
-        throw new RuntimeError({
-          code: "INTERNAL_ERROR",
-          message: "Auth provider did not return a session cookie.",
-          statusCode: 500,
-        });
-      }
-
-      const cookiePair = extractCookiePair(setCookie);
-      const session = (await auth.api.getSession({
-        headers: new Headers({
-          cookie: cookiePair,
-        }),
-      })) as BetterAuthLikeSession | null;
-
-      if (!session) {
-        throw new RuntimeError({
-          code: "INTERNAL_ERROR",
-          message: "Session lookup failed after successful sign-in.",
-          statusCode: 500,
-        });
-      }
-
-      const studioSession = toStudioSession(session);
-      await options.db
-        .delete(authSessions)
-        .where(
-          and(
-            eq(authSessions.userId, studioSession.userId),
-            ne(authSessions.id, studioSession.id),
-          ),
-        );
-
+    if (activeBackoff) {
       return {
-        session: studioSession,
-        setCookie:
-          appendSetCookieHeaders(setCookie, createCsrfCookie()) ?? setCookie,
+        outcome: "throttled",
+        retryAfterSeconds: activeBackoff.retryAfterSeconds,
       };
-    } catch (error) {
-      mapUnknownAuthError(
-        error,
-        "AUTH_INVALID_CREDENTIALS",
-        "Email or password is invalid.",
-      );
     }
+
+    const response = await auth.api.signInEmail({
+      headers: request.headers,
+      body: {
+        email,
+        password,
+      },
+      asResponse: true,
+    });
+
+    if (response.status >= 400) {
+      await recordFailedLoginAttempt(loginKey);
+      throw new RuntimeError({
+        code: "AUTH_INVALID_CREDENTIALS",
+        message: "Email or password is invalid.",
+        statusCode: 401,
+      });
+    }
+
+    const setCookie = response.headers.get("set-cookie");
+    if (!setCookie || setCookie.trim().length === 0) {
+      throw new RuntimeError({
+        code: "INTERNAL_ERROR",
+        message: "Auth provider did not return a session cookie.",
+        statusCode: 500,
+      });
+    }
+
+    const cookiePair = extractCookiePair(setCookie);
+    const session = (await auth.api.getSession({
+      headers: new Headers({
+        cookie: cookiePair,
+      }),
+    })) as BetterAuthLikeSession | null;
+
+    if (!session) {
+      throw new RuntimeError({
+        code: "INTERNAL_ERROR",
+        message: "Session lookup failed after successful sign-in.",
+        statusCode: 500,
+      });
+    }
+
+    const studioSession = toStudioSession(session);
+    await clearLoginBackoff(loginKey);
+    await options.db
+      .delete(authSessions)
+      .where(
+        and(
+          eq(authSessions.userId, studioSession.userId),
+          ne(authSessions.id, studioSession.id),
+        ),
+      );
+
+    return {
+      outcome: "success",
+      session: studioSession,
+      setCookie:
+        appendSetCookieHeaders(setCookie, createCsrfCookie()) ?? setCookie,
+    };
   }
 
   async function getSessionIfAvailable(
@@ -1650,6 +1787,14 @@ export function createAuthService(
           input.email,
           input.password,
         );
+
+        if (loginResult.outcome === "throttled") {
+          return {
+            outcome: "throttled",
+            retryAfterSeconds: loginResult.retryAfterSeconds,
+          };
+        }
+
         session = loginResult.session;
         setCookie = loginResult.setCookie;
       }
@@ -1825,6 +1970,10 @@ export function mountAuthRoutes(
       const password = assertNonEmptyString(payload.password, "password");
       const result = await options.authService.login(request, email, password);
 
+      if (result.outcome === "throttled") {
+        return createAuthBackoffResponse(request, result.retryAfterSeconds);
+      }
+
       return createJsonResponse(
         {
           data: {
@@ -1968,6 +2117,10 @@ export function mountAuthRoutes(
         request,
       });
 
+      if (result.outcome === "throttled") {
+        return createAuthBackoffResponse(request, result.retryAfterSeconds);
+      }
+
       if (result.outcome === "login_required") {
         return new Response(
           renderCliAuthorizeLoginForm({
@@ -2045,6 +2198,10 @@ export function mountAuthRoutes(
         password,
         request,
       });
+
+      if (result.outcome === "throttled") {
+        return createAuthBackoffResponse(request, result.retryAfterSeconds);
+      }
 
       if (result.outcome === "login_required") {
         return new Response(

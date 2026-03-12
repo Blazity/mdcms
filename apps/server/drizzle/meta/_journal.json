@@ -57,6 +57,13 @@
       "when": 1773197563004,
       "tag": "0007_first_stellaris",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1773390600000,
+      "tag": "0008_mellow_starlord",
+      "breakpoints": true
     }
   ]
 }

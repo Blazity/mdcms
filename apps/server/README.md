@@ -163,6 +163,19 @@ Backend API/runtime package boundary for MDCMS.
     source (for example CMS-44 RBAC) without changing this endpoint contract.
   - deterministic semantics: `401` unauthenticated, `403` non-admin, `404` unknown user.
 
+## Password Login Backoff (CMS-39)
+
+- MDCMS owns password failed-attempt throttling for the password-entry routes:
+  - `POST /api/v1/auth/login`
+  - `POST /api/v1/auth/cli/login/authorize` when credentials are submitted
+- Backoff is keyed by normalized email for MVP scope.
+- Invalid credentials outside active lockout remain `401 AUTH_INVALID_CREDENTIALS`.
+- Active lockout returns `429 AUTH_BACKOFF_ACTIVE` and emits `Retry-After`.
+- Successful password sign-in resets stored backoff state.
+- A quiet window of 15 minutes without failed attempts resets backoff state.
+- The MVP schedule is capped exponential delay: `1s`, `2s`, `4s`, `8s`, `16s`, `32s`.
+- Better Auth's built-in rate limiting is not the source of truth for this contract because MDCMS performs password verification through server-side `auth.api` calls inside its own auth wrapper.
+
 ## RBAC Engine + Runtime Enforcement (CMS-44)
 
 - RBAC grants are persisted in `rbac_grants` and evaluated with most-permissive

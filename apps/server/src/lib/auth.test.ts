@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import postgres from "postgres";
 
 import {
+  authLoginBackoffs,
   authSessions,
   cliLoginChallenges,
   environments,
@@ -47,6 +48,53 @@ async function canConnectToDatabase(): Promise<boolean> {
 
 const dbAvailable = await canConnectToDatabase();
 const testWithDatabase = dbAvailable ? test : test.skip;
+
+async function ensureAuthLoginBackoffTable(): Promise<void> {
+  const client = postgres(env.DATABASE_URL ?? "", {
+    onnotice: () => undefined,
+    connect_timeout: 1,
+    max: 1,
+  });
+
+  try {
+    await client`
+      CREATE TABLE IF NOT EXISTS auth_login_backoffs (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+        login_key text NOT NULL,
+        failure_count integer DEFAULT 0 NOT NULL,
+        first_failed_at timestamp with time zone NOT NULL,
+        last_failed_at timestamp with time zone NOT NULL,
+        next_allowed_at timestamp with time zone NOT NULL,
+        created_at timestamp with time zone DEFAULT now() NOT NULL,
+        updated_at timestamp with time zone DEFAULT now() NOT NULL,
+        CONSTRAINT uniq_auth_login_backoffs_login_key UNIQUE (login_key)
+      )
+    `;
+    await client`
+      CREATE INDEX IF NOT EXISTS idx_auth_login_backoffs_next_allowed
+      ON auth_login_backoffs USING btree (next_allowed_at)
+    `;
+  } finally {
+    await client.end({ timeout: 1 });
+  }
+}
+
+if (dbAvailable) {
+  await ensureAuthLoginBackoffTable();
+}
+
+async function withMockedNow<T>(
+  value: number,
+  run: () => Promise<T>,
+): Promise<T> {
+  const originalNow = Date.now;
+  Date.now = () => value;
+  try {
+    return await run();
+  } finally {
+    Date.now = originalNow;
+  }
+}
 
 function uniqueEmail(): string {
   return `auth-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@mdcms.local`;
@@ -141,15 +189,7 @@ async function login(
     expiresAt: string;
   };
 }> {
-  const loginResponse = await handler(
-    new Request("http://localhost/api/v1/auth/login", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(input),
-    }),
-  );
+  const loginResponse = await attemptLogin(handler, input);
   const loginBody = (await loginResponse.json()) as {
     data: {
       session: {
@@ -169,6 +209,24 @@ async function login(
     setCookie,
     session: loginBody.data.session,
   };
+}
+
+function attemptLogin(
+  handler: (request: Request) => Promise<Response>,
+  input: {
+    email: string;
+    password: string;
+  },
+): Promise<Response> {
+  return handler(
+    new Request("http://localhost/api/v1/auth/login", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(input),
+    }),
+  );
 }
 
 async function seedScope(
@@ -383,6 +441,181 @@ testWithDatabase(
     } finally {
       await secureHandlerBundle.dbConnection.close();
       await insecureHandlerBundle.dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "auth login applies exponential backoff and clears stored state after successful sign-in",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+    const invalidPassword = "WrongPassword123!";
+    const start = Date.parse("2026-03-13T10:00:00.000Z");
+
+    try {
+      await signUp(handler, { email, password });
+
+      const firstInvalidResponse = await withMockedNow(start, () =>
+        attemptLogin(handler, {
+          email,
+          password: invalidPassword,
+        }),
+      );
+      const firstInvalidBody = (await firstInvalidResponse.json()) as {
+        code: string;
+      };
+
+      assert.equal(firstInvalidResponse.status, 401);
+      assert.equal(firstInvalidBody.code, "AUTH_INVALID_CREDENTIALS");
+
+      const [storedBackoff] = await dbConnection.db
+        .select()
+        .from(authLoginBackoffs)
+        .where(eq(authLoginBackoffs.loginKey, email.toLowerCase()));
+      assert.ok(storedBackoff);
+      assert.equal(storedBackoff.failureCount, 1);
+
+      const lockedResponse = await withMockedNow(start, () =>
+        attemptLogin(handler, {
+          email,
+          password: invalidPassword,
+        }),
+      );
+      const lockedBody = (await lockedResponse.json()) as {
+        code: string;
+      };
+
+      assert.equal(lockedResponse.status, 429);
+      assert.equal(lockedBody.code, "AUTH_BACKOFF_ACTIVE");
+      assert.equal(lockedResponse.headers.get("retry-after"), "1");
+
+      const secondInvalidResponse = await withMockedNow(start + 1_100, () =>
+        attemptLogin(handler, {
+          email,
+          password: invalidPassword,
+        }),
+      );
+      const secondInvalidBody = (await secondInvalidResponse.json()) as {
+        code: string;
+      };
+
+      assert.equal(secondInvalidResponse.status, 401);
+      assert.equal(secondInvalidBody.code, "AUTH_INVALID_CREDENTIALS");
+
+      await withMockedNow(start + 3_200, () =>
+        login(handler, { email, password }),
+      );
+
+      const clearedBackoffRows = await dbConnection.db
+        .select()
+        .from(authLoginBackoffs)
+        .where(eq(authLoginBackoffs.loginKey, email.toLowerCase()));
+      assert.equal(clearedBackoffRows.length, 0);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "auth login surfaces internal errors when backoff persistence fails",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+    const invalidPassword = "WrongPassword123!";
+    const originalTransaction = dbConnection.db.transaction.bind(
+      dbConnection.db,
+    );
+
+    try {
+      await signUp(handler, { email, password });
+      (
+        dbConnection.db as typeof dbConnection.db & {
+          transaction: typeof dbConnection.db.transaction;
+        }
+      ).transaction = (async (callback: any, ...args: any[]) =>
+        originalTransaction(
+          async (tx: any, ...txArgs: any[]) => {
+            const originalTxInsert = tx.insert.bind(tx);
+            tx.insert = ((table: unknown) => {
+              if (table === authLoginBackoffs) {
+                throw new Error("forced backoff insert failure");
+              }
+
+              return originalTxInsert(
+                table as Parameters<typeof originalTxInsert>[0],
+              );
+            }) as typeof tx.insert;
+
+            return callback(tx, ...txArgs);
+          },
+          ...args,
+        )) as typeof dbConnection.db.transaction;
+
+      const response = await attemptLogin(handler, {
+        email,
+        password: invalidPassword,
+      });
+      const body = (await response.json()) as {
+        code: string;
+      };
+
+      assert.equal(response.status, 500);
+      assert.equal(body.code, "INTERNAL_ERROR");
+    } finally {
+      dbConnection.db.transaction = originalTransaction;
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "auth login surfaces internal errors when provider sign-in throws",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+    const originalInsert = dbConnection.db.insert.bind(dbConnection.db);
+
+    try {
+      await signUp(handler, { email, password });
+      (
+        dbConnection.db as typeof dbConnection.db & {
+          insert: typeof dbConnection.db.insert;
+        }
+      ).insert = ((table: unknown) => {
+        if (table === authSessions) {
+          throw new Error("forced auth session insert failure");
+        }
+
+        return originalInsert(table as Parameters<typeof originalInsert>[0]);
+      }) as typeof dbConnection.db.insert;
+
+      const response = await attemptLogin(handler, {
+        email,
+        password,
+      });
+      const body = (await response.json()) as {
+        code: string;
+      };
+
+      assert.equal(response.status, 500);
+      assert.equal(body.code, "INTERNAL_ERROR");
+    } finally {
+      dbConnection.db.insert = originalInsert;
+      await dbConnection.close();
     }
   },
 );
@@ -1655,6 +1888,98 @@ testWithDatabase(
       };
       assert.equal(secondRevokeResponse.status, 401);
       assert.equal(secondRevokeBody.code, "UNAUTHORIZED");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "CLI login authorize applies password backoff without authorizing the challenge",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+    const invalidPassword = "WrongPassword123!";
+    const state = `state-${Date.now()}-abcdefghijklmnop`;
+    const start = Date.now();
+
+    try {
+      await signUp(handler, { email, password });
+
+      const startResponse = await handler(
+        new Request("http://localhost/api/v1/auth/cli/login/start", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            project: "marketing-site",
+            environment: "staging",
+            redirectUri: "http://127.0.0.1:45123/callback",
+            state,
+          }),
+        }),
+      );
+      const startBody = (await startResponse.json()) as {
+        data: { challengeId: string; authorizeUrl: string };
+      };
+
+      const authorizeUrl = new URL(startBody.data.authorizeUrl);
+
+      const firstAuthorizeResponse = await withMockedNow(start, () =>
+        handler(
+          new Request(authorizeUrl.toString(), {
+            method: "POST",
+            headers: {
+              "content-type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({
+              email,
+              password: invalidPassword,
+            }).toString(),
+          }),
+        ),
+      );
+      const firstAuthorizeBody = (await firstAuthorizeResponse.json()) as {
+        code: string;
+      };
+
+      assert.equal(firstAuthorizeResponse.status, 401);
+      assert.equal(firstAuthorizeBody.code, "AUTH_INVALID_CREDENTIALS");
+
+      const lockedAuthorizeResponse = await withMockedNow(start, () =>
+        handler(
+          new Request(authorizeUrl.toString(), {
+            method: "POST",
+            headers: {
+              "content-type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({
+              email,
+              password: invalidPassword,
+            }).toString(),
+          }),
+        ),
+      );
+      const lockedAuthorizeBody = (await lockedAuthorizeResponse.json()) as {
+        code: string;
+      };
+
+      assert.equal(lockedAuthorizeResponse.status, 429);
+      assert.equal(lockedAuthorizeBody.code, "AUTH_BACKOFF_ACTIVE");
+      assert.equal(lockedAuthorizeResponse.headers.get("retry-after"), "1");
+
+      const [challengeRow] = await dbConnection.db
+        .select()
+        .from(cliLoginChallenges)
+        .where(eq(cliLoginChallenges.id, startBody.data.challengeId));
+
+      assert.equal(challengeRow?.status, "pending");
+      assert.equal(challengeRow?.authorizedAt, null);
     } finally {
       await dbConnection.close();
     }

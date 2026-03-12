@@ -154,6 +154,24 @@ export const cliLoginChallenges = pgTable(
   ],
 );
 
+export const authLoginBackoffs = pgTable(
+  "auth_login_backoffs",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    loginKey: text().notNull(),
+    failureCount: integer().default(0).notNull(),
+    firstFailedAt: timestamp({ withTimezone: true }).notNull(),
+    lastFailedAt: timestamp({ withTimezone: true }).notNull(),
+    nextAllowedAt: timestamp({ withTimezone: true }).notNull(),
+    createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("uniq_auth_login_backoffs_login_key").on(table.loginKey),
+    index("idx_auth_login_backoffs_next_allowed").on(table.nextAllowedAt),
+  ],
+);
+
 export const rbacGrants = pgTable(
   "rbac_grants",
   {

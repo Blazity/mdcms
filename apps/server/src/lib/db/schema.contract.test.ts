@@ -133,6 +133,16 @@ test("schema snapshot includes CMS-11/CMS-12 core tables and columns", () => {
       "used_at",
       "created_at",
     ],
+    "public.auth_login_backoffs": [
+      "id",
+      "login_key",
+      "failure_count",
+      "first_failed_at",
+      "last_failed_at",
+      "next_allowed_at",
+      "created_at",
+      "updated_at",
+    ],
     "public.rbac_grants": [
       "id",
       "user_id",
@@ -265,6 +275,7 @@ test("snapshot includes required named constraints and indexes", () => {
   const apiKeysTable = snapshot.tables["public.api_keys"];
   const cliLoginChallengesTable =
     snapshot.tables["public.cli_login_challenges"];
+  const authLoginBackoffsTable = snapshot.tables["public.auth_login_backoffs"];
   const rbacGrantsTable = snapshot.tables["public.rbac_grants"];
   const authUsersTable = snapshot.tables["public.users"];
   const authSessionsTable = snapshot.tables["public.sessions"];
@@ -284,6 +295,10 @@ test("snapshot includes required named constraints and indexes", () => {
   assert.ok(
     cliLoginChallengesTable,
     "expected cli_login_challenges table in snapshot",
+  );
+  assert.ok(
+    authLoginBackoffsTable,
+    "expected auth_login_backoffs table in snapshot",
   );
   assert.ok(rbacGrantsTable, "expected rbac_grants table in snapshot");
   assert.ok(authUsersTable, "expected users table in snapshot");
@@ -359,6 +374,14 @@ test("snapshot includes required named constraints and indexes", () => {
   assert.ok(
     cliLoginChallengesTable.indexes.idx_cli_login_challenges_user,
     "expected index idx_cli_login_challenges_user on cli_login_challenges",
+  );
+  assert.ok(
+    authLoginBackoffsTable.uniqueConstraints.uniq_auth_login_backoffs_login_key,
+    "expected unique constraint uniq_auth_login_backoffs_login_key on auth_login_backoffs",
+  );
+  assert.ok(
+    authLoginBackoffsTable.indexes.idx_auth_login_backoffs_next_allowed,
+    "expected index idx_auth_login_backoffs_next_allowed on auth_login_backoffs",
   );
   assert.ok(
     cliLoginChallengesTable.foreignKeys
