@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import type { MdcmsModulePackage } from "../contracts/extensibility.js";
 import { createConsoleLogger } from "./logger.js";
-import { buildModuleLoadReport } from "./module-loader-core.js";
+import { buildRuntimeModulePlan } from "./module-loader-core.js";
 
 function createNoopLogger() {
   return createConsoleLogger({
@@ -17,6 +17,8 @@ function createModule(
     server?: boolean;
     cli?: boolean;
     minCoreVersion?: string;
+    dependsOn?: string[];
+    actionIds?: string[];
   } = {},
 ): MdcmsModulePackage {
   return {
@@ -25,11 +27,18 @@ function createModule(
       version: "1.0.0",
       apiVersion: "1",
       minCoreVersion: options.minCoreVersion,
+      dependsOn: options.dependsOn,
     },
     server: options.server
       ? {
           mount: () => undefined,
-          actions: [],
+          actions: (options.actionIds ?? []).map((actionId) => ({
+            id: actionId,
+            kind: "query",
+            method: "GET",
+            path: `/api/v1/actions/${actionId}`,
+            permissions: ["content:read"],
+          })),
         }
       : undefined,
     cli: options.cli
@@ -42,9 +51,13 @@ function createModule(
   };
 }
 
-test("buildModuleLoadReport sorts module ids deterministically", () => {
-  const report = buildModuleLoadReport(
-    [createModule("zeta", { cli: true }), createModule("alpha", { cli: true })],
+test("buildRuntimeModulePlan computes deterministic topological order", () => {
+  const plan = buildRuntimeModulePlan(
+    [
+      createModule("beta", { cli: true, dependsOn: ["alpha"] }),
+      createModule("core.system", { cli: true }),
+      createModule("alpha", { cli: true, dependsOn: ["core.system"] }),
+    ],
     {
       coreVersion: "1.0.0",
       surface: "cli",
@@ -53,52 +66,173 @@ test("buildModuleLoadReport sorts module ids deterministically", () => {
     },
   );
 
-  assert.deepEqual(report.evaluatedModuleIds, ["alpha", "zeta"]);
-  assert.deepEqual(report.loadedModuleIds, ["alpha", "zeta"]);
-  assert.deepEqual(report.skippedModuleIds, []);
+  assert.equal(plan.ok, true);
+
+  if (!plan.ok) {
+    return;
+  }
+
+  assert.deepEqual(plan.moduleIds, ["core.system", "alpha", "beta"]);
+  assert.deepEqual(
+    plan.loaded.map((moduleResult) => moduleResult.id),
+    ["core.system", "alpha", "beta"],
+  );
 });
 
-test("buildModuleLoadReport marks missing surface explicitly", () => {
-  const report = buildModuleLoadReport([createModule("alpha", { cli: true })], {
+test("buildRuntimeModulePlan reports duplicate module ids", () => {
+  const plan = buildRuntimeModulePlan(
+    [createModule("dup", { cli: true }), createModule("dup", { cli: true })],
+    {
+      coreVersion: "1.0.0",
+      surface: "cli",
+      runtime: "cli",
+      logger: createNoopLogger(),
+    },
+  );
+
+  assert.equal(plan.ok, false);
+
+  if (plan.ok) {
+    return;
+  }
+
+  assert.deepEqual(
+    plan.violations.map((entry) => entry.code),
+    ["DUPLICATE_MODULE_ID"],
+  );
+});
+
+test("buildRuntimeModulePlan reports missing dependsOn targets", () => {
+  const plan = buildRuntimeModulePlan(
+    [createModule("alpha", { cli: true, dependsOn: ["missing.target"] })],
+    {
+      coreVersion: "1.0.0",
+      surface: "cli",
+      runtime: "cli",
+      logger: createNoopLogger(),
+    },
+  );
+
+  assert.equal(plan.ok, false);
+
+  if (plan.ok) {
+    return;
+  }
+
+  assert.deepEqual(
+    plan.violations.map((entry) => entry.code),
+    ["MISSING_DEPENDENCY"],
+  );
+});
+
+test("buildRuntimeModulePlan reports dependency cycles", () => {
+  const plan = buildRuntimeModulePlan(
+    [
+      createModule("cycle.alpha", { cli: true, dependsOn: ["cycle.beta"] }),
+      createModule("cycle.beta", { cli: true, dependsOn: ["cycle.alpha"] }),
+    ],
+    {
+      coreVersion: "1.0.0",
+      surface: "cli",
+      runtime: "cli",
+      logger: createNoopLogger(),
+    },
+  );
+
+  assert.equal(plan.ok, false);
+
+  if (plan.ok) {
+    return;
+  }
+
+  assert.deepEqual(
+    plan.violations.map((entry) => entry.code),
+    ["DEPENDENCY_CYCLE", "DEPENDENCY_CYCLE"],
+  );
+});
+
+test("buildRuntimeModulePlan reports duplicate server action ids", () => {
+  const plan = buildRuntimeModulePlan(
+    [
+      createModule("alpha", {
+        server: true,
+        actionIds: ["content.preview"],
+      }),
+      createModule("beta", {
+        server: true,
+        actionIds: ["content.preview"],
+      }),
+    ],
+    {
+      coreVersion: "1.0.0",
+      surface: "server",
+      runtime: "server",
+      logger: createNoopLogger(),
+    },
+  );
+
+  assert.equal(plan.ok, false);
+
+  if (plan.ok) {
+    return;
+  }
+
+  assert.deepEqual(
+    plan.violations.map((entry) => entry.code),
+    ["DUPLICATE_ACTION_ID"],
+  );
+});
+
+test("buildRuntimeModulePlan sorts violations deterministically", () => {
+  const moduleCandidates = [
+    null,
+    createModule("future", { cli: true, minCoreVersion: "9.0.0" }),
+    createModule("dup", { cli: true }),
+    createModule("dup", { cli: true }),
+    createModule("missing", { cli: true, dependsOn: ["ghost"] }),
+    createModule("cycle.alpha", { cli: true, dependsOn: ["cycle.beta"] }),
+    createModule("cycle.beta", { cli: true, dependsOn: ["cycle.alpha"] }),
+    createModule("action.alpha", {
+      server: true,
+      actionIds: ["system.ping"],
+    }),
+    createModule("action.beta", {
+      server: true,
+      actionIds: ["system.ping"],
+    }),
+  ];
+
+  const planA = buildRuntimeModulePlan(moduleCandidates, {
+    coreVersion: "1.0.0",
+    surface: "server",
+    runtime: "server",
+    logger: createNoopLogger(),
+  });
+  const planB = buildRuntimeModulePlan(moduleCandidates, {
     coreVersion: "1.0.0",
     surface: "server",
     runtime: "server",
     logger: createNoopLogger(),
   });
 
-  assert.deepEqual(report.loadedModuleIds, []);
-  assert.equal(report.skipped.length, 1);
-  assert.equal(report.skipped[0]?.id, "alpha");
-  assert.equal(report.skipped[0]?.reason, "missing-surface");
-});
+  assert.equal(planA.ok, false);
+  assert.equal(planB.ok, false);
 
-test("buildModuleLoadReport marks incompatible manifests", () => {
-  const report = buildModuleLoadReport(
-    [createModule("future", { cli: true, minCoreVersion: "9.0.0" })],
-    {
-      coreVersion: "1.0.0",
-      surface: "cli",
-      runtime: "cli",
-      logger: createNoopLogger(),
-    },
+  if (planA.ok || planB.ok) {
+    return;
+  }
+
+  assert.deepEqual(planA.violations, planB.violations);
+  assert.deepEqual(
+    planA.violations.map((entry) => entry.code),
+    [
+      "DEPENDENCY_CYCLE",
+      "DEPENDENCY_CYCLE",
+      "DUPLICATE_ACTION_ID",
+      "DUPLICATE_MODULE_ID",
+      "INCOMPATIBLE_MANIFEST",
+      "INVALID_PACKAGE",
+      "MISSING_DEPENDENCY",
+    ],
   );
-
-  assert.deepEqual(report.loadedModuleIds, []);
-  assert.equal(report.skipped.length, 1);
-  assert.equal(report.skipped[0]?.id, "future");
-  assert.equal(report.skipped[0]?.reason, "incompatible");
-});
-
-test("buildModuleLoadReport marks invalid package payloads", () => {
-  const report = buildModuleLoadReport([null], {
-    coreVersion: "1.0.0",
-    surface: "cli",
-    runtime: "cli",
-    logger: createNoopLogger(),
-  });
-
-  assert.deepEqual(report.loadedModuleIds, []);
-  assert.equal(report.skipped.length, 1);
-  assert.equal(report.skipped[0]?.id, "unknown.0000");
-  assert.equal(report.skipped[0]?.reason, "invalid-package");
 });
