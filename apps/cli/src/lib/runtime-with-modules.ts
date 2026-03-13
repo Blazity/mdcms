@@ -22,7 +22,7 @@ export type CliRuntimeContextWithModules = CliRuntimeContext & {
 
 /**
  * createCliRuntimeContextWithModules composes CLI runtime context with
- * compile-time local module loading from @mdcms/modules.
+ * strict compile-time local module planning from @mdcms/modules.
  */
 export function createCliRuntimeContextWithModules(
   rawEnv: NodeJS.ProcessEnv = process.env,

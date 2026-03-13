@@ -2,9 +2,19 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { installedModules } from "@mdcms/modules";
-import { createConsoleLogger, type MdcmsModulePackage } from "@mdcms/shared";
+import {
+  RuntimeError,
+  createConsoleLogger,
+  type MdcmsModulePackage,
+} from "@mdcms/shared";
 
-import { buildCliModuleLoadReport, loadCliModules } from "./module-loader.js";
+import {
+  buildCliModuleLoadReport,
+  collectCliActionAliases,
+  collectCliOutputFormatters,
+  collectCliPreflightHooks,
+  loadCliModules,
+} from "./module-loader.js";
 
 const testLogger = createConsoleLogger({
   level: "trace",
@@ -32,56 +42,52 @@ test("loadCliModules uses deterministic manifest.id ordering", () => {
   assert.deepEqual(reportA.loadedModuleIds, expectedOrder);
 });
 
-test("buildCliModuleLoadReport emits deterministic skip reasons", () => {
-  const validModule: MdcmsModulePackage = {
+function createCliModule(
+  id: string,
+  options: {
+    dependsOn?: string[];
+    minCoreVersion?: string;
+    alias?: string;
+  } = {},
+): MdcmsModulePackage {
+  const alias = options.alias ?? `${id}:run`;
+
+  return {
     manifest: {
-      id: "c.valid",
+      id,
       version: "1.0.0",
       apiVersion: "1",
-      minCoreVersion: "0.0.1",
+      minCoreVersion: options.minCoreVersion ?? "0.0.1",
+      dependsOn: options.dependsOn,
     },
     cli: {
       actionAliases: [
         {
-          alias: "c:valid",
-          actionId: "c.valid.action",
+          alias,
+          actionId: `${id}.action`,
         },
       ],
-    },
-  };
-
-  const incompatibleModule: MdcmsModulePackage = {
-    manifest: {
-      id: "a.incompatible",
-      version: "1.0.0",
-      apiVersion: "1",
-      minCoreVersion: "9.0.0",
-    },
-    cli: {
-      actionAliases: [
+      outputFormatters: [
         {
-          alias: "a:incompatible",
-          actionId: "a.incompatible.action",
+          format: (output) => `${id}:${String(output)}`,
+        },
+      ],
+      preflightHooks: [
+        {
+          id: `${id}.hook`,
+          run: () => undefined,
         },
       ],
     },
   };
+}
 
-  const missingSurfaceModule: MdcmsModulePackage = {
-    manifest: {
-      id: "b.no-cli",
-      version: "1.0.0",
-      apiVersion: "1",
-      minCoreVersion: "0.0.1",
-    },
-  };
-
+test("buildCliModuleLoadReport uses strict dependency ordering", () => {
   const report = buildCliModuleLoadReport(
     [
-      { manifest: { id: "z.invalid" } },
-      validModule,
-      incompatibleModule,
-      missingSurfaceModule,
+      createCliModule("m.feature", { dependsOn: ["a.feature"] }),
+      createCliModule("z.core"),
+      createCliModule("a.feature", { dependsOn: ["z.core"] }),
     ],
     {
       coreVersion: "1.0.0",
@@ -89,13 +95,71 @@ test("buildCliModuleLoadReport emits deterministic skip reasons", () => {
     },
   );
 
-  assert.deepEqual(report.loadedModuleIds, ["c.valid"]);
-  assert.deepEqual(
-    report.skipped.map((entry) => ({ id: entry.id, reason: entry.reason })),
+  assert.deepEqual(report.loadedModuleIds, ["z.core", "a.feature", "m.feature"]);
+});
+
+test("CLI collectors preserve strict loaded module order", () => {
+  const report = buildCliModuleLoadReport(
     [
-      { id: "a.incompatible", reason: "incompatible" },
-      { id: "b.no-cli", reason: "missing-surface" },
-      { id: "z.invalid", reason: "invalid-package" },
+      createCliModule("m.feature", { dependsOn: ["a.feature"] }),
+      createCliModule("z.core"),
+      createCliModule("a.feature", { dependsOn: ["z.core"] }),
     ],
+    {
+      coreVersion: "1.0.0",
+      logger: testLogger,
+    },
+  );
+
+  assert.deepEqual(
+    collectCliActionAliases(report).map((alias) => alias.alias),
+    ["z.core:run", "a.feature:run", "m.feature:run"],
+  );
+  assert.deepEqual(
+    collectCliOutputFormatters(report).map((formatter) =>
+      formatter.format("ok"),
+    ),
+    ["z.core:ok", "a.feature:ok", "m.feature:ok"],
+  );
+  assert.deepEqual(
+    collectCliPreflightHooks(report).map((hook) => hook.id),
+    ["z.core.hook", "a.feature.hook", "m.feature.hook"],
+  );
+});
+
+test("buildCliModuleLoadReport fails fast with deterministic violations", () => {
+  assert.throws(
+    () =>
+      buildCliModuleLoadReport(
+        [null, createCliModule("m.missing", { dependsOn: ["ghost.module"] })],
+        {
+          coreVersion: "1.0.0",
+          logger: testLogger,
+        },
+      ),
+    (error) => {
+      assert.equal(error instanceof RuntimeError, true);
+
+      if (!(error instanceof RuntimeError)) {
+        return false;
+      }
+
+      assert.equal(error.code, "INVALID_MODULE_BOOTSTRAP");
+      const details = error.details as
+        | { violations?: Array<{ code: string; moduleId: string }> }
+        | undefined;
+      const violations = details?.violations ?? [];
+
+      assert.deepEqual(
+        violations.map((entry) => entry.code),
+        ["INVALID_PACKAGE", "MISSING_DEPENDENCY"],
+      );
+      assert.deepEqual(
+        violations.map((entry) => entry.moduleId),
+        ["unknown.0000", "m.missing"],
+      );
+
+      return true;
+    },
   );
 });

@@ -1,6 +1,7 @@
 import { installedModules } from "@mdcms/modules";
 import {
-  buildModuleLoadReport,
+  RuntimeError,
+  buildRuntimeModulePlan,
   type ModuleLoadReport,
   type CliActionAlias,
   type CliOutputFormatter,
@@ -23,18 +24,36 @@ export function buildCliModuleLoadReport(
   moduleCandidates: readonly unknown[],
   options: BuildCliModuleLoadReportOptions,
 ): CliModuleLoadReport {
-  return buildModuleLoadReport(moduleCandidates, {
+  const runtimePlan = buildRuntimeModulePlan(moduleCandidates, {
     coreVersion: options.coreVersion,
     logger: options.logger,
     supportedApiVersion: options.supportedApiVersion,
     runtime: "cli",
     surface: "cli",
-    missingSurfaceDetails: "Module does not expose a cli surface.",
     mapLoadedModule: (modulePackage) => ({
       ...modulePackage,
       cli: modulePackage.cli!,
     }),
   });
+
+  if (!runtimePlan.ok) {
+    throw new RuntimeError({
+      code: "INVALID_MODULE_BOOTSTRAP",
+      message: "CLI module bootstrap failed.",
+      statusCode: 500,
+      details: {
+        violations: runtimePlan.violations,
+      },
+    });
+  }
+
+  return {
+    evaluatedModuleIds: runtimePlan.moduleIds,
+    loadedModuleIds: runtimePlan.moduleIds,
+    skippedModuleIds: [],
+    loaded: runtimePlan.loaded,
+    skipped: [],
+  };
 }
 
 export function loadCliModules(
