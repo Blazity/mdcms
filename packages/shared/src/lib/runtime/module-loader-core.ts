@@ -476,7 +476,7 @@ export function buildRuntimeModulePlan<
   if (options.surface === "server") {
     violations.push(
       ...collectDuplicateServerActionViolations(
-        loaded as readonly LoadedModule<"server", TModulePackage>[],
+        loaded as unknown as readonly LoadedModule<"server", TModulePackage>[],
       ),
     );
   }
@@ -584,7 +584,8 @@ export function buildModuleLoadReport<
     }
   }
 
-  const loadedEvent = options.loadedEvent ?? defaultLoadedEvent(options.runtime);
+  const loadedEvent =
+    options.loadedEvent ?? defaultLoadedEvent(options.runtime);
   const skippedEvent =
     options.skippedEvent ?? defaultSkippedEvent(options.runtime);
   const summaryEvent =
