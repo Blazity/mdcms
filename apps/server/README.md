@@ -54,12 +54,16 @@ Backend API/runtime package boundary for MDCMS.
 
 - Server module loading lives in `src/lib/module-loader.ts`.
 - `@mdcms/server` consumes `@mdcms/modules` compile-time registry and mounts only bundled local module server surfaces.
-- Loader output is deterministic and reports:
-  - `loadedModuleIds`
-  - `skippedModuleIds`
-  - structured skip reasons (`missing-surface`, `incompatible`, `invalid-package`)
+- Server bootstrap uses the shared strict planner and fails fast on deterministic module bootstrap violations before route registration.
+- Fail-fast startup violations are reported under `INVALID_MODULE_BOOTSTRAP` with deterministic `details.violations` entries.
+- Startup is blocked on:
+  - duplicate module ids
+  - missing dependencies
+  - dependency cycles
+  - incompatible module manifests
+  - duplicate server action ids
 - `createServerRequestHandlerWithModules(...)` composes module load report + mounts + action catalog into the server runtime.
-- Runtime logs emit module load summary lines for loaded and skipped modules.
+- Server module planning/routing still follows explicit composition-root dependency wiring (`module.mount(app, deps)`), without DI container/service-locator runtime patterns.
 
 ## Environment API Endpoints (CMS-18)
 

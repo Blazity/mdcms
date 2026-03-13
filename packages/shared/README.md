@@ -145,6 +145,32 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
     must use strict `x.y.z` format.
   - Pre-release/build metadata (for example `1.0.0-beta.1`, `1.0.0+build`) is rejected.
 
+## Strict Module Bootstrap Planner (CMS-33)
+
+- Shared runtime module bootstrap planning now exposes:
+  - `buildRuntimeModulePlan(...)`
+  - `RuntimeModulePlan`
+  - `ModuleBootstrapViolation`
+  - `ModuleBootstrapViolationCode`
+- The planner enforces deterministic validation + ordering before runtime wiring:
+  - validates module package shape and manifest compatibility
+  - validates dependency availability (`dependsOn`)
+  - detects dependency cycles
+  - computes deterministic dependency-aware module order
+  - validates duplicate action ids for `server` surface planning
+- Planner violations are deterministic and sorted by:
+  - violation `code`
+  - `moduleId`
+  - `details`
+- Violation codes emitted by the planner:
+  - `INVALID_PACKAGE`
+  - `INCOMPATIBLE_MANIFEST`
+  - `DUPLICATE_MODULE_ID`
+  - `MISSING_DEPENDENCY`
+  - `DEPENDENCY_CYCLE`
+  - `DUPLICATE_ACTION_ID`
+- Runtime loaders can still use `buildModuleLoadReport(...)` as a compatibility wrapper while migrating to strict fail-fast bootstrap semantics.
+
 ## Build
 
 - `bun nx build shared`
