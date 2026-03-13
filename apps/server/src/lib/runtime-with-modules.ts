@@ -24,6 +24,10 @@ import {
 } from "./environments-api.js";
 import { loadServerConfig } from "./config.js";
 import type { ParsedMdcmsConfig } from "@mdcms/shared";
+import {
+  createStudioRuntimePublication,
+  type CreateStudioRuntimePublicationOptions,
+} from "./studio-bootstrap.js";
 
 import {
   collectServerModuleActions,
@@ -46,6 +50,11 @@ export type CreateServerRequestHandlerWithModulesOptions = {
     "env" | "logger" | "actions" | "configureApp"
   >;
 };
+
+export type PrepareServerRequestHandlerWithModulesOptions =
+  CreateServerRequestHandlerWithModulesOptions & {
+    studioRuntimeOptions?: CreateStudioRuntimePublicationOptions;
+  };
 
 export type ServerRequestHandlerWithModulesResult = {
   handler: ServerRequestHandler;
@@ -157,4 +166,48 @@ export function createServerRequestHandlerWithModules(
     dbConnection,
     dal,
   };
+}
+
+/**
+ * prepareServerRequestHandlerWithModules builds the startup-owned Studio
+ * runtime publication once, then composes it into the shared server handler.
+ */
+export async function prepareServerRequestHandlerWithModules(
+  options: PrepareServerRequestHandlerWithModulesOptions = {},
+): Promise<ServerRequestHandlerWithModulesResult> {
+  const rawEnv = options.env ?? process.env;
+  const env = parseServerEnv(rawEnv);
+  const logger =
+    options.logger ??
+    createConsoleLogger({
+      level: env.LOG_LEVEL,
+      context: {
+        runtime: "server",
+        service: env.SERVICE_NAME,
+      },
+    });
+  const moduleLoadReport =
+    options.moduleLoadReport ??
+    loadServerModules({
+      coreVersion: env.APP_VERSION,
+      logger,
+    });
+  const studioRuntimePublication =
+    options.serverOptions?.studioRuntimePublication ??
+    (await createStudioRuntimePublication({
+      ...options.studioRuntimeOptions,
+      studioVersion:
+        options.studioRuntimeOptions?.studioVersion ??
+        (rawEnv.APP_VERSION?.trim() || "0.0.0"),
+    }));
+
+  return createServerRequestHandlerWithModules({
+    ...options,
+    logger,
+    moduleLoadReport,
+    serverOptions: {
+      ...(options.serverOptions ?? {}),
+      studioRuntimePublication,
+    },
+  });
 }

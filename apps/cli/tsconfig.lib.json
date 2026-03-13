@@ -12,13 +12,10 @@
   "include": ["src/**/*.ts"],
   "references": [
     {
-      "path": "../../packages/modules/tsconfig.lib.json"
-    },
-    {
       "path": "../../packages/shared/tsconfig.lib.json"
     },
     {
-      "path": "../server/tsconfig.lib.json"
+      "path": "../../packages/modules/tsconfig.lib.json"
     }
   ]
 }

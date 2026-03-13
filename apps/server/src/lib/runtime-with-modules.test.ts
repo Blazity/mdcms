@@ -1,14 +1,22 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import {
   RuntimeError,
+  assertStudioBootstrapManifest,
   createConsoleLogger,
   type MdcmsModulePackage,
+  type StudioBootstrapManifest,
 } from "@mdcms/shared";
 
 import { buildServerModuleLoadReport } from "./module-loader.js";
-import { createServerRequestHandlerWithModules } from "./runtime-with-modules.js";
+import {
+  createServerRequestHandlerWithModules,
+  prepareServerRequestHandlerWithModules,
+} from "./runtime-with-modules.js";
 
 const env = {
   NODE_ENV: "test",
@@ -31,6 +39,19 @@ const logger = createConsoleLogger({
   level: "trace",
   sink: () => undefined,
 });
+
+async function withTempDir<T>(
+  prefix: string,
+  run: (directory: string) => Promise<T>,
+): Promise<T> {
+  const directory = await mkdtemp(join(tmpdir(), prefix));
+
+  try {
+    return await run(directory);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
 
 function createServerModule(
   id: string,
@@ -214,4 +235,73 @@ test("createServerRequestHandlerWithModules passes explicit composition-root dep
   } finally {
     await dbConnection.close();
   }
+});
+
+test("prepareServerRequestHandlerWithModules publishes module actions and studio runtime endpoints together", async () => {
+  await withTempDir("runtime-with-modules-", async (directory) => {
+    const sourceFile = join(directory, "remote.ts");
+    const outDir = join(directory, "studio-dist");
+    await writeFile(
+      sourceFile,
+      "export const mount = (_container: unknown, _ctx: unknown) => () => {};\n",
+      "utf8",
+    );
+
+    const { handler, dbConnection } =
+      await prepareServerRequestHandlerWithModules({
+        env,
+        logger,
+        studioRuntimeOptions: {
+          sourceFile,
+          outDir,
+          studioVersion: "1.0.0",
+        },
+      });
+
+    try {
+      const actionsResponse = await handler(
+        new Request("http://localhost/api/v1/actions"),
+      );
+      const actionsBody = (await actionsResponse.json()) as Array<{
+        id: string;
+      }>;
+
+      assert.equal(actionsResponse.status, 200);
+      assert.deepEqual(
+        actionsBody.map((entry) => entry.id),
+        ["core.system.ping", "domain.content.preview"],
+      );
+
+      const probeResponse = await handler(
+        new Request("http://localhost/api/v1/modules/core-system/ping"),
+      );
+
+      assert.equal(probeResponse.status, 200);
+
+      const bootstrapResponse = await handler(
+        new Request("http://localhost/api/v1/studio/bootstrap"),
+      );
+      const bootstrapBody = (await bootstrapResponse.json()) as {
+        data: StudioBootstrapManifest;
+      };
+
+      assert.equal(bootstrapResponse.status, 200);
+      assertStudioBootstrapManifest(bootstrapBody.data, "bootstrap.data");
+      assert.equal(bootstrapBody.data.mode, "module");
+
+      const assetResponse = await handler(
+        new Request(`http://localhost${bootstrapBody.data.entryUrl}`),
+      );
+      const assetBody = await assetResponse.text();
+
+      assert.equal(assetResponse.status, 200);
+      assert.equal(
+        assetResponse.headers.get("content-type"),
+        "text/javascript; charset=utf-8",
+      );
+      assert.equal(assetBody.length > 0, true);
+    } finally {
+      await dbConnection.close();
+    }
+  });
 });

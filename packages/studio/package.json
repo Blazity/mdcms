@@ -8,6 +8,13 @@
   "types": "./dist/index.d.ts",
   "exports": {
     "./package.json": "./package.json",
+    "./build-runtime": {
+      "@mdcms/source": "./src/lib/build-runtime.ts",
+      "bun": "./src/lib/build-runtime.ts",
+      "types": "./dist/lib/build-runtime.d.ts",
+      "import": "./dist/lib/build-runtime.js",
+      "default": "./dist/lib/build-runtime.js"
+    },
     ".": {
       "@mdcms/source": "./src/index.ts",
       "bun": "./src/index.ts",
@@ -37,7 +44,6 @@
   },
   "dependencies": {
     "@elysiajs/eden": "^1.4.8",
-    "@mdcms/server": "workspace:*",
     "@mdcms/shared": "workspace:*",
     "@tiptap/core": "^3.7.0",
     "@tiptap/markdown": "^3.7.0",

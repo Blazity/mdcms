@@ -1,5 +1,5 @@
 import { parseServerEnv } from "../lib/env.js";
-import { createServerRequestHandlerWithModules } from "../lib/runtime-with-modules.js";
+import { prepareServerRequestHandlerWithModules } from "../lib/runtime-with-modules.js";
 
 type BunServer = {
   stop: (closeActiveConnections?: boolean) => void;
@@ -15,7 +15,7 @@ type BunRuntime = {
 declare const Bun: BunRuntime;
 
 const env = parseServerEnv(process.env);
-const { handler } = createServerRequestHandlerWithModules({
+const { handler } = await prepareServerRequestHandlerWithModules({
   env: process.env,
 });
 

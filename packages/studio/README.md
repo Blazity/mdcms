@@ -99,6 +99,11 @@ export default function AdminPage() {
   - `dist/bootstrap/<buildId>.json`
 - `buildId` and `integritySha256` are derived from bundled artifact bytes.
 - `src/lib/remote-module.ts` provides the typed `RemoteStudioModule` mount entrypoint.
+- Under CMS-34, runtime artifacts are still built in `@mdcms/studio`, but publication now happens from `@mdcms/server` through:
+  - `GET /api/v1/studio/bootstrap`
+  - `GET /api/v1/studio/assets/:buildId/*`
+- The MVP bootstrap contract is fixed to `mode: "module"`.
+- Loader-side runtime fetch, integrity verification, and execution remain deferred to CMS-60.
 
 ## Build
 

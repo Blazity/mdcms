@@ -29,7 +29,6 @@
   "dependencies": {
     "@elysiajs/eden": "^1.4.8",
     "@mdcms/modules": "workspace:*",
-    "@mdcms/server": "workspace:*",
     "@mdcms/shared": "workspace:*",
     "elysia": "^1.4.25",
     "tslib": "^2.3.0",

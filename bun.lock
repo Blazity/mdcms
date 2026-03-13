@@ -25,7 +25,6 @@
       "dependencies": {
         "@elysiajs/eden": "^1.4.8",
         "@mdcms/modules": "workspace:*",
-        "@mdcms/server": "workspace:*",
         "@mdcms/shared": "workspace:*",
         "elysia": "^1.4.25",
         "tslib": "^2.3.0",
@@ -38,6 +37,7 @@
       "dependencies": {
         "@mdcms/modules": "workspace:*",
         "@mdcms/shared": "workspace:*",
+        "@mdcms/studio": "workspace:*",
         "better-auth": "^1.5.1",
         "drizzle-orm": "^0.45.1",
         "elysia": "^1.4.25",
@@ -84,6 +84,7 @@
       "name": "@mdcms/shared",
       "version": "0.0.1",
       "dependencies": {
+        "elysia": "^1.4.25",
         "tslib": "^2.3.0",
         "zod": "^4.3.6",
       },
@@ -93,7 +94,6 @@
       "version": "0.0.1",
       "dependencies": {
         "@elysiajs/eden": "^1.4.8",
-        "@mdcms/server": "workspace:*",
         "@mdcms/shared": "workspace:*",
         "@tiptap/core": "^3.7.0",
         "@tiptap/markdown": "^3.7.0",

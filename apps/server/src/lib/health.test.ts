@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { ActionCatalogItem } from "@mdcms/shared";
+import type { ActionCatalogItem, StudioBootstrapManifest } from "@mdcms/shared";
 
 import { createServerRequestHandler } from "./server.js";
 
@@ -166,6 +166,151 @@ test("unprefixed /actions path is rejected to enforce /api/v1 base path", async 
     now: () => new Date("2026-02-20T00:00:10.000Z"),
   });
   const response = await handler(new Request("http://localhost/actions"));
+  const body = (await response.json()) as Record<string, unknown>;
+
+  assert.equal(response.status, 404);
+  assert.equal(body.code, "NOT_FOUND");
+});
+
+test("GET /api/v1/studio/bootstrap returns studio runtime manifest when publication exists", async () => {
+  const manifest: StudioBootstrapManifest = {
+    apiVersion: "1",
+    studioVersion: "1.2.3",
+    mode: "module",
+    entryUrl: "/api/v1/studio/assets/build-123/runtime.mjs",
+    integritySha256: "abc123",
+    signature: "signature",
+    keyId: "key-1",
+    buildId: "build-123",
+    minStudioPackageVersion: "0.0.1",
+    minHostBridgeVersion: "1.0.0",
+    expiresAt: "2099-01-01T00:00:00.000Z",
+  };
+  const handler = createServerRequestHandler({
+    env: baseEnv,
+    now: () => new Date("2026-02-20T00:00:10.000Z"),
+    studioRuntimePublication: {
+      buildId: "build-123",
+      entryFile: "runtime.mjs",
+      manifest,
+      getAsset: async () => undefined,
+    },
+  });
+  const response = await handler(
+    new Request("http://localhost/api/v1/studio/bootstrap"),
+  );
+  const body = (await response.json()) as { data: StudioBootstrapManifest };
+
+  assert.equal(response.status, 200);
+  assert.equal(body.data.mode, "module");
+  assert.equal(body.data.buildId, "build-123");
+});
+
+test("GET /api/v1/studio/assets/:buildId/* returns runtime asset when present", async () => {
+  const encoder = new TextEncoder();
+  const handler = createServerRequestHandler({
+    env: baseEnv,
+    now: () => new Date("2026-02-20T00:00:10.000Z"),
+    studioRuntimePublication: {
+      buildId: "build-123",
+      entryFile: "runtime.mjs",
+      manifest: {
+        apiVersion: "1",
+        studioVersion: "1.2.3",
+        mode: "module",
+        entryUrl: "/api/v1/studio/assets/build-123/runtime.mjs",
+        integritySha256: "abc123",
+        signature: "signature",
+        keyId: "key-1",
+        buildId: "build-123",
+        minStudioPackageVersion: "0.0.1",
+        minHostBridgeVersion: "1.0.0",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      },
+      getAsset: async ({ buildId, assetPath }) =>
+        buildId === "build-123" && assetPath === "runtime.mjs"
+          ? {
+              absolutePath: "/tmp/runtime.mjs",
+              contentType: "text/javascript; charset=utf-8",
+              body: encoder.encode("export const ok = true;\n"),
+            }
+          : undefined,
+    },
+  });
+
+  const response = await handler(
+    new Request("http://localhost/api/v1/studio/assets/build-123/runtime.mjs"),
+  );
+  const body = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(
+    response.headers.get("content-type"),
+    "text/javascript; charset=utf-8",
+  );
+  assert.equal(body, "export const ok = true;\n");
+});
+
+test("GET /api/v1/studio/assets/:buildId/* returns NOT_FOUND envelope for unknown build id", async () => {
+  const handler = createServerRequestHandler({
+    env: baseEnv,
+    now: () => new Date("2026-02-20T00:00:10.000Z"),
+    studioRuntimePublication: {
+      buildId: "build-123",
+      entryFile: "runtime.mjs",
+      manifest: {
+        apiVersion: "1",
+        studioVersion: "1.2.3",
+        mode: "module",
+        entryUrl: "/api/v1/studio/assets/build-123/runtime.mjs",
+        integritySha256: "abc123",
+        signature: "signature",
+        keyId: "key-1",
+        buildId: "build-123",
+        minStudioPackageVersion: "0.0.1",
+        minHostBridgeVersion: "1.0.0",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      },
+      getAsset: async () => undefined,
+    },
+  });
+
+  const response = await handler(
+    new Request("http://localhost/api/v1/studio/assets/build-999/runtime.mjs"),
+  );
+  const body = (await response.json()) as Record<string, unknown>;
+
+  assert.equal(response.status, 404);
+  assert.equal(body.code, "NOT_FOUND");
+});
+
+test("GET /api/v1/studio/assets/:buildId/* returns NOT_FOUND envelope for missing asset", async () => {
+  const handler = createServerRequestHandler({
+    env: baseEnv,
+    now: () => new Date("2026-02-20T00:00:10.000Z"),
+    studioRuntimePublication: {
+      buildId: "build-123",
+      entryFile: "runtime.mjs",
+      manifest: {
+        apiVersion: "1",
+        studioVersion: "1.2.3",
+        mode: "module",
+        entryUrl: "/api/v1/studio/assets/build-123/runtime.mjs",
+        integritySha256: "abc123",
+        signature: "signature",
+        keyId: "key-1",
+        buildId: "build-123",
+        minStudioPackageVersion: "0.0.1",
+        minHostBridgeVersion: "1.0.0",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      },
+      getAsset: async () => undefined,
+    },
+  });
+
+  const response = await handler(
+    new Request("http://localhost/api/v1/studio/assets/build-123/missing.mjs"),
+  );
   const body = (await response.json()) as Record<string, unknown>;
 
   assert.equal(response.status, 404);

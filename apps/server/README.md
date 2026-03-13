@@ -26,6 +26,17 @@ Backend API/runtime package boundary for MDCMS.
 - `isActionVisible` defaults to allow-all and is designed for future auth integration tasks.
 - Unprefixed `/actions` paths are rejected to keep `/api/v1` enforcement consistent across server and consumers.
 
+## Studio Runtime Publication (CMS-34)
+
+- Server exposes the canonical public Studio runtime publication endpoints:
+  - `GET /api/v1/studio/bootstrap`
+  - `GET /api/v1/studio/assets/:buildId/*`
+- `prepareServerRequestHandlerWithModules(...)` prepares one startup-owned Studio runtime publication snapshot and injects it into the shared request handler.
+- The bootstrap payload is served as `{ data: StudioBootstrapManifest }`.
+- MVP bootstrap execution mode is fixed to `module`.
+- `buildId` identifies an immutable asset snapshot. Asset URLs under `/api/v1/studio/assets/:buildId/*` are content-addressed and only serve files from the active published build root.
+- Missing publications, unknown `buildId` values, and missing asset paths normalize to the standard `NOT_FOUND` error envelope.
+
 ## Explicit Target Routing Guard (CMS-14)
 
 - The server enforces explicit request routing for scoped API prefixes before handler execution.

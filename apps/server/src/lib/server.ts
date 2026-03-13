@@ -7,14 +7,15 @@ import {
   type HealthzPayload,
   type Logger,
 } from "@mdcms/shared";
+import { createActionCatalogContractApp } from "@mdcms/shared/action-catalog-contract";
 import { Elysia } from "elysia";
 
-import { createActionCatalogContractApp } from "./action-catalog-contract.js";
 import { parseServerEnv } from "./env.js";
 import { toServerErrorResponse } from "./errors.js";
 import { createHealthzPayload } from "./health.js";
 import { createJsonResponse, resolvePathname } from "./http-utils.js";
 import { createTargetRoutingGuard } from "./target-routing-guard.js";
+import type { StudioRuntimePublication } from "./studio-bootstrap.js";
 
 export type ServerRequestHandler = (request: Request) => Promise<Response>;
 
@@ -27,6 +28,7 @@ export type CreateServerRequestHandlerOptions = {
   startedAtMs?: number;
   healthCheck?: () => HealthzPayload;
   actions?: ActionCatalogItem[];
+  studioRuntimePublication?: StudioRuntimePublication;
   isActionVisible?: ActionCatalogVisibilityPolicy;
   configureApp?: ServerAppConfigurator;
 };
@@ -103,6 +105,7 @@ async function filterVisibleActions(
 function createServerApp(options: {
   healthCheck: () => HealthzPayload;
   actions: ActionCatalogItem[];
+  studioRuntimePublication?: StudioRuntimePublication;
   isActionVisible: ActionCatalogVisibilityPolicy;
   configureApp?: ServerAppConfigurator;
 }) {
@@ -132,7 +135,46 @@ function createServerApp(options: {
     },
   });
 
-  const app = new Elysia().get("/healthz", () => options.healthCheck());
+  const app = new Elysia()
+    .get("/healthz", () => options.healthCheck())
+    .get("/api/v1/studio/bootstrap", () => {
+      if (!options.studioRuntimePublication) {
+        return createNotFoundResponse();
+      }
+
+      return {
+        data: options.studioRuntimePublication.manifest,
+      };
+    })
+    .get("/api/v1/studio/assets/:buildId/*", async ({ params }) => {
+      if (!options.studioRuntimePublication) {
+        return createNotFoundResponse();
+      }
+
+      const buildId = params.buildId;
+      const assetPath =
+        (params as unknown as Record<string, string>)["*"] ?? "";
+
+      if (!assetPath) {
+        return createNotFoundResponse();
+      }
+
+      const asset = await options.studioRuntimePublication.getAsset({
+        buildId,
+        assetPath,
+      });
+
+      if (!asset) {
+        return createNotFoundResponse();
+      }
+
+      return new Response(asset.body, {
+        status: 200,
+        headers: {
+          "content-type": asset.contentType,
+        },
+      });
+    });
 
   options.configureApp?.(app);
 
@@ -211,6 +253,7 @@ export function createServerRequestHandler(
   const app = createServerApp({
     healthCheck,
     actions,
+    studioRuntimePublication: options.studioRuntimePublication,
     isActionVisible,
     configureApp: options.configureApp,
   });

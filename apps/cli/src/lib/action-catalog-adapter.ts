@@ -5,7 +5,7 @@ import {
   assertActionCatalogList,
   type ActionCatalogItem,
 } from "@mdcms/shared";
-import type { ActionCatalogContractApp } from "@mdcms/server";
+import type { ActionCatalogContractApp } from "@mdcms/shared/action-catalog-contract";
 
 export type ActionCatalogHeaders = Record<string, string>;
 
