@@ -1,6 +1,8 @@
 import { installedModules } from "@mdcms/modules";
 import {
   RuntimeError,
+  assertMdcmsModulePackage,
+  assertModuleManifestCompatibility,
   buildRuntimeModulePlan,
   type ModuleLoadReport,
   type CliActionAlias,
@@ -8,6 +10,7 @@ import {
   type CliPreflightHook,
   type Logger,
   type MdcmsModulePackage,
+  type SkippedModule,
 } from "@mdcms/shared";
 
 type CliModulePackage = MdcmsModulePackage;
@@ -47,12 +50,38 @@ export function buildCliModuleLoadReport(
     });
   }
 
+  const evaluatedModuleIds: string[] = [];
+  const skipped: SkippedModule[] = [];
+
+  for (const moduleCandidate of moduleCandidates) {
+    assertMdcmsModulePackage(moduleCandidate, "module");
+
+    const modulePackage = moduleCandidate as MdcmsModulePackage;
+    assertModuleManifestCompatibility(modulePackage.manifest, {
+      coreVersion: options.coreVersion,
+      supportedApiVersion: options.supportedApiVersion,
+    });
+
+    evaluatedModuleIds.push(modulePackage.manifest.id);
+
+    if (modulePackage.cli === undefined) {
+      skipped.push({
+        id: modulePackage.manifest.id,
+        reason: "missing-surface",
+        details: "Module does not expose a cli surface.",
+      });
+    }
+  }
+
+  evaluatedModuleIds.sort((left, right) => left.localeCompare(right));
+  skipped.sort((left, right) => left.id.localeCompare(right.id));
+
   return {
-    evaluatedModuleIds: runtimePlan.moduleIds,
+    evaluatedModuleIds,
     loadedModuleIds: runtimePlan.moduleIds,
-    skippedModuleIds: [],
+    skippedModuleIds: skipped.map((entry) => entry.id),
     loaded: runtimePlan.loaded,
-    skipped: [],
+    skipped,
   };
 }
 

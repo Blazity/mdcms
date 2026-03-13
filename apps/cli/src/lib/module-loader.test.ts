@@ -21,7 +21,7 @@ const testLogger = createConsoleLogger({
   sink: () => undefined,
 });
 
-test("loadCliModules uses deterministic manifest.id ordering", () => {
+test("loadCliModules uses deterministic dependency-aware ordering", () => {
   const reportA = loadCliModules({
     coreVersion: "1.0.0",
     logger: testLogger,
@@ -33,13 +33,36 @@ test("loadCliModules uses deterministic manifest.id ordering", () => {
 
   assert.deepEqual(reportA.loadedModuleIds, reportB.loadedModuleIds);
   assert.deepEqual(reportA.skippedModuleIds, reportB.skippedModuleIds);
+  assert.deepEqual(
+    reportA.loaded.map((moduleResult) => moduleResult.id),
+    reportA.loadedModuleIds,
+  );
 
-  const expectedOrder = [...installedModules]
+  const loadedModules = [...installedModules]
     .filter((modulePackage) => modulePackage.cli !== undefined)
-    .map((modulePackage) => modulePackage.manifest.id)
-    .sort((left, right) => left.localeCompare(right));
+    .map((modulePackage) => modulePackage.manifest);
+  const positions = new Map(
+    reportA.loadedModuleIds.map((moduleId, index) => [moduleId, index]),
+  );
 
-  assert.deepEqual(reportA.loadedModuleIds, expectedOrder);
+  for (const manifest of loadedModules) {
+    const currentPosition = positions.get(manifest.id);
+    assert.notEqual(currentPosition, undefined);
+
+    for (const dependencyId of manifest.dependsOn ?? []) {
+      const dependencyPosition = positions.get(dependencyId);
+
+      if (dependencyPosition === undefined || currentPosition === undefined) {
+        continue;
+      }
+
+      assert.equal(
+        dependencyPosition < currentPosition,
+        true,
+        `${manifest.id} should be ordered after ${dependencyId}`,
+      );
+    }
+  }
 });
 
 function createCliModule(
@@ -95,7 +118,45 @@ test("buildCliModuleLoadReport uses strict dependency ordering", () => {
     },
   );
 
-  assert.deepEqual(report.loadedModuleIds, ["z.core", "a.feature", "m.feature"]);
+  assert.deepEqual(report.loadedModuleIds, [
+    "z.core",
+    "a.feature",
+    "m.feature",
+  ]);
+});
+
+test("buildCliModuleLoadReport keeps missing-surface entries in skipped report", () => {
+  const noCliSurfaceModule: MdcmsModulePackage = {
+    manifest: {
+      id: "b.no-cli",
+      version: "1.0.0",
+      apiVersion: "1",
+      minCoreVersion: "0.0.1",
+    },
+  };
+
+  const report = buildCliModuleLoadReport(
+    [
+      createCliModule("a.feature"),
+      noCliSurfaceModule,
+      createCliModule("z.core"),
+    ],
+    {
+      coreVersion: "1.0.0",
+      logger: testLogger,
+    },
+  );
+
+  assert.deepEqual(report.evaluatedModuleIds, [
+    "a.feature",
+    "b.no-cli",
+    "z.core",
+  ]);
+  assert.deepEqual(report.skippedModuleIds, ["b.no-cli"]);
+  assert.deepEqual(
+    report.skipped.map((entry) => ({ id: entry.id, reason: entry.reason })),
+    [{ id: "b.no-cli", reason: "missing-surface" }],
+  );
 });
 
 test("CLI collectors preserve strict loaded module order", () => {
