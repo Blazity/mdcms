@@ -72,16 +72,15 @@ export function createServerRequestHandlerWithModules(
         service: env.SERVICE_NAME,
       },
     });
-
-  const dbConnection = createDatabaseConnection({ env: rawEnv });
-  const dal = createContentDAL({ db: dbConnection.db });
-
   const moduleLoadReport =
     options.moduleLoadReport ??
     loadServerModules({
       coreVersion: env.APP_VERSION,
       logger,
     });
+
+  const dbConnection = createDatabaseConnection({ env: rawEnv });
+  const dal = createContentDAL({ db: dbConnection.db });
   const authService = createAuthService({ db: dbConnection.db, env: rawEnv });
   const contentStore = createDatabaseContentStore({ db: dbConnection.db });
   const schemaStore = createDatabaseSchemaStore({ db: dbConnection.db });

@@ -1,6 +1,7 @@
 import { installedModules } from "@mdcms/modules";
 import {
-  buildModuleLoadReport,
+  RuntimeError,
+  buildRuntimeModulePlan,
   type ModuleLoadReport,
   type ActionCatalogItem,
   type Logger,
@@ -26,18 +27,36 @@ export function buildServerModuleLoadReport(
   moduleCandidates: readonly unknown[],
   options: BuildServerModuleLoadReportOptions,
 ): ServerModuleLoadReport {
-  return buildModuleLoadReport(moduleCandidates, {
+  const runtimePlan = buildRuntimeModulePlan(moduleCandidates, {
     coreVersion: options.coreVersion,
     logger: options.logger,
     supportedApiVersion: options.supportedApiVersion,
     runtime: "server",
     surface: "server",
-    missingSurfaceDetails: "Module does not expose a server surface.",
     mapLoadedModule: (modulePackage) => ({
       ...modulePackage,
       server: modulePackage.server!,
     }),
   });
+
+  if (!runtimePlan.ok) {
+    throw new RuntimeError({
+      code: "INVALID_MODULE_BOOTSTRAP",
+      message: "Server module bootstrap failed.",
+      statusCode: 500,
+      details: {
+        violations: runtimePlan.violations,
+      },
+    });
+  }
+
+  return {
+    evaluatedModuleIds: runtimePlan.moduleIds,
+    loadedModuleIds: runtimePlan.moduleIds,
+    skippedModuleIds: [],
+    loaded: runtimePlan.loaded,
+    skipped: [],
+  };
 }
 
 export function loadServerModules(

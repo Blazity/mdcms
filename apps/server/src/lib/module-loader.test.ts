@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { installedModules } from "@mdcms/modules";
-import { createConsoleLogger, type MdcmsModulePackage } from "@mdcms/shared";
+import {
+  RuntimeError,
+  createConsoleLogger,
+  type MdcmsModulePackage,
+} from "@mdcms/shared";
 
 import {
   buildServerModuleLoadReport,
@@ -35,10 +39,10 @@ test("loadServerModules uses deterministic manifest.id ordering", () => {
   assert.deepEqual(reportA.loadedModuleIds, expectedOrder);
 });
 
-test("buildServerModuleLoadReport emits deterministic skip reasons", () => {
-  const validModule: MdcmsModulePackage = {
+test("buildServerModuleLoadReport fails fast with deterministic violations", () => {
+  const actionOwnerA: MdcmsModulePackage = {
     manifest: {
-      id: "c.valid",
+      id: "a.owner",
       version: "1.0.0",
       apiVersion: "1",
       minCoreVersion: "0.0.1",
@@ -47,57 +51,82 @@ test("buildServerModuleLoadReport emits deterministic skip reasons", () => {
       mount: () => undefined,
       actions: [
         {
-          id: "c.valid.action",
+          id: "shared.action",
           kind: "query",
           method: "GET",
-          path: "/api/v1/c.valid/action",
+          path: "/api/v1/a.owner/action",
           permissions: ["content:read"],
         },
       ],
     },
   };
 
-  const incompatibleModule: MdcmsModulePackage = {
+  const actionOwnerB: MdcmsModulePackage = {
     manifest: {
-      id: "a.incompatible",
+      id: "b.owner",
       version: "1.0.0",
       apiVersion: "1",
-      minCoreVersion: "9.0.0",
+      minCoreVersion: "0.0.1",
+    },
+    server: {
+      mount: () => undefined,
+      actions: [
+        {
+          id: "shared.action",
+          kind: "query",
+          method: "GET",
+          path: "/api/v1/b.owner/action",
+          permissions: ["content:read"],
+        },
+      ],
+    },
+  };
+
+  const missingDependencyModule: MdcmsModulePackage = {
+    manifest: {
+      id: "c.missing-dependency",
+      version: "1.0.0",
+      apiVersion: "1",
+      minCoreVersion: "0.0.1",
+      dependsOn: ["missing.module"],
     },
     server: {
       mount: () => undefined,
     },
   };
 
-  const missingSurfaceModule: MdcmsModulePackage = {
-    manifest: {
-      id: "b.no-server",
-      version: "1.0.0",
-      apiVersion: "1",
-      minCoreVersion: "0.0.1",
-    },
-  };
+  assert.throws(
+    () =>
+      buildServerModuleLoadReport(
+        [actionOwnerA, actionOwnerB, missingDependencyModule],
+        {
+          coreVersion: "1.0.0",
+          logger: testLogger,
+        },
+      ),
+    (error) => {
+      assert.equal(error instanceof RuntimeError, true);
 
-  const report = buildServerModuleLoadReport(
-    [
-      { manifest: { id: "z.invalid" } },
-      validModule,
-      incompatibleModule,
-      missingSurfaceModule,
-    ],
-    {
-      coreVersion: "1.0.0",
-      logger: testLogger,
-    },
-  );
+      if (!(error instanceof RuntimeError)) {
+        return false;
+      }
 
-  assert.deepEqual(report.loadedModuleIds, ["c.valid"]);
-  assert.deepEqual(
-    report.skipped.map((entry) => ({ id: entry.id, reason: entry.reason })),
-    [
-      { id: "a.incompatible", reason: "incompatible" },
-      { id: "b.no-server", reason: "missing-surface" },
-      { id: "z.invalid", reason: "invalid-package" },
-    ],
+      assert.equal(error.code, "INVALID_MODULE_BOOTSTRAP");
+      const details = error.details as
+        | { violations?: Array<{ code: string; moduleId: string }> }
+        | undefined;
+      const violations = details?.violations ?? [];
+
+      assert.deepEqual(
+        violations.map((entry) => entry.code),
+        ["DUPLICATE_ACTION_ID", "MISSING_DEPENDENCY"],
+      );
+      assert.deepEqual(
+        violations.map((entry) => entry.moduleId),
+        ["b.owner", "c.missing-dependency"],
+      );
+
+      return true;
+    },
   );
 });
