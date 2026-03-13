@@ -186,6 +186,22 @@ function toErrorDetails(error: unknown): string {
   return "Unknown module bootstrap error.";
 }
 
+function defaultLoadedEvent(runtime: string): string {
+  return `${runtime}_module_loaded`;
+}
+
+function defaultSkippedEvent(runtime: string): string {
+  return `${runtime}_module_skipped`;
+}
+
+function defaultSummaryEvent(runtime: string): string {
+  return `${runtime}_module_load_summary`;
+}
+
+function defaultMissingSurfaceDetails(surface: ModuleSurface): string {
+  return `Module does not expose a ${surface} surface.`;
+}
+
 function findDuplicateModuleIds(
   moduleCandidates: readonly ValidatedModuleCandidate<MdcmsModulePackage>[],
 ): Set<string> {
@@ -498,24 +514,109 @@ export function buildModuleLoadReport<
   moduleCandidates: readonly unknown[],
   options: BuildModuleLoadReportOptions<TSurface, TModulePackage>,
 ): ModuleLoadReport<TSurface, TModulePackage> {
-  const runtimePlan = buildRuntimeModulePlan(moduleCandidates, options);
-
-  if (!runtimePlan.ok) {
-    throw new RuntimeError({
-      code: "INVALID_MODULE_BOOTSTRAP",
-      message: "Module bootstrap failed.",
-      statusCode: 500,
-      details: {
-        violations: runtimePlan.violations,
+  const logger =
+    options.logger ??
+    createConsoleLogger({
+      level: "info",
+      context: {
+        runtime: options.runtime,
       },
+    });
+  const sortedCandidates: SortedModuleCandidate[] = [...moduleCandidates]
+    .map((candidate, index) => ({
+      id: resolveModuleId(candidate, index),
+      index,
+      moduleCandidate: candidate,
+    }))
+    .sort(compareByModuleId);
+  const loaded: LoadedModule<TSurface, TModulePackage>[] = [];
+  const skipped: SkippedModule[] = [];
+
+  for (const candidate of sortedCandidates) {
+    try {
+      assertMdcmsModulePackage(
+        candidate.moduleCandidate,
+        `modules[${candidate.id}]`,
+      );
+
+      const modulePackage = candidate.moduleCandidate as TModulePackage;
+
+      assertModuleManifestCompatibility(modulePackage.manifest, {
+        coreVersion: options.coreVersion,
+        supportedApiVersion: options.supportedApiVersion,
+      });
+
+      const surfaceValue = modulePackage[options.surface];
+
+      if (!surfaceValue) {
+        skipped.push({
+          id: modulePackage.manifest.id,
+          reason: "missing-surface",
+          details:
+            options.missingSurfaceDetails ??
+            defaultMissingSurfaceDetails(options.surface),
+        });
+
+        continue;
+      }
+
+      loaded.push({
+        id: modulePackage.manifest.id,
+        modulePackage: options.mapLoadedModule
+          ? options.mapLoadedModule(modulePackage)
+          : ({
+              ...modulePackage,
+              [options.surface]: surfaceValue,
+            } as unknown as ModuleWithSurface<TSurface, TModulePackage>),
+      });
+    } catch (error) {
+      const reason: ModuleLoadSkipReason =
+        error instanceof RuntimeError &&
+        error.code === "INCOMPATIBLE_MODULE_MANIFEST"
+          ? "incompatible"
+          : "invalid-package";
+
+      skipped.push({
+        id: candidate.id,
+        reason,
+        details: toErrorDetails(error),
+      });
+    }
+  }
+
+  const loadedEvent = options.loadedEvent ?? defaultLoadedEvent(options.runtime);
+  const skippedEvent =
+    options.skippedEvent ?? defaultSkippedEvent(options.runtime);
+  const summaryEvent =
+    options.summaryEvent ?? defaultSummaryEvent(options.runtime);
+
+  for (const moduleResult of loaded) {
+    logger.info(loadedEvent, {
+      moduleId: moduleResult.id,
     });
   }
 
-  return {
-    evaluatedModuleIds: runtimePlan.moduleIds,
-    loadedModuleIds: runtimePlan.moduleIds,
-    skippedModuleIds: [],
-    loaded: runtimePlan.loaded,
-    skipped: [],
+  for (const skippedModule of skipped) {
+    logger.warn(skippedEvent, {
+      moduleId: skippedModule.id,
+      reason: skippedModule.reason,
+      details: skippedModule.details,
+    });
+  }
+
+  const report: ModuleLoadReport<TSurface, TModulePackage> = {
+    evaluatedModuleIds: sortedCandidates.map((candidate) => candidate.id),
+    loadedModuleIds: loaded.map((moduleResult) => moduleResult.id),
+    skippedModuleIds: skipped.map((moduleResult) => moduleResult.id),
+    loaded,
+    skipped,
   };
+
+  logger.info(summaryEvent, {
+    evaluatedModuleIds: report.evaluatedModuleIds,
+    loadedModuleIds: report.loadedModuleIds,
+    skippedModuleIds: report.skippedModuleIds,
+  });
+
+  return report;
 }

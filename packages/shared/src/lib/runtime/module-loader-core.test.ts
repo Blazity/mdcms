@@ -3,7 +3,10 @@ import { test } from "node:test";
 
 import type { MdcmsModulePackage } from "../contracts/extensibility.js";
 import { createConsoleLogger } from "./logger.js";
-import { buildRuntimeModulePlan } from "./module-loader-core.js";
+import {
+  buildModuleLoadReport,
+  buildRuntimeModulePlan,
+} from "./module-loader-core.js";
 
 function createNoopLogger() {
   return createConsoleLogger({
@@ -233,6 +236,33 @@ test("buildRuntimeModulePlan sorts violations deterministically", () => {
       "INCOMPATIBLE_MANIFEST",
       "INVALID_PACKAGE",
       "MISSING_DEPENDENCY",
+    ],
+  );
+});
+
+test("buildModuleLoadReport remains skip-based compatibility wrapper", () => {
+  const report = buildModuleLoadReport(
+    [
+      { manifest: { id: "z.invalid" } },
+      createModule("c.valid", { cli: true, minCoreVersion: "0.0.1" }),
+      createModule("a.incompatible", { cli: true, minCoreVersion: "9.0.0" }),
+      createModule("b.no-cli", { server: true }),
+    ],
+    {
+      coreVersion: "1.0.0",
+      surface: "cli",
+      runtime: "cli",
+      logger: createNoopLogger(),
+    },
+  );
+
+  assert.deepEqual(report.loadedModuleIds, ["c.valid"]);
+  assert.deepEqual(
+    report.skipped.map((entry) => ({ id: entry.id, reason: entry.reason })),
+    [
+      { id: "a.incompatible", reason: "incompatible" },
+      { id: "b.no-cli", reason: "missing-surface" },
+      { id: "z.invalid", reason: "invalid-package" },
     ],
   );
 });
