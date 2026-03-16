@@ -4,15 +4,14 @@ This directory is the live documentation entrypoint for MDCMS. It replaces the o
 
 ## Canonical Sources
 
-- Live product and architecture specs: `/Users/karol/Desktop/mdcms/docs/specs/README.md`
-- Architecture decision records: `/Users/karol/Desktop/mdcms/docs/adrs/README.md`
-- Execution roadmap and task tracking: `/Users/karol/Desktop/mdcms/ROADMAP_TASKS.md`
+- Live product and architecture specs: `specs/README.md`
+- Architecture decision records: `adrs/README.md`
 
 ## Directory Layout
 
-- `/Users/karol/Desktop/mdcms/docs/specs/` contains the live domain specs. Contracts stay inside the owning spec.
-- `/Users/karol/Desktop/mdcms/docs/adrs/` contains the accepted architectural decisions and trade-offs.
-- `/Users/karol/Desktop/mdcms/docs/plans/` remains a workspace for temporary implementation/design plans and is not canonical product documentation.
+- `specs/` contains the live domain specs. Contracts stay inside the owning spec.
+- `adrs/` contains the accepted architectural decisions and trade-offs.
+- `plans/` remains a workspace for temporary implementation/design plans and is not canonical product documentation (local-only, not committed).
 
 ## Working Rules
 
@@ -22,5 +21,5 @@ This directory is the live documentation entrypoint for MDCMS. It replaces the o
 
 ## Quick Navigation
 
-- Specs index: `/Users/karol/Desktop/mdcms/docs/specs/README.md`
-- ADR index: `/Users/karol/Desktop/mdcms/docs/adrs/README.md`
+- Specs index: `specs/README.md`
+- ADR index: `adrs/README.md`
