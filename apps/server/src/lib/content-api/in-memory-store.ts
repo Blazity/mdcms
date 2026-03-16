@@ -611,13 +611,22 @@ export function createInMemoryContentStore(): ContentStore {
       return restored;
     },
 
-    async listVersions(scope, documentId) {
+    async listVersions(scope, documentId, query = {}) {
       const store = getScopeStore(scope);
       const publishedSnapshots = getScopePublishedSnapshots(scope);
       const normalizedDocumentId = assertRequiredString(
         documentId,
         "documentId",
       );
+      const limit = parsePositiveInt(query.limit, "limit", {
+        defaultValue: DEFAULT_LIMIT,
+        min: 1,
+        max: MAX_LIMIT,
+      });
+      const offset = parsePositiveInt(query.offset, "offset", {
+        defaultValue: 0,
+        min: 0,
+      });
       const existing = store.get(normalizedDocumentId);
 
       if (!existing) {
@@ -635,9 +644,14 @@ export function createInMemoryContentStore(): ContentStore {
         ...(publishedSnapshots.get(normalizedDocumentId)?.values() ?? []),
       ].sort((left, right) => right.version - left.version);
 
-      return snapshots.map((snapshot) =>
-        toVersionSummary(scope, existing, snapshot),
-      );
+      return {
+        rows: snapshots
+          .slice(offset, offset + limit)
+          .map((snapshot) => toVersionSummary(scope, existing, snapshot)),
+        total: snapshots.length,
+        limit,
+        offset,
+      };
     },
 
     async getVersion(scope, documentId, version) {

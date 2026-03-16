@@ -110,6 +110,8 @@ Backend API/runtime package boundary for MDCMS.
   - `POST /api/v1/content/:documentId/unpublish`
 - List endpoint query contract supports:
   - `type`, `path`, `locale`, `slug`, `published`, `isDeleted`, `hasUnpublishedChanges`, `draft`, `resolve`, `project`, `environment`, `limit`, `offset`, `sort`, `order`, `q`
+- Version-history list query contract supports:
+  - `limit`, `offset`
 - Pagination defaults:
   - `limit` defaults to `20`
   - `limit` max is `100`
@@ -123,6 +125,7 @@ Backend API/runtime package boundary for MDCMS.
 - Restore/version-history semantics:
   - `POST /api/v1/content/:documentId/restore` is exact undelete of the current head row. It clears `documents.is_deleted`, preserves the current head content and `published_version`, and does not append a new immutable version row.
   - `GET /api/v1/content/:documentId/versions` returns immutable publish history for the routed document in descending version order.
+  - `GET /api/v1/content/:documentId/versions` uses the standard list envelope `{ data, pagination }`.
   - `GET /api/v1/content/:documentId/versions/:version` returns one immutable publish snapshot.
   - `POST /api/v1/content/:documentId/versions/:version/restore` restores a historical snapshot back into the mutable head.
   - version restore defaults to `targetStatus=draft`, which updates only the mutable head row, keeps existing `published_version`, and marks `documents.has_unpublished_changes = TRUE`.

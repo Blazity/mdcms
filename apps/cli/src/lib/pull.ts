@@ -3,6 +3,10 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import type {
+  ApiPaginatedEnvelope,
+  ContentDocumentResponse,
+} from "@mdcms/shared";
 import { RuntimeError } from "@mdcms/shared";
 
 import type { CliCommand, CliCommandContext } from "./framework.js";
@@ -13,17 +17,18 @@ import {
   type ScopedManifest,
 } from "./manifest.js";
 
-type ContentDocumentPayload = {
-  documentId: string;
-  type: string;
-  locale: string;
-  path: string;
-  format: "md" | "mdx";
-  frontmatter: Record<string, unknown>;
-  body: string;
-  draftRevision: number;
-  publishedVersion: number | null;
-};
+type ContentDocumentPayload = Pick<
+  ContentDocumentResponse,
+  | "documentId"
+  | "type"
+  | "locale"
+  | "path"
+  | "format"
+  | "frontmatter"
+  | "body"
+  | "draftRevision"
+  | "publishedVersion"
+>;
 
 type PullChangeStatus =
   | "Modified"
@@ -157,17 +162,10 @@ async function fetchContentPage(
   );
 
   const body = (await response.json().catch(() => undefined)) as
-    | {
+    | ({
         code?: string;
         message?: string;
-        data?: ContentDocumentPayload[];
-        pagination?: {
-          hasMore: boolean;
-          offset: number;
-          limit: number;
-          total: number;
-        };
-      }
+      } & Partial<ApiPaginatedEnvelope<ContentDocumentPayload>>)
     | undefined;
 
   if (!response.ok) {

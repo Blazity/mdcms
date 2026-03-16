@@ -5,19 +5,22 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
 
+import type { ContentDocumentResponse } from "@mdcms/shared";
+
 import { runMdcmsCli } from "./framework.js";
 
-type RemoteDocument = {
-  documentId: string;
-  type: string;
-  locale: string;
-  path: string;
-  format: "md" | "mdx";
-  frontmatter: Record<string, unknown>;
-  body: string;
-  draftRevision: number;
-  publishedVersion: number | null;
-};
+type RemoteDocument = Pick<
+  ContentDocumentResponse,
+  | "documentId"
+  | "type"
+  | "locale"
+  | "path"
+  | "format"
+  | "frontmatter"
+  | "body"
+  | "draftRevision"
+  | "publishedVersion"
+>;
 
 function createContentListResponse(input: {
   rows: RemoteDocument[];

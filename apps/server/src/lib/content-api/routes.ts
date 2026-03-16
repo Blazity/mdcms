@@ -1,3 +1,4 @@
+import type { ApiPaginatedEnvelope, PaginationMetadata } from "@mdcms/shared";
 import { RuntimeError } from "@mdcms/shared";
 
 import type { ApiKeyOperationScope } from "../auth.js";
@@ -17,6 +18,7 @@ import {
   toVersionSummaryResponse,
 } from "./responses.js";
 import type {
+  ContentListResult,
   ContentListQuery,
   ContentPublishPayload,
   ContentRestoreVersionPayload,
@@ -30,6 +32,27 @@ function resolveContentReadScope(
 ): ApiKeyOperationScope {
   const draft = parseBoolean(query.draft, "draft");
   return draft === true ? "content:read:draft" : "content:read";
+}
+
+function toPaginationMetadata(
+  result: Pick<ContentListResult<unknown>, "total" | "limit" | "offset">,
+): PaginationMetadata {
+  return {
+    total: result.total,
+    limit: result.limit,
+    offset: result.offset,
+    hasMore: result.offset + result.limit < result.total,
+  };
+}
+
+function toPaginatedResponse<Row, Output>(
+  result: ContentListResult<Row>,
+  mapper: (row: Row) => Output,
+): ApiPaginatedEnvelope<Output> {
+  return {
+    data: result.rows.map((row) => mapper(row)),
+    pagination: toPaginationMetadata(result),
+  };
 }
 
 export function mountContentApiRoutes(
@@ -52,15 +75,7 @@ export function mountContentApiRoutes(
       });
       const result = await options.store.list(scope, typedQuery);
 
-      return {
-        data: result.rows.map((row) => toDocumentResponse(row)),
-        pagination: {
-          total: result.total,
-          limit: result.limit,
-          offset: result.offset,
-          hasMore: result.offset + result.limit < result.total,
-        },
-      };
+      return toPaginatedResponse(result, (row) => toDocumentResponse(row));
     });
   });
 
@@ -109,9 +124,10 @@ export function mountContentApiRoutes(
 
   contentApp.get?.(
     "/api/v1/content/:documentId/versions",
-    ({ request, params }: any) => {
+    ({ request, params, query }: any) => {
       return executeWithRuntimeErrorsHandled(request, async () => {
         const scope = pickScope(request);
+        const typedQuery = query as ContentListQuery;
 
         await options.authorize(request, {
           requiredScope: "content:read",
@@ -144,9 +160,12 @@ export function mountContentApiRoutes(
         const versions = await options.store.listVersions(
           scope,
           params.documentId,
+          typedQuery,
         );
 
-        for (const path of new Set(versions.map((version) => version.path))) {
+        for (const path of new Set(
+          versions.rows.map((version) => version.path),
+        )) {
           if (path !== existing.path) {
             await options.authorize(request, {
               requiredScope: "content:read",
@@ -157,9 +176,9 @@ export function mountContentApiRoutes(
           }
         }
 
-        return {
-          data: versions.map((version) => toVersionSummaryResponse(version)),
-        };
+        return toPaginatedResponse(versions, (version) =>
+          toVersionSummaryResponse(version),
+        );
       });
     },
   );

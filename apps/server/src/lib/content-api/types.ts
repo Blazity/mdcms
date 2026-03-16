@@ -1,3 +1,8 @@
+import type {
+  ContentDocumentResponse,
+  ContentVersionDocumentResponse,
+  ContentVersionSummaryResponse,
+} from "@mdcms/shared";
 import type { AuthorizationRequirement } from "../auth.js";
 import type { DrizzleDatabase } from "../db.js";
 import { z } from "zod";
@@ -25,47 +30,13 @@ export type ContentScope = {
   environment: string;
 };
 
-export type ContentDocument = {
-  documentId: string;
-  translationGroupId: string;
-  project: string;
-  environment: string;
-  path: string;
-  type: string;
-  locale: string;
-  format: ContentFormat;
-  isDeleted: boolean;
-  hasUnpublishedChanges: boolean;
-  version: number;
-  publishedVersion: number | null;
-  draftRevision: number;
-  frontmatter: Record<string, unknown>;
-  body: string;
-  createdBy: string;
-  createdAt: string;
+export type ContentDocument = ContentDocumentResponse & {
   updatedBy: string;
-  updatedAt: string;
 };
 
-export type ContentVersionSummary = {
-  documentId: string;
-  translationGroupId: string;
-  project: string;
-  environment: string;
-  version: number;
-  path: string;
-  type: string;
-  locale: string;
-  format: ContentFormat;
-  publishedAt: string;
-  publishedBy: string;
-  changeSummary?: string;
-};
+export type ContentVersionSummary = ContentVersionSummaryResponse;
 
-export type ContentVersionDocument = ContentVersionSummary & {
-  frontmatter: Record<string, unknown>;
-  body: string;
-};
+export type ContentVersionDocument = ContentVersionDocumentResponse;
 
 export type ContentPublishedSnapshot = {
   version: number;
@@ -130,6 +101,13 @@ export type ContentRouteApp = {
   delete?: (path: string, handler: (ctx: any) => unknown) => ContentRouteApp;
 };
 
+export type ContentListResult<Row> = {
+  rows: Row[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
 export type ContentStore = {
   create: (
     scope: ContentScope,
@@ -138,12 +116,7 @@ export type ContentStore = {
   list: (
     scope: ContentScope,
     query: ContentListQuery,
-  ) => Promise<{
-    rows: ContentDocument[];
-    total: number;
-    limit: number;
-    offset: number;
-  }>;
+  ) => Promise<ContentListResult<ContentDocument>>;
   getById: (
     scope: ContentScope,
     documentId: string,
@@ -165,7 +138,8 @@ export type ContentStore = {
   listVersions: (
     scope: ContentScope,
     documentId: string,
-  ) => Promise<ContentVersionSummary[]>;
+    query: ContentListQuery,
+  ) => Promise<ContentListResult<ContentVersionSummary>>;
   getVersion: (
     scope: ContentScope,
     documentId: string,

@@ -1175,11 +1175,23 @@ test("content API restore undeletes the current head without appending a version
   );
   const versionsBody = (await versionsResponse.json()) as {
     data: Array<{ version: number }>;
+    pagination: {
+      total: number;
+      limit: number;
+      offset: number;
+      hasMore: boolean;
+    };
   };
 
   assert.equal(versionsResponse.status, 200);
   assert.equal(versionsBody.data.length, 1);
   assert.equal(versionsBody.data[0]?.version, 1);
+  assert.deepEqual(versionsBody.pagination, {
+    total: 1,
+    limit: 20,
+    offset: 0,
+    hasMore: false,
+  });
 
   const publishedReadResponse = await handler(
     new Request(`http://localhost/api/v1/content/${created.data.documentId}`, {
@@ -1366,6 +1378,12 @@ test("content API returns version history summaries and immutable snapshots", as
       path: string;
       changeSummary?: string;
     }>;
+    pagination: {
+      total: number;
+      limit: number;
+      offset: number;
+      hasMore: boolean;
+    };
   };
 
   assert.equal(versionsResponse.status, 200);
@@ -1376,6 +1394,76 @@ test("content API returns version history summaries and immutable snapshots", as
   assert.equal(versionsBody.data[1]?.version, 1);
   assert.equal(versionsBody.data[1]?.path, "blog/version-history");
   assert.equal(versionsBody.data[1]?.changeSummary, "Version one");
+  assert.deepEqual(versionsBody.pagination, {
+    total: 2,
+    limit: 20,
+    offset: 0,
+    hasMore: false,
+  });
+
+  const pagedVersionsResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/versions?limit=1&offset=0`,
+      {
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const pagedVersionsBody = (await pagedVersionsResponse.json()) as {
+    data: Array<{
+      version: number;
+      path: string;
+      changeSummary?: string;
+    }>;
+    pagination: {
+      total: number;
+      limit: number;
+      offset: number;
+      hasMore: boolean;
+    };
+  };
+
+  assert.equal(pagedVersionsResponse.status, 200);
+  assert.equal(pagedVersionsBody.data.length, 1);
+  assert.equal(pagedVersionsBody.data[0]?.version, 2);
+  assert.deepEqual(pagedVersionsBody.pagination, {
+    total: 2,
+    limit: 1,
+    offset: 0,
+    hasMore: true,
+  });
+
+  const offsetVersionsResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${created.data.documentId}/versions?limit=1&offset=1`,
+      {
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const offsetVersionsBody = (await offsetVersionsResponse.json()) as {
+    data: Array<{
+      version: number;
+      path: string;
+      changeSummary?: string;
+    }>;
+    pagination: {
+      total: number;
+      limit: number;
+      offset: number;
+      hasMore: boolean;
+    };
+  };
+
+  assert.equal(offsetVersionsResponse.status, 200);
+  assert.equal(offsetVersionsBody.data.length, 1);
+  assert.equal(offsetVersionsBody.data[0]?.version, 1);
+  assert.deepEqual(offsetVersionsBody.pagination, {
+    total: 2,
+    limit: 1,
+    offset: 1,
+    hasMore: false,
+  });
 
   const versionOneResponse = await handler(
     new Request(
@@ -2950,6 +3038,37 @@ testWithDatabase(
       assert.equal(restoreBody.data.path, created.data.path);
       assert.equal(restoreBody.data.body, "version one body");
       assert.equal(restoreBody.data.hasUnpublishedChanges, false);
+
+      const versionsResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${created.data.documentId}/versions?limit=2&offset=1`,
+          {
+            headers: csrfHeaders({
+              ...scopeHeaders,
+            }),
+          },
+        ),
+      );
+      const versionsBody = (await versionsResponse.json()) as {
+        data: Array<{ version: number }>;
+        pagination: {
+          total: number;
+          limit: number;
+          offset: number;
+          hasMore: boolean;
+        };
+      };
+
+      assert.equal(versionsResponse.status, 200);
+      assert.equal(versionsBody.data.length, 2);
+      assert.equal(versionsBody.data[0]?.version, 2);
+      assert.equal(versionsBody.data[1]?.version, 1);
+      assert.deepEqual(versionsBody.pagination, {
+        total: 3,
+        limit: 2,
+        offset: 1,
+        hasMore: false,
+      });
 
       const versionRows = await dbConnection.db
         .select()

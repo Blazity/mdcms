@@ -6,17 +6,20 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
 
+import type { ContentDocumentResponse } from "@mdcms/shared";
+
 import { runMdcmsCli } from "./framework.js";
 
-type RemoteDocument = {
-  documentId: string;
-  type: string;
-  locale: string;
-  path: string;
-  format: "md" | "mdx";
-  draftRevision: number;
-  publishedVersion: number | null;
-};
+type RemoteDocument = Pick<
+  ContentDocumentResponse,
+  | "documentId"
+  | "type"
+  | "locale"
+  | "path"
+  | "format"
+  | "draftRevision"
+  | "publishedVersion"
+>;
 
 async function withTempDir(run: (cwd: string) => Promise<void>): Promise<void> {
   const cwd = await mkdtemp(join(tmpdir(), "mdcms-cli-push-"));

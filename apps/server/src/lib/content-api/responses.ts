@@ -1,3 +1,8 @@
+import type {
+  ContentDocumentResponse,
+  ContentVersionDocumentResponse,
+  ContentVersionSummaryResponse,
+} from "@mdcms/shared";
 import { RuntimeError } from "@mdcms/shared";
 
 import { documents, documentVersions } from "../db/schema.js";
@@ -13,7 +18,7 @@ import type {
 
 export function toDocumentResponse(
   document: ContentDocument,
-): Record<string, unknown> {
+): ContentDocumentResponse {
   return {
     documentId: document.documentId,
     translationGroupId: document.translationGroupId,
@@ -38,7 +43,7 @@ export function toDocumentResponse(
 
 export function toVersionSummaryResponse(
   document: ContentVersionSummary,
-): Record<string, unknown> {
+): ContentVersionSummaryResponse {
   return {
     documentId: document.documentId,
     translationGroupId: document.translationGroupId,
@@ -57,7 +62,7 @@ export function toVersionSummaryResponse(
 
 export function toVersionDocumentResponse(
   document: ContentVersionDocument,
-): Record<string, unknown> {
+): ContentVersionDocumentResponse {
   return {
     ...toVersionSummaryResponse(document),
     frontmatter: document.frontmatter,

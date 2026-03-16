@@ -1073,11 +1073,20 @@ export function createDatabaseContentStore(
       return toContentDocument(scope, updated);
     },
 
-    async listVersions(scope, documentId) {
+    async listVersions(scope, documentId, query) {
       const normalizedDocumentId = assertRequiredString(
         documentId,
         "documentId",
       );
+      const limit = parsePositiveInt(query.limit, "limit", {
+        defaultValue: DEFAULT_LIMIT,
+        min: 1,
+        max: MAX_LIMIT,
+      });
+      const offset = parsePositiveInt(query.offset, "offset", {
+        defaultValue: 0,
+        min: 0,
+      });
       const scopeIds = await resolveScopeIds(scope, false);
 
       if (!scopeIds) {
@@ -1115,9 +1124,18 @@ export function createDatabaseContentStore(
           ),
         );
 
-      return rows
-        .sort((left, right) => right.version - left.version)
-        .map((row) => toContentVersionDocument(scope, row));
+      const sortedRows = rows.sort(
+        (left, right) => right.version - left.version,
+      );
+
+      return {
+        rows: sortedRows
+          .slice(offset, offset + limit)
+          .map((row) => toContentVersionDocument(scope, row)),
+        total: sortedRows.length,
+        limit,
+        offset,
+      };
     },
 
     async getVersion(scope, documentId, version) {

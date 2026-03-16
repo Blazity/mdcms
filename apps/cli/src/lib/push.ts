@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 
+import type { ContentDocumentResponse } from "@mdcms/shared";
 import { RuntimeError } from "@mdcms/shared";
 import { parse as parseYaml } from "yaml";
 
@@ -44,15 +45,16 @@ type PushResult = {
   message: string;
 };
 
-type ContentDocumentPayload = {
-  documentId: string;
-  type: string;
-  locale: string;
-  path: string;
-  format: "md" | "mdx";
-  draftRevision: number;
-  publishedVersion: number | null;
-};
+type ContentDocumentPayload = Pick<
+  ContentDocumentResponse,
+  | "documentId"
+  | "type"
+  | "locale"
+  | "path"
+  | "format"
+  | "draftRevision"
+  | "publishedVersion"
+>;
 
 function parsePushOptions(args: string[]): PushOptions {
   for (const token of args) {
