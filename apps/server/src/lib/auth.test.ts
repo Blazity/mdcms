@@ -1309,6 +1309,56 @@ testWithDatabase(
       };
       assert.equal(createDocumentResponse.status, 200);
 
+      const readKeyResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          method: "POST",
+          headers: createCsrfHeaders(loginResult, {
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            label: "published-read-only",
+            scopes: ["content:read"],
+            contextAllowlist: [
+              {
+                project: "marketing-site",
+                environment: "production",
+              },
+            ],
+          }),
+        }),
+      );
+      const readKeyBody = (await readKeyResponse.json()) as {
+        data: { key: string };
+      };
+      assert.equal(readKeyResponse.status, 200);
+
+      const publishedListAllowedResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          headers: {
+            authorization: `Bearer ${readKeyBody.data.key}`,
+            "x-mdcms-project": "marketing-site",
+            "x-mdcms-environment": "production",
+          },
+        }),
+      );
+      assert.equal(publishedListAllowedResponse.status, 200);
+
+      const draftListForbiddenResponse = await handler(
+        new Request("http://localhost/api/v1/content?draft=true", {
+          headers: {
+            authorization: `Bearer ${readKeyBody.data.key}`,
+            "x-mdcms-project": "marketing-site",
+            "x-mdcms-environment": "production",
+          },
+        }),
+      );
+      const draftListForbiddenBody =
+        (await draftListForbiddenResponse.json()) as {
+          code: string;
+        };
+      assert.equal(draftListForbiddenResponse.status, 403);
+      assert.equal(draftListForbiddenBody.code, "FORBIDDEN");
+
       const legacyWriteKeyResponse = await handler(
         new Request("http://localhost/api/v1/auth/api-keys", {
           method: "POST",
@@ -1406,6 +1456,17 @@ testWithDatabase(
         ),
       );
       assert.equal(draftReadAllowedResponse.status, 200);
+
+      const draftListAllowedResponse = await handler(
+        new Request("http://localhost/api/v1/content?draft=true", {
+          headers: {
+            authorization: `Bearer ${draftReadKeyBody.data.key}`,
+            "x-mdcms-project": "marketing-site",
+            "x-mdcms-environment": "production",
+          },
+        }),
+      );
+      assert.equal(draftListAllowedResponse.status, 200);
 
       const draftWriteForbiddenResponse = await handler(
         new Request(

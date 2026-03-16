@@ -23,6 +23,7 @@ import {
   parseSortField,
   parseSortOrder,
 } from "./parsing.js";
+import { matchesDeletedListVisibility } from "./visibility.js";
 
 function toScopeKey(project: string, environment: string): string {
   return `${project}::${environment}`;
@@ -362,7 +363,7 @@ export function createInMemoryContentStore(): ContentStore {
             }
           }
 
-          if (isDeleted !== undefined && doc.isDeleted !== isDeleted) {
+          if (!matchesDeletedListVisibility(doc, { draft, isDeleted })) {
             return false;
           }
 

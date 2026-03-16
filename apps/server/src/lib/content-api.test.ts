@@ -1086,6 +1086,244 @@ test("content API supports draft/publish/unpublish lifecycle", async () => {
   assert.equal(getDeletedBody.code, "NOT_FOUND");
 });
 
+test("content API list uses published snapshots by default and hides deleted draft rows unless explicitly requested", async () => {
+  const handler = createHandler();
+
+  const publishedCreateResponse = await handler(
+    new Request("http://localhost/api/v1/content", {
+      method: "POST",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "blog/list-visible-published",
+        type: "BlogPost",
+        locale: "en",
+        format: "md",
+        frontmatter: { slug: "list-visible-published" },
+        body: "published body",
+      }),
+    }),
+  );
+  const publishedCreated = (await publishedCreateResponse.json()) as {
+    data: { documentId: string };
+  };
+  assert.equal(publishedCreateResponse.status, 200);
+
+  const publishResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${publishedCreated.data.documentId}/publish`,
+      {
+        method: "POST",
+        headers: {
+          ...scopeHeaders,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          change_summary: "Publish visible baseline",
+        }),
+      },
+    ),
+  );
+  assert.equal(publishResponse.status, 200);
+
+  const publishedUpdateResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${publishedCreated.data.documentId}`,
+      {
+        method: "PUT",
+        headers: {
+          ...scopeHeaders,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          path: "blog/list-visible-draft",
+          body: "draft body",
+        }),
+      },
+    ),
+  );
+  assert.equal(publishedUpdateResponse.status, 200);
+
+  const unpublishedCreateResponse = await handler(
+    new Request("http://localhost/api/v1/content", {
+      method: "POST",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "blog/list-unpublished-only",
+        type: "BlogPost",
+        locale: "en",
+        format: "md",
+        frontmatter: { slug: "list-unpublished-only" },
+        body: "unpublished draft body",
+      }),
+    }),
+  );
+  const unpublishedCreated = (await unpublishedCreateResponse.json()) as {
+    data: { documentId: string };
+  };
+  assert.equal(unpublishedCreateResponse.status, 200);
+
+  const deletedCreateResponse = await handler(
+    new Request("http://localhost/api/v1/content", {
+      method: "POST",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "blog/list-deleted-doc",
+        type: "BlogPost",
+        locale: "en",
+        format: "md",
+        frontmatter: { slug: "list-deleted-doc" },
+        body: "deleted body",
+      }),
+    }),
+  );
+  const deletedCreated = (await deletedCreateResponse.json()) as {
+    data: { documentId: string };
+  };
+  assert.equal(deletedCreateResponse.status, 200);
+
+  const deletedPublishResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${deletedCreated.data.documentId}/publish`,
+      {
+        method: "POST",
+        headers: {
+          ...scopeHeaders,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          change_summary: "Publish before delete",
+        }),
+      },
+    ),
+  );
+  assert.equal(deletedPublishResponse.status, 200);
+
+  const deletedDeleteResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${deletedCreated.data.documentId}`,
+      {
+        method: "DELETE",
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  assert.equal(deletedDeleteResponse.status, 200);
+
+  const publishedListResponse = await handler(
+    new Request("http://localhost/api/v1/content?sort=path&order=asc", {
+      headers: scopeHeaders,
+    }),
+  );
+  const publishedListBody = (await publishedListResponse.json()) as {
+    data: Array<{
+      documentId: string;
+      path: string;
+      body: string;
+      isDeleted: boolean;
+    }>;
+  };
+  assert.equal(publishedListResponse.status, 200);
+  assert.deepEqual(
+    publishedListBody.data.map((document) => ({
+      documentId: document.documentId,
+      path: document.path,
+      body: document.body,
+      isDeleted: document.isDeleted,
+    })),
+    [
+      {
+        documentId: publishedCreated.data.documentId,
+        path: "blog/list-visible-published",
+        body: "published body",
+        isDeleted: false,
+      },
+    ],
+  );
+
+  const draftListResponse = await handler(
+    new Request(
+      "http://localhost/api/v1/content?draft=true&sort=path&order=asc",
+      {
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const draftListBody = (await draftListResponse.json()) as {
+    data: Array<{
+      documentId: string;
+      path: string;
+      body: string;
+      isDeleted: boolean;
+    }>;
+  };
+  assert.equal(draftListResponse.status, 200);
+  assert.deepEqual(
+    draftListBody.data.map((document) => ({
+      documentId: document.documentId,
+      path: document.path,
+      body: document.body,
+      isDeleted: document.isDeleted,
+    })),
+    [
+      {
+        documentId: unpublishedCreated.data.documentId,
+        path: "blog/list-unpublished-only",
+        body: "unpublished draft body",
+        isDeleted: false,
+      },
+      {
+        documentId: publishedCreated.data.documentId,
+        path: "blog/list-visible-draft",
+        body: "draft body",
+        isDeleted: false,
+      },
+    ],
+  );
+
+  const deletedDraftListResponse = await handler(
+    new Request(
+      "http://localhost/api/v1/content?draft=true&isDeleted=true&sort=path&order=asc",
+      {
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const deletedDraftListBody = (await deletedDraftListResponse.json()) as {
+    data: Array<{
+      documentId: string;
+      path: string;
+      body: string;
+      isDeleted: boolean;
+    }>;
+  };
+  assert.equal(deletedDraftListResponse.status, 200);
+  assert.deepEqual(
+    deletedDraftListBody.data.map((document) => ({
+      documentId: document.documentId,
+      path: document.path,
+      body: document.body,
+      isDeleted: document.isDeleted,
+    })),
+    [
+      {
+        documentId: deletedCreated.data.documentId,
+        path: "blog/list-deleted-doc",
+        body: "deleted body",
+        isDeleted: true,
+      },
+    ],
+  );
+});
+
 test("content API restore undeletes the current head without appending a version", async () => {
   const handler = createHandler();
 
@@ -2571,6 +2809,265 @@ testWithDatabase(
 
       assert.equal(variantCreateResponse.status, 400);
       assert.equal(variantCreateBody.code, "INVALID_INPUT");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API DB list uses published snapshots by default and hides deleted draft rows unless explicitly requested",
+  async () => {
+    const { handler, dbConnection, cookie, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-db-list-visibility");
+    const testScopeHeaders = {
+      "x-mdcms-project": `content-db-list-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      "x-mdcms-environment": "production",
+    };
+
+    try {
+      const publishedCreateResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            path: `blog/db-list-visible-published-${Date.now()}`,
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "db-list-visible-published" },
+            body: "published body",
+          }),
+        }),
+      );
+      const publishedCreated = (await publishedCreateResponse.json()) as {
+        data: { documentId: string; path: string };
+      };
+      assert.equal(publishedCreateResponse.status, 200);
+
+      const publishResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${publishedCreated.data.documentId}/publish`,
+          {
+            method: "POST",
+            headers: csrfHeaders({
+              ...testScopeHeaders,
+              "content-type": "application/json",
+            }),
+            body: JSON.stringify({
+              change_summary: "Publish visible baseline",
+            }),
+          },
+        ),
+      );
+      assert.equal(publishResponse.status, 200);
+
+      const publishedUpdateResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${publishedCreated.data.documentId}`,
+          {
+            method: "PUT",
+            headers: csrfHeaders({
+              ...testScopeHeaders,
+              "content-type": "application/json",
+            }),
+            body: JSON.stringify({
+              path: `${publishedCreated.data.path}-draft`,
+              body: "draft body",
+            }),
+          },
+        ),
+      );
+      assert.equal(publishedUpdateResponse.status, 200);
+
+      const unpublishedCreateResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            path: `blog/db-list-unpublished-${Date.now()}`,
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "db-list-unpublished" },
+            body: "unpublished draft body",
+          }),
+        }),
+      );
+      const unpublishedCreated = (await unpublishedCreateResponse.json()) as {
+        data: { documentId: string; path: string };
+      };
+      assert.equal(unpublishedCreateResponse.status, 200);
+
+      const deletedCreateResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            path: `blog/db-list-deleted-${Date.now()}`,
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "db-list-deleted" },
+            body: "deleted body",
+          }),
+        }),
+      );
+      const deletedCreated = (await deletedCreateResponse.json()) as {
+        data: { documentId: string; path: string };
+      };
+      assert.equal(deletedCreateResponse.status, 200);
+
+      const deletedPublishResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${deletedCreated.data.documentId}/publish`,
+          {
+            method: "POST",
+            headers: csrfHeaders({
+              ...testScopeHeaders,
+              "content-type": "application/json",
+            }),
+            body: JSON.stringify({
+              change_summary: "Publish before delete",
+            }),
+          },
+        ),
+      );
+      assert.equal(deletedPublishResponse.status, 200);
+
+      const deletedDeleteResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${deletedCreated.data.documentId}`,
+          {
+            method: "DELETE",
+            headers: csrfHeaders(testScopeHeaders),
+          },
+        ),
+      );
+      assert.equal(deletedDeleteResponse.status, 200);
+
+      const publishedListResponse = await handler(
+        new Request("http://localhost/api/v1/content?sort=path&order=asc", {
+          headers: {
+            ...testScopeHeaders,
+            cookie,
+          },
+        }),
+      );
+      const publishedListBody = (await publishedListResponse.json()) as {
+        data: Array<{
+          documentId: string;
+          path: string;
+          body: string;
+          isDeleted: boolean;
+        }>;
+      };
+      assert.equal(publishedListResponse.status, 200);
+      assert.deepEqual(
+        publishedListBody.data.map((document) => ({
+          documentId: document.documentId,
+          path: document.path,
+          body: document.body,
+          isDeleted: document.isDeleted,
+        })),
+        [
+          {
+            documentId: publishedCreated.data.documentId,
+            path: publishedCreated.data.path,
+            body: "published body",
+            isDeleted: false,
+          },
+        ],
+      );
+
+      const draftListResponse = await handler(
+        new Request(
+          "http://localhost/api/v1/content?draft=true&sort=path&order=asc",
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const draftListBody = (await draftListResponse.json()) as {
+        data: Array<{
+          documentId: string;
+          path: string;
+          body: string;
+          isDeleted: boolean;
+        }>;
+      };
+      assert.equal(draftListResponse.status, 200);
+      assert.deepEqual(
+        draftListBody.data.map((document) => ({
+          documentId: document.documentId,
+          path: document.path,
+          body: document.body,
+          isDeleted: document.isDeleted,
+        })),
+        [
+          {
+            documentId: unpublishedCreated.data.documentId,
+            path: unpublishedCreated.data.path,
+            body: "unpublished draft body",
+            isDeleted: false,
+          },
+          {
+            documentId: publishedCreated.data.documentId,
+            path: `${publishedCreated.data.path}-draft`,
+            body: "draft body",
+            isDeleted: false,
+          },
+        ],
+      );
+
+      const deletedDraftListResponse = await handler(
+        new Request(
+          "http://localhost/api/v1/content?draft=true&isDeleted=true&sort=path&order=asc",
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const deletedDraftListBody = (await deletedDraftListResponse.json()) as {
+        data: Array<{
+          documentId: string;
+          path: string;
+          body: string;
+          isDeleted: boolean;
+        }>;
+      };
+      assert.equal(deletedDraftListResponse.status, 200);
+      assert.deepEqual(
+        deletedDraftListBody.data.map((document) => ({
+          documentId: document.documentId,
+          path: document.path,
+          body: document.body,
+          isDeleted: document.isDeleted,
+        })),
+        [
+          {
+            documentId: deletedCreated.data.documentId,
+            path: deletedCreated.data.path,
+            body: "deleted body",
+            isDeleted: true,
+          },
+        ],
+      );
     } finally {
       await dbConnection.close();
     }

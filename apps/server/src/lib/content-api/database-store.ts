@@ -43,6 +43,7 @@ import {
   toContentVersionDocument,
   toIsoString,
 } from "./responses.js";
+import { matchesDeletedListVisibility } from "./visibility.js";
 
 export function createDatabaseContentStore(
   options: CreateDatabaseContentStoreOptions,
@@ -292,6 +293,7 @@ export function createDatabaseContentStore(
   function applyListFilters(
     document: ContentDocument,
     query: {
+      draft: boolean;
       type?: string;
       path?: string;
       locale?: string;
@@ -329,10 +331,7 @@ export function createDatabaseContentStore(
       }
     }
 
-    if (
-      query.isDeleted !== undefined &&
-      document.isDeleted !== query.isDeleted
-    ) {
+    if (!matchesDeletedListVisibility(document, query)) {
       return false;
     }
 
@@ -689,6 +688,7 @@ export function createDatabaseContentStore(
 
       const filteredRows = resolvedRows.filter((document) =>
         applyListFilters(document, {
+          draft,
           type: normalizedType,
           path: normalizedPath,
           locale: normalizedLocale,
