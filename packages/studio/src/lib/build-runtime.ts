@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   EXTENSIBILITY_API_VERSION,
@@ -42,6 +42,9 @@ export const STUDIO_RUNTIME_ENTRY_BASENAME = "studio-runtime";
 export const STUDIO_RUNTIME_ENTRY_EXTENSION = ".mjs";
 export const STUDIO_RUNTIME_DEFAULT_ASSETS_BASE_PATH = "/api/v1/studio/assets";
 export const STUDIO_RUNTIME_DEFAULT_EXPIRES_AT = "2099-01-01T00:00:00.000Z";
+const DEFAULT_STUDIO_PROJECT_ROOT = resolve(
+  fileURLToPath(new URL("../../", import.meta.url)),
+);
 
 export type BuildStudioRuntimeArtifactsOptions = {
   projectRoot?: string;
@@ -170,7 +173,7 @@ async function bundleRuntimeEntry(input: {
 export async function buildStudioRuntimeArtifacts(
   options: BuildStudioRuntimeArtifactsOptions = {},
 ): Promise<StudioRuntimeBuildResult> {
-  const projectRoot = options.projectRoot ?? resolve("packages/studio");
+  const projectRoot = options.projectRoot ?? DEFAULT_STUDIO_PROJECT_ROOT;
   const sourceFile = resolve(
     options.sourceFile ?? join(projectRoot, "src/lib/remote-module.ts"),
   );

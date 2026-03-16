@@ -93,8 +93,8 @@ trap cleanup EXIT
 [[ -d "$APP_DIR" ]] || fail "sample app directory not found: $APP_DIR"
 
 cd "$ROOT_DIR"
-echo "Building @mdcms/studio package"
-bun nx build studio
+echo "Building @mdcms/studio and @mdcms/cli packages"
+bun nx run-many -t build --projects cli,studio
 
 echo "Starting Next.js embed sample app on ${BASE_URL}"
 : >"$NEXT_LOG_FILE"

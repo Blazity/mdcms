@@ -107,6 +107,28 @@ test("buildStudioRuntimeArtifacts changes buildId and integrity when source chan
   });
 });
 
+test("buildStudioRuntimeArtifacts resolves the default project root from the package location", async () => {
+  await withTempDir("studio-runtime-cwd-", async (directory) => {
+    const outDir = join(directory, "dist");
+    const originalCwd = process.cwd();
+
+    process.chdir(directory);
+
+    try {
+      const build = await buildStudioRuntimeArtifacts({
+        outDir,
+        studioVersion: "1.2.3",
+        mode: "module",
+      });
+
+      assert.equal(build.entryPath.startsWith(`${outDir}/`), true);
+      assert.equal((await readFile(build.entryPath, "utf8")).length > 0, true);
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+});
+
 test("buildStudioRuntimeArtifacts writes bundled JavaScript runtime entry", async () => {
   await withTempDir("studio-runtime-", async (directory) => {
     const sourceFile = join(directory, "app.ts");
