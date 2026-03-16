@@ -29,7 +29,8 @@ export type ModuleBootstrapViolationCode =
   | "DUPLICATE_MODULE_ID"
   | "MISSING_DEPENDENCY"
   | "DEPENDENCY_CYCLE"
-  | "DUPLICATE_ACTION_ID";
+  | "DUPLICATE_ACTION_ID"
+  | "DUPLICATE_ACTION_ROUTE";
 
 export type ModuleBootstrapViolation = {
   code: ModuleBootstrapViolationCode;
@@ -306,6 +307,10 @@ function collectDuplicateServerActionViolations<
   loadedModules: readonly LoadedModule<"server", TModulePackage>[],
 ): ModuleBootstrapViolation[] {
   const ownerByActionId = new Map<string, string>();
+  const ownerByRoute = new Map<
+    string,
+    { moduleId: string; actionId: string; method: string; path: string }
+  >();
   const violations: ModuleBootstrapViolation[] = [];
 
   for (const loadedModule of loadedModules) {
@@ -324,6 +329,25 @@ function collectDuplicateServerActionViolations<
       }
 
       ownerByActionId.set(action.id, loadedModule.id);
+
+      const routeKey = `${action.method} ${action.path}`;
+      const currentRouteOwner = ownerByRoute.get(routeKey);
+
+      if (currentRouteOwner !== undefined) {
+        violations.push({
+          code: "DUPLICATE_ACTION_ROUTE",
+          moduleId: loadedModule.id,
+          details: `Action route "${action.method} ${action.path}" declared by action "${action.id}" conflicts with action "${currentRouteOwner.actionId}" in module "${currentRouteOwner.moduleId}".`,
+        });
+        continue;
+      }
+
+      ownerByRoute.set(routeKey, {
+        moduleId: loadedModule.id,
+        actionId: action.id,
+        method: action.method,
+        path: action.path,
+      });
     }
   }
 

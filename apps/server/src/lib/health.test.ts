@@ -159,6 +159,100 @@ test("action visibility policy filters list and hides detail responses", async (
   assert.equal(detailBody.code, "NOT_FOUND");
 });
 
+test("hidden actions remain server-authoritative when forced against a protected route", async () => {
+  const secureAction: ActionCatalogItem = {
+    id: "content.secure-publish",
+    kind: "command",
+    method: "POST",
+    path: "/api/v1/protected/secure-publish",
+    permissions: ["content:publish"],
+  };
+  const handler = createServerRequestHandler({
+    env: baseEnv,
+    actions: [...actionCatalog, secureAction],
+    isActionVisible: ({ action }) => action.id !== secureAction.id,
+    now: () => new Date("2026-02-20T00:00:10.000Z"),
+    configureApp: (app) => {
+      const serverApp = app as {
+        post?: (
+          path: string,
+          handler: (context: { request: Request }) => Response,
+        ) => unknown;
+      };
+
+      serverApp.post?.("/api/v1/protected/secure-publish", ({ request }) => {
+        if (request.headers.get("x-test-actor") !== "authorized") {
+          return new Response(
+            JSON.stringify({
+              status: "error",
+              code: "FORBIDDEN",
+              message: "Forbidden.",
+            }),
+            {
+              status: 403,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            data: { ok: true },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      });
+    },
+  });
+
+  const listResponse = await handler(
+    new Request("http://localhost/api/v1/actions"),
+  );
+  const listBody = (await listResponse.json()) as ActionCatalogItem[];
+  assert.equal(
+    listBody.some((action) => action.id === secureAction.id),
+    false,
+  );
+
+  const detailResponse = await handler(
+    new Request(`http://localhost/api/v1/actions/${secureAction.id}`),
+  );
+  const detailBody = (await detailResponse.json()) as Record<string, unknown>;
+  assert.equal(detailResponse.status, 404);
+  assert.equal(detailBody.code, "NOT_FOUND");
+
+  const forcedUnauthorizedResponse = await handler(
+    new Request("http://localhost/api/v1/protected/secure-publish", {
+      method: "POST",
+    }),
+  );
+  const forcedUnauthorizedBody =
+    (await forcedUnauthorizedResponse.json()) as Record<string, unknown>;
+  assert.equal(forcedUnauthorizedResponse.status, 403);
+  assert.equal(forcedUnauthorizedBody.code, "FORBIDDEN");
+
+  const forcedAuthorizedResponse = await handler(
+    new Request("http://localhost/api/v1/protected/secure-publish", {
+      method: "POST",
+      headers: {
+        "x-test-actor": "authorized",
+      },
+    }),
+  );
+  const forcedAuthorizedBody = (await forcedAuthorizedResponse.json()) as {
+    data: { ok: boolean };
+  };
+  assert.equal(forcedAuthorizedResponse.status, 200);
+  assert.equal(forcedAuthorizedBody.data.ok, true);
+});
+
 test("unprefixed /actions path is rejected to enforce /api/v1 base path", async () => {
   const handler = createServerRequestHandler({
     env: baseEnv,

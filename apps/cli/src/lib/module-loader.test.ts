@@ -188,6 +188,46 @@ test("CLI collectors preserve strict loaded module order", () => {
   );
 });
 
+test("CLI registry merge order is deterministic for shuffled module candidates", () => {
+  const inputA = [
+    createCliModule("m.feature", { dependsOn: ["a.feature"] }),
+    createCliModule("z.core"),
+    createCliModule("a.feature", { dependsOn: ["z.core"] }),
+  ];
+  const inputB = [
+    createCliModule("a.feature", { dependsOn: ["z.core"] }),
+    createCliModule("m.feature", { dependsOn: ["a.feature"] }),
+    createCliModule("z.core"),
+  ];
+
+  const reportA = buildCliModuleLoadReport(inputA, {
+    coreVersion: "1.0.0",
+    logger: testLogger,
+  });
+  const reportB = buildCliModuleLoadReport(inputB, {
+    coreVersion: "1.0.0",
+    logger: testLogger,
+  });
+
+  assert.deepEqual(reportA.loadedModuleIds, reportB.loadedModuleIds);
+  assert.deepEqual(
+    collectCliActionAliases(reportA).map((alias) => alias.alias),
+    collectCliActionAliases(reportB).map((alias) => alias.alias),
+  );
+  assert.deepEqual(
+    collectCliOutputFormatters(reportA).map((formatter) =>
+      formatter.format("ok"),
+    ),
+    collectCliOutputFormatters(reportB).map((formatter) =>
+      formatter.format("ok"),
+    ),
+  );
+  assert.deepEqual(
+    collectCliPreflightHooks(reportA).map((hook) => hook.id),
+    collectCliPreflightHooks(reportB).map((hook) => hook.id),
+  );
+});
+
 test("buildCliModuleLoadReport fails fast with deterministic violations", () => {
   assert.throws(
     () =>

@@ -103,6 +103,9 @@ export default function AdminPage() {
   - `GET /api/v1/studio/bootstrap`
   - `GET /api/v1/studio/assets/:buildId/*`
 - The MVP bootstrap contract is fixed to `mode: "module"`.
+- CMS-35 adds test coverage for bootstrap manifest shape, compatibility bounds,
+  runtime-byte integrity, and the current placeholder signature/key invariants
+  emitted by the builder.
 - Loader-side runtime fetch, integrity verification, and execution remain deferred to CMS-60.
 
 ## Build

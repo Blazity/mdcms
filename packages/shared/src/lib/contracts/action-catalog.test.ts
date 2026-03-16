@@ -57,6 +57,34 @@ test("assertActionCatalogItem rejects invalid metadata shape", () => {
   );
 });
 
+test("assertActionCatalogItem rejects invalid studio and cli metadata values", () => {
+  assert.throws(
+    () =>
+      assertActionCatalogItem({
+        ...validAction,
+        studio: {
+          ...validAction.studio,
+          form: {
+            mode: "wizard",
+          },
+        },
+      }),
+    /studio\.form\.mode must be "auto" or "custom"/,
+  );
+
+  assert.throws(
+    () =>
+      assertActionCatalogItem({
+        ...validAction,
+        cli: {
+          ...validAction.cli,
+          inputMode: "flags-only",
+        },
+      }),
+    /cli\.inputMode must be one of/,
+  );
+});
+
 test("assertActionCatalogItem rejects non-object inline schemas", () => {
   assert.throws(
     () =>
@@ -70,4 +98,23 @@ test("assertActionCatalogItem rejects non-object inline schemas", () => {
 
 test("assertActionCatalogList validates item arrays", () => {
   assert.doesNotThrow(() => assertActionCatalogList([validAction]));
+});
+
+test("assertActionCatalogList rejects invalid list entries deterministically", () => {
+  assert.throws(
+    () =>
+      assertActionCatalogList([
+        validAction,
+        {
+          ...validAction,
+          id: "",
+        },
+      ]),
+    /actions\[1\]\.id must be a non-empty string/,
+  );
+
+  assert.throws(
+    () => assertActionCatalogList("not-an-array"),
+    /actions must be an array/,
+  );
 });

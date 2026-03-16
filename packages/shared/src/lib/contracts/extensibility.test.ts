@@ -115,6 +115,26 @@ test("assertModuleManifest rejects invalid dependsOn shapes and duplicates", () 
   );
 });
 
+test("assertModuleManifest rejects blank ids and unsupported apiVersion", () => {
+  assert.throws(
+    () =>
+      assertModuleManifest({
+        ...validModuleManifest,
+        id: "   ",
+      }),
+    /manifest\.id must be a non-empty string/,
+  );
+
+  assert.throws(
+    () =>
+      assertModuleManifest({
+        ...validModuleManifest,
+        apiVersion: "2",
+      }),
+    /manifest\.apiVersion must be "1"/,
+  );
+});
+
 test("assertModuleManifestCompatibility rejects when core version is below minCoreVersion", () => {
   assert.throws(
     () =>
@@ -224,6 +244,26 @@ test("assertStudioBootstrapCompatibility accepts exact minimum versions", () => 
       studioPackageVersion: "0.1.0",
       hostBridgeVersion: "1.0.0",
     }),
+  );
+});
+
+test("assertStudioBootstrapManifest rejects blank signature and invalid mode", () => {
+  assert.throws(
+    () =>
+      assertStudioBootstrapManifest({
+        ...validStudioBootstrapManifest,
+        signature: "   ",
+      }),
+    /studioBootstrapManifest\.signature must be a non-empty string/,
+  );
+
+  assert.throws(
+    () =>
+      assertStudioBootstrapManifest({
+        ...validStudioBootstrapManifest,
+        mode: "worker",
+      }),
+    /studioBootstrapManifest\.mode .*iframe.*module/,
   );
 });
 

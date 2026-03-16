@@ -22,8 +22,21 @@ function createModule(
     minCoreVersion?: string;
     dependsOn?: string[];
     actionIds?: string[];
+    actions?: Array<{
+      id: string;
+      method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+      path?: string;
+    }>;
   } = {},
 ): MdcmsModulePackage {
+  const serverActions =
+    options.actions ??
+    (options.actionIds ?? []).map((actionId) => ({
+      id: actionId,
+      method: "GET" as const,
+      path: `/api/v1/actions/${actionId}`,
+    }));
+
   return {
     manifest: {
       id,
@@ -35,11 +48,11 @@ function createModule(
     server: options.server
       ? {
           mount: () => undefined,
-          actions: (options.actionIds ?? []).map((actionId) => ({
-            id: actionId,
+          actions: serverActions.map((action) => ({
+            id: action.id,
             kind: "query",
-            method: "GET",
-            path: `/api/v1/actions/${actionId}`,
+            method: action.method ?? "GET",
+            path: action.path ?? `/api/v1/actions/${action.id}`,
             permissions: ["content:read"],
           })),
         }
@@ -186,6 +199,54 @@ test("buildRuntimeModulePlan reports duplicate server action ids", () => {
   );
 });
 
+test("buildRuntimeModulePlan reports conflicting server action routes", () => {
+  const plan = buildRuntimeModulePlan(
+    [
+      createModule("alpha", {
+        server: true,
+        actions: [
+          {
+            id: "alpha.publish",
+            method: "POST",
+            path: "/api/v1/content/publish",
+          },
+        ],
+      }),
+      createModule("beta", {
+        server: true,
+        actions: [
+          {
+            id: "beta.publish",
+            method: "POST",
+            path: "/api/v1/content/publish",
+          },
+        ],
+      }),
+    ],
+    {
+      coreVersion: "1.0.0",
+      surface: "server",
+      runtime: "server",
+      logger: createNoopLogger(),
+    },
+  );
+
+  assert.equal(plan.ok, false);
+
+  if (plan.ok) {
+    return;
+  }
+
+  assert.deepEqual(
+    plan.violations.map((entry) => entry.code),
+    ["DUPLICATE_ACTION_ROUTE"],
+  );
+  assert.match(
+    plan.violations[0]?.details ?? "",
+    /POST \/api\/v1\/content\/publish/,
+  );
+});
+
 test("buildRuntimeModulePlan sorts violations deterministically", () => {
   const moduleCandidates = [
     null,
@@ -202,6 +263,26 @@ test("buildRuntimeModulePlan sorts violations deterministically", () => {
     createModule("action.beta", {
       server: true,
       actionIds: ["system.ping"],
+    }),
+    createModule("route.alpha", {
+      server: true,
+      actions: [
+        {
+          id: "route.alpha.publish",
+          method: "POST",
+          path: "/api/v1/routes/shared",
+        },
+      ],
+    }),
+    createModule("route.beta", {
+      server: true,
+      actions: [
+        {
+          id: "route.beta.publish",
+          method: "POST",
+          path: "/api/v1/routes/shared",
+        },
+      ],
     }),
   ];
 
@@ -232,6 +313,7 @@ test("buildRuntimeModulePlan sorts violations deterministically", () => {
       "DEPENDENCY_CYCLE",
       "DEPENDENCY_CYCLE",
       "DUPLICATE_ACTION_ID",
+      "DUPLICATE_ACTION_ROUTE",
       "DUPLICATE_MODULE_ID",
       "INCOMPATIBLE_MANIFEST",
       "INVALID_PACKAGE",
