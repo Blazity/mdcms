@@ -42,9 +42,6 @@ export const STUDIO_RUNTIME_ENTRY_BASENAME = "studio-runtime";
 export const STUDIO_RUNTIME_ENTRY_EXTENSION = ".mjs";
 export const STUDIO_RUNTIME_DEFAULT_ASSETS_BASE_PATH = "/api/v1/studio/assets";
 export const STUDIO_RUNTIME_DEFAULT_EXPIRES_AT = "2099-01-01T00:00:00.000Z";
-const DEFAULT_STUDIO_PROJECT_ROOT = resolve(
-  fileURLToPath(new URL("../../", import.meta.url)),
-);
 
 export type BuildStudioRuntimeArtifactsOptions = {
   projectRoot?: string;
@@ -113,6 +110,12 @@ function createRuntimeEntryFileName(buildId: string): string {
   return `${STUDIO_RUNTIME_ENTRY_BASENAME}.${buildId}${STUDIO_RUNTIME_ENTRY_EXTENSION}`;
 }
 
+function resolveDefaultStudioProjectRoot(): string {
+  // Keep this lazy so importing `@mdcms/studio` in a host app does not
+  // evaluate build-only path resolution during module initialization.
+  return resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+}
+
 function formatBuildErrorDetails(logs: readonly unknown[] | undefined): string {
   if (!logs || logs.length === 0) {
     return "Unknown build error.";
@@ -173,7 +176,7 @@ async function bundleRuntimeEntry(input: {
 export async function buildStudioRuntimeArtifacts(
   options: BuildStudioRuntimeArtifactsOptions = {},
 ): Promise<StudioRuntimeBuildResult> {
-  const projectRoot = options.projectRoot ?? DEFAULT_STUDIO_PROJECT_ROOT;
+  const projectRoot = options.projectRoot ?? resolveDefaultStudioProjectRoot();
   const sourceFile = resolve(
     options.sourceFile ?? join(projectRoot, "src/lib/remote-module.ts"),
   );
