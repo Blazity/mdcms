@@ -2,6 +2,7 @@ import type {
   ContentDocumentResponse,
   ContentVersionDocumentResponse,
   ContentVersionSummaryResponse,
+  SchemaRegistryTypeSnapshot,
 } from "@mdcms/shared";
 import type { AuthorizationRequirement } from "../auth.js";
 import type { DrizzleDatabase } from "../db.js";
@@ -109,6 +110,10 @@ export type ContentListResult<Row> = {
 };
 
 export type ContentStore = {
+  getSchema: (
+    scope: ContentScope,
+    type: string,
+  ) => Promise<SchemaRegistryTypeSnapshot | undefined>;
   create: (
     scope: ContentScope,
     payload: ContentWritePayload,
@@ -174,6 +179,16 @@ export type ContentStore = {
 
 export type CreateDatabaseContentStoreOptions = {
   db: DrizzleDatabase;
+};
+
+export type InMemoryContentSchemaScope = {
+  project: string;
+  environment: string;
+  schemas: Record<string, SchemaRegistryTypeSnapshot>;
+};
+
+export type CreateInMemoryContentStoreOptions = {
+  schemaScopes?: InMemoryContentSchemaScope[];
 };
 
 export type ContentRequestAuthorizer = (

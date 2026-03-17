@@ -57,6 +57,8 @@ const postWithAuthor = await cms.get("BlogPost", {
 });
 ```
 
+The SDK follows the same reference-resolution contract documented in SPEC-003. Resolution is shallow-only, unresolved references become `null`, and the response may include a top-level `resolveErrors` map keyed by the full field path (for example `frontmatter.author`) so callers can inspect why a referenced document could not be materialized. The `resolve` query values express field paths relative to `frontmatter` (e.g., `resolve=author` or `resolve=hero.author`), so callers should not prefix them with `frontmatter.`.
+
 ### Runtime Type Inference
 
 The SDK infers types at runtime by fetching the schema from the server on initialization. This means:

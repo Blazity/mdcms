@@ -13,6 +13,11 @@ import {
   pickScope,
 } from "./parsing.js";
 import {
+  applyResolvePlan,
+  parseRequestedResolvePaths,
+  prepareResolvePlan,
+} from "./resolve.js";
+import {
   toDocumentResponse,
   toVersionDocumentResponse,
   toVersionSummaryResponse,
@@ -55,6 +60,19 @@ function toPaginatedResponse<Row, Output>(
   };
 }
 
+function getResolveQueryValue(
+  request: Request,
+  query: ContentListQuery,
+): ContentListQuery["resolve"] {
+  const values = new URL(request.url).searchParams.getAll("resolve");
+
+  if (values.length === 0) {
+    return query.resolve;
+  }
+
+  return values.length === 1 ? values[0] : values;
+}
+
 export function mountContentApiRoutes(
   app: unknown,
   options: MountContentApiRoutesOptions,
@@ -66,16 +84,57 @@ export function mountContentApiRoutes(
       const scope = pickScope(request);
       const typedQuery = query as ContentListQuery;
       const requestedPath = typedQuery.path?.trim();
+      const requiredScope = resolveContentReadScope(typedQuery);
+      const draft = requiredScope === "content:read:draft";
+      const resolvePaths = parseRequestedResolvePaths({
+        query: {
+          ...typedQuery,
+          resolve: getResolveQueryValue(request, typedQuery),
+        },
+        requireType: true,
+      });
+      const resolvedType = typedQuery.type?.trim();
       await options.authorize(request, {
-        requiredScope: resolveContentReadScope(typedQuery),
+        requiredScope,
         project: scope.project,
         environment: scope.environment,
         documentPath:
           requestedPath && requestedPath.length > 0 ? requestedPath : undefined,
       });
-      const result = await options.store.list(scope, typedQuery);
 
-      return toPaginatedResponse(result, (row) => toDocumentResponse(row));
+      const result = await options.store.list(scope, typedQuery);
+      const response = toPaginatedResponse(result, (row) =>
+        toDocumentResponse(row),
+      );
+
+      if (resolvePaths.length === 0) {
+        return response;
+      }
+
+      const resolvePlan = await prepareResolvePlan({
+        scope,
+        store: options.store,
+        documentType: resolvedType!,
+        paths: resolvePaths,
+      });
+
+      return {
+        ...response,
+        data: await Promise.all(
+          response.data.map((document) =>
+            applyResolvePlan({
+              authorize: options.authorize,
+              request,
+              requiredScope,
+              scope,
+              store: options.store,
+              draft,
+              document,
+              plan: resolvePlan,
+            }),
+          ),
+        ),
+      };
     });
   });
 
@@ -87,6 +146,13 @@ export function mountContentApiRoutes(
         const typedQuery = query as ContentListQuery;
         const requiredScope = resolveContentReadScope(typedQuery);
         const draft = parseBoolean(typedQuery.draft, "draft") === true;
+        const resolvePaths = parseRequestedResolvePaths({
+          query: {
+            ...typedQuery,
+            resolve: getResolveQueryValue(request, typedQuery),
+          },
+          requireType: false,
+        });
 
         await options.authorize(request, {
           requiredScope,
@@ -115,8 +181,25 @@ export function mountContentApiRoutes(
           documentPath: document.path,
         });
 
+        const responseDocument = toDocumentResponse(document);
+        const resolvePlan = await prepareResolvePlan({
+          scope,
+          store: options.store,
+          documentType: document.type,
+          paths: resolvePaths,
+        });
+
         return {
-          data: toDocumentResponse(document),
+          data: await applyResolvePlan({
+            authorize: options.authorize,
+            document: responseDocument,
+            request,
+            requiredScope,
+            scope,
+            store: options.store,
+            draft,
+            plan: resolvePlan,
+          }),
         };
       });
     },
@@ -185,10 +268,18 @@ export function mountContentApiRoutes(
 
   contentApp.get?.(
     "/api/v1/content/:documentId/versions/:version",
-    ({ request, params }: any) => {
+    ({ request, params, query }: any) => {
       return executeWithRuntimeErrorsHandled(request, async () => {
         const scope = pickScope(request);
         const version = parsePathInt(params.version, "version");
+        const typedQuery = query as ContentListQuery;
+        const resolvePaths = parseRequestedResolvePaths({
+          query: {
+            ...typedQuery,
+            resolve: getResolveQueryValue(request, typedQuery),
+          },
+          requireType: false,
+        });
 
         await options.authorize(request, {
           requiredScope: "content:read",
@@ -233,8 +324,25 @@ export function mountContentApiRoutes(
           });
         }
 
+        const responseDocument = toVersionDocumentResponse(versionDocument);
+        const resolvePlan = await prepareResolvePlan({
+          scope,
+          store: options.store,
+          documentType: versionDocument.type,
+          paths: resolvePaths,
+        });
+
         return {
-          data: toVersionDocumentResponse(versionDocument),
+          data: await applyResolvePlan({
+            authorize: options.authorize,
+            document: responseDocument,
+            request,
+            requiredScope: "content:read",
+            scope,
+            store: options.store,
+            draft: false,
+            plan: resolvePlan,
+          }),
         };
       });
     },

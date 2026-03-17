@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { RuntimeError } from "@mdcms/shared";
+import { RuntimeError, type SchemaRegistryTypeSnapshot } from "@mdcms/shared";
 import { and, eq, ne, sql, type SQL } from "drizzle-orm";
 
 import type { DrizzleDatabase } from "../db.js";
@@ -377,6 +377,25 @@ export function createDatabaseContentStore(
   }
 
   return {
+    async getSchema(scope, type) {
+      const normalizedType = assertRequiredString(type, "type");
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        return undefined;
+      }
+
+      const row = await db.query.schemaRegistryEntries.findFirst({
+        where: and(
+          eq(schemaRegistryEntries.projectId, scopeIds.projectId),
+          eq(schemaRegistryEntries.environmentId, scopeIds.environmentId),
+          eq(schemaRegistryEntries.schemaType, normalizedType),
+        ),
+      });
+
+      return row?.resolvedSchema as SchemaRegistryTypeSnapshot | undefined;
+    },
+
     async create(scope, payload) {
       const path = assertRequiredString(payload.path, "path");
       const type = assertRequiredString(payload.type, "type");

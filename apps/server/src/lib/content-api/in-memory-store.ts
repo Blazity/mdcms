@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { RuntimeError } from "@mdcms/shared";
+import { RuntimeError, type SchemaRegistryTypeSnapshot } from "@mdcms/shared";
 
 import {
   DEFAULT_ACTOR,
@@ -12,6 +12,7 @@ import {
   type ContentStore,
   type ContentVersionDocument,
   type ContentVersionSummary,
+  type CreateInMemoryContentStoreOptions,
 } from "./types.js";
 import {
   assertJsonObject,
@@ -29,12 +30,25 @@ function toScopeKey(project: string, environment: string): string {
   return `${project}::${environment}`;
 }
 
-export function createInMemoryContentStore(): ContentStore {
+export function createInMemoryContentStore(
+  options: CreateInMemoryContentStoreOptions = {},
+): ContentStore {
   const scopedDocs = new Map<string, Map<string, ContentDocument>>();
   const scopedPublishedSnapshots = new Map<
     string,
     Map<string, Map<number, ContentPublishedSnapshot>>
   >();
+  const scopedSchemas = new Map<
+    string,
+    Map<string, SchemaRegistryTypeSnapshot>
+  >();
+
+  for (const scope of options.schemaScopes ?? []) {
+    scopedSchemas.set(
+      toScopeKey(scope.project, scope.environment),
+      new Map(Object.entries(scope.schemas)),
+    );
+  }
 
   function getScopeStore(scope: ContentScope): Map<string, ContentDocument> {
     const key = toScopeKey(scope.project, scope.environment);
@@ -191,6 +205,13 @@ export function createInMemoryContentStore(): ContentStore {
   }
 
   return {
+    async getSchema(scope, type) {
+      const normalizedType = assertRequiredString(type, "type");
+      return scopedSchemas
+        .get(toScopeKey(scope.project, scope.environment))
+        ?.get(normalizedType);
+    },
+
     async create(scope, payload) {
       const store = getScopeStore(scope);
       const path = assertRequiredString(payload.path, "path");

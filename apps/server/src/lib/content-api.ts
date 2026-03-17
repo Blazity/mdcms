@@ -1,7 +1,9 @@
 export type {
+  CreateInMemoryContentStoreOptions,
   ContentRequestAuthorizer,
   ContentStore,
   CreateDatabaseContentStoreOptions,
+  InMemoryContentSchemaScope,
   MountContentApiRoutesOptions,
 } from "./content-api/types.js";
 export { createDatabaseContentStore } from "./content-api/database-store.js";

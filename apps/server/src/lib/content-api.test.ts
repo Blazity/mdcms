@@ -6,6 +6,7 @@ import { createConsoleLogger } from "@mdcms/shared";
 import { eq } from "drizzle-orm";
 import postgres from "postgres";
 
+import type { ContentWritePayload } from "./content-api/types.js";
 import type { DrizzleDatabase } from "./db.js";
 import {
   documents,
@@ -203,6 +204,7 @@ async function createDatabaseTestContext(
       dbConnection,
       cookie,
       setCookie,
+      userId: loginBody.data.session.userId,
       csrfHeaders: (headers: Record<string, string> = {}) =>
         createCsrfHeaders({ cookie, setCookie }, headers),
     };
@@ -221,6 +223,7 @@ async function seedSchemaRegistryScope(
       type: string;
       directory: string;
       localized: boolean;
+      fields?: Record<string, unknown>;
     }>;
   },
 ) {
@@ -271,7 +274,7 @@ async function seedSchemaRegistryScope(
       type: entry.type,
       directory: entry.directory,
       localized: entry.localized,
-      fields: {},
+      fields: entry.fields ?? {},
     };
 
     await db
@@ -301,6 +304,226 @@ async function seedSchemaRegistryScope(
         },
       });
   }
+}
+
+const cms26BlogPostSchemaFields = {
+  slug: {
+    kind: "string",
+    required: true,
+    nullable: false,
+  },
+  title: {
+    kind: "string",
+    required: false,
+    nullable: true,
+  },
+  author: {
+    kind: "string",
+    required: false,
+    nullable: true,
+    reference: {
+      targetType: "Author",
+    },
+  },
+  hero: {
+    kind: "object",
+    required: false,
+    nullable: true,
+    fields: {
+      author: {
+        kind: "string",
+        required: false,
+        nullable: true,
+        reference: {
+          targetType: "Author",
+        },
+      },
+    },
+  },
+  slugline: {
+    kind: "string",
+    required: false,
+    nullable: true,
+  },
+};
+
+const cms26AuthorSchemaFields = {
+  name: {
+    kind: "string",
+    required: true,
+    nullable: false,
+  },
+};
+
+const cms26PageSchemaFields = {
+  slug: {
+    kind: "string",
+    required: true,
+    nullable: false,
+  },
+};
+
+function createCms26ResolvedSchemas() {
+  return {
+    BlogPost: {
+      type: "BlogPost",
+      directory: "content/blog",
+      localized: true,
+      fields: cms26BlogPostSchemaFields,
+    },
+    Author: {
+      type: "Author",
+      directory: "content/authors",
+      localized: true,
+      fields: cms26AuthorSchemaFields,
+    },
+    Page: {
+      type: "Page",
+      directory: "content/pages",
+      localized: true,
+      fields: cms26PageSchemaFields,
+    },
+  };
+}
+
+async function seedCms26ReferenceSchema(
+  db: DrizzleDatabase,
+  scope: { project: string; environment: string },
+) {
+  await seedSchemaRegistryScope(db, {
+    scope,
+    entries: [
+      {
+        type: "BlogPost",
+        directory: "content/blog",
+        localized: true,
+        fields: cms26BlogPostSchemaFields,
+      },
+      {
+        type: "Author",
+        directory: "content/authors",
+        localized: true,
+        fields: cms26AuthorSchemaFields,
+      },
+      {
+        type: "Page",
+        directory: "content/pages",
+        localized: true,
+        fields: cms26PageSchemaFields,
+      },
+    ],
+  });
+}
+
+async function createContentDocument(
+  handler: ReturnType<typeof createServerRequestHandler>,
+  csrfHeaders: (headers?: Record<string, string>) => Record<string, string>,
+  scopeHeaders: Record<string, string>,
+  payload: ContentWritePayload,
+) {
+  const response = await handler(
+    new Request("http://localhost/api/v1/content", {
+      method: "POST",
+      headers: csrfHeaders({
+        ...scopeHeaders,
+        "content-type": "application/json",
+      }),
+      body: JSON.stringify(payload),
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { data: Record<string, unknown> };
+  return body.data;
+}
+
+async function createCms26Author(
+  handler: ReturnType<typeof createServerRequestHandler>,
+  csrfHeaders: (headers?: Record<string, string>) => Record<string, string>,
+  scopeHeaders: Record<string, string>,
+  slug: string,
+) {
+  return createContentDocument(handler, csrfHeaders, scopeHeaders, {
+    path: `authors/cms26-${slug}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`,
+    type: "Author",
+    locale: "en",
+    format: "md",
+    frontmatter: {
+      slug,
+      name: `${slug} author`,
+    },
+    body: `${slug} bio`,
+  });
+}
+
+async function createCms26BlogPost(
+  handler: ReturnType<typeof createServerRequestHandler>,
+  csrfHeaders: (headers?: Record<string, string>) => Record<string, string>,
+  scopeHeaders: Record<string, string>,
+  slug: string,
+  frontmatter: Record<string, unknown>,
+) {
+  return createContentDocument(handler, csrfHeaders, scopeHeaders, {
+    path: `blog/cms26-${slug}-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`,
+    type: "BlogPost",
+    locale: "en",
+    format: "md",
+    frontmatter: {
+      slug,
+      ...frontmatter,
+    },
+    body: `${slug} body`,
+  });
+}
+
+async function publishContentDocument(
+  handler: ReturnType<typeof createServerRequestHandler>,
+  csrfHeaders: (headers?: Record<string, string>) => Record<string, string>,
+  scopeHeaders: Record<string, string>,
+  documentId: string,
+) {
+  const response = await handler(
+    new Request(`http://localhost/api/v1/content/${documentId}/publish`, {
+      method: "POST",
+      headers: csrfHeaders({
+        ...scopeHeaders,
+        "content-type": "application/json",
+      }),
+      body: JSON.stringify({
+        change_summary: "cms26 publish",
+      }),
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  return (await response.json()) as {
+    data: {
+      version: number;
+      publishedVersion: number | null;
+    };
+  };
+}
+
+async function deleteContentDocument(
+  handler: ReturnType<typeof createServerRequestHandler>,
+  csrfHeaders: (headers?: Record<string, string>) => Record<string, string>,
+  scopeHeaders: Record<string, string>,
+  documentId: string,
+) {
+  const response = await handler(
+    new Request(`http://localhost/api/v1/content/${documentId}`, {
+      method: "DELETE",
+      headers: csrfHeaders({
+        ...scopeHeaders,
+      }),
+    }),
+  );
+
+  assert.equal(response.status, 200);
 }
 
 testWithDatabase(
@@ -396,6 +619,1272 @@ testWithDatabase(
       );
 
       assert.equal(apiKeyCreateResponse.status, 200);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API resolve list inline returns referenced authors",
+  async () => {
+    const { handler, dbConnection, cookie, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-resolve-list");
+    const project = `cms26-resolve-list-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const mainAuthor = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "list-primary",
+      );
+      const heroAuthor = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "list-hero",
+      );
+      const blog = await createCms26BlogPost(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "resolve-list",
+        {
+          author: mainAuthor.documentId as string,
+          hero: { author: heroAuthor.documentId as string },
+        },
+      );
+
+      const response = await handler(
+        new Request(
+          "http://localhost/api/v1/content?type=BlogPost&draft=true&sort=path&order=asc&resolve=author&resolve=hero.author",
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const body = (await response.json()) as {
+        data: Array<Record<string, unknown>>;
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(body.data.length, 1);
+
+      const [document] = body.data;
+      assert.equal(document.documentId, blog.documentId);
+      const frontmatter = document.frontmatter as Record<string, unknown>;
+      const resolvedAuthor = frontmatter.author as Record<string, unknown>;
+      assert.equal(resolvedAuthor?.documentId, mainAuthor.documentId);
+      const hero = frontmatter.hero as Record<string, unknown> | undefined;
+      const resolvedHero = hero?.author as Record<string, unknown>;
+      assert.equal(resolvedHero?.documentId, heroAuthor.documentId);
+      assert.equal(document.resolveErrors, undefined);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+test("content API in-memory resolve supports configured schema scopes", async () => {
+  const store = createInMemoryContentStore({
+    schemaScopes: [
+      {
+        project: scopeHeaders["x-mdcms-project"],
+        environment: scopeHeaders["x-mdcms-environment"],
+        schemas: createCms26ResolvedSchemas(),
+      },
+    ],
+  });
+  const handler = createServerRequestHandler({
+    env: baseEnv,
+    configureApp: (app) => {
+      mountContentApiRoutes(app, {
+        store,
+        authorize: async () => undefined,
+        requireCsrf: async () => undefined,
+      });
+    },
+    now: () => new Date("2026-03-02T10:00:00.000Z"),
+  });
+
+  const authorCreateResponse = await handler(
+    new Request("http://localhost/api/v1/content", {
+      method: "POST",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "authors/in-memory-author",
+        type: "Author",
+        locale: "en",
+        format: "md",
+        frontmatter: {
+          slug: "in-memory-author",
+          name: "In Memory Author",
+        },
+        body: "author body",
+      }),
+    }),
+  );
+  const authorCreateBody = (await authorCreateResponse.json()) as {
+    data: {
+      documentId: string;
+    };
+  };
+  assert.equal(authorCreateResponse.status, 200);
+
+  const blogCreateResponse = await handler(
+    new Request("http://localhost/api/v1/content", {
+      method: "POST",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "blog/in-memory-resolve",
+        type: "BlogPost",
+        locale: "en",
+        format: "md",
+        frontmatter: {
+          slug: "in-memory-resolve",
+          author: authorCreateBody.data.documentId,
+        },
+        body: "blog body",
+      }),
+    }),
+  );
+  const blogCreateBody = (await blogCreateResponse.json()) as {
+    data: {
+      documentId: string;
+    };
+  };
+  assert.equal(blogCreateResponse.status, 200);
+
+  const response = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${blogCreateBody.data.documentId}?draft=true&resolve=author`,
+      {
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const body = (await response.json()) as {
+    data: Record<string, unknown>;
+  };
+
+  assert.equal(response.status, 200);
+  const frontmatter = body.data.frontmatter as Record<string, unknown>;
+  const resolvedAuthor = frontmatter.author as Record<string, unknown>;
+  assert.equal(resolvedAuthor?.documentId, authorCreateBody.data.documentId);
+  assert.equal(body.data.resolveErrors, undefined);
+});
+
+testWithDatabase(
+  "content API resolve single document returns inline references",
+  async () => {
+    const { handler, dbConnection, cookie, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-resolve-single");
+    const project = `cms26-resolve-single-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const mainAuthor = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "single-primary",
+      );
+      const heroAuthor = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "single-hero",
+      );
+      const blog = await createCms26BlogPost(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "resolve-single",
+        {
+          author: mainAuthor.documentId as string,
+          hero: { author: heroAuthor.documentId as string },
+        },
+      );
+
+      const response = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${blog.documentId}?draft=true&resolve=author&resolve=hero.author`,
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const body = (await response.json()) as {
+        data: Record<string, unknown>;
+      };
+
+      assert.equal(response.status, 200);
+      const document = body.data;
+      const frontmatter = document.frontmatter as Record<string, unknown>;
+      const resolvedAuthor = frontmatter.author as Record<string, unknown>;
+      assert.equal(resolvedAuthor?.documentId, mainAuthor.documentId);
+      const hero = frontmatter.hero as Record<string, unknown> | undefined;
+      const resolvedHero = hero?.author as Record<string, unknown>;
+      assert.equal(resolvedHero?.documentId, heroAuthor.documentId);
+      assert.equal(document.resolveErrors, undefined);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API resolve version detail returns inline references",
+  async () => {
+    const { handler, dbConnection, cookie, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-resolve-version");
+    const project = `cms26-resolve-version-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const author = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "version-primary",
+      );
+      await publishContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        author.documentId as string,
+      );
+      const blog = await createCms26BlogPost(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "resolve-version",
+        {
+          author: author.documentId as string,
+        },
+      );
+      await publishContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        blog.documentId as string,
+      );
+
+      const response = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${blog.documentId}/versions/1?resolve=author`,
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const body = (await response.json()) as {
+        data: Record<string, unknown>;
+      };
+
+      assert.equal(response.status, 200);
+      const frontmatter = body.data.frontmatter as Record<string, unknown>;
+      const resolvedAuthor = frontmatter.author as Record<string, unknown>;
+      assert.equal(resolvedAuthor?.documentId, author.documentId);
+      assert.equal(body.data.resolveErrors, undefined);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API version summary stays summary-only when resolve is requested",
+  async () => {
+    const { handler, dbConnection, cookie, csrfHeaders } =
+      await createDatabaseTestContext(
+        "test:content-api-versions-summary-resolve",
+      );
+    const project = `cms26-resolve-summary-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const author = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "summary-author",
+      );
+      const blog = await createCms26BlogPost(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "resolve-summary",
+        {
+          author: author.documentId as string,
+        },
+      );
+      await publishContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        blog.documentId as string,
+      );
+
+      const response = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${blog.documentId}/versions?resolve=author&limit=1`,
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const body = (await response.json()) as {
+        data: Array<Record<string, unknown>>;
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(body.data.length, 1);
+      assert.equal(body.data[0].frontmatter, undefined);
+      assert.equal(body.data[0].resolveErrors, undefined);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API resolve rejects invalid and non-reference paths",
+  async () => {
+    const { handler, dbConnection, cookie, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-resolve-invalid-path");
+    const project = `cms26-resolve-invalid-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const author = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "invalid-path-author",
+      );
+      const blog = await createCms26BlogPost(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "resolve-invalid",
+        {
+          author: author.documentId as string,
+          slugline: "not-a-reference",
+        },
+      );
+
+      const invalidResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${blog.documentId}?draft=true&resolve=missingField`,
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const invalidBody = (await invalidResponse.json()) as {
+        code: string;
+      };
+      assert.equal(invalidResponse.status, 400);
+      assert.equal(invalidBody.code, "INVALID_QUERY_PARAM");
+
+      const nonRefResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${blog.documentId}?draft=true&resolve=slugline`,
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const nonRefBody = (await nonRefResponse.json()) as {
+        code: string;
+      };
+      assert.equal(nonRefResponse.status, 400);
+      assert.equal(nonRefBody.code, "INVALID_QUERY_PARAM");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API resolve list requires a type filter",
+  async () => {
+    const { handler, dbConnection, cookie } = await createDatabaseTestContext(
+      "test:content-api-resolve-list-requires-type",
+    );
+    const project = `cms26-resolve-list-type-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await seedCms26ReferenceSchema(dbConnection.db, scope);
+
+      const response = await handler(
+        new Request(
+          "http://localhost/api/v1/content?draft=true&resolve=author",
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const body = (await response.json()) as {
+        code: string;
+      };
+
+      assert.equal(response.status, 400);
+      assert.equal(body.code, "INVALID_QUERY_PARAM");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API resolve missing reference records resolveErrors",
+  async () => {
+    const { handler, dbConnection, cookie, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-resolve-missing");
+    const project = `cms26-resolve-missing-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const heroAuthor = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "missing-hero",
+      );
+      const missingId = randomUUID();
+      const blog = await createCms26BlogPost(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "resolve-missing",
+        {
+          author: missingId,
+          hero: { author: heroAuthor.documentId as string },
+        },
+      );
+
+      const response = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${blog.documentId}?draft=true&resolve=author&resolve=hero.author`,
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const body = (await response.json()) as {
+        data: Record<string, unknown>;
+      };
+
+      assert.equal(response.status, 200);
+      const frontmatter = body.data.frontmatter as Record<string, unknown>;
+      assert.equal(frontmatter.author, null);
+      const hero = frontmatter.hero as Record<string, unknown> | undefined;
+      const resolvedHero = hero?.author as Record<string, unknown>;
+      assert.equal(resolvedHero?.documentId, heroAuthor.documentId);
+
+      const resolveErrors = body.data.resolveErrors as
+        | Record<string, { code: string; ref: Record<string, unknown> }>
+        | undefined;
+      assert.ok(resolveErrors);
+      assert.equal(
+        resolveErrors?.["frontmatter.author"]?.code,
+        "REFERENCE_NOT_FOUND",
+      );
+      assert.equal(
+        resolveErrors?.["frontmatter.author"]?.ref.documentId,
+        missingId,
+      );
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API resolve malformed reference values become null with resolveErrors",
+  async () => {
+    const { handler, dbConnection, cookie, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-resolve-malformed");
+    const project = `cms26-resolve-malformed-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const blog = await createCms26BlogPost(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "resolve-malformed",
+        {
+          author: {
+            bad: true,
+          },
+        },
+      );
+
+      const response = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${blog.documentId}?draft=true&resolve=author`,
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const body = (await response.json()) as {
+        data: Record<string, unknown>;
+      };
+
+      assert.equal(response.status, 200);
+      const frontmatter = body.data.frontmatter as Record<string, unknown>;
+      assert.equal(frontmatter.author, null);
+      const resolveErrors = body.data.resolveErrors as
+        | Record<string, { code: string; ref: Record<string, unknown> }>
+        | undefined;
+      assert.ok(resolveErrors);
+      assert.equal(
+        resolveErrors?.["frontmatter.author"]?.code,
+        "REFERENCE_NOT_FOUND",
+      );
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API resolve deleted reference surfaces resolveErrors",
+  async () => {
+    const { handler, dbConnection, cookie, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-resolve-deleted");
+    const project = `cms26-resolve-deleted-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const deletedAuthor = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "deleted-author",
+      );
+      await deleteContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        deletedAuthor.documentId as string,
+      );
+      const blog = await createCms26BlogPost(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "resolve-deleted",
+        {
+          hero: { author: deletedAuthor.documentId as string },
+        },
+      );
+
+      const response = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${blog.documentId}?draft=true&resolve=hero.author`,
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const body = (await response.json()) as {
+        data: Record<string, unknown>;
+      };
+
+      assert.equal(response.status, 200);
+      const frontmatter = body.data.frontmatter as Record<string, unknown>;
+      const hero = frontmatter.hero as Record<string, unknown> | undefined;
+      assert.equal(hero?.author, null);
+
+      const resolveErrors = body.data.resolveErrors as
+        | Record<string, { code: string; ref: Record<string, unknown> }>
+        | undefined;
+      assert.ok(resolveErrors);
+      assert.equal(
+        resolveErrors?.["frontmatter.hero.author"]?.code,
+        "REFERENCE_DELETED",
+      );
+      assert.equal(
+        resolveErrors?.["frontmatter.hero.author"]?.ref.documentId,
+        deletedAuthor.documentId,
+      );
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API resolve hidden deleted references surface forbidden",
+  async () => {
+    const { handler, dbConnection, cookie, csrfHeaders, userId } =
+      await createDatabaseTestContext(
+        "test:content-api-resolve-hidden-deleted",
+      );
+    const project = `cms26-resolve-hidden-deleted-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const author = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "hidden-deleted-author",
+      );
+      await deleteContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        author.documentId as string,
+      );
+      const blog = await createCms26BlogPost(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "hidden-deleted-blog",
+        {
+          author: author.documentId as string,
+        },
+      );
+
+      await dbConnection.db
+        .delete(rbacGrants)
+        .where(eq(rbacGrants.userId, userId));
+
+      await dbConnection.db.insert(rbacGrants).values({
+        userId,
+        role: "editor",
+        scopeKind: "folder_prefix",
+        project,
+        environment: "production",
+        pathPrefix: "blog/",
+        source: "test:content-api-resolve-hidden-deleted",
+        createdByUserId: userId,
+      });
+
+      const response = await handler(
+        new Request(
+          "http://localhost/api/v1/content?type=BlogPost&draft=true&path=blog/&resolve=author",
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const body = (await response.json()) as {
+        data: Array<Record<string, unknown>>;
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(body.data.length, 1);
+      assert.equal(body.data[0]?.documentId, blog.documentId);
+      const frontmatter = body.data[0]?.frontmatter as Record<string, unknown>;
+      assert.equal(frontmatter.author, null);
+      const resolveErrors = body.data[0]?.resolveErrors as
+        | Record<string, { code: string; ref: Record<string, unknown> }>
+        | undefined;
+      assert.ok(resolveErrors);
+      assert.equal(
+        resolveErrors?.["frontmatter.author"]?.code,
+        "REFERENCE_FORBIDDEN",
+      );
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API resolve type mismatch surfaces resolveErrors",
+  async () => {
+    const { handler, dbConnection, cookie, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-resolve-type-mismatch");
+    const project = `cms26-resolve-mismatch-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const page = await createContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        {
+          path: `pages/cms26-${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2, 8)}`,
+          type: "Page",
+          locale: "en",
+          format: "md",
+          frontmatter: {
+            slug: "resolve-page-type-mismatch",
+          },
+          body: "page body",
+        },
+      );
+      const blog = await createCms26BlogPost(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "resolve-mismatch",
+        {
+          author: page.documentId as string,
+        },
+      );
+
+      const response = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${blog.documentId}?draft=true&resolve=author`,
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const body = (await response.json()) as {
+        data: Record<string, unknown>;
+      };
+
+      assert.equal(response.status, 200);
+      const frontmatter = body.data.frontmatter as Record<string, unknown>;
+      assert.equal(frontmatter.author, null);
+      const resolveErrors = body.data.resolveErrors as
+        | Record<string, { code: string; ref: Record<string, unknown> }>
+        | undefined;
+      assert.ok(resolveErrors);
+      assert.equal(
+        resolveErrors?.["frontmatter.author"]?.code,
+        "REFERENCE_TYPE_MISMATCH",
+      );
+      assert.equal(
+        resolveErrors?.["frontmatter.author"]?.ref.documentId,
+        page.documentId,
+      );
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API resolve forbidden reference surfaces resolveErrors on list reads",
+  async () => {
+    const { handler, dbConnection, cookie, csrfHeaders, userId } =
+      await createDatabaseTestContext("test:content-api-resolve-forbidden");
+    const project = `cms26-resolve-forbidden-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const author = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "forbidden-author",
+      );
+      const blog = await createCms26BlogPost(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "resolve-forbidden",
+        {
+          author: author.documentId as string,
+        },
+      );
+
+      await dbConnection.db
+        .delete(rbacGrants)
+        .where(eq(rbacGrants.userId, userId));
+
+      await dbConnection.db.insert(rbacGrants).values({
+        userId,
+        role: "editor",
+        scopeKind: "folder_prefix",
+        project,
+        environment: "production",
+        pathPrefix: "blog/",
+        source: "test:content-api-resolve-forbidden",
+        createdByUserId: userId,
+      });
+
+      const response = await handler(
+        new Request(
+          "http://localhost/api/v1/content?type=BlogPost&draft=true&path=blog/&resolve=author",
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const body = (await response.json()) as {
+        data: Array<Record<string, unknown>>;
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(body.data.length, 1);
+      assert.equal(body.data[0]?.documentId, blog.documentId);
+      const frontmatter = body.data[0]?.frontmatter as Record<string, unknown>;
+      assert.equal(frontmatter.author, null);
+      const resolveErrors = body.data[0]?.resolveErrors as
+        | Record<string, { code: string; ref: Record<string, unknown> }>
+        | undefined;
+      assert.ok(resolveErrors);
+      assert.equal(
+        resolveErrors?.["frontmatter.author"]?.code,
+        "REFERENCE_FORBIDDEN",
+      );
+      assert.equal(
+        resolveErrors?.["frontmatter.author"]?.ref.documentId,
+        author.documentId,
+      );
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API resolve draft-only references publishes as not found but resolves in drafts",
+  async () => {
+    const { handler, dbConnection, cookie, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-resolve-draft-only");
+    const project = `cms26-resolve-draft-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const draftOnlyAuthor = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "draft-only-author",
+      );
+      const blog = await createCms26BlogPost(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "resolve-draft",
+        {
+          author: draftOnlyAuthor.documentId as string,
+        },
+      );
+      await publishContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        blog.documentId as string,
+      );
+
+      const publishedResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${blog.documentId}?resolve=author`,
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const publishedBody = (await publishedResponse.json()) as {
+        data: Record<string, unknown>;
+      };
+      assert.equal(publishedResponse.status, 200);
+      const publishedFrontmatter = publishedBody.data.frontmatter as Record<
+        string,
+        unknown
+      >;
+      assert.equal(publishedFrontmatter.author, null);
+      const publishedErrors = publishedBody.data.resolveErrors as
+        | Record<string, { code: string; ref: Record<string, unknown> }>
+        | undefined;
+      assert.ok(publishedErrors);
+      assert.equal(
+        publishedErrors?.["frontmatter.author"]?.code,
+        "REFERENCE_NOT_FOUND",
+      );
+
+      const draftResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${blog.documentId}?draft=true&resolve=author`,
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const draftBody = (await draftResponse.json()) as {
+        data: Record<string, unknown>;
+      };
+      assert.equal(draftResponse.status, 200);
+      const draftFrontmatter = draftBody.data.frontmatter as Record<
+        string,
+        unknown
+      >;
+      const resolvedAuthor = draftFrontmatter.author as Record<
+        string,
+        unknown
+      > | null;
+      assert.equal(resolvedAuthor?.documentId, draftOnlyAuthor.documentId);
+      assert.equal(draftBody.data.resolveErrors, undefined);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API resolve published reads hide draft-only deleted references as not found",
+  async () => {
+    const { handler, dbConnection, cookie, csrfHeaders } =
+      await createDatabaseTestContext(
+        "test:content-api-resolve-published-draft-deleted",
+      );
+    const project = `cms26-resolve-published-deleted-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const deletedAuthor = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "draft-only-deleted-author",
+      );
+      await deleteContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        deletedAuthor.documentId as string,
+      );
+      const blog = await createCms26BlogPost(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "resolve-published-deleted",
+        {
+          author: deletedAuthor.documentId as string,
+        },
+      );
+      await publishContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        blog.documentId as string,
+      );
+
+      const response = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${blog.documentId}?resolve=author`,
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const body = (await response.json()) as {
+        data: Record<string, unknown>;
+      };
+
+      assert.equal(response.status, 200);
+      const frontmatter = body.data.frontmatter as Record<string, unknown>;
+      assert.equal(frontmatter.author, null);
+      const resolveErrors = body.data.resolveErrors as
+        | Record<string, { code: string; ref: Record<string, unknown> }>
+        | undefined;
+      assert.ok(resolveErrors);
+      assert.equal(
+        resolveErrors?.["frontmatter.author"]?.code,
+        "REFERENCE_NOT_FOUND",
+      );
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API resolve published reads hide draft-only type mismatches as not found",
+  async () => {
+    const { handler, dbConnection, cookie, csrfHeaders } =
+      await createDatabaseTestContext(
+        "test:content-api-resolve-published-draft-mismatch",
+      );
+    const project = `cms26-resolve-published-mismatch-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const draftOnlyPage = await createContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        {
+          path: `pages/cms26-published-mismatch-${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2, 8)}`,
+          type: "Page",
+          locale: "en",
+          format: "md",
+          frontmatter: {
+            slug: "draft-only-page",
+          },
+          body: "draft-only page body",
+        },
+      );
+      const blog = await createCms26BlogPost(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "resolve-published-mismatch",
+        {
+          author: draftOnlyPage.documentId as string,
+        },
+      );
+      await publishContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        blog.documentId as string,
+      );
+
+      const response = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${blog.documentId}?resolve=author`,
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const body = (await response.json()) as {
+        data: Record<string, unknown>;
+      };
+
+      assert.equal(response.status, 200);
+      const frontmatter = body.data.frontmatter as Record<string, unknown>;
+      assert.equal(frontmatter.author, null);
+      const resolveErrors = body.data.resolveErrors as
+        | Record<string, { code: string; ref: Record<string, unknown> }>
+        | undefined;
+      assert.ok(resolveErrors);
+      assert.equal(
+        resolveErrors?.["frontmatter.author"]?.code,
+        "REFERENCE_NOT_FOUND",
+      );
     } finally {
       await dbConnection.close();
     }

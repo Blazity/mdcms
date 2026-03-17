@@ -14,6 +14,21 @@ export type ApiPaginatedEnvelope<T> = {
   pagination: PaginationMetadata;
 };
 
+export type ContentResolveError = {
+  code:
+    | "REFERENCE_NOT_FOUND"
+    | "REFERENCE_DELETED"
+    | "REFERENCE_TYPE_MISMATCH"
+    | "REFERENCE_FORBIDDEN";
+  message: string;
+  ref: {
+    documentId: string;
+    type: string;
+  };
+};
+
+export type ResolveErrorsMap = Record<string, ContentResolveError>;
+
 export type ContentDocumentResponse = {
   documentId: string;
   translationGroupId: string;
@@ -30,6 +45,7 @@ export type ContentDocumentResponse = {
   draftRevision: number;
   frontmatter: Record<string, unknown>;
   body: string;
+  resolveErrors?: ResolveErrorsMap;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -53,4 +69,5 @@ export type ContentVersionSummaryResponse = {
 export type ContentVersionDocumentResponse = ContentVersionSummaryResponse & {
   frontmatter: Record<string, unknown>;
   body: string;
+  resolveErrors?: ResolveErrorsMap;
 };
