@@ -108,6 +108,12 @@ Backend API/runtime package boundary for MDCMS.
   - `POST /api/v1/content/:documentId/versions/:version/restore`
   - `POST /api/v1/content/:documentId/publish`
   - `POST /api/v1/content/:documentId/unpublish`
+- Content create/update writes are schema-gated:
+  - `POST /api/v1/content`
+  - `PUT /api/v1/content/:documentId`
+- Those writes require `x-mdcms-schema-hash`.
+- Missing or blank hashes fail with `SCHEMA_HASH_REQUIRED` (`400`), missing target sync records fail with `SCHEMA_NOT_SYNCED` (`409`), and mismatched hashes fail with `SCHEMA_HASH_MISMATCH` (`409`).
+- `reference('Type')` values are stored as plain environment-local `document_id` UUID strings, not `{$ref, type}` objects.
 - List endpoint query contract supports:
   - `type`, `path`, `locale`, `slug`, `published`, `isDeleted`, `hasUnpublishedChanges`, `draft`, `resolve`, `project`, `environment`, `limit`, `offset`, `sort`, `order`, `q`
 - Version-history list query contract supports:

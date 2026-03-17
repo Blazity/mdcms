@@ -12,6 +12,7 @@ import {
   type ContentStore,
   type ContentVersionDocument,
   type ContentVersionSummary,
+  type ContentWriteOperationOptions,
   type CreateInMemoryContentStoreOptions,
 } from "./types.js";
 import {
@@ -24,6 +25,7 @@ import {
   parseSortField,
   parseSortOrder,
 } from "./parsing.js";
+import { validateReferenceFieldIdentities } from "./reference-validation.js";
 import { matchesDeletedListVisibility } from "./visibility.js";
 
 function toScopeKey(project: string, environment: string): string {
@@ -74,6 +76,12 @@ export function createInMemoryContentStore(
     }
 
     return store;
+  }
+
+  function getScopeSchemas(
+    scope: ContentScope,
+  ): Map<string, SchemaRegistryTypeSnapshot> | undefined {
+    return scopedSchemas.get(toScopeKey(scope.project, scope.environment));
   }
 
   function findPathConflict(
@@ -212,8 +220,9 @@ export function createInMemoryContentStore(
         ?.get(normalizedType);
     },
 
-    async create(scope, payload) {
+    async create(scope, payload, _options?: ContentWriteOperationOptions) {
       const store = getScopeStore(scope);
+      const scopeSchemas = getScopeSchemas(scope);
       const path = assertRequiredString(payload.path, "path");
       const type = assertRequiredString(payload.type, "type");
       const locale = assertRequiredString(payload.locale, "locale");
@@ -253,6 +262,38 @@ export function createInMemoryContentStore(
           },
         });
       }
+
+      const schema = scopeSchemas?.get(type);
+
+      if (!schema) {
+        throw new RuntimeError({
+          code: "INVALID_INPUT",
+          message: 'Field "type" must reference a synced schema type.',
+          statusCode: 400,
+          details: {
+            field: "type",
+            type,
+          },
+        });
+      }
+
+      await validateReferenceFieldIdentities({
+        schema,
+        frontmatter,
+        lookupTarget: async (documentId) => {
+          const target = store.get(documentId);
+
+          if (!target) {
+            return undefined;
+          }
+
+          return {
+            documentId: target.documentId,
+            type: target.type,
+            isDeleted: target.isDeleted,
+          };
+        },
+      });
 
       const conflict = findPathConflict(store, { path, locale });
 
@@ -452,8 +493,14 @@ export function createInMemoryContentStore(
       });
     },
 
-    async update(scope, documentId, payload) {
+    async update(
+      scope,
+      documentId,
+      payload,
+      _options?: ContentWriteOperationOptions,
+    ) {
       const store = getScopeStore(scope);
+      const scopeSchemas = getScopeSchemas(scope);
       const normalizedDocumentId = assertRequiredString(
         documentId,
         "documentId",
@@ -470,6 +517,46 @@ export function createInMemoryContentStore(
           },
         });
       }
+
+      const nextType =
+        payload.type !== undefined
+          ? assertRequiredString(payload.type, "type")
+          : existing.type;
+      const nextFrontmatter =
+        payload.frontmatter !== undefined
+          ? assertJsonObject(payload.frontmatter, "frontmatter")
+          : existing.frontmatter;
+      const schema = scopeSchemas?.get(nextType);
+
+      if (!schema) {
+        throw new RuntimeError({
+          code: "INVALID_INPUT",
+          message: 'Field "type" must reference a synced schema type.',
+          statusCode: 400,
+          details: {
+            field: "type",
+            type: nextType,
+          },
+        });
+      }
+
+      await validateReferenceFieldIdentities({
+        schema,
+        frontmatter: nextFrontmatter,
+        lookupTarget: async (candidateDocumentId) => {
+          const target = store.get(candidateDocumentId);
+
+          if (!target) {
+            return undefined;
+          }
+
+          return {
+            documentId: target.documentId,
+            type: target.type,
+            isDeleted: target.isDeleted,
+          };
+        },
+      });
 
       const nextPath =
         payload.path !== undefined
@@ -523,19 +610,13 @@ export function createInMemoryContentStore(
       const updated: ContentDocument = {
         ...existing,
         path: nextPath,
-        type:
-          payload.type !== undefined
-            ? assertRequiredString(payload.type, "type")
-            : existing.type,
+        type: nextType,
         locale: nextLocale,
         format:
           payload.format !== undefined
             ? parseContentFormat(payload.format)
             : existing.format,
-        frontmatter:
-          payload.frontmatter !== undefined
-            ? assertJsonObject(payload.frontmatter, "frontmatter")
-            : existing.frontmatter,
+        frontmatter: nextFrontmatter,
         body:
           payload.body !== undefined
             ? assertRequiredString(payload.body, "body", { allowEmpty: true })

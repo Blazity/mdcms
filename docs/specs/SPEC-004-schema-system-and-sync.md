@@ -238,12 +238,13 @@ Inspired by Payload CMS's dev/prod split:
 
 - **All environments:** Schema writes are explicit via `cms schema sync` (and `cms migrate` when data backfill is required). Studio can only run an explicit user-triggered sync action that sends the same schema snapshot payload.
 - **Mismatch behavior:** If Studio's local config hash differs from the server schema hash, Studio shows a banner ("Schema changes detected, run `cms schema sync`"), switches to read-only mode, and blocks content writes until schemas match.
+- **Content write gate:** `POST /api/v1/content` and `PUT /api/v1/content/:documentId` require the `x-mdcms-schema-hash` header. Missing or blank values fail with `SCHEMA_HASH_REQUIRED` (`400`), a missing target sync record fails with `SCHEMA_NOT_SYNCED` (`409`), and a non-matching client/server hash fails with `SCHEMA_HASH_MISMATCH` (`409`).
 
 This ensures schemas only change through deliberate, reviewable actions.
 
 ### Reference Field Identity
 
-`reference('Type')` fields store the target document's **environment-local `document_id`** (plus target type metadata).
+`reference('Type')` fields store the target document's **environment-local `document_id` string**. The persisted value is a plain UUID string, not a `{$ref, type}` object; target type metadata remains schema-owned through `reference('Type')`. Write-time reference validation failures continue to use `INVALID_INPUT` (`400`); `resolve` remains read-time only.
 
 - Reference resolution is always scoped to the explicit `(project, environment)` request target.
 - Clone/promote operations remap references using `translation_group_id + locale`.

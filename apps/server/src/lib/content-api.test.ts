@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 
 import { createConsoleLogger } from "@mdcms/shared";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import postgres from "postgres";
 
 import type { ContentWritePayload } from "./content-api/types.js";
@@ -22,6 +22,7 @@ import {
   createInMemoryContentStore,
   mountContentApiRoutes,
 } from "./content-api.js";
+import { CONTENT_SCHEMA_HASH_HEADER } from "./content-api/schema-hash.js";
 import { resolveProjectEnvironmentScope } from "./project-provisioning.js";
 
 const baseEnv = {
@@ -108,20 +109,83 @@ function createCsrfHeaders(
   };
 }
 
-function createHandler() {
-  const store = createInMemoryContentStore();
+const inMemorySchemaHash = "cms29-in-memory-schema-hash";
 
-  return createServerRequestHandler({
+function isContentWriteRoute(request: Request): boolean {
+  const url = new URL(request.url);
+
+  return (
+    (request.method === "POST" && url.pathname === "/api/v1/content") ||
+    (request.method === "PUT" &&
+      /^\/api\/v1\/content\/[^/]+$/.test(url.pathname))
+  );
+}
+
+async function withSchemaHashHeader(
+  request: Request,
+  schemaHash: string,
+): Promise<Request> {
+  const headers = new Headers(request.headers);
+  headers.set(CONTENT_SCHEMA_HASH_HEADER, schemaHash);
+  const bodyText = await request.clone().text();
+
+  return new Request(request.url, {
+    method: request.method,
+    headers,
+    body: bodyText.length > 0 ? bodyText : undefined,
+  });
+}
+
+function wrapHandlerWithAutoSchemaHash(
+  rawHandler: ReturnType<typeof createServerRequestHandler>,
+  resolveSchemaHash: (
+    request: Request,
+  ) => Promise<string | undefined> | string | undefined,
+): ReturnType<typeof createServerRequestHandler> {
+  return async (request: Request): Promise<Response> => {
+    if (
+      !isContentWriteRoute(request) ||
+      request.headers.has(CONTENT_SCHEMA_HASH_HEADER)
+    ) {
+      return rawHandler(request);
+    }
+
+    const schemaHash = await resolveSchemaHash(request);
+
+    if (!schemaHash) {
+      return rawHandler(request);
+    }
+
+    return rawHandler(await withSchemaHashHeader(request, schemaHash));
+  };
+}
+
+function createHandler() {
+  const store = createInMemoryContentStore({
+    schemaScopes: [
+      {
+        project: scopeHeaders["x-mdcms-project"],
+        environment: scopeHeaders["x-mdcms-environment"],
+        schemas: createCms26ResolvedSchemas(),
+      },
+    ],
+  });
+  const rawHandler = createServerRequestHandler({
     env: baseEnv,
     configureApp: (app) => {
       mountContentApiRoutes(app, {
         store,
         authorize: async () => undefined,
         requireCsrf: async () => undefined,
+        getWriteSchemaSyncState: async () => ({
+          schemaHash: inMemorySchemaHash,
+        }),
       });
     },
     now: () => new Date("2026-03-02T10:00:00.000Z"),
   });
+
+  return wrapHandlerWithAutoSchemaHash(rawHandler, () => inMemorySchemaHash);
 }
 
 type TestServerHandlerFactory = (
@@ -134,14 +198,88 @@ type TestServerHandlerFactory = (
   };
 };
 
+type DatabaseTestContextOptions = {
+  autoSchemaHashHeaders?: boolean;
+  autoSeedWriteSchemas?: boolean;
+};
+
+const defaultWriteSchemaSeedEntries = [
+  {
+    type: "Author",
+    directory: "content/authors",
+    localized: true,
+  },
+  {
+    type: "BlogPost",
+    directory: "content/blog",
+    localized: true,
+  },
+  {
+    type: "Page",
+    directory: "content/pages",
+    localized: true,
+  },
+] as const;
+
 async function createDatabaseTestContext(
   source: string,
   createHandlerWithModules: TestServerHandlerFactory = createServerRequestHandlerWithModules,
+  contextOptions: DatabaseTestContextOptions = {},
 ) {
-  const { handler, dbConnection } = createHandlerWithModules({
+  const { handler: baseHandler, dbConnection } = createHandlerWithModules({
     env: dbEnv,
     logger,
   });
+  const handler =
+    contextOptions.autoSchemaHashHeaders === false
+      ? baseHandler
+      : wrapHandlerWithAutoSchemaHash(baseHandler, async (request) => {
+          // Most legacy write tests are asserting lifecycle and scope behavior,
+          // not the CMS-29 transport contract. Dedicated schema-hash tests opt
+          // out of this helper and assert the public header behavior directly.
+          const project = request.headers.get("x-mdcms-project")?.trim();
+          const environment = request.headers
+            .get("x-mdcms-environment")
+            ?.trim();
+
+          if (!project || !environment) {
+            return undefined;
+          }
+
+          const scope = { project, environment };
+          const resolvedScope = await resolveProjectEnvironmentScope(
+            dbConnection.db,
+            {
+              project,
+              environment,
+              createIfMissing: false,
+            },
+          );
+          let schemaHash = resolvedScope
+            ? (
+                await dbConnection.db.query.schemaSyncs.findFirst({
+                  where: and(
+                    eq(schemaSyncs.projectId, resolvedScope.project.id),
+                    eq(schemaSyncs.environmentId, resolvedScope.environment.id),
+                  ),
+                })
+              )?.schemaHash
+            : undefined;
+
+          if (!schemaHash && contextOptions.autoSeedWriteSchemas !== false) {
+            schemaHash = (
+              await seedSchemaRegistryScope(dbConnection.db, {
+                scope,
+                supportedLocales: ["en", "fr", "de"],
+                entries: defaultWriteSchemaSeedEntries.map((entry) => ({
+                  ...entry,
+                })),
+              })
+            ).schemaHash;
+          }
+
+          return schemaHash;
+        });
   const safeSource = source.replace(/[^a-z0-9-]/gi, "-").toLowerCase();
   const email = `content-${safeSource}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@mdcms.local`;
   const password = "Admin12345!";
@@ -218,6 +356,7 @@ async function seedSchemaRegistryScope(
   db: DrizzleDatabase,
   input: {
     scope: { project: string; environment: string };
+    schemaHash?: string;
     supportedLocales?: string[];
     entries: Array<{
       type: string;
@@ -235,7 +374,7 @@ async function seedSchemaRegistryScope(
 
   assert.ok(resolvedScope);
 
-  const schemaHash = `cms20-${randomUUID()}`;
+  const schemaHash = input.schemaHash ?? `cms20-${randomUUID()}`;
   const syncedAt = new Date();
   const rawConfigSnapshot = {
     project: input.scope.project,
@@ -304,6 +443,8 @@ async function seedSchemaRegistryScope(
         },
       });
   }
+
+  return { schemaHash };
 }
 
 const cms26BlogPostSchemaFields = {
@@ -337,6 +478,20 @@ const cms26BlogPostSchemaFields = {
         reference: {
           targetType: "Author",
         },
+      },
+    },
+  },
+  contributors: {
+    kind: "array",
+    required: false,
+    nullable: false,
+    default: [],
+    item: {
+      kind: "string",
+      required: true,
+      nullable: false,
+      reference: {
+        targetType: "Author",
       },
     },
   },
@@ -437,6 +592,17 @@ async function createContentDocument(
   return body.data;
 }
 
+async function overwriteDraftFrontmatter(
+  db: DrizzleDatabase,
+  documentId: string,
+  frontmatter: Record<string, unknown>,
+) {
+  await db
+    .update(documents)
+    .set({ frontmatter })
+    .where(eq(documents.documentId, documentId));
+}
+
 async function createCms26Author(
   handler: ReturnType<typeof createServerRequestHandler>,
   csrfHeaders: (headers?: Record<string, string>) => Record<string, string>,
@@ -478,6 +644,44 @@ async function createCms26BlogPost(
     },
     body: `${slug} body`,
   });
+}
+
+async function createCms28ReferenceWriteContext(source: string) {
+  const context = await createDatabaseTestContext(source);
+  const project = `cms28-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const testScopeHeaders = {
+    ...scopeHeaders,
+    "x-mdcms-project": project,
+    "x-mdcms-environment": "production",
+  };
+  const scope = {
+    project,
+    environment: testScopeHeaders["x-mdcms-environment"],
+  };
+
+  await seedCms26ReferenceSchema(context.dbConnection.db, scope);
+
+  return {
+    ...context,
+    scope,
+    testScopeHeaders,
+  };
+}
+
+function createCms28BlogPostPayload(
+  frontmatter: Record<string, unknown>,
+): ContentWritePayload {
+  return {
+    path: `blog/cms28-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type: "BlogPost",
+    locale: "en",
+    format: "md",
+    frontmatter: {
+      slug: `cms28-${Math.random().toString(36).slice(2, 8)}`,
+      ...frontmatter,
+    },
+    body: "cms28 body",
+  };
 }
 
 async function publishContentDocument(
@@ -577,6 +781,21 @@ testWithDatabase(
       );
 
       assert.equal(allowedSessionResponse.status, 200);
+      const resolvedScope = await resolveProjectEnvironmentScope(
+        dbConnection.db,
+        {
+          project: scopeHeaders["x-mdcms-project"],
+          environment: scopeHeaders["x-mdcms-environment"],
+        },
+      );
+      assert.ok(resolvedScope);
+      const schemaSync = await dbConnection.db.query.schemaSyncs.findFirst({
+        where: and(
+          eq(schemaSyncs.projectId, resolvedScope.project.id),
+          eq(schemaSyncs.environmentId, resolvedScope.environment.id),
+        ),
+      });
+      assert.ok(schemaSync);
 
       const apiKeyResponse = await handler(
         new Request("http://localhost/api/v1/auth/api-keys", {
@@ -606,6 +825,7 @@ testWithDatabase(
             ...scopeHeaders,
             authorization: `Bearer ${apiKeyBody.data.key}`,
             "content-type": "application/json",
+            "x-mdcms-schema-hash": schemaSync.schemaHash,
           },
           body: JSON.stringify({
             path: `blog/csrf-api-key-${Date.now()}`,
@@ -624,6 +844,950 @@ testWithDatabase(
     }
   },
 );
+testWithDatabase(
+  "content API create rejects missing schema hash header",
+  async () => {
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext(
+        "test:content-api-schema-hash-required",
+        createServerRequestHandlerWithModules,
+        { autoSchemaHashHeaders: false },
+      );
+    const project = `cms29-required-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await seedSchemaRegistryScope(dbConnection.db, {
+        scope,
+        schemaHash: "schema-hash-required",
+        entries: [
+          {
+            type: "BlogPost",
+            directory: "content/blog",
+            localized: true,
+          },
+        ],
+      });
+
+      const response = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            path: `blog/schema-required-${Date.now()}`,
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "schema-required" },
+            body: "missing schema hash",
+          }),
+        }),
+      );
+      const body = (await response.json()) as {
+        code: string;
+      };
+
+      assert.equal(response.status, 400);
+      assert.equal(body.code, "SCHEMA_HASH_REQUIRED");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API create rejects unsynced target schema on write",
+  async () => {
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-schema-not-synced");
+    const project = `cms29-not-synced-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+
+    try {
+      const response = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+            "x-mdcms-schema-hash": "unsynced-schema-hash",
+          }),
+          body: JSON.stringify({
+            path: `blog/schema-not-synced-${Date.now()}`,
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "schema-not-synced" },
+            body: "unsynced target schema",
+          }),
+        }),
+      );
+      const body = (await response.json()) as {
+        code: string;
+      };
+
+      assert.equal(response.status, 409);
+      assert.equal(body.code, "SCHEMA_NOT_SYNCED");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API create rejects mismatched schema hash header",
+  async () => {
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-schema-hash-mismatch");
+    const project = `cms29-mismatch-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      const { schemaHash } = await seedSchemaRegistryScope(dbConnection.db, {
+        scope,
+        schemaHash: "schema-hash-match-me",
+        entries: [
+          {
+            type: "BlogPost",
+            directory: "content/blog",
+            localized: true,
+          },
+        ],
+      });
+
+      const response = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+            "x-mdcms-schema-hash": "schema-hash-wrong",
+          }),
+          body: JSON.stringify({
+            path: `blog/schema-mismatch-${Date.now()}`,
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "schema-mismatch" },
+            body: "mismatched schema hash",
+          }),
+        }),
+      );
+      const body = (await response.json()) as {
+        code: string;
+        details?: {
+          clientSchemaHash?: string;
+          serverSchemaHash?: string;
+        };
+      };
+
+      assert.equal(response.status, 409);
+      assert.equal(body.code, "SCHEMA_HASH_MISMATCH");
+      assert.equal(body.details?.clientSchemaHash, "schema-hash-wrong");
+      assert.equal(body.details?.serverSchemaHash, schemaHash);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API update rejects missing schema hash header",
+  async () => {
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext(
+        "test:content-api-update-schema-required",
+        createServerRequestHandlerWithModules,
+        { autoSchemaHashHeaders: false },
+      );
+    const project = `cms29-update-required-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await seedSchemaRegistryScope(dbConnection.db, {
+        scope,
+        schemaHash: "schema-hash-update",
+        entries: [
+          {
+            type: "BlogPost",
+            directory: "content/blog",
+            localized: true,
+          },
+        ],
+      });
+
+      const store = createDatabaseContentStore({ db: dbConnection.db });
+      const existing = await store.create(scope, {
+        path: `blog/schema-update-${Date.now()}`,
+        type: "BlogPost",
+        locale: "en",
+        format: "md",
+        frontmatter: { slug: "schema-update" },
+        body: "before update",
+      });
+
+      const response = await handler(
+        new Request(`http://localhost/api/v1/content/${existing.documentId}`, {
+          method: "PUT",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            body: "after update",
+          }),
+        }),
+      );
+      const body = (await response.json()) as {
+        code: string;
+      };
+
+      assert.equal(response.status, 400);
+      assert.equal(body.code, "SCHEMA_HASH_REQUIRED");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API create accepts matching schema hash header",
+  async () => {
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext(
+        "test:content-api-schema-hash-create-match",
+      );
+    const project = `cms29-create-match-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      const { schemaHash } = await seedSchemaRegistryScope(dbConnection.db, {
+        scope,
+        schemaHash: "schema-hash-create-match",
+        entries: [
+          {
+            type: "BlogPost",
+            directory: "content/blog",
+            localized: true,
+          },
+        ],
+      });
+
+      const response = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+            "x-mdcms-schema-hash": schemaHash,
+          }),
+          body: JSON.stringify({
+            path: `blog/schema-create-match-${Date.now()}`,
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "schema-create-match" },
+            body: "matching schema hash",
+          }),
+        }),
+      );
+      const body = (await response.json()) as {
+        data: {
+          documentId: string;
+        };
+      };
+
+      assert.equal(response.status, 200);
+      assert.ok(body.data.documentId);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API update accepts matching schema hash header",
+  async () => {
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext(
+        "test:content-api-schema-hash-update-match",
+      );
+    const project = `cms29-update-match-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": project,
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project,
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      const { schemaHash } = await seedSchemaRegistryScope(dbConnection.db, {
+        scope,
+        schemaHash: "schema-hash-update-match",
+        entries: [
+          {
+            type: "BlogPost",
+            directory: "content/blog",
+            localized: true,
+          },
+        ],
+      });
+
+      const store = createDatabaseContentStore({ db: dbConnection.db });
+      const existing = await store.create(scope, {
+        path: `blog/schema-update-match-${Date.now()}`,
+        type: "BlogPost",
+        locale: "en",
+        format: "md",
+        frontmatter: { slug: "schema-update-match" },
+        body: "before update",
+      });
+
+      const response = await handler(
+        new Request(`http://localhost/api/v1/content/${existing.documentId}`, {
+          method: "PUT",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+            "x-mdcms-schema-hash": schemaHash,
+          }),
+          body: JSON.stringify({
+            body: "after update",
+          }),
+        }),
+      );
+      const body = (await response.json()) as {
+        data: {
+          documentId: string;
+          draftRevision: number;
+        };
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(body.data.documentId, existing.documentId);
+      assert.equal(body.data.draftRevision, 2);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "cms-28 reference write create accepts valid environment-local ids",
+  async () => {
+    const { handler, dbConnection, csrfHeaders, testScopeHeaders } =
+      await createCms28ReferenceWriteContext(
+        "test:cms-28-reference-write-create-valid",
+      );
+
+    try {
+      const primaryAuthor = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "cms28-primary",
+      );
+      const heroAuthor = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "cms28-hero",
+      );
+      const contributorAuthor = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "cms28-contributor",
+      );
+
+      const response = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify(
+            createCms28BlogPostPayload({
+              author: primaryAuthor.documentId,
+              hero: {
+                author: heroAuthor.documentId,
+              },
+              contributors: [
+                primaryAuthor.documentId,
+                contributorAuthor.documentId,
+              ],
+            }),
+          ),
+        }),
+      );
+      const body = (await response.json()) as {
+        data: {
+          frontmatter: {
+            author: string;
+            hero: {
+              author: string;
+            };
+            contributors: string[];
+          };
+        };
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(body.data.frontmatter.author, primaryAuthor.documentId);
+      assert.equal(body.data.frontmatter.hero.author, heroAuthor.documentId);
+      assert.deepEqual(body.data.frontmatter.contributors, [
+        primaryAuthor.documentId,
+        contributorAuthor.documentId,
+      ]);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "cms-28 reference write update accepts valid environment-local ids",
+  async () => {
+    const { handler, dbConnection, csrfHeaders, testScopeHeaders } =
+      await createCms28ReferenceWriteContext(
+        "test:cms-28-reference-write-update-valid",
+      );
+
+    try {
+      const basePayload = createCms28BlogPostPayload({
+        title: "before",
+      });
+      const created = await createContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        basePayload,
+      );
+      const primaryAuthor = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "cms28-update-primary",
+      );
+      const heroAuthor = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "cms28-update-hero",
+      );
+      const contributorAuthor = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "cms28-update-contributor",
+      );
+
+      const response = await handler(
+        new Request(`http://localhost/api/v1/content/${created.documentId}`, {
+          method: "PUT",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            frontmatter: {
+              ...(basePayload.frontmatter ?? {}),
+              author: primaryAuthor.documentId,
+              hero: {
+                author: heroAuthor.documentId,
+              },
+              contributors: [
+                primaryAuthor.documentId,
+                contributorAuthor.documentId,
+              ],
+            },
+            body: "updated body",
+          }),
+        }),
+      );
+      const body = (await response.json()) as {
+        data: {
+          frontmatter: {
+            author: string;
+            hero: {
+              author: string;
+            };
+            contributors: string[];
+          };
+        };
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(body.data.frontmatter.author, primaryAuthor.documentId);
+      assert.equal(body.data.frontmatter.hero.author, heroAuthor.documentId);
+      assert.deepEqual(body.data.frontmatter.contributors, [
+        primaryAuthor.documentId,
+        contributorAuthor.documentId,
+      ]);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "cms-28 reference write create rejects malformed uuid strings",
+  async () => {
+    const { handler, dbConnection, csrfHeaders, testScopeHeaders } =
+      await createCms28ReferenceWriteContext(
+        "test:cms-28-reference-write-malformed",
+      );
+
+    try {
+      const response = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify(
+            createCms28BlogPostPayload({
+              author: "not-a-uuid",
+            }),
+          ),
+        }),
+      );
+      const body = (await response.json()) as {
+        code: string;
+      };
+
+      assert.equal(response.status, 400);
+      assert.equal(body.code, "INVALID_INPUT");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "cms-28 reference write create rejects non-string reference values",
+  async () => {
+    const { handler, dbConnection, csrfHeaders, testScopeHeaders } =
+      await createCms28ReferenceWriteContext(
+        "test:cms-28-reference-write-non-string",
+      );
+
+    try {
+      const response = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify(
+            createCms28BlogPostPayload({
+              author: {
+                documentId: randomUUID(),
+              },
+            }),
+          ),
+        }),
+      );
+      const body = (await response.json()) as {
+        code: string;
+      };
+
+      assert.equal(response.status, 400);
+      assert.equal(body.code, "INVALID_INPUT");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "cms-28 reference write create rejects missing deleted and wrong-type targets",
+  async () => {
+    const { handler, dbConnection, csrfHeaders, testScopeHeaders } =
+      await createCms28ReferenceWriteContext(
+        "test:cms-28-reference-write-target-state",
+      );
+
+    try {
+      const missingResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify(
+            createCms28BlogPostPayload({
+              author: randomUUID(),
+            }),
+          ),
+        }),
+      );
+      const missingBody = (await missingResponse.json()) as {
+        code: string;
+      };
+      assert.equal(missingResponse.status, 400);
+      assert.equal(missingBody.code, "INVALID_INPUT");
+
+      const deletedAuthor = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "cms28-deleted-author",
+      );
+      await deleteContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        deletedAuthor.documentId as string,
+      );
+
+      const deletedResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify(
+            createCms28BlogPostPayload({
+              author: deletedAuthor.documentId,
+            }),
+          ),
+        }),
+      );
+      const deletedBody = (await deletedResponse.json()) as {
+        code: string;
+      };
+      assert.equal(deletedResponse.status, 400);
+      assert.equal(deletedBody.code, "INVALID_INPUT");
+
+      const page = await createContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        {
+          path: `pages/cms28-page-${Date.now()}`,
+          type: "Page",
+          locale: "en",
+          format: "md",
+          frontmatter: {
+            slug: `cms28-page-${Math.random().toString(36).slice(2, 8)}`,
+          },
+          body: "page body",
+        },
+      );
+
+      const wrongTypeResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify(
+            createCms28BlogPostPayload({
+              author: page.documentId,
+            }),
+          ),
+        }),
+      );
+      const wrongTypeBody = (await wrongTypeResponse.json()) as {
+        code: string;
+      };
+      assert.equal(wrongTypeResponse.status, 400);
+      assert.equal(wrongTypeBody.code, "INVALID_INPUT");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "cms-28 reference write create rejects nested object and array violations",
+  async () => {
+    const { handler, dbConnection, csrfHeaders, testScopeHeaders } =
+      await createCms28ReferenceWriteContext(
+        "test:cms-28-reference-write-nested-array",
+      );
+
+    try {
+      const validAuthor = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "cms28-array-valid",
+      );
+
+      const nestedResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify(
+            createCms28BlogPostPayload({
+              hero: {
+                author: randomUUID(),
+              },
+            }),
+          ),
+        }),
+      );
+      const nestedBody = (await nestedResponse.json()) as {
+        code: string;
+      };
+      assert.equal(nestedResponse.status, 400);
+      assert.equal(nestedBody.code, "INVALID_INPUT");
+
+      const arrayResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify(
+            createCms28BlogPostPayload({
+              contributors: [validAuthor.documentId, "not-a-uuid"],
+            }),
+          ),
+        }),
+      );
+      const arrayBody = (await arrayResponse.json()) as {
+        code: string;
+      };
+      assert.equal(arrayResponse.status, 400);
+      assert.equal(arrayBody.code, "INVALID_INPUT");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "cms-28 reference write update rejects missing targets",
+  async () => {
+    const { handler, dbConnection, csrfHeaders, testScopeHeaders } =
+      await createCms28ReferenceWriteContext(
+        "test:cms-28-reference-write-update-invalid",
+      );
+
+    try {
+      const basePayload = createCms28BlogPostPayload({
+        title: "before",
+      });
+      const created = await createContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        basePayload,
+      );
+
+      const response = await handler(
+        new Request(`http://localhost/api/v1/content/${created.documentId}`, {
+          method: "PUT",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            frontmatter: {
+              ...(basePayload.frontmatter ?? {}),
+              author: randomUUID(),
+            },
+            body: "updated body",
+          }),
+        }),
+      );
+      const body = (await response.json()) as {
+        code: string;
+      };
+
+      assert.equal(response.status, 400);
+      assert.equal(body.code, "INVALID_INPUT");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "cms-28 database content store enforces reference identity when schema snapshots are present",
+  async () => {
+    const { dbConnection } = createServerRequestHandlerWithModules({
+      env: dbEnv,
+      logger,
+    });
+    const scope = {
+      project: `cms28-db-store-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      environment: "production",
+    };
+
+    try {
+      await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const store = createDatabaseContentStore({ db: dbConnection.db });
+      const page = await store.create(scope, {
+        path: `pages/cms28-db-page-${Date.now()}`,
+        type: "Page",
+        locale: "en",
+        format: "md",
+        frontmatter: {
+          slug: `cms28-db-page-${Math.random().toString(36).slice(2, 8)}`,
+        },
+        body: "page body",
+      });
+      const blogPayload = createCms28BlogPostPayload({
+        title: "db base",
+      });
+      const blog = await store.create(scope, blogPayload);
+
+      await assert.rejects(
+        () =>
+          store.create(scope, {
+            ...createCms28BlogPostPayload({
+              author: page.documentId,
+            }),
+          }),
+        (error: unknown) => {
+          assert.equal((error as { code?: string }).code, "INVALID_INPUT");
+          return true;
+        },
+      );
+
+      await assert.rejects(
+        () =>
+          store.update(scope, blog.documentId, {
+            frontmatter: {
+              ...(blogPayload.frontmatter ?? {}),
+              author: randomUUID(),
+            },
+          }),
+        (error: unknown) => {
+          assert.equal((error as { code?: string }).code, "INVALID_INPUT");
+          return true;
+        },
+      );
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+test("cms-28 in-memory content store enforces reference identity when schema snapshots are present", async () => {
+  const scope = {
+    project: "cms28-in-memory",
+    environment: "production",
+  };
+  const store = createInMemoryContentStore({
+    schemaScopes: [
+      {
+        project: scope.project,
+        environment: scope.environment,
+        schemas: createCms26ResolvedSchemas(),
+      },
+    ],
+  });
+  const page = await store.create(scope, {
+    path: `pages/cms28-memory-page-${Date.now()}`,
+    type: "Page",
+    locale: "en",
+    format: "md",
+    frontmatter: {
+      slug: `cms28-memory-page-${Math.random().toString(36).slice(2, 8)}`,
+    },
+    body: "page body",
+  });
+  const blogPayload = createCms28BlogPostPayload({
+    title: "memory base",
+  });
+  const blog = await store.create(scope, blogPayload);
+
+  await assert.rejects(
+    () =>
+      store.create(scope, {
+        ...createCms28BlogPostPayload({
+          author: page.documentId,
+        }),
+      }),
+    (error: unknown) => {
+      assert.equal((error as { code?: string }).code, "INVALID_INPUT");
+      return true;
+    },
+  );
+
+  await assert.rejects(
+    () =>
+      store.update(scope, blog.documentId, {
+        frontmatter: {
+          ...(blogPayload.frontmatter ?? {}),
+          author: randomUUID(),
+        },
+      }),
+    (error: unknown) => {
+      assert.equal((error as { code?: string }).code, "INVALID_INPUT");
+      return true;
+    },
+  );
+});
 
 testWithDatabase(
   "content API resolve list inline returns referenced authors",
@@ -711,17 +1875,24 @@ test("content API in-memory resolve supports configured schema scopes", async ()
       },
     ],
   });
-  const handler = createServerRequestHandler({
+  const rawHandler = createServerRequestHandler({
     env: baseEnv,
     configureApp: (app) => {
       mountContentApiRoutes(app, {
         store,
         authorize: async () => undefined,
         requireCsrf: async () => undefined,
+        getWriteSchemaSyncState: async () => ({
+          schemaHash: inMemorySchemaHash,
+        }),
       });
     },
     now: () => new Date("2026-03-02T10:00:00.000Z"),
   });
+  const handler = wrapHandlerWithAutoSchemaHash(
+    rawHandler,
+    () => inMemorySchemaHash,
+  );
 
   const authorCreateResponse = await handler(
     new Request("http://localhost/api/v1/content", {
@@ -1166,6 +2337,15 @@ testWithDatabase(
         testScopeHeaders,
         "resolve-missing",
         {
+          author: heroAuthor.documentId as string,
+          hero: { author: heroAuthor.documentId as string },
+        },
+      );
+      await overwriteDraftFrontmatter(
+        dbConnection.db,
+        blog.documentId as string,
+        {
+          slug: "resolve-missing",
           author: missingId,
           hero: { author: heroAuthor.documentId as string },
         },
@@ -1231,12 +2411,26 @@ testWithDatabase(
 
     try {
       await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const author = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "malformed-author",
+      );
       const blog = await createCms26BlogPost(
         handler,
         csrfHeaders,
         testScopeHeaders,
         "resolve-malformed",
         {
+          author: author.documentId as string,
+        },
+      );
+      await overwriteDraftFrontmatter(
+        dbConnection.db,
+        blog.documentId as string,
+        {
+          slug: "resolve-malformed",
           author: {
             bad: true,
           },
@@ -1301,12 +2495,6 @@ testWithDatabase(
         testScopeHeaders,
         "deleted-author",
       );
-      await deleteContentDocument(
-        handler,
-        csrfHeaders,
-        testScopeHeaders,
-        deletedAuthor.documentId as string,
-      );
       const blog = await createCms26BlogPost(
         handler,
         csrfHeaders,
@@ -1315,6 +2503,12 @@ testWithDatabase(
         {
           hero: { author: deletedAuthor.documentId as string },
         },
+      );
+      await deleteContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        deletedAuthor.documentId as string,
       );
 
       const response = await handler(
@@ -1383,12 +2577,6 @@ testWithDatabase(
         testScopeHeaders,
         "hidden-deleted-author",
       );
-      await deleteContentDocument(
-        handler,
-        csrfHeaders,
-        testScopeHeaders,
-        author.documentId as string,
-      );
       const blog = await createCms26BlogPost(
         handler,
         csrfHeaders,
@@ -1397,6 +2585,12 @@ testWithDatabase(
         {
           author: author.documentId as string,
         },
+      );
+      await deleteContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        author.documentId as string,
       );
 
       await dbConnection.db
@@ -1468,6 +2662,12 @@ testWithDatabase(
 
     try {
       await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const author = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "mismatch-author",
+      );
       const page = await createContentDocument(
         handler,
         csrfHeaders,
@@ -1491,6 +2691,14 @@ testWithDatabase(
         testScopeHeaders,
         "resolve-mismatch",
         {
+          author: author.documentId as string,
+        },
+      );
+      await overwriteDraftFrontmatter(
+        dbConnection.db,
+        blog.documentId as string,
+        {
+          slug: "resolve-mismatch",
           author: page.documentId as string,
         },
       );
@@ -1750,12 +2958,6 @@ testWithDatabase(
         testScopeHeaders,
         "draft-only-deleted-author",
       );
-      await deleteContentDocument(
-        handler,
-        csrfHeaders,
-        testScopeHeaders,
-        deletedAuthor.documentId as string,
-      );
       const blog = await createCms26BlogPost(
         handler,
         csrfHeaders,
@@ -1764,6 +2966,12 @@ testWithDatabase(
         {
           author: deletedAuthor.documentId as string,
         },
+      );
+      await deleteContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        deletedAuthor.documentId as string,
       );
       await publishContentDocument(
         handler,
@@ -1826,6 +3034,12 @@ testWithDatabase(
 
     try {
       await seedCms26ReferenceSchema(dbConnection.db, scope);
+      const author = await createCms26Author(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        "published-mismatch-author",
+      );
       const draftOnlyPage = await createContentDocument(
         handler,
         csrfHeaders,
@@ -1849,6 +3063,14 @@ testWithDatabase(
         testScopeHeaders,
         "resolve-published-mismatch",
         {
+          author: author.documentId as string,
+        },
+      );
+      await overwriteDraftFrontmatter(
+        dbConnection.db,
+        blog.documentId as string,
+        {
+          slug: "resolve-published-mismatch",
           author: draftOnlyPage.documentId as string,
         },
       );
@@ -3563,6 +4785,16 @@ testWithDatabase(
     };
 
     try {
+      await seedSchemaRegistryScope(dbConnection.db, {
+        scope,
+        entries: [
+          {
+            type: "BlogPost",
+            directory: "content/blog",
+            localized: true,
+          },
+        ],
+      });
       const sourceStore = createDatabaseContentStore({ db: dbConnection.db });
       const sourceDocument = await sourceStore.create(scope, {
         path: `blog/race-source-${Date.now()}`,
@@ -3575,7 +4807,42 @@ testWithDatabase(
 
       const wrappedDb = Object.assign(Object.create(dbConnection.db), {
         query: dbConnection.db.query,
-        transaction: dbConnection.db.transaction.bind(dbConnection.db),
+        transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+          dbConnection.db.transaction(async (tx) => {
+            const wrappedTx = Object.assign(Object.create(tx), {
+              query: tx.query,
+              insert: (table: unknown) => {
+                if (table === documents) {
+                  return {
+                    values: (values: typeof documents.$inferInsert) => ({
+                      returning: async () => {
+                        await dbConnection.db
+                          .insert(documents)
+                          .values({
+                            ...values,
+                            documentId: randomUUID(),
+                          })
+                          .returning();
+
+                        const error = new Error("duplicate", {
+                          cause: {
+                            code: "23505",
+                            constraint_name:
+                              "uniq_documents_active_translation_locale",
+                          },
+                        });
+                        throw error;
+                      },
+                    }),
+                  };
+                }
+
+                return tx.insert(table as any);
+              },
+            });
+
+            return callback(wrappedTx);
+          }),
         insert: (table: unknown) => {
           if (table === documents) {
             return {
@@ -3648,6 +4915,16 @@ testWithDatabase(
     };
 
     try {
+      await seedSchemaRegistryScope(dbConnection.db, {
+        scope,
+        entries: [
+          {
+            type: "BlogPost",
+            directory: "content/blog",
+            localized: true,
+          },
+        ],
+      });
       const sourceStore = createDatabaseContentStore({ db: dbConnection.db });
       const sourceDocument = await sourceStore.create(scope, {
         path: `blog/race-update-source-${Date.now()}`,
@@ -3674,7 +4951,64 @@ testWithDatabase(
 
       const wrappedDb = Object.assign(Object.create(dbConnection.db), {
         query: dbConnection.db.query,
-        transaction: dbConnection.db.transaction.bind(dbConnection.db),
+        transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+          dbConnection.db.transaction(async (tx) => {
+            const wrappedTx = Object.assign(Object.create(tx), {
+              query: tx.query,
+              insert: tx.insert.bind(tx),
+              update: (table: unknown) => {
+                if (table === documents) {
+                  return {
+                    set: (values: Partial<typeof documents.$inferInsert>) => ({
+                      where: () => ({
+                        returning: async () => {
+                          await dbConnection.db
+                            .insert(documents)
+                            .values({
+                              documentId: randomUUID(),
+                              translationGroupId: sourceRow.translationGroupId,
+                              projectId: sourceRow.projectId,
+                              environmentId: sourceRow.environmentId,
+                              path: `blog/race-update-fr-competitor-${Date.now()}`,
+                              schemaType: sourceRow.schemaType,
+                              locale:
+                                typeof values.locale === "string"
+                                  ? values.locale
+                                  : "fr",
+                              contentFormat: sourceRow.contentFormat,
+                              body: "fr competitor body",
+                              frontmatter: {
+                                slug: "race-update-fr-competitor",
+                              },
+                              isDeleted: false,
+                              hasUnpublishedChanges: true,
+                              publishedVersion: null,
+                              draftRevision: 1,
+                              createdBy: sourceRow.createdBy,
+                              updatedBy: sourceRow.updatedBy,
+                            })
+                            .returning();
+
+                          const error = new Error("duplicate", {
+                            cause: {
+                              code: "23505",
+                              constraint_name:
+                                "uniq_documents_active_translation_locale",
+                            },
+                          });
+                          throw error;
+                        },
+                      }),
+                    }),
+                  };
+                }
+
+                return tx.update(table as any);
+              },
+            });
+
+            return callback(wrappedTx);
+          }),
         insert: dbConnection.db.insert.bind(dbConnection.db),
         update: (table: unknown) => {
           if (table === documents) {
@@ -4688,65 +6022,10 @@ testWithDatabase(
 testWithDatabase(
   "content API publish persists change_summary to immutable document_versions row",
   async () => {
-    const { handler, dbConnection } = createServerRequestHandlerWithModules({
-      env: dbEnv,
-      logger,
-    });
-    const email = `content-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@mdcms.local`;
-    const password = "Admin12345!";
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-change-summary");
 
     try {
-      const signUpResponse = await handler(
-        new Request("http://localhost/api/v1/auth/sign-up/email", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            email,
-            password,
-            name: "Content User",
-          }),
-        }),
-      );
-      assert.equal(signUpResponse.status, 200);
-
-      const loginResponse = await handler(
-        new Request("http://localhost/api/v1/auth/login", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            email,
-            password,
-          }),
-        }),
-      );
-      const loginBody = (await loginResponse.json()) as {
-        data: {
-          session: {
-            userId: string;
-          };
-        };
-      };
-      assert.equal(loginResponse.status, 200);
-      const setCookie = loginResponse.headers.get("set-cookie");
-      assert.ok(setCookie);
-      const cookie = toCookieHeader(setCookie);
-      const csrfHeaders = (headers: Record<string, string> = {}) =>
-        createCsrfHeaders({ cookie, setCookie }, headers);
-      await dbConnection.db
-        .insert(rbacGrants)
-        .values({
-          userId: loginBody.data.session.userId,
-          role: "owner",
-          scopeKind: "global",
-          source: "test:content-api",
-          createdByUserId: loginBody.data.session.userId,
-        })
-        .onConflictDoNothing();
-
       const createResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
@@ -5081,66 +6360,10 @@ testWithDatabase(
 testWithDatabase(
   "content API keeps documents isolated across routed projects",
   async () => {
-    const { handler, dbConnection } = createServerRequestHandlerWithModules({
-      env: dbEnv,
-      logger,
-    });
-    const email = `content-scope-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@mdcms.local`;
-    const password = "Admin12345!";
+    const { handler, dbConnection, cookie, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-routed-project-scope");
 
     try {
-      const signUpResponse = await handler(
-        new Request("http://localhost/api/v1/auth/sign-up/email", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            email,
-            password,
-            name: "Scoped Content User",
-          }),
-        }),
-      );
-      assert.equal(signUpResponse.status, 200);
-
-      const loginResponse = await handler(
-        new Request("http://localhost/api/v1/auth/login", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            email,
-            password,
-          }),
-        }),
-      );
-      const loginBody = (await loginResponse.json()) as {
-        data: {
-          session: {
-            userId: string;
-          };
-        };
-      };
-      assert.equal(loginResponse.status, 200);
-      const setCookie = loginResponse.headers.get("set-cookie");
-      assert.ok(setCookie);
-      const cookie = toCookieHeader(setCookie);
-      const csrfHeaders = (headers: Record<string, string> = {}) =>
-        createCsrfHeaders({ cookie, setCookie }, headers);
-
-      await dbConnection.db
-        .insert(rbacGrants)
-        .values({
-          userId: loginBody.data.session.userId,
-          role: "owner",
-          scopeKind: "global",
-          source: "test:content-api-scope",
-          createdByUserId: loginBody.data.session.userId,
-        })
-        .onConflictDoNothing();
-
       const marketingCreateResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",

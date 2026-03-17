@@ -12,6 +12,7 @@ import {
   parseRestoreTargetStatus,
   pickScope,
 } from "./parsing.js";
+import { requireMatchingWriteSchemaHash } from "./schema-hash.js";
 import {
   applyResolvePlan,
   parseRequestedResolvePaths,
@@ -362,7 +363,14 @@ export function mountContentApiRoutes(
         documentPath:
           requestedPath && requestedPath.length > 0 ? requestedPath : undefined,
       });
-      const document = await options.store.create(scope, payload);
+      const schemaHash = await requireMatchingWriteSchemaHash(
+        request,
+        scope,
+        options.getWriteSchemaSyncState,
+      );
+      const document = await options.store.create(scope, payload, {
+        expectedSchemaHash: schemaHash,
+      });
 
       return {
         data: toDocumentResponse(document),
@@ -383,6 +391,11 @@ export function mountContentApiRoutes(
           project: scope.project,
           environment: scope.environment,
         });
+        const schemaHash = await requireMatchingWriteSchemaHash(
+          request,
+          scope,
+          options.getWriteSchemaSyncState,
+        );
         const existing = await options.store.getById(scope, params.documentId, {
           draft: true,
         });
@@ -421,6 +434,9 @@ export function mountContentApiRoutes(
           scope,
           params.documentId,
           payload,
+          {
+            expectedSchemaHash: schemaHash,
+          },
         );
 
         return {

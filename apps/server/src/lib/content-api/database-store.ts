@@ -20,6 +20,7 @@ import {
   type ContentFormat,
   type ContentScope,
   type ContentStore,
+  type ContentWriteOperationOptions,
   type CreateDatabaseContentStoreOptions,
   type SortField,
   type SortOrder,
@@ -43,6 +44,7 @@ import {
   toContentVersionDocument,
   toIsoString,
 } from "./responses.js";
+import { validateReferenceFieldIdentities } from "./reference-validation.js";
 import { matchesDeletedListVisibility } from "./visibility.js";
 
 export function createDatabaseContentStore(
@@ -130,6 +132,60 @@ export function createDatabaseContentStore(
     });
   }
 
+  async function assertExpectedSchemaHash(
+    executor: DrizzleDatabase,
+    scope: ContentScope,
+    scopeIds: { projectId: string; environmentId: string },
+    expectedSchemaHash?: string,
+  ): Promise<void> {
+    if (!expectedSchemaHash) {
+      return;
+    }
+
+    const [schemaSync] = await executor
+      .select({
+        schemaHash: schemaSyncs.schemaHash,
+      })
+      .from(schemaSyncs)
+      .where(
+        and(
+          eq(schemaSyncs.projectId, scopeIds.projectId),
+          eq(schemaSyncs.environmentId, scopeIds.environmentId),
+        ),
+      )
+      .for("update");
+
+    if (!schemaSync) {
+      throw new RuntimeError({
+        code: "SCHEMA_NOT_SYNCED",
+        message:
+          'Target project/environment has no synced schema. Run "cms schema sync" before writing content.',
+        statusCode: 409,
+        details: {
+          project: scope.project,
+          environment: scope.environment,
+        },
+      });
+    }
+
+    if (schemaSync.schemaHash === expectedSchemaHash) {
+      return;
+    }
+
+    throw new RuntimeError({
+      code: "SCHEMA_HASH_MISMATCH",
+      message:
+        "Client schema hash does not match the server schema hash for the target project/environment.",
+      statusCode: 409,
+      details: {
+        project: scope.project,
+        environment: scope.environment,
+        clientSchemaHash: expectedSchemaHash,
+        serverSchemaHash: schemaSync.schemaHash,
+      },
+    });
+  }
+
   async function resolveVariantLocalePolicy(
     scopeIds: { projectId: string; environmentId: string },
     type: string,
@@ -164,6 +220,21 @@ export function createDatabaseContentStore(
       localized: schemaEntry.localized,
       supportedLocales: readSupportedLocales(schemaSync?.rawConfigSnapshot),
     };
+  }
+
+  async function resolveTypeSchema(
+    scopeIds: { projectId: string; environmentId: string },
+    type: string,
+  ): Promise<SchemaRegistryTypeSnapshot | undefined> {
+    const row = await db.query.schemaRegistryEntries.findFirst({
+      where: and(
+        eq(schemaRegistryEntries.projectId, scopeIds.projectId),
+        eq(schemaRegistryEntries.environmentId, scopeIds.environmentId),
+        eq(schemaRegistryEntries.schemaType, type),
+      ),
+    });
+
+    return row?.resolvedSchema as SchemaRegistryTypeSnapshot | undefined;
   }
 
   async function resolvePublishedSnapshot(
@@ -396,7 +467,7 @@ export function createDatabaseContentStore(
       return row?.resolvedSchema as SchemaRegistryTypeSnapshot | undefined;
     },
 
-    async create(scope, payload) {
+    async create(scope, payload, options?: ContentWriteOperationOptions) {
       const path = assertRequiredString(payload.path, "path");
       const type = assertRequiredString(payload.type, "type");
       const locale = assertRequiredString(payload.locale, "locale");
@@ -488,6 +559,38 @@ export function createDatabaseContentStore(
         }
       }
 
+      const schema = await resolveTypeSchema(scopeIds, type);
+
+      if (!schema) {
+        throw new RuntimeError({
+          code: "INVALID_INPUT",
+          message: 'Field "type" must reference a synced schema type.',
+          statusCode: 400,
+          details: {
+            field: "type",
+            type,
+          },
+        });
+      }
+
+      await validateReferenceFieldIdentities({
+        schema,
+        frontmatter,
+        lookupTarget: async (documentId) => {
+          const row = await resolveHeadRow(scopeIds, documentId);
+
+          if (!row) {
+            return undefined;
+          }
+
+          return {
+            documentId: row.documentId,
+            type: row.schemaType,
+            isDeleted: row.isDeleted,
+          };
+        },
+      });
+
       const conflict = await findPathConflict(scopeIds, {
         path,
         locale,
@@ -534,27 +637,37 @@ export function createDatabaseContentStore(
       const actor = payload.createdBy?.trim() || DEFAULT_ACTOR;
 
       try {
-        const [created] = await db
-          .insert(documents)
-          .values({
-            documentId: randomUUID(),
-            translationGroupId,
-            projectId: scopeIds.projectId,
-            environmentId: scopeIds.environmentId,
-            path,
-            schemaType: type,
-            locale,
-            contentFormat: format,
-            body,
-            frontmatter,
-            isDeleted: false,
-            hasUnpublishedChanges: true,
-            publishedVersion: null,
-            draftRevision: 1,
-            createdBy: actor,
-            updatedBy: actor,
-          })
-          .returning();
+        const created = await db.transaction(async (tx) => {
+          await assertExpectedSchemaHash(
+            tx as unknown as DrizzleDatabase,
+            scope,
+            scopeIds,
+            options?.expectedSchemaHash,
+          );
+          const [created] = await tx
+            .insert(documents)
+            .values({
+              documentId: randomUUID(),
+              translationGroupId,
+              projectId: scopeIds.projectId,
+              environmentId: scopeIds.environmentId,
+              path,
+              schemaType: type,
+              locale,
+              contentFormat: format,
+              body,
+              frontmatter,
+              isDeleted: false,
+              hasUnpublishedChanges: true,
+              publishedVersion: null,
+              draftRevision: 1,
+              createdBy: actor,
+              updatedBy: actor,
+            })
+            .returning();
+
+          return created;
+        });
 
         if (!created) {
           throw new RuntimeError({
@@ -763,7 +876,12 @@ export function createDatabaseContentStore(
       };
     },
 
-    async update(scope, documentId, payload) {
+    async update(
+      scope,
+      documentId,
+      payload,
+      options?: ContentWriteOperationOptions,
+    ) {
       const normalizedDocumentId = assertRequiredString(
         documentId,
         "documentId",
@@ -793,6 +911,46 @@ export function createDatabaseContentStore(
           },
         });
       }
+
+      const nextType =
+        payload.type !== undefined
+          ? assertRequiredString(payload.type, "type")
+          : existing.schemaType;
+      const nextFrontmatter =
+        payload.frontmatter !== undefined
+          ? assertJsonObject(payload.frontmatter, "frontmatter")
+          : (existing.frontmatter as Record<string, unknown>);
+      const schema = await resolveTypeSchema(scopeIds, nextType);
+
+      if (!schema) {
+        throw new RuntimeError({
+          code: "INVALID_INPUT",
+          message: 'Field "type" must reference a synced schema type.',
+          statusCode: 400,
+          details: {
+            field: "type",
+            type: nextType,
+          },
+        });
+      }
+
+      await validateReferenceFieldIdentities({
+        schema,
+        frontmatter: nextFrontmatter,
+        lookupTarget: async (candidateDocumentId) => {
+          const row = await resolveHeadRow(scopeIds, candidateDocumentId);
+
+          if (!row) {
+            return undefined;
+          }
+
+          return {
+            documentId: row.documentId,
+            type: row.schemaType,
+            isDeleted: row.isDeleted,
+          };
+        },
+      });
 
       const nextPath =
         payload.path !== undefined
@@ -846,36 +1004,46 @@ export function createDatabaseContentStore(
       }
 
       try {
-        const [updated] = await db
-          .update(documents)
-          .set({
-            path: nextPath,
-            schemaType:
-              payload.type !== undefined
-                ? assertRequiredString(payload.type, "type")
-                : existing.schemaType,
-            locale: nextLocale,
-            contentFormat:
-              payload.format !== undefined
-                ? parseContentFormat(payload.format)
-                : existing.contentFormat,
-            frontmatter:
-              payload.frontmatter !== undefined
-                ? assertJsonObject(payload.frontmatter, "frontmatter")
-                : existing.frontmatter,
-            body:
-              payload.body !== undefined
-                ? assertRequiredString(payload.body, "body", {
-                    allowEmpty: true,
-                  })
-                : existing.body,
-            hasUnpublishedChanges: true,
-            draftRevision: sql`${documents.draftRevision} + 1`,
-            updatedBy: payload.updatedBy?.trim() || DEFAULT_ACTOR,
-            updatedAt: new Date(),
-          })
-          .where(eq(documents.documentId, normalizedDocumentId))
-          .returning();
+        const updated = await db.transaction(async (tx) => {
+          await assertExpectedSchemaHash(
+            tx as unknown as DrizzleDatabase,
+            scope,
+            scopeIds,
+            options?.expectedSchemaHash,
+          );
+          const [updated] = await tx
+            .update(documents)
+            .set({
+              path: nextPath,
+              schemaType: nextType,
+              locale: nextLocale,
+              contentFormat:
+                payload.format !== undefined
+                  ? parseContentFormat(payload.format)
+                  : existing.contentFormat,
+              frontmatter: nextFrontmatter,
+              body:
+                payload.body !== undefined
+                  ? assertRequiredString(payload.body, "body", {
+                      allowEmpty: true,
+                    })
+                  : existing.body,
+              hasUnpublishedChanges: true,
+              draftRevision: sql`${documents.draftRevision} + 1`,
+              updatedBy: payload.updatedBy?.trim() || DEFAULT_ACTOR,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(documents.projectId, scopeIds.projectId),
+                eq(documents.environmentId, scopeIds.environmentId),
+                eq(documents.documentId, normalizedDocumentId),
+              ),
+            )
+            .returning();
+
+          return updated;
+        });
 
         if (!updated) {
           throw new RuntimeError({

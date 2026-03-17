@@ -31,6 +31,10 @@ export type ContentScope = {
   environment: string;
 };
 
+export type ContentWriteSchemaSyncState = {
+  schemaHash: string;
+};
+
 export type ContentDocument = ContentDocumentResponse & {
   updatedBy: string;
 };
@@ -50,6 +54,13 @@ export type ContentPublishedSnapshot = {
   publishedAt: string;
   publishedBy: string;
   changeSummary?: string;
+};
+
+export type ContentWriteOperationOptions = {
+  // Route-owned request metadata for CMS-29. HTTP content writes must pass the
+  // header-derived hash once the route gate succeeds; non-HTTP direct store
+  // callers may omit it.
+  expectedSchemaHash?: string;
 };
 
 export type ContentListQuery = {
@@ -117,6 +128,7 @@ export type ContentStore = {
   create: (
     scope: ContentScope,
     payload: ContentWritePayload,
+    options?: ContentWriteOperationOptions,
   ) => Promise<ContentDocument>;
   list: (
     scope: ContentScope,
@@ -131,6 +143,7 @@ export type ContentStore = {
     scope: ContentScope,
     documentId: string,
     payload: ContentWritePayload,
+    options?: ContentWriteOperationOptions,
   ) => Promise<ContentDocument>;
   softDelete: (
     scope: ContentScope,
@@ -198,8 +211,13 @@ export type ContentRequestAuthorizer = (
 
 export type ContentRequestCsrfProtector = (request: Request) => Promise<void>;
 
+export type ContentWriteSchemaSyncLookup = (
+  scope: ContentScope,
+) => Promise<ContentWriteSchemaSyncState | undefined>;
+
 export type MountContentApiRoutesOptions = {
   store: ContentStore;
   authorize: ContentRequestAuthorizer;
   requireCsrf: ContentRequestCsrfProtector;
+  getWriteSchemaSyncState: ContentWriteSchemaSyncLookup;
 };

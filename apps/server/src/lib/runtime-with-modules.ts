@@ -4,6 +4,7 @@ import {
   type ServerRequestHandler,
 } from "./server.js";
 import { createConsoleLogger, type Logger } from "@mdcms/shared";
+import { and, eq } from "drizzle-orm";
 import { parseServerEnv } from "./env.js";
 import { createDatabaseConnection, type DatabaseConnection } from "./db.js";
 import { createContentDAL } from "./dal/index.js";
@@ -28,6 +29,8 @@ import {
   createStudioRuntimePublication,
   type CreateStudioRuntimePublicationOptions,
 } from "./studio-bootstrap.js";
+import { schemaSyncs } from "./db/schema.js";
+import { resolveProjectEnvironmentScope } from "./project-provisioning.js";
 
 import {
   collectServerModuleActions,
@@ -125,6 +128,34 @@ export function createServerRequestHandlerWithModules(
         authorize: (request, requirement) =>
           authService.authorizeRequest(request, requirement),
         requireCsrf: (request) => authService.requireCsrfProtection(request),
+        getWriteSchemaSyncState: async (scope) => {
+          const resolvedScope = await resolveProjectEnvironmentScope(
+            dbConnection.db,
+            {
+              project: scope.project,
+              environment: scope.environment,
+            },
+          );
+
+          if (!resolvedScope) {
+            return undefined;
+          }
+
+          const row = await dbConnection.db.query.schemaSyncs.findFirst({
+            where: and(
+              eq(schemaSyncs.projectId, resolvedScope.project.id),
+              eq(schemaSyncs.environmentId, resolvedScope.environment.id),
+            ),
+          });
+
+          if (!row) {
+            return undefined;
+          }
+
+          return {
+            schemaHash: row.schemaHash,
+          };
+        },
       });
       mountSchemaApiRoutes(app, {
         store: schemaStore,
