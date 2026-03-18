@@ -3,9 +3,6 @@ status: accepted
 canonical: true
 created: 2026-03-11
 last_updated: 2026-03-11
-legacy_sections:
-  - 1
-  - 2
 ---
 
 # ADR-002 Database as Source of Truth

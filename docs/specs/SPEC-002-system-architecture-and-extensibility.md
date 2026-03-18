@@ -3,28 +3,6 @@ status: live
 canonical: true
 created: 2026-03-11
 last_updated: 2026-03-11
-legacy_sections:
-  - 2.1
-  - 2.2
-  - 2.3
-  - 2.4
-  - 2.6
-  - 2.7
-  - 2.8
-  - 2.9
-  - 2.10
-  - 2.11
-  - 2.12
-  - 2.13
-  - 2.14
-  - 2.15
-  - 2.16
-  - 3
-  - 3.1
-  - 3.2
-  - 6.11
-  - 6.12
-  - 24.8
 ---
 
 # SPEC-002 System Architecture and Extensibility
@@ -411,8 +389,6 @@ apps/cli/src/lib/
 ---
 
 ## Extensibility Contract Endpoints
-
-This spec owns the action-catalog side of legacy section `6.11`. The Studio runtime delivery endpoints from that legacy section are owned by `docs/specs/SPEC-006-studio-runtime-and-ui.md`.
 
 | Method | Path                  | Auth Mode                              | Required Scope | Target Routing | Request         | Success                                     | Deterministic Errors                                                                                |
 | ------ | --------------------- | -------------------------------------- | -------------- | -------------- | --------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------- |

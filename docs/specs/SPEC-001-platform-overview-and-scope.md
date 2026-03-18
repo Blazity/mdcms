@@ -3,10 +3,6 @@ status: live
 canonical: true
 created: 2026-03-11
 last_updated: 2026-03-11
-legacy_sections:
-  - 1
-  - 22.1
-  - 22.2
 ---
 
 # SPEC-001 Platform Overview and Scope
@@ -27,7 +23,7 @@ MDCMS is an open-source CMS built around Markdown and MDX files. It takes any ar
 
 ## Scope Summary
 
-Detailed execution tracking lives in `ROADMAP_TASKS.md`. This section keeps only the product-scope split that was previously embedded in the legacy monolithic spec.
+This section keeps only the product-scope split for the live product definition.
 
 ### MVP
 

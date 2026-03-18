@@ -3,10 +3,6 @@ status: live
 canonical: true
 created: 2026-03-11
 last_updated: 2026-03-11
-legacy_sections:
-  - 10
-  - 18
-  - 6.10
 ---
 
 # SPEC-007 Editor, MDX, and Collaboration

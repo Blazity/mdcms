@@ -2,19 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-11
-legacy_sections:
-  - 6
-  - 6.1
-  - 6.2
-  - 6.2.1
-  - 6.5
-  - 11
-  - 23.2.3
-  - 23.2.4
-  - 24.1
-  - 24.3
-  - 24.4
+last_updated: 2026-03-18
 ---
 
 # SPEC-005 Auth, Authorization, and Request Routing
@@ -155,6 +143,81 @@ Implemented via **better-auth**.
 
 Authentication state is managed via sessions. The Studio communicates with the backend over the same session.
 
+#### OIDC Provider Support
+
+- MDCMS standardizes on the Better Auth SSO plugin for OIDC support.
+- OIDC uses startup-configured provider profiles only. Runtime provider registration, Studio provider settings, email/domain-based provider discovery, domain verification, and organization provisioning are out of scope.
+- Supported provider IDs are:
+  - `okta`
+  - `azure-ad`
+  - `google-workspace`
+  - `auth0`
+- Deny-by-default applies to provider selection:
+  - only explicitly configured provider profiles are available for sign-in
+  - requests for unsupported or unconfigured provider IDs fail with `SSO_PROVIDER_NOT_CONFIGURED` (`404`)
+
+#### OIDC Startup Configuration (Normative)
+
+- OIDC providers are configured through `MDCMS_AUTH_OIDC_PROVIDERS`, a JSON array of provider profiles loaded during server startup.
+- Each provider profile must include:
+  - `providerId` (`okta` | `azure-ad` | `google-workspace` | `auth0`)
+  - `issuer`
+  - `domain`
+  - `clientId`
+  - `clientSecret`
+- Optional fields:
+  - `scopes` (defaults to `["openid", "email", "profile"]`)
+  - `trustedOrigins[]` for explicitly permitted non-issuer discovery or callback hosts
+  - `discoveryOverrides` for endpoint metadata correction when a provider fixture or tenant advertises incomplete metadata
+- PKCE is enabled for all configured OIDC providers.
+- MDCMS performs OIDC discovery from `{issuer}/.well-known/openid-configuration` and refuses startup when:
+  - the JSON payload is malformed
+  - a provider profile is missing required fields
+  - `providerId` is unsupported
+  - `providerId` or `domain` is duplicated
+  - discovery metadata cannot be resolved or validated
+  - discovery resolves to an origin outside the configured `issuer` origin plus any explicit `trustedOrigins[]`
+- Startup validation failures are deterministic `INVALID_ENV` boot failures, not deferred runtime warnings.
+- OIDC provider configuration is instance-global and requires process restart after changes.
+
+Example `MDCMS_AUTH_OIDC_PROVIDERS` value:
+
+```json
+[
+  {
+    "providerId": "okta",
+    "issuer": "https://example.okta.com/oauth2/default",
+    "domain": "example.com",
+    "clientId": "okta-client-id",
+    "clientSecret": "okta-client-secret"
+  },
+  {
+    "providerId": "google-workspace",
+    "issuer": "https://accounts.google.com",
+    "domain": "workspace.example.com",
+    "clientId": "google-client-id",
+    "clientSecret": "google-client-secret"
+  }
+]
+```
+
+#### Canonical OIDC Claims Mapping (Normative)
+
+All configured provider profiles normalize to the same MDCMS user fields:
+
+- `id <- sub` (required)
+- `email <- email` (required, non-empty)
+- `emailVerified <- email_verified` when present and boolean; otherwise `false`
+- `name <- name`; fallback order is `given_name + family_name`, then `preferred_username`, then `email`
+- `image <- picture` when present; otherwise `null`
+
+Provider-specific claims remapping is not operator-configurable.
+
+MDCMS rejects sign-in with `AUTH_OIDC_REQUIRED_CLAIM_MISSING` (`401`) when:
+
+- `sub` is missing or empty
+- `email` is missing, empty, or unusable as an account identifier
+
 #### Session Security
 
 - Session cookies are `httpOnly`, `Secure`, `SameSite=Strict`, and scoped to `/`.
@@ -233,7 +296,7 @@ Machine-to-machine access (SDK, CI/CD) uses API keys:
 - Optional API key labels support operational ownership (`ci`, `bot`, `editorial`, etc.).
 - Breaking compatibility note: legacy keys with only `content:write:draft` no longer satisfy draft-read authorization; they satisfy write operations only.
 
-#### CLI Browser Login/Logout Handshake (CMS-79)
+#### CLI Browser Login/Logout Handshake
 
 `cms login` is implemented as a browser-based authorization code flow, not as direct credential entry in CLI.
 
@@ -322,22 +385,45 @@ API keys follow the same project/environment scoping model through tuple allowli
 - API-key authenticated routes in this endpoint family are exempt from CSRF validation.
 - CSRF validation failures return `FORBIDDEN` (`403`).
 
-| Method | Path                                             | Auth Mode             | Required Scope | Target Routing | Request                                                     | Success                                                 | Deterministic Errors                                                                                                 |
-| ------ | ------------------------------------------------ | --------------------- | -------------- | -------------- | ----------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/api/v1/auth/login`                             | public                | none           | none           | JSON: `{ email, password }`                                 | `200` `{ data: { session } }` + `set-cookie`            | `INVALID_INPUT` (`400`), `AUTH_INVALID_CREDENTIALS` (`401`), `AUTH_BACKOFF_ACTIVE` (`429`), `INTERNAL_ERROR` (`500`) |
-| GET    | `/api/v1/auth/session`                           | session               | none           | none           | session cookie                                              | `200` `{ data: { session } }`                           | `UNAUTHORIZED` (`401`)                                                                                               |
-| GET    | `/api/v1/auth/get-session`                       | session               | none           | none           | session cookie                                              | `200` `{ data: { session } }`                           | `UNAUTHORIZED` (`401`)                                                                                               |
-| POST   | `/api/v1/auth/logout`                            | session               | none           | none           | session cookie                                              | `200` `{ data: { revoked: boolean } }`                  | `INTERNAL_ERROR` (`500`)                                                                                             |
-| POST   | `/api/v1/auth/users/:userId/sessions/revoke-all` | session (admin/owner) | none           | none           | `userId` path param                                         | `200` `{ data: { userId, revokedSessions } }`           | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                     |
-| GET    | `/api/v1/auth/api-keys`                          | session               | none           | none           | session cookie                                              | `200` `{ data: ApiKeyMetadata[] }`                      | `UNAUTHORIZED` (`401`)                                                                                               |
-| POST   | `/api/v1/auth/api-keys`                          | session               | none           | none           | JSON: `{ label, scopes[], contextAllowlist[], expiresAt? }` | `200` `{ data: { key, ...metadata } }` (key shown once) | `UNAUTHORIZED` (`401`), `INVALID_INPUT` (`400`), `INTERNAL_ERROR` (`500`)                                            |
-| POST   | `/api/v1/auth/api-keys/:keyId/revoke`            | session               | none           | none           | `keyId` path param                                          | `200` `{ data: ApiKeyMetadata }`                        | `UNAUTHORIZED` (`401`), `NOT_FOUND` (`404`)                                                                          |
-| POST   | `/api/v1/auth/api-keys/self/revoke`              | api_key               | none           | none           | `Authorization: Bearer <mdcms_key_...>`                     | `200` `{ data: { revoked: true, keyId } }`              | `UNAUTHORIZED` (`401`)                                                                                               |
-| POST   | `/api/v1/auth/sign-up/email`                     | public                | none           | none           | better-auth sign-up payload                                 | better-auth success payload                             | better-auth deterministic auth/provider errors                                                                       |
-| POST   | `/api/v1/auth/sign-in/email`                     | public                | none           | none           | better-auth sign-in payload                                 | better-auth success payload                             | better-auth deterministic auth/provider errors                                                                       |
-| POST   | `/api/v1/auth/sign-out`                          | session               | none           | none           | better-auth sign-out payload                                | better-auth sign-out payload                            | better-auth deterministic auth/provider errors                                                                       |
+| Method | Path                                             | Auth Mode             | Required Scope | Target Routing | Request                                                                                 | Success                                                 | Deterministic Errors                                                                                                                                 |
+| ------ | ------------------------------------------------ | --------------------- | -------------- | -------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/v1/auth/login`                             | public                | none           | none           | JSON: `{ email, password }`                                                             | `200` `{ data: { session } }` + `set-cookie`            | `INVALID_INPUT` (`400`), `AUTH_INVALID_CREDENTIALS` (`401`), `AUTH_BACKOFF_ACTIVE` (`429`), `INTERNAL_ERROR` (`500`)                                 |
+| GET    | `/api/v1/auth/session`                           | session               | none           | none           | session cookie                                                                          | `200` `{ data: { session } }`                           | `UNAUTHORIZED` (`401`)                                                                                                                               |
+| GET    | `/api/v1/auth/get-session`                       | session               | none           | none           | session cookie                                                                          | `200` `{ data: { session } }`                           | `UNAUTHORIZED` (`401`)                                                                                                                               |
+| POST   | `/api/v1/auth/logout`                            | session               | none           | none           | session cookie                                                                          | `200` `{ data: { revoked: boolean } }`                  | `INTERNAL_ERROR` (`500`)                                                                                                                             |
+| POST   | `/api/v1/auth/users/:userId/sessions/revoke-all` | session (admin/owner) | none           | none           | `userId` path param                                                                     | `200` `{ data: { userId, revokedSessions } }`           | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                                                     |
+| GET    | `/api/v1/auth/api-keys`                          | session               | none           | none           | session cookie                                                                          | `200` `{ data: ApiKeyMetadata[] }`                      | `UNAUTHORIZED` (`401`)                                                                                                                               |
+| POST   | `/api/v1/auth/api-keys`                          | session               | none           | none           | JSON: `{ label, scopes[], contextAllowlist[], expiresAt? }`                             | `200` `{ data: { key, ...metadata } }` (key shown once) | `UNAUTHORIZED` (`401`), `INVALID_INPUT` (`400`), `INTERNAL_ERROR` (`500`)                                                                            |
+| POST   | `/api/v1/auth/api-keys/:keyId/revoke`            | session               | none           | none           | `keyId` path param                                                                      | `200` `{ data: ApiKeyMetadata }`                        | `UNAUTHORIZED` (`401`), `NOT_FOUND` (`404`)                                                                                                          |
+| POST   | `/api/v1/auth/api-keys/self/revoke`              | api_key               | none           | none           | `Authorization: Bearer <mdcms_key_...>`                                                 | `200` `{ data: { revoked: true, keyId } }`              | `UNAUTHORIZED` (`401`)                                                                                                                               |
+| POST   | `/api/v1/auth/sign-up/email`                     | public                | none           | none           | better-auth sign-up payload                                                             | better-auth success payload                             | better-auth deterministic auth/provider errors                                                                                                       |
+| POST   | `/api/v1/auth/sign-in/email`                     | public                | none           | none           | better-auth sign-in payload                                                             | better-auth success payload                             | better-auth deterministic auth/provider errors                                                                                                       |
+| POST   | `/api/v1/auth/sign-out`                          | session               | none           | none           | better-auth sign-out payload                                                            | better-auth sign-out payload                            | better-auth deterministic auth/provider errors                                                                                                       |
+| POST   | `/api/v1/auth/sign-in/sso`                       | public                | none           | none           | JSON: `{ providerId, callbackURL, errorCallbackURL?, newUserCallbackURL?, loginHint? }` | `302` redirect to configured provider authorization URL | `INVALID_INPUT` (`400`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`), `INTERNAL_ERROR` (`500`)                                                             |
+| GET    | `/api/v1/auth/sso/callback/:providerId`          | public                | none           | none           | OIDC callback query per Better Auth SSO flow                                            | `302` redirect to validated callback URL + `set-cookie` | `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `AUTH_OIDC_REQUIRED_CLAIM_MISSING` (`401`), `AUTH_PROVIDER_ERROR` (`502`), `INTERNAL_ERROR` (`500`) |
 
-## CMS-79 CLI Browser Login Endpoints
+## OIDC Sign-In Semantics
+
+- MDCMS uses the Better Auth SSO plugin route family under `/api/v1/auth/*` for OIDC sign-in and callback handling.
+- OIDC sign-in initiation is restricted to explicit `providerId` selection. MDCMS does not expose email/domain-based provider resolution.
+- `providerId` on `POST /api/v1/auth/sign-in/sso` must match a startup-configured provider profile.
+- `callbackURL`, `errorCallbackURL`, and `newUserCallbackURL` must be either:
+  - relative application paths, or
+  - absolute URLs whose origin matches `MDCMS_SERVER_URL`
+- External callback origins are rejected with `INVALID_INPUT` (`400`).
+- The default OIDC callback route is `/api/v1/auth/sso/callback/:providerId`.
+- Callback success issues the same session authentication contract used for email/password login.
+- Provider token exchange, userinfo retrieval, or callback validation failures return `AUTH_PROVIDER_ERROR` (`502`) unless a stricter deterministic error above applies.
+- Requests targeting unsupported or unconfigured provider profiles remain deny-by-default and return `SSO_PROVIDER_NOT_CONFIGURED` (`404`).
+- Verification must include a deterministic fixture matrix covering:
+  - `okta`
+  - `azure-ad`
+  - `google-workspace`
+  - `auth0`
+  - missing required-claim failures
+  - unconfigured-provider rejection
+
+## CLI Browser Login Endpoints
 
 | Method | Path                               | Auth Mode              | Required Scope | Target Routing | Request                                                                                     | Success                                                                                                                                   | Deterministic Errors                                                                                                                                                                        |
 | ------ | ---------------------------------- | ---------------------- | -------------- | -------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -346,7 +432,7 @@ API keys follow the same project/environment scoping model through tuple allowli
 | POST   | `/api/v1/auth/cli/login/authorize` | public (session-aware) | none           | none           | query: `challenge`, `state`; credentials via form or JSON `{ email, password }` when needed | `302` JSON `{ data: { redirectTo } }` + `Location`; may also set session cookie                                                           | `AUTH_INVALID_CREDENTIALS` (`401`), `AUTH_BACKOFF_ACTIVE` (`429`), `NOT_FOUND` (`404`), `LOGIN_CHALLENGE_EXPIRED` (`410`), `LOGIN_CHALLENGE_USED` (`409`), `INVALID_LOGIN_EXCHANGE` (`400`) |
 | POST   | `/api/v1/auth/cli/login/exchange`  | public                 | none           | none           | JSON: `{ challengeId, state, code }`                                                        | `200` `{ data: { key, ...ApiKeyMetadata } }`                                                                                              | `INVALID_INPUT` (`400`), `NOT_FOUND` (`404`), `LOGIN_CHALLENGE_EXPIRED` (`410`), `LOGIN_CHALLENGE_USED` (`409`), `INVALID_LOGIN_EXCHANGE` (`400`)                                           |
 
-**CMS-79 one-time semantics (normative):**
+**One-time semantics (normative):**
 
 - Challenge TTL is 10 minutes.
 - `state` is validated against stored hash.

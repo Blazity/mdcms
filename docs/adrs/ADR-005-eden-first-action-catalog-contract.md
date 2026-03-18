@@ -3,10 +3,6 @@ status: accepted
 canonical: true
 created: 2026-03-11
 last_updated: 2026-03-11
-legacy_sections:
-  - 2.8
-  - 6.11
-  - 6.12
 ---
 
 # ADR-005 Eden-First Action Catalog Contract

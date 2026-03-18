@@ -3,14 +3,6 @@ status: live
 canonical: true
 created: 2026-03-11
 last_updated: 2026-03-11
-legacy_sections:
-  - 12
-  - 13
-  - 23.2.1
-  - 23.2.2
-  - 23.2.5
-  - 6.9
-  - 24.7
 ---
 
 # SPEC-009 i18n and Environments
@@ -258,7 +250,7 @@ const cms = createClient({
 
 ## Environment Management Endpoints
 
-All `/api/v1/environments*` endpoints require explicit project routing. Clone/promote remain MVP; clone does not include media in reduced scope. CMS-18 does not define an update endpoint for environments.
+All `/api/v1/environments*` endpoints require explicit project routing. Clone/promote remain MVP; clone does not include media in reduced scope. No update endpoint is defined for environments.
 
 `EnvironmentSummary`:
 

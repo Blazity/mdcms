@@ -3,14 +3,6 @@ status: live
 canonical: true
 created: 2026-03-11
 last_updated: 2026-03-11
-legacy_sections:
-  - 4
-  - 6.3
-  - 6.4
-  - 14
-  - 19
-  - 20
-  - 24.5
 ---
 
 # SPEC-003 Content Storage, Versioning, and Migrations
