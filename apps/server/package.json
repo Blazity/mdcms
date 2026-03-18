@@ -29,6 +29,7 @@
     "db:migrate": "drizzle-kit migrate --config drizzle.config.ts"
   },
   "dependencies": {
+    "@better-auth/sso": "1.5.1",
     "@mdcms/modules": "workspace:*",
     "@mdcms/shared": "workspace:*",
     "@mdcms/studio": "workspace:*",

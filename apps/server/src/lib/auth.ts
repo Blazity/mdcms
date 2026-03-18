@@ -4,6 +4,7 @@ import { RuntimeError, serializeError } from "@mdcms/shared";
 import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { sso } from "@better-auth/sso";
 import { z } from "zod";
 
 import type { DrizzleDatabase } from "./db.js";
@@ -24,6 +25,11 @@ import {
   type RbacGrant,
   type RbacRole,
 } from "./rbac.js";
+import {
+  parseServerEnv,
+  type OidcProviderConfig,
+  type OidcTokenEndpointAuthMethod,
+} from "./env.js";
 import {
   createJsonResponse,
   executeWithRuntimeErrorsHandled,
@@ -210,6 +216,8 @@ export type AuthService = {
     userId: string;
     revokedSessions: number;
   }>;
+  startSsoSignIn: (request: Request) => Promise<Response>;
+  handleSsoCallback: (request: Request) => Promise<Response>;
   handleAuthRequest: (request: Request) => Promise<Response>;
 };
 
@@ -242,6 +250,31 @@ type AuthRouteApp = {
   post?: (path: string, handler: (ctx: any) => unknown) => AuthRouteApp;
 };
 
+type StaticOidcProvider = {
+  providerId: OidcProviderConfig["providerId"];
+  domain: string;
+  oidcConfig: {
+    issuer: string;
+    discoveryEndpoint: string;
+    clientId: string;
+    clientSecret: string;
+    pkce: true;
+    scopes: string[];
+    authorizationEndpoint?: string;
+    tokenEndpoint?: string;
+    userInfoEndpoint?: string;
+    jwksEndpoint?: string;
+    tokenEndpointAuthentication?: OidcTokenEndpointAuthMethod;
+    mapping: {
+      id: "sub";
+      email: "email";
+      emailVerified: "email_verified";
+      name: "name";
+      image: "picture";
+    };
+  };
+};
+
 const CreateApiKeyInputSchema = z.object({
   label: z.string().trim().min(1).max(128),
   scopes: z.array(z.enum(API_KEY_OPERATION_SCOPES)).min(1),
@@ -269,6 +302,16 @@ const CliLoginExchangeInputSchema = z.object({
   state: z.string().trim().min(16).max(256),
   code: z.string().trim().min(16).max(256),
 });
+
+const SsoSignInInputSchema = z
+  .object({
+    providerId: z.string().trim().min(1),
+    callbackURL: z.string().trim().min(1),
+    errorCallbackURL: z.string().trim().min(1).optional(),
+    newUserCallbackURL: z.string().trim().min(1).optional(),
+    loginHint: z.string().trim().min(1).optional(),
+  })
+  .passthrough();
 
 function toIsoString(value: unknown): string {
   if (value instanceof Date) {
@@ -605,6 +648,167 @@ function toStudioSession(payload: BetterAuthLikeSession): StudioSession {
   };
 }
 
+function createInvalidInputError(
+  message: string,
+  details: Record<string, unknown> = {},
+): RuntimeError {
+  return new RuntimeError({
+    code: "INVALID_INPUT",
+    message,
+    statusCode: 400,
+    details,
+  });
+}
+
+function createSsoProviderNotConfiguredError(providerId: string): RuntimeError {
+  return new RuntimeError({
+    code: "SSO_PROVIDER_NOT_CONFIGURED",
+    message: `OIDC provider "${providerId}" is not configured.`,
+    statusCode: 404,
+    details: {
+      providerId,
+    },
+  });
+}
+
+function createRequiredOidcClaimError(): RuntimeError {
+  return new RuntimeError({
+    code: "AUTH_OIDC_REQUIRED_CLAIM_MISSING",
+    message: "OIDC provider response is missing required claims.",
+    statusCode: 401,
+  });
+}
+
+function createAuthProviderError(
+  error: string,
+  errorDescription: string,
+): RuntimeError {
+  return new RuntimeError({
+    code: "AUTH_PROVIDER_ERROR",
+    message: "OIDC provider callback failed.",
+    statusCode: 502,
+    details: {
+      providerError: error,
+      providerErrorDescription: errorDescription,
+    },
+  });
+}
+
+function createDiscoveryEndpoint(issuer: string): string {
+  const url = new URL(issuer);
+  const normalizedPath = url.pathname.replace(/\/$/, "");
+  url.pathname = `${normalizedPath}/.well-known/openid-configuration`;
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
+export function buildStaticOidcProviders(
+  _baseUrl: string,
+  providers: OidcProviderConfig[],
+): StaticOidcProvider[] {
+  return providers.map((provider) => ({
+    providerId: provider.providerId,
+    domain: provider.domain,
+    oidcConfig: {
+      issuer: provider.issuer,
+      discoveryEndpoint: createDiscoveryEndpoint(provider.issuer),
+      clientId: provider.clientId,
+      clientSecret: provider.clientSecret,
+      pkce: true,
+      scopes: [...provider.scopes],
+      authorizationEndpoint: provider.discoveryOverrides?.authorizationEndpoint,
+      tokenEndpoint: provider.discoveryOverrides?.tokenEndpoint,
+      userInfoEndpoint: provider.discoveryOverrides?.userInfoEndpoint,
+      jwksEndpoint: provider.discoveryOverrides?.jwksUri,
+      tokenEndpointAuthentication:
+        provider.discoveryOverrides?.tokenEndpointAuthMethod,
+      mapping: {
+        id: "sub",
+        email: "email",
+        emailVerified: "email_verified",
+        name: "name",
+        image: "picture",
+      },
+    },
+  }));
+}
+
+export function validateSsoRedirectUrl(
+  value: string,
+  field: string,
+  baseUrl: string,
+): string {
+  const trimmed = value.trim();
+
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
+    return trimmed;
+  }
+
+  let target: URL;
+  let appOrigin: string;
+
+  try {
+    target = new URL(trimmed);
+    appOrigin = new URL(baseUrl).origin;
+  } catch {
+    throw createInvalidInputError(
+      `Field "${field}" must be a relative path or same-origin absolute URL.`,
+      { field, value },
+    );
+  }
+
+  if (target.origin !== appOrigin) {
+    throw createInvalidInputError(
+      `Field "${field}" must be a relative path or same-origin absolute URL.`,
+      { field, value },
+    );
+  }
+
+  return trimmed;
+}
+
+export function mapSsoCallbackErrorCode(
+  location: string,
+  providerId?: string,
+): RuntimeError | undefined {
+  let url: URL;
+
+  try {
+    url = new URL(location, "http://localhost");
+  } catch {
+    return createAuthProviderError("invalid_redirect", location);
+  }
+
+  const error = url.searchParams.get("error");
+  const errorDescription = url.searchParams.get("error_description") ?? "";
+  const normalizedDescription = errorDescription.toLowerCase();
+
+  if (!error) {
+    return undefined;
+  }
+
+  if (
+    error === "invalid_provider" &&
+    normalizedDescription.includes("missing_user_info")
+  ) {
+    return createRequiredOidcClaimError();
+  }
+
+  if (
+    error === "invalid_provider" &&
+    normalizedDescription.includes("provider not found")
+  ) {
+    return createSsoProviderNotConfiguredError(providerId ?? "unknown");
+  }
+
+  if (error === "invalid_state") {
+    return createInvalidInputError("OIDC callback state is invalid.");
+  }
+
+  return createAuthProviderError(error, errorDescription);
+}
+
 function resolveAuthBaseUrl(env: NodeJS.ProcessEnv): string {
   const fromEnv = env.MDCMS_SERVER_URL?.trim();
 
@@ -614,6 +818,23 @@ function resolveAuthBaseUrl(env: NodeJS.ProcessEnv): string {
 
   const port = env.PORT?.trim() || "4000";
   return `http://localhost:${port}`;
+}
+
+function collectTrustedOrigins(
+  baseUrl: string,
+  providers: OidcProviderConfig[],
+): string[] {
+  const trustedOrigins = new Set<string>([new URL(baseUrl).origin]);
+
+  for (const provider of providers) {
+    trustedOrigins.add(new URL(provider.issuer).origin);
+
+    for (const origin of provider.trustedOrigins ?? []) {
+      trustedOrigins.add(origin);
+    }
+  }
+
+  return [...trustedOrigins];
 }
 
 function resolveAuthSecret(env: NodeJS.ProcessEnv): string {
@@ -812,10 +1033,22 @@ export function createAuthService(
   options: CreateAuthServiceOptions,
 ): AuthService {
   const rawEnv = options.env ?? process.env;
+  const parsedEnv = parseServerEnv(rawEnv);
   const baseUrl = resolveAuthBaseUrl(rawEnv);
   const secret = resolveAuthSecret(rawEnv);
   const useSecureCookies = resolveSecureCookiePolicy(rawEnv);
   const adminAllowlist = resolveAdminAllowlist(rawEnv);
+  const oidcProviders = buildStaticOidcProviders(
+    baseUrl,
+    parsedEnv.MDCMS_AUTH_OIDC_PROVIDERS,
+  );
+  const trustedOrigins = collectTrustedOrigins(
+    baseUrl,
+    parsedEnv.MDCMS_AUTH_OIDC_PROVIDERS,
+  );
+  const oidcProviderIds = new Set(
+    oidcProviders.map((provider) => provider.providerId),
+  );
   const isAdminSession =
     options.isAdminSession ??
     ((session: StudioSession) =>
@@ -849,6 +1082,7 @@ export function createAuthService(
     baseURL: baseUrl,
     basePath: "/api/v1/auth",
     secret,
+    trustedOrigins,
     database: drizzleAdapter(options.db as unknown as Record<string, unknown>, {
       provider: "pg",
       schema: {
@@ -878,7 +1112,85 @@ export function createAuthService(
     rateLimit: {
       enabled: false,
     },
+    plugins: [
+      sso({
+        defaultSSO: oidcProviders,
+        providersLimit: 0,
+      }),
+    ],
   });
+
+  function assertConfiguredSsoProvider(providerId: string): void {
+    if (!oidcProviderIds.has(providerId as OidcProviderConfig["providerId"])) {
+      throw createSsoProviderNotConfiguredError(providerId);
+    }
+  }
+
+  async function parseSsoSignInPayload(request: Request): Promise<{
+    providerId: string;
+    callbackURL: string;
+    errorCallbackURL?: string;
+    newUserCallbackURL?: string;
+  }> {
+    const payload = await request
+      .clone()
+      .json()
+      .catch(() => {
+        throw createInvalidInputError(
+          "OIDC sign-in requires a valid JSON request body.",
+        );
+      });
+
+    const parsed = SsoSignInInputSchema.safeParse(payload);
+
+    if (!parsed.success) {
+      throw createInvalidInputError("OIDC sign-in payload is invalid.", {
+        issues: parsed.error.issues,
+      });
+    }
+
+    if (
+      "email" in parsed.data ||
+      "domain" in parsed.data ||
+      "organizationSlug" in parsed.data
+    ) {
+      throw createInvalidInputError(
+        'OIDC sign-in requires explicit "providerId" selection only.',
+      );
+    }
+
+    assertConfiguredSsoProvider(parsed.data.providerId);
+    validateSsoRedirectUrl(parsed.data.callbackURL, "callbackURL", baseUrl);
+
+    if (parsed.data.errorCallbackURL) {
+      validateSsoRedirectUrl(
+        parsed.data.errorCallbackURL,
+        "errorCallbackURL",
+        baseUrl,
+      );
+    }
+
+    if (parsed.data.newUserCallbackURL) {
+      validateSsoRedirectUrl(
+        parsed.data.newUserCallbackURL,
+        "newUserCallbackURL",
+        baseUrl,
+      );
+    }
+
+    return parsed.data;
+  }
+
+  function toRedirectResponse(response: Response, location: string): Response {
+    const headers = new Headers(response.headers);
+    headers.delete("content-type");
+    headers.set("location", location);
+
+    return new Response(null, {
+      status: 302,
+      headers,
+    });
+  }
 
   async function findLoginBackoff(
     loginKey: string,
@@ -1918,6 +2230,74 @@ export function createAuthService(
       };
     },
 
+    async startSsoSignIn(request) {
+      await parseSsoSignInPayload(request);
+
+      const response = await auth.handler(request);
+
+      if (response.status === 404) {
+        throw createSsoProviderNotConfiguredError("unknown");
+      }
+
+      if (response.status >= 400) {
+        throw createAuthProviderError(
+          "sign_in_failed",
+          `OIDC sign-in failed with status ${response.status}.`,
+        );
+      }
+
+      const body = (await response
+        .clone()
+        .json()
+        .catch(() => undefined)) as
+        | {
+            url?: unknown;
+            redirect?: unknown;
+          }
+        | undefined;
+      const location =
+        typeof body?.url === "string" && body.url.trim().length > 0
+          ? body.url
+          : undefined;
+
+      if (!location) {
+        throw new RuntimeError({
+          code: "INTERNAL_ERROR",
+          message: "OIDC sign-in did not return a provider redirect URL.",
+          statusCode: 500,
+        });
+      }
+
+      return toRedirectResponse(response, location);
+    },
+
+    async handleSsoCallback(request) {
+      const providerId = new URL(request.url).pathname.split("/").at(-1);
+      assertConfiguredSsoProvider(
+        assertNonEmptyString(providerId, "providerId"),
+      );
+
+      const response = await auth.handler(request);
+
+      if (response.status !== 302) {
+        return response;
+      }
+
+      const location = response.headers.get("location");
+
+      if (!location) {
+        return response;
+      }
+
+      const mappedError = mapSsoCallbackErrorCode(location, providerId);
+
+      if (!mappedError) {
+        return response;
+      }
+
+      throw mappedError;
+    },
+
     handleAuthRequest(request) {
       return auth.handler(request);
     },
@@ -2256,6 +2636,16 @@ export function mountAuthRoutes(
   );
   authApp.post?.("/api/v1/auth/sign-in/email", ({ request }: any) =>
     options.authService.handleAuthRequest(request),
+  );
+  authApp.post?.("/api/v1/auth/sign-in/sso", ({ request }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () =>
+      options.authService.startSsoSignIn(request),
+    ),
+  );
+  authApp.get?.("/api/v1/auth/sso/callback/:providerId", ({ request }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () =>
+      options.authService.handleSsoCallback(request),
+    ),
   );
   authApp.post?.("/api/v1/auth/sign-out", ({ request }: any) =>
     executeWithRuntimeErrorsHandled(request, async () => {

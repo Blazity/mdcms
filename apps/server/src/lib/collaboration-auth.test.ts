@@ -103,6 +103,22 @@ function createAuthServiceStub(overrides: Partial<AuthService>): AuthService {
         revokedSessions: 0,
       };
     },
+    async startSsoSignIn() {
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: "http://localhost/oidc/authorize",
+        },
+      });
+    },
+    async handleSsoCallback() {
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: "http://localhost/studio",
+        },
+      });
+    },
     async startCliLogin() {
       return {
         challengeId: "11111111-1111-4111-8111-111111111111",

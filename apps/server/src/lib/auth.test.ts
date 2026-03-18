@@ -1,10 +1,20 @@
 import assert from "node:assert/strict";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import { test } from "node:test";
 
 import { createConsoleLogger } from "@mdcms/shared";
 import { eq } from "drizzle-orm";
 import postgres from "postgres";
 
+import {
+  buildStaticOidcProviders,
+  mapSsoCallbackErrorCode,
+  validateSsoRedirectUrl,
+} from "./auth.js";
 import {
   authLoginBackoffs,
   authSessions,
@@ -28,6 +38,26 @@ const logger = createConsoleLogger({
   level: "error",
   sink: () => undefined,
 });
+
+type MockOidcClaims = {
+  sub?: string;
+  email?: string;
+  email_verified?: boolean;
+  name?: string;
+  picture?: string;
+  preferred_username?: string;
+  given_name?: string;
+  family_name?: string;
+};
+
+type MockOidcProvider = {
+  issuer: string;
+  authorizationEndpoint: string;
+  tokenEndpoint: string;
+  userInfoEndpoint: string;
+  jwksEndpoint: string;
+  close: () => Promise<void>;
+};
 
 async function canConnectToDatabase(): Promise<boolean> {
   const client = postgres(env.DATABASE_URL ?? "", {
@@ -79,6 +109,97 @@ async function ensureAuthLoginBackoffTable(): Promise<void> {
   }
 }
 
+test("auth oidc provider config builds static Better Auth providers", () => {
+  const providers = buildStaticOidcProviders("http://localhost:4000", [
+    {
+      providerId: "okta",
+      issuer: "https://example.okta.com/oauth2/default",
+      domain: "example.com",
+      clientId: "okta-client-id",
+      clientSecret: "okta-client-secret",
+      scopes: ["openid", "email", "profile"],
+      trustedOrigins: ["https://issuer-fixture.example"],
+      discoveryOverrides: {
+        authorizationEndpoint: "https://issuer-fixture.example/authorize",
+        tokenEndpoint: "https://issuer-fixture.example/token",
+        userInfoEndpoint: "https://issuer-fixture.example/userinfo",
+        jwksUri: "https://issuer-fixture.example/jwks",
+        tokenEndpointAuthMethod: "client_secret_post",
+      },
+    },
+  ]);
+
+  assert.equal(providers.length, 1);
+  assert.deepEqual(providers[0], {
+    providerId: "okta",
+    domain: "example.com",
+    oidcConfig: {
+      issuer: "https://example.okta.com/oauth2/default",
+      discoveryEndpoint:
+        "https://example.okta.com/oauth2/default/.well-known/openid-configuration",
+      clientId: "okta-client-id",
+      clientSecret: "okta-client-secret",
+      pkce: true,
+      scopes: ["openid", "email", "profile"],
+      authorizationEndpoint: "https://issuer-fixture.example/authorize",
+      tokenEndpoint: "https://issuer-fixture.example/token",
+      userInfoEndpoint: "https://issuer-fixture.example/userinfo",
+      jwksEndpoint: "https://issuer-fixture.example/jwks",
+      tokenEndpointAuthentication: "client_secret_post",
+      mapping: {
+        id: "sub",
+        email: "email",
+        emailVerified: "email_verified",
+        name: "name",
+        image: "picture",
+      },
+    },
+  });
+});
+
+test("auth oidc redirect validation allows only relative and same-origin URLs", () => {
+  assert.equal(
+    validateSsoRedirectUrl("/studio", "callbackURL", "http://localhost:4000"),
+    "/studio",
+  );
+  assert.equal(
+    validateSsoRedirectUrl(
+      "http://localhost:4000/studio?tab=users",
+      "callbackURL",
+      "http://localhost:4000",
+    ),
+    "http://localhost:4000/studio?tab=users",
+  );
+  assert.throws(
+    () =>
+      validateSsoRedirectUrl(
+        "https://evil.example/callback",
+        "callbackURL",
+        "http://localhost:4000",
+      ),
+    /callbackURL/,
+  );
+});
+
+test("auth oidc callback error mapping recognizes missing required claims", () => {
+  assert.equal(
+    mapSsoCallbackErrorCode(
+      "http://localhost:4000/studio?error=invalid_provider&error_description=missing_user_info",
+    )?.code,
+    "AUTH_OIDC_REQUIRED_CLAIM_MISSING",
+  );
+  assert.equal(
+    mapSsoCallbackErrorCode(
+      "http://localhost:4000/studio?error=discovery_failed&error_description=timeout",
+    )?.code,
+    "AUTH_PROVIDER_ERROR",
+  );
+  assert.equal(
+    mapSsoCallbackErrorCode("http://localhost:4000/studio"),
+    undefined,
+  );
+});
+
 if (dbAvailable) {
   await ensureAuthLoginBackoffTable();
 }
@@ -104,6 +225,164 @@ function extractSetCookie(response: Response): string {
   const header = response.headers.get("set-cookie");
   assert.ok(header);
   return header;
+}
+
+async function createMockOidcProvider(
+  claims: MockOidcClaims,
+): Promise<MockOidcProvider> {
+  const keyPair = await crypto.subtle.generateKey(
+    {
+      name: "RSASSA-PKCS1-v1_5",
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: "SHA-256",
+    },
+    true,
+    ["sign", "verify"],
+  );
+  const kid = "mock-oidc-key";
+  const publicJwk = (await crypto.subtle.exportKey(
+    "jwk",
+    keyPair.publicKey,
+  )) as Record<string, unknown> & {
+    kid?: string;
+    use?: string;
+    alg?: string;
+  };
+  publicJwk.kid = kid;
+  publicJwk.use = "sig";
+  publicJwk.alg = "RS256";
+
+  let issuer = "";
+
+  async function writeJson(
+    response: ServerResponse<IncomingMessage>,
+    status: number,
+    body: unknown,
+  ): Promise<void> {
+    response.statusCode = status;
+    response.setHeader("content-type", "application/json; charset=utf-8");
+    response.end(JSON.stringify(body));
+  }
+
+  async function signIdToken(
+    payload: Record<string, unknown>,
+  ): Promise<string> {
+    const header = Buffer.from(
+      JSON.stringify({ alg: "RS256", typ: "JWT", kid }),
+    ).toString("base64url");
+    const encodedPayload = Buffer.from(JSON.stringify(payload)).toString(
+      "base64url",
+    );
+    const signingInput = `${header}.${encodedPayload}`;
+    const signature = await crypto.subtle.sign(
+      { name: "RSASSA-PKCS1-v1_5" },
+      keyPair.privateKey,
+      new TextEncoder().encode(signingInput),
+    );
+
+    return `${signingInput}.${Buffer.from(signature).toString("base64url")}`;
+  }
+
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url ?? "/", issuer);
+
+    if (url.pathname === "/authorize") {
+      response.statusCode = 200;
+      response.end("ok");
+      return;
+    }
+
+    if (url.pathname === "/token") {
+      const idToken = await signIdToken({
+        iss: issuer,
+        aud: "mock-client-id",
+        exp: Math.floor(Date.now() / 1000) + 300,
+        iat: Math.floor(Date.now() / 1000),
+        ...claims,
+      });
+
+      await writeJson(response, 200, {
+        token_type: "Bearer",
+        access_token: "mock-access-token",
+        expires_in: 300,
+        id_token: idToken,
+      });
+      return;
+    }
+
+    if (url.pathname === "/userinfo") {
+      await writeJson(response, 200, claims);
+      return;
+    }
+
+    if (url.pathname === "/jwks") {
+      await writeJson(response, 200, {
+        keys: [publicJwk],
+      });
+      return;
+    }
+
+    response.statusCode = 404;
+    response.end("not found");
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", (error?: Error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve();
+    });
+  });
+
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  issuer = `http://127.0.0.1:${address.port}`;
+
+  return {
+    issuer,
+    authorizationEndpoint: `${issuer}/authorize`,
+    tokenEndpoint: `${issuer}/token`,
+    userInfoEndpoint: `${issuer}/userinfo`,
+    jwksEndpoint: `${issuer}/jwks`,
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve();
+        });
+      }),
+  };
+}
+
+function createOidcEnv(provider: MockOidcProvider): NodeJS.ProcessEnv {
+  return {
+    ...env,
+    MDCMS_AUTH_OIDC_PROVIDERS: JSON.stringify([
+      {
+        providerId: "okta",
+        issuer: provider.issuer,
+        domain: "example.com",
+        clientId: "mock-client-id",
+        clientSecret: "mock-client-secret",
+        scopes: ["openid", "email", "profile"],
+        discoveryOverrides: {
+          authorizationEndpoint: provider.authorizationEndpoint,
+          tokenEndpoint: provider.tokenEndpoint,
+          userInfoEndpoint: provider.userInfoEndpoint,
+          jwksUri: provider.jwksEndpoint,
+          tokenEndpointAuthMethod: "client_secret_basic",
+        },
+      },
+    ]),
+  };
 }
 
 function splitSetCookieHeader(header: string): string[] {
@@ -228,6 +507,177 @@ function attemptLogin(
     }),
   );
 }
+
+testWithDatabase(
+  "auth oidc sign-in redirects to the configured provider authorization URL",
+  async () => {
+    const provider = await createMockOidcProvider({
+      sub: "oidc-user-1",
+      email: "oidc-user@example.com",
+      email_verified: true,
+      name: "OIDC User",
+    });
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env: createOidcEnv(provider),
+      logger,
+    });
+
+    try {
+      const response = await handler(
+        new Request("http://localhost/api/v1/auth/sign-in/sso", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            providerId: "okta",
+            callbackURL: "/studio",
+          }),
+        }),
+      );
+
+      assert.equal(response.status, 302);
+      const location = response.headers.get("location");
+      assert.ok(location);
+      assert.equal(location.startsWith(provider.authorizationEndpoint), true);
+      assert.ok(extractSetCookie(response));
+    } finally {
+      await provider.close();
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "auth oidc sign-in rejects unconfigured providers",
+  async () => {
+    const provider = await createMockOidcProvider({
+      sub: "oidc-user-2",
+      email: "configured@example.com",
+      email_verified: true,
+      name: "Configured User",
+    });
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env: createOidcEnv(provider),
+      logger,
+    });
+
+    try {
+      const response = await handler(
+        new Request("http://localhost/api/v1/auth/sign-in/sso", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            providerId: "auth0",
+            callbackURL: "/studio",
+          }),
+        }),
+      );
+      const body = (await response.json()) as { code: string };
+
+      assert.equal(response.status, 404);
+      assert.equal(body.code, "SSO_PROVIDER_NOT_CONFIGURED");
+    } finally {
+      await provider.close();
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "auth oidc sign-in rejects callback URLs outside the server origin",
+  async () => {
+    const provider = await createMockOidcProvider({
+      sub: "oidc-user-3",
+      email: "callback@example.com",
+      email_verified: true,
+      name: "Callback User",
+    });
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env: createOidcEnv(provider),
+      logger,
+    });
+
+    try {
+      const response = await handler(
+        new Request("http://localhost/api/v1/auth/sign-in/sso", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            providerId: "okta",
+            callbackURL: "https://evil.example/callback",
+          }),
+        }),
+      );
+      const body = (await response.json()) as { code: string };
+
+      assert.equal(response.status, 400);
+      assert.equal(body.code, "INVALID_INPUT");
+    } finally {
+      await provider.close();
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "auth oidc callback maps missing required claims to a deterministic auth error",
+  async () => {
+    const provider = await createMockOidcProvider({
+      sub: "oidc-user-4",
+      email_verified: true,
+      name: "Missing Email User",
+    });
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env: createOidcEnv(provider),
+      logger,
+    });
+
+    try {
+      const signInResponse = await handler(
+        new Request("http://localhost/api/v1/auth/sign-in/sso", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            providerId: "okta",
+            callbackURL: "/studio",
+          }),
+        }),
+      );
+
+      assert.equal(signInResponse.status, 302);
+      const location = signInResponse.headers.get("location");
+      assert.ok(location);
+
+      const redirect = new URL(location);
+      const state = redirect.searchParams.get("state");
+      const redirectUri = redirect.searchParams.get("redirect_uri");
+      assert.ok(state);
+      assert.ok(redirectUri);
+
+      const callbackResponse = await handler(
+        new Request(`${redirectUri}?code=mock-code&state=${state}`, {
+          headers: {
+            cookie: toCookieHeader(extractSetCookie(signInResponse)),
+          },
+        }),
+      );
+      const body = (await callbackResponse.json()) as { code: string };
+
+      assert.equal(callbackResponse.status, 401);
+      assert.equal(body.code, "AUTH_OIDC_REQUIRED_CLAIM_MISSING");
+    } finally {
+      await provider.close();
+      await dbConnection.close();
+    }
+  },
+);
 
 async function seedScope(
   db: ReturnType<
