@@ -103,7 +103,18 @@ function parseAbsoluteUrl(
   const resolved = parseNonEmptyString(value, field, index);
 
   try {
-    return new URL(resolved).toString();
+    const url = new URL(resolved);
+
+    if (
+      url.pathname === "/" &&
+      url.search.length === 0 &&
+      url.hash.length === 0 &&
+      !resolved.endsWith("/")
+    ) {
+      return url.origin;
+    }
+
+    return url.toString();
   } catch {
     throw createInvalidEnvError(value, `${field} must be an absolute URL.`, {
       field,
@@ -120,7 +131,7 @@ function parseOrigin(value: unknown, field: string, index: number): string {
     url.pathname !== "/" ||
     url.search.length > 0 ||
     url.hash.length > 0 ||
-    resolved !== url.origin + "/"
+    (resolved !== url.origin && resolved !== url.origin + "/")
   ) {
     throw createInvalidEnvError(
       value,

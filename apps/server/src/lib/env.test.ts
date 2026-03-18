@@ -52,6 +52,25 @@ test("parseServerEnv parses valid OIDC provider config", () => {
   });
 });
 
+test("parseServerEnv preserves bare-origin OIDC issuers without adding a slash", () => {
+  const env = parseServerEnv({
+    MDCMS_AUTH_OIDC_PROVIDERS: JSON.stringify([
+      {
+        providerId: "auth0",
+        issuer: "https://tenant.example.com",
+        domain: "example.com",
+        clientId: "auth0-client-id",
+        clientSecret: "auth0-client-secret",
+      },
+    ]),
+  } as NodeJS.ProcessEnv);
+
+  assert.equal(
+    env.MDCMS_AUTH_OIDC_PROVIDERS[0]?.issuer,
+    "https://tenant.example.com",
+  );
+});
+
 test("parseServerEnv rejects malformed OIDC provider JSON", () => {
   assert.throws(
     () =>

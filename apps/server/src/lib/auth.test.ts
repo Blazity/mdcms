@@ -188,7 +188,9 @@ test("auth oidc callback error mapping recognizes missing required claims", () =
 
 test("auth oidc startup resolution hydrates discovery metadata before boot", async () => {
   const fixture = createOidcFixture("okta");
-  const provider = await startMockOidcProvider(fixture.claims);
+  const provider = await startMockOidcProvider(fixture.claims, {
+    clientId: fixture.providerConfig.clientId,
+  });
 
   try {
     const [resolved] = await resolveStartupOidcProviders([
@@ -276,12 +278,50 @@ async function withMockedNow<T>(
   value: number,
   run: () => Promise<T>,
 ): Promise<T> {
-  const originalNow = Date.now;
-  Date.now = () => value;
+  const OriginalDate = Date;
+  class MockDate extends OriginalDate {
+    constructor(...args: any[]) {
+      if (args.length === 0) {
+        super(value);
+        return;
+      }
+
+      switch (args.length) {
+        case 1:
+          super(args[0]);
+          return;
+        case 2:
+          super(args[0], args[1]);
+          return;
+        case 3:
+          super(args[0], args[1], args[2]);
+          return;
+        case 4:
+          super(args[0], args[1], args[2], args[3]);
+          return;
+        case 5:
+          super(args[0], args[1], args[2], args[3], args[4]);
+          return;
+        case 6:
+          super(args[0], args[1], args[2], args[3], args[4], args[5]);
+          return;
+        default:
+          super(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
+      }
+    }
+
+    static override now(): number {
+      return value;
+    }
+  }
+
+  MockDate.parse = OriginalDate.parse;
+  MockDate.UTC = OriginalDate.UTC;
+  globalThis.Date = MockDate as DateConstructor;
   try {
     return await run();
   } finally {
-    Date.now = originalNow;
+    globalThis.Date = OriginalDate;
   }
 }
 
@@ -421,12 +461,17 @@ function attemptLogin(
 testWithDatabase(
   "auth oidc sign-in redirects to the configured provider authorization URL",
   async () => {
-    const provider = await startMockOidcProvider({
-      sub: "oidc-user-1",
-      email: "oidc-user@example.com",
-      email_verified: true,
-      name: "OIDC User",
-    });
+    const provider = await startMockOidcProvider(
+      {
+        sub: "oidc-user-1",
+        email: "oidc-user@example.com",
+        email_verified: true,
+        name: "OIDC User",
+      },
+      {
+        clientId: "okta-client-id",
+      },
+    );
     const { handler, dbConnection } = createServerRequestHandlerWithModules({
       env: createOidcEnv(provider, env),
       logger,
@@ -463,7 +508,9 @@ for (const providerId of ["azure-ad", "google-workspace", "auth0"] as const) {
     `auth oidc sign-in redirects to the configured ${providerId} fixture authorization URL`,
     async () => {
       const fixture = createOidcFixture(providerId);
-      const provider = await startMockOidcProvider(fixture.claims);
+      const provider = await startMockOidcProvider(fixture.claims, {
+        clientId: fixture.providerConfig.clientId,
+      });
       const { handler, dbConnection } = createServerRequestHandlerWithModules({
         env: createOidcEnv(provider, env, providerId),
         logger,
@@ -498,12 +545,17 @@ for (const providerId of ["azure-ad", "google-workspace", "auth0"] as const) {
 testWithDatabase(
   "auth oidc sign-in rejects unconfigured providers",
   async () => {
-    const provider = await startMockOidcProvider({
-      sub: "oidc-user-2",
-      email: "configured@example.com",
-      email_verified: true,
-      name: "Configured User",
-    });
+    const provider = await startMockOidcProvider(
+      {
+        sub: "oidc-user-2",
+        email: "configured@example.com",
+        email_verified: true,
+        name: "Configured User",
+      },
+      {
+        clientId: "okta-client-id",
+      },
+    );
     const { handler, dbConnection } = createServerRequestHandlerWithModules({
       env: createOidcEnv(provider, env),
       logger,
@@ -537,7 +589,9 @@ testWithDatabase(
   "auth oidc callback maps missing sub claims to a deterministic auth error",
   async () => {
     const fixture = createMissingSubOidcFixture("auth0");
-    const provider = await startMockOidcProvider(fixture.claims);
+    const provider = await startMockOidcProvider(fixture.claims, {
+      clientId: fixture.providerConfig.clientId,
+    });
     const { handler, dbConnection } = createServerRequestHandlerWithModules({
       env: createOidcEnv(provider, env, "auth0"),
       logger,
@@ -588,12 +642,17 @@ testWithDatabase(
 testWithDatabase(
   "auth oidc sign-in rejects callback URLs outside the server origin",
   async () => {
-    const provider = await startMockOidcProvider({
-      sub: "oidc-user-3",
-      email: "callback@example.com",
-      email_verified: true,
-      name: "Callback User",
-    });
+    const provider = await startMockOidcProvider(
+      {
+        sub: "oidc-user-3",
+        email: "callback@example.com",
+        email_verified: true,
+        name: "Callback User",
+      },
+      {
+        clientId: "okta-client-id",
+      },
+    );
     const { handler, dbConnection } = createServerRequestHandlerWithModules({
       env: createOidcEnv(provider, env),
       logger,
@@ -626,11 +685,16 @@ testWithDatabase(
 testWithDatabase(
   "auth oidc callback maps missing required claims to a deterministic auth error",
   async () => {
-    const provider = await startMockOidcProvider({
-      sub: "oidc-user-4",
-      email_verified: true,
-      name: "Missing Email User",
-    });
+    const provider = await startMockOidcProvider(
+      {
+        sub: "oidc-user-4",
+        email_verified: true,
+        name: "Missing Email User",
+      },
+      {
+        clientId: "okta-client-id",
+      },
+    );
     const { handler, dbConnection } = createServerRequestHandlerWithModules({
       env: createOidcEnv(provider, env),
       logger,
@@ -1710,6 +1774,15 @@ testWithDatabase(
     });
     const email = uniqueEmail();
     const password = "Admin12345!";
+    const scope = {
+      project: `content-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      environment: `env-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    };
+    const schemaHash = "content-scope-split";
+    const scopeHeaders = {
+      "x-mdcms-project": scope.project,
+      "x-mdcms-environment": scope.environment,
+    };
 
     try {
       await signUp(handler, {
@@ -1731,18 +1804,34 @@ testWithDatabase(
           createdByUserId: loginResult.session.userId,
         })
         .onConflictDoNothing();
+      await seedScope(dbConnection.db, scope);
+
+      const schemaSyncResponse = await handler(
+        new Request("http://localhost/api/v1/schema", {
+          method: "PUT",
+          headers: createCsrfHeaders(loginResult, {
+            ...scopeHeaders,
+            "x-mdcms-schema-hash": schemaHash,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify(
+            createSchemaSyncPayload(schemaHash, scope.project),
+          ),
+        }),
+      );
+      assert.equal(schemaSyncResponse.status, 200);
 
       const createDocumentResponse = await handler(
         new Request("http://localhost/api/v1/content", {
           method: "POST",
           headers: createCsrfHeaders(loginResult, {
-            "x-mdcms-project": "marketing-site",
-            "x-mdcms-environment": "production",
+            ...scopeHeaders,
+            "x-mdcms-schema-hash": schemaHash,
             "content-type": "application/json",
           }),
           body: JSON.stringify({
             path: `content/posts/scope-test-${Date.now()}`,
-            type: "post",
+            type: "Post",
             locale: "en",
             format: "md",
             frontmatter: {
@@ -1769,8 +1858,8 @@ testWithDatabase(
             scopes: ["content:read"],
             contextAllowlist: [
               {
-                project: "marketing-site",
-                environment: "production",
+                project: scope.project,
+                environment: scope.environment,
               },
             ],
           }),
@@ -1785,8 +1874,7 @@ testWithDatabase(
         new Request("http://localhost/api/v1/content", {
           headers: {
             authorization: `Bearer ${readKeyBody.data.key}`,
-            "x-mdcms-project": "marketing-site",
-            "x-mdcms-environment": "production",
+            ...scopeHeaders,
           },
         }),
       );
@@ -1796,8 +1884,7 @@ testWithDatabase(
         new Request("http://localhost/api/v1/content?draft=true", {
           headers: {
             authorization: `Bearer ${readKeyBody.data.key}`,
-            "x-mdcms-project": "marketing-site",
-            "x-mdcms-environment": "production",
+            ...scopeHeaders,
           },
         }),
       );
@@ -1819,8 +1906,8 @@ testWithDatabase(
             scopes: ["content:write:draft"],
             contextAllowlist: [
               {
-                project: "marketing-site",
-                environment: "production",
+                project: scope.project,
+                environment: scope.environment,
               },
             ],
           }),
@@ -1837,8 +1924,7 @@ testWithDatabase(
           {
             headers: {
               authorization: `Bearer ${legacyWriteKeyBody.data.key}`,
-              "x-mdcms-project": "marketing-site",
-              "x-mdcms-environment": "production",
+              ...scopeHeaders,
             },
           },
         ),
@@ -1857,8 +1943,8 @@ testWithDatabase(
             method: "PUT",
             headers: {
               authorization: `Bearer ${legacyWriteKeyBody.data.key}`,
-              "x-mdcms-project": "marketing-site",
-              "x-mdcms-environment": "production",
+              ...scopeHeaders,
+              "x-mdcms-schema-hash": schemaHash,
               "content-type": "application/json",
             },
             body: JSON.stringify({
@@ -1880,8 +1966,8 @@ testWithDatabase(
             scopes: ["content:read:draft"],
             contextAllowlist: [
               {
-                project: "marketing-site",
-                environment: "production",
+                project: scope.project,
+                environment: scope.environment,
               },
             ],
           }),
@@ -1898,8 +1984,7 @@ testWithDatabase(
           {
             headers: {
               authorization: `Bearer ${draftReadKeyBody.data.key}`,
-              "x-mdcms-project": "marketing-site",
-              "x-mdcms-environment": "production",
+              ...scopeHeaders,
             },
           },
         ),
@@ -1910,8 +1995,7 @@ testWithDatabase(
         new Request("http://localhost/api/v1/content?draft=true", {
           headers: {
             authorization: `Bearer ${draftReadKeyBody.data.key}`,
-            "x-mdcms-project": "marketing-site",
-            "x-mdcms-environment": "production",
+            ...scopeHeaders,
           },
         }),
       );
@@ -1924,8 +2008,8 @@ testWithDatabase(
             method: "PUT",
             headers: {
               authorization: `Bearer ${draftReadKeyBody.data.key}`,
-              "x-mdcms-project": "marketing-site",
-              "x-mdcms-environment": "production",
+              ...scopeHeaders,
+              "x-mdcms-schema-hash": schemaHash,
               "content-type": "application/json",
             },
             body: JSON.stringify({

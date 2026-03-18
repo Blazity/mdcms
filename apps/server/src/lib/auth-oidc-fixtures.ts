@@ -4,6 +4,7 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
+import type { Socket } from "node:net";
 
 import type { OidcProviderConfig, OidcProviderId } from "./env.js";
 
@@ -180,6 +181,9 @@ export function createMissingSubOidcFixture(
 
 export async function startMockOidcProvider(
   claims: OidcFixtureClaims,
+  options: {
+    clientId?: string;
+  } = {},
 ): Promise<MockOidcProvider> {
   const keyPair = await crypto.subtle.generateKey(
     {
@@ -205,6 +209,7 @@ export async function startMockOidcProvider(
   publicJwk.alg = "RS256";
 
   let issuer = "";
+  const openSockets = new Set<Socket>();
 
   async function writeJson(
     response: ServerResponse<IncomingMessage>,
@@ -262,7 +267,7 @@ export async function startMockOidcProvider(
     if (url.pathname === "/token") {
       const idToken = await signIdToken({
         iss: issuer,
-        aud: "mock-client-id",
+        aud: options.clientId ?? "okta-client-id",
         exp: Math.floor(Date.now() / 1000) + 300,
         iat: Math.floor(Date.now() / 1000),
         ...claims,
@@ -292,6 +297,12 @@ export async function startMockOidcProvider(
     response.statusCode = 404;
     response.end("not found");
   });
+  server.on("connection", (socket) => {
+    openSockets.add(socket);
+    socket.on("close", () => {
+      openSockets.delete(socket);
+    });
+  });
 
   await new Promise<void>((resolve, reject) => {
     server.listen(0, "127.0.0.1", (error?: Error) => {
@@ -316,14 +327,61 @@ export async function startMockOidcProvider(
     jwksEndpoint: `${issuer}/jwks`,
     close: () =>
       new Promise<void>((resolve, reject) => {
-        server.close((error) => {
+        let settled = false;
+        const isServerNotRunningError = (error: unknown): boolean =>
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "ERR_SERVER_NOT_RUNNING";
+        const timeout = setTimeout(() => {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+          resolve();
+        }, 100);
+
+        const finish = (error?: Error | null) => {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+          clearTimeout(timeout);
+
           if (error) {
             reject(error);
             return;
           }
 
           resolve();
-        });
+        };
+
+        try {
+          server.close((error) => {
+            if (isServerNotRunningError(error)) {
+              finish();
+              return;
+            }
+
+            finish(error);
+          });
+        } catch (error) {
+          if (isServerNotRunningError(error)) {
+            finish();
+            return;
+          }
+
+          finish(error as Error);
+          return;
+        }
+
+        for (const socket of openSockets) {
+          socket.destroy();
+        }
+
+        server.closeAllConnections?.();
+        server.closeIdleConnections?.();
       }),
   };
 }
