@@ -178,6 +178,78 @@ Backend API/runtime package boundary for MDCMS.
 - Session validation is deny-by-default: requests without a valid session token receive `401 UNAUTHORIZED`.
 - Better Auth native endpoints are also available under `/api/v1/auth/*` (for example `POST /api/v1/auth/sign-up/email`).
 
+## OIDC Provider Support
+
+- OIDC sign-in is implemented with the Better Auth SSO plugin.
+- Supported provider IDs:
+  - `okta`
+  - `azure-ad`
+  - `google-workspace`
+  - `auth0`
+- Provider profiles are loaded from `MDCMS_AUTH_OIDC_PROVIDERS` at server startup.
+- The env value must be a JSON array whose entries include:
+  - `providerId`
+  - `issuer`
+  - `domain`
+  - `clientId`
+  - `clientSecret`
+- Optional per-provider fields:
+  - `scopes` (defaults to `["openid", "email", "profile"]`)
+  - `trustedOrigins` as absolute origins (`scheme://host[:port]`)
+  - `discoveryOverrides` with supported keys:
+    - `authorizationEndpoint`
+    - `tokenEndpoint`
+    - `userInfoEndpoint`
+    - `jwksUri`
+    - `tokenEndpointAuthMethod` (`client_secret_basic` or `client_secret_post`)
+- Config changes require process restart.
+- OIDC routes exposed under `/api/v1/auth`:
+  - `POST /api/v1/auth/sign-in/sso`
+  - `GET /api/v1/auth/sso/callback/:providerId`
+- For provider-side setup, register this redirect URI for each configured profile:
+  - `${MDCMS_SERVER_URL}/api/v1/auth/sso/callback/<providerId>`
+- Sign-in is deny-by-default:
+  - only explicitly configured provider profiles are available
+  - unsupported or unconfigured `providerId` values return `SSO_PROVIDER_NOT_CONFIGURED` (`404`)
+- `callbackURL`, `errorCallbackURL`, and `newUserCallbackURL` must be either:
+  - relative app paths
+  - absolute URLs on the same origin as `MDCMS_SERVER_URL`
+
+Example:
+
+```json
+[
+  {
+    "providerId": "okta",
+    "issuer": "https://example.okta.com/oauth2/default",
+    "domain": "example.com",
+    "clientId": "okta-client-id",
+    "clientSecret": "okta-client-secret"
+  },
+  {
+    "providerId": "google-workspace",
+    "issuer": "https://accounts.google.com",
+    "domain": "workspace.example.com",
+    "clientId": "google-client-id",
+    "clientSecret": "google-client-secret"
+  }
+]
+```
+
+Shell example:
+
+```bash
+export MDCMS_AUTH_OIDC_PROVIDERS='[
+  {
+    "providerId": "okta",
+    "issuer": "https://example.okta.com/oauth2/default",
+    "domain": "example.com",
+    "clientId": "okta-client-id",
+    "clientSecret": "okta-client-secret"
+  }
+]'
+```
+
 ## Session Security Policy (CMS-37)
 
 - Session cookie policy:
