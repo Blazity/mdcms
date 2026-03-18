@@ -238,6 +238,21 @@ export async function startMockOidcProvider(
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", issuer);
 
+    if (url.pathname === "/.well-known/openid-configuration") {
+      await writeJson(response, 200, {
+        issuer,
+        authorization_endpoint: `${issuer}/authorize`,
+        token_endpoint: `${issuer}/token`,
+        userinfo_endpoint: `${issuer}/userinfo`,
+        jwks_uri: `${issuer}/jwks`,
+        token_endpoint_auth_methods_supported: [
+          "client_secret_basic",
+          "client_secret_post",
+        ],
+      });
+      return;
+    }
+
     if (url.pathname === "/authorize") {
       response.statusCode = 200;
       response.end("ok");
@@ -316,16 +331,17 @@ export async function startMockOidcProvider(
 export function createOidcEnv(
   provider: MockOidcProvider,
   baseEnv: NodeJS.ProcessEnv,
+  providerId: OidcProviderId = "okta",
 ): NodeJS.ProcessEnv {
   return {
     ...baseEnv,
     MDCMS_AUTH_OIDC_PROVIDERS: JSON.stringify([
       {
-        providerId: "okta",
+        providerId,
         issuer: provider.issuer,
-        domain: "example.com",
-        clientId: "mock-client-id",
-        clientSecret: "mock-client-secret",
+        domain: `${providerId}.example.com`,
+        clientId: `${providerId}-client-id`,
+        clientSecret: `${providerId}-client-secret`,
         scopes: ["openid", "email", "profile"],
         discoveryOverrides: {
           authorizationEndpoint: provider.authorizationEndpoint,

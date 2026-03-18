@@ -8,6 +8,8 @@ import postgres from "postgres";
 import {
   buildStaticOidcProviders,
   mapSsoCallbackErrorCode,
+  resolveStartupOidcProviders,
+  validateSsoSignInPayload,
   validateSsoRedirectUrl,
 } from "./auth.js";
 import {
@@ -181,6 +183,64 @@ test("auth oidc callback error mapping recognizes missing required claims", () =
   assert.equal(
     mapSsoCallbackErrorCode("http://localhost:4000/studio"),
     undefined,
+  );
+});
+
+test("auth oidc startup resolution hydrates discovery metadata before boot", async () => {
+  const fixture = createOidcFixture("okta");
+  const provider = await startMockOidcProvider(fixture.claims);
+
+  try {
+    const [resolved] = await resolveStartupOidcProviders([
+      {
+        ...fixture.providerConfig,
+        issuer: provider.issuer,
+        discoveryOverrides: undefined,
+      },
+    ]);
+
+    assert.equal(
+      resolved?.discoveryOverrides?.authorizationEndpoint,
+      provider.authorizationEndpoint,
+    );
+    assert.equal(
+      resolved?.discoveryOverrides?.tokenEndpoint,
+      provider.tokenEndpoint,
+    );
+    assert.equal(resolved?.discoveryOverrides?.jwksUri, provider.jwksEndpoint);
+  } finally {
+    await provider.close();
+  }
+});
+
+test("auth oidc static provider build rejects unresolved discovery metadata", () => {
+  const fixture = createOidcFixture("okta");
+
+  assert.throws(
+    () =>
+      buildStaticOidcProviders("http://localhost:4000", [
+        {
+          ...fixture.providerConfig,
+          discoveryOverrides: undefined,
+        },
+      ]),
+    /discovery/i,
+  );
+});
+
+test("auth oidc sign-in payload rejects unsupported Better Auth fields", () => {
+  assert.throws(
+    () =>
+      validateSsoSignInPayload(
+        {
+          providerId: "okta",
+          callbackURL: "/studio",
+          scopes: ["offline_access"],
+        },
+        "http://localhost:4000",
+        new Set(["okta"]),
+      ),
+    /invalid/i,
   );
 });
 
@@ -398,6 +458,43 @@ testWithDatabase(
   },
 );
 
+for (const providerId of ["azure-ad", "google-workspace", "auth0"] as const) {
+  testWithDatabase(
+    `auth oidc sign-in redirects to the configured ${providerId} fixture authorization URL`,
+    async () => {
+      const fixture = createOidcFixture(providerId);
+      const provider = await startMockOidcProvider(fixture.claims);
+      const { handler, dbConnection } = createServerRequestHandlerWithModules({
+        env: createOidcEnv(provider, env, providerId),
+        logger,
+      });
+
+      try {
+        const response = await handler(
+          new Request("http://localhost/api/v1/auth/sign-in/sso", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              providerId,
+              callbackURL: "/studio",
+            }),
+          }),
+        );
+
+        assert.equal(response.status, 302);
+        const location = response.headers.get("location");
+        assert.ok(location);
+        assert.equal(location.startsWith(provider.authorizationEndpoint), true);
+      } finally {
+        await provider.close();
+        await dbConnection.close();
+      }
+    },
+  );
+}
+
 testWithDatabase(
   "auth oidc sign-in rejects unconfigured providers",
   async () => {
@@ -429,6 +526,58 @@ testWithDatabase(
 
       assert.equal(response.status, 404);
       assert.equal(body.code, "SSO_PROVIDER_NOT_CONFIGURED");
+    } finally {
+      await provider.close();
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "auth oidc callback maps missing sub claims to a deterministic auth error",
+  async () => {
+    const fixture = createMissingSubOidcFixture("auth0");
+    const provider = await startMockOidcProvider(fixture.claims);
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env: createOidcEnv(provider, env, "auth0"),
+      logger,
+    });
+
+    try {
+      const signInResponse = await handler(
+        new Request("http://localhost/api/v1/auth/sign-in/sso", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            providerId: "auth0",
+            callbackURL: "/studio",
+          }),
+        }),
+      );
+
+      assert.equal(signInResponse.status, 302);
+      const location = signInResponse.headers.get("location");
+      assert.ok(location);
+
+      const redirect = new URL(location);
+      const state = redirect.searchParams.get("state");
+      const redirectUri = redirect.searchParams.get("redirect_uri");
+      assert.ok(state);
+      assert.ok(redirectUri);
+
+      const callbackResponse = await handler(
+        new Request(`${redirectUri}?code=mock-code&state=${state}`, {
+          headers: {
+            cookie: toCookieHeader(extractSetCookie(signInResponse)),
+          },
+        }),
+      );
+      const body = (await callbackResponse.json()) as { code: string };
+
+      assert.equal(callbackResponse.status, 401);
+      assert.equal(body.code, "AUTH_OIDC_REQUIRED_CLAIM_MISSING");
     } finally {
       await provider.close();
       await dbConnection.close();

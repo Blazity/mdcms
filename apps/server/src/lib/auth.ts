@@ -4,7 +4,7 @@ import { RuntimeError, serializeError } from "@mdcms/shared";
 import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { sso } from "@better-auth/sso";
+import { DiscoveryError, discoverOIDCConfig, sso } from "@better-auth/sso";
 import { z } from "zod";
 
 import type { DrizzleDatabase } from "./db.js";
@@ -311,7 +311,7 @@ const SsoSignInInputSchema = z
     newUserCallbackURL: z.string().trim().min(1).optional(),
     loginHint: z.string().trim().min(1).optional(),
   })
-  .passthrough();
+  .strict();
 
 function toIsoString(value: unknown): string {
   if (value instanceof Date) {
@@ -703,35 +703,156 @@ function createDiscoveryEndpoint(issuer: string): string {
   return url.toString();
 }
 
+function hasResolvedDiscoveryOverrides(provider: OidcProviderConfig): boolean {
+  return Boolean(
+    provider.discoveryOverrides?.authorizationEndpoint &&
+      provider.discoveryOverrides?.tokenEndpoint &&
+      provider.discoveryOverrides?.jwksUri,
+  );
+}
+
+function createInvalidEnvDiscoveryError(
+  provider: OidcProviderConfig,
+  error: unknown,
+): RuntimeError {
+  const details: Record<string, unknown> = {
+    providerId: provider.providerId,
+    issuer: provider.issuer,
+  };
+
+  if (error instanceof DiscoveryError) {
+    details.discoveryCode = error.code;
+  }
+
+  return new RuntimeError({
+    code: "INVALID_ENV",
+    message: `OIDC discovery failed for provider "${provider.providerId}".`,
+    statusCode: 500,
+    details,
+  });
+}
+
+function createStartupDiscoveryConfig(provider: OidcProviderConfig) {
+  return {
+    issuer: provider.issuer,
+    discoveryEndpoint: createDiscoveryEndpoint(provider.issuer),
+    clientId: provider.clientId,
+    clientSecret: provider.clientSecret,
+    pkce: true,
+    scopes: [...provider.scopes],
+    authorizationEndpoint: provider.discoveryOverrides?.authorizationEndpoint,
+    tokenEndpoint: provider.discoveryOverrides?.tokenEndpoint,
+    userInfoEndpoint: provider.discoveryOverrides?.userInfoEndpoint,
+    jwksEndpoint: provider.discoveryOverrides?.jwksUri,
+    tokenEndpointAuthentication:
+      provider.discoveryOverrides?.tokenEndpointAuthMethod,
+    mapping: {
+      id: "sub" as const,
+      email: "email" as const,
+      emailVerified: "email_verified" as const,
+      name: "name" as const,
+      image: "picture" as const,
+    },
+  };
+}
+
+function createProviderOriginAllowlist(
+  provider: OidcProviderConfig,
+): Set<string> {
+  return new Set([
+    new URL(provider.issuer).origin,
+    ...(provider.trustedOrigins ?? []),
+  ]);
+}
+
+export async function resolveStartupOidcProviders(
+  providers: OidcProviderConfig[],
+): Promise<OidcProviderConfig[]> {
+  return Promise.all(
+    providers.map(async (provider) => {
+      if (hasResolvedDiscoveryOverrides(provider)) {
+        return provider;
+      }
+
+      const trustedOrigins = createProviderOriginAllowlist(provider);
+
+      try {
+        const discovered = await discoverOIDCConfig({
+          issuer: provider.issuer,
+          existingConfig: createStartupDiscoveryConfig(provider),
+          isTrustedOrigin: (url) => {
+            try {
+              return trustedOrigins.has(new URL(url).origin);
+            } catch {
+              return false;
+            }
+          },
+        });
+
+        return {
+          ...provider,
+          discoveryOverrides: {
+            authorizationEndpoint: discovered.authorizationEndpoint,
+            tokenEndpoint: discovered.tokenEndpoint,
+            userInfoEndpoint: discovered.userInfoEndpoint,
+            jwksUri: discovered.jwksEndpoint,
+            tokenEndpointAuthMethod:
+              discovered.tokenEndpointAuthentication ??
+              provider.discoveryOverrides?.tokenEndpointAuthMethod ??
+              "client_secret_basic",
+          },
+        };
+      } catch (error) {
+        throw createInvalidEnvDiscoveryError(provider, error);
+      }
+    }),
+  );
+}
+
 export function buildStaticOidcProviders(
   _baseUrl: string,
   providers: OidcProviderConfig[],
 ): StaticOidcProvider[] {
-  return providers.map((provider) => ({
-    providerId: provider.providerId,
-    domain: provider.domain,
-    oidcConfig: {
-      issuer: provider.issuer,
-      discoveryEndpoint: createDiscoveryEndpoint(provider.issuer),
-      clientId: provider.clientId,
-      clientSecret: provider.clientSecret,
-      pkce: true,
-      scopes: [...provider.scopes],
-      authorizationEndpoint: provider.discoveryOverrides?.authorizationEndpoint,
-      tokenEndpoint: provider.discoveryOverrides?.tokenEndpoint,
-      userInfoEndpoint: provider.discoveryOverrides?.userInfoEndpoint,
-      jwksEndpoint: provider.discoveryOverrides?.jwksUri,
-      tokenEndpointAuthentication:
-        provider.discoveryOverrides?.tokenEndpointAuthMethod,
-      mapping: {
-        id: "sub",
-        email: "email",
-        emailVerified: "email_verified",
-        name: "name",
-        image: "picture",
+  return providers.map((provider) => {
+    if (!hasResolvedDiscoveryOverrides(provider)) {
+      throw new RuntimeError({
+        code: "INVALID_ENV",
+        message: `OIDC provider "${provider.providerId}" must have resolved discovery metadata before auth startup.`,
+        statusCode: 500,
+        details: {
+          providerId: provider.providerId,
+          issuer: provider.issuer,
+        },
+      });
+    }
+
+    return {
+      providerId: provider.providerId,
+      domain: provider.domain,
+      oidcConfig: {
+        issuer: provider.issuer,
+        discoveryEndpoint: createDiscoveryEndpoint(provider.issuer),
+        clientId: provider.clientId,
+        clientSecret: provider.clientSecret,
+        pkce: true,
+        scopes: [...provider.scopes],
+        authorizationEndpoint:
+          provider.discoveryOverrides?.authorizationEndpoint,
+        tokenEndpoint: provider.discoveryOverrides?.tokenEndpoint,
+        userInfoEndpoint: provider.discoveryOverrides?.userInfoEndpoint,
+        jwksEndpoint: provider.discoveryOverrides?.jwksUri,
+        tokenEndpointAuthentication:
+          provider.discoveryOverrides?.tokenEndpointAuthMethod,
+        mapping: {
+          id: "sub",
+          email: "email",
+          emailVerified: "email_verified",
+          name: "name",
+          image: "picture",
+        },
       },
-    },
-  }));
+    };
+  });
 }
 
 export function validateSsoRedirectUrl(
@@ -807,6 +928,44 @@ export function mapSsoCallbackErrorCode(
   }
 
   return createAuthProviderError(error, errorDescription);
+}
+
+export function validateSsoSignInPayload(
+  payload: unknown,
+  baseUrl: string,
+  configuredProviderIds: ReadonlySet<string>,
+): z.infer<typeof SsoSignInInputSchema> {
+  const parsed = SsoSignInInputSchema.safeParse(payload);
+
+  if (!parsed.success) {
+    throw createInvalidInputError("OIDC sign-in payload is invalid.", {
+      issues: parsed.error.issues,
+    });
+  }
+
+  if (!configuredProviderIds.has(parsed.data.providerId)) {
+    throw createSsoProviderNotConfiguredError(parsed.data.providerId);
+  }
+
+  validateSsoRedirectUrl(parsed.data.callbackURL, "callbackURL", baseUrl);
+
+  if (parsed.data.errorCallbackURL) {
+    validateSsoRedirectUrl(
+      parsed.data.errorCallbackURL,
+      "errorCallbackURL",
+      baseUrl,
+    );
+  }
+
+  if (parsed.data.newUserCallbackURL) {
+    validateSsoRedirectUrl(
+      parsed.data.newUserCallbackURL,
+      "newUserCallbackURL",
+      baseUrl,
+    );
+  }
+
+  return parsed.data;
 }
 
 function resolveAuthBaseUrl(env: NodeJS.ProcessEnv): string {
@@ -1131,6 +1290,7 @@ export function createAuthService(
     callbackURL: string;
     errorCallbackURL?: string;
     newUserCallbackURL?: string;
+    loginHint?: string;
   }> {
     const payload = await request
       .clone()
@@ -1141,44 +1301,7 @@ export function createAuthService(
         );
       });
 
-    const parsed = SsoSignInInputSchema.safeParse(payload);
-
-    if (!parsed.success) {
-      throw createInvalidInputError("OIDC sign-in payload is invalid.", {
-        issues: parsed.error.issues,
-      });
-    }
-
-    if (
-      "email" in parsed.data ||
-      "domain" in parsed.data ||
-      "organizationSlug" in parsed.data
-    ) {
-      throw createInvalidInputError(
-        'OIDC sign-in requires explicit "providerId" selection only.',
-      );
-    }
-
-    assertConfiguredSsoProvider(parsed.data.providerId);
-    validateSsoRedirectUrl(parsed.data.callbackURL, "callbackURL", baseUrl);
-
-    if (parsed.data.errorCallbackURL) {
-      validateSsoRedirectUrl(
-        parsed.data.errorCallbackURL,
-        "errorCallbackURL",
-        baseUrl,
-      );
-    }
-
-    if (parsed.data.newUserCallbackURL) {
-      validateSsoRedirectUrl(
-        parsed.data.newUserCallbackURL,
-        "newUserCallbackURL",
-        baseUrl,
-      );
-    }
-
-    return parsed.data;
+    return validateSsoSignInPayload(payload, baseUrl, oidcProviderIds);
   }
 
   function toRedirectResponse(response: Response, location: string): Response {
@@ -1189,6 +1312,21 @@ export function createAuthService(
     return new Response(null, {
       status: 302,
       headers,
+    });
+  }
+
+  function createSsoSignInRequest(
+    request: Request,
+    payload: Awaited<ReturnType<typeof parseSsoSignInPayload>>,
+  ): Request {
+    const headers = new Headers(request.headers);
+    headers.set("content-type", "application/json");
+    headers.delete("content-length");
+
+    return new Request(request.url, {
+      method: request.method,
+      headers,
+      body: JSON.stringify(payload),
     });
   }
 
@@ -2231,19 +2369,26 @@ export function createAuthService(
     },
 
     async startSsoSignIn(request) {
-      await parseSsoSignInPayload(request);
+      const payload = await parseSsoSignInPayload(request);
 
-      const response = await auth.handler(request);
+      const response = await auth.handler(
+        createSsoSignInRequest(request, payload),
+      );
 
       if (response.status === 404) {
-        throw createSsoProviderNotConfiguredError("unknown");
+        throw createSsoProviderNotConfiguredError(payload.providerId);
+      }
+
+      if (response.status === 400) {
+        throw createInvalidInputError("OIDC sign-in payload is invalid.");
+      }
+
+      if (response.status >= 500) {
+        throw createAuthProviderError("sign_in_failed", "OIDC sign-in failed.");
       }
 
       if (response.status >= 400) {
-        throw createAuthProviderError(
-          "sign_in_failed",
-          `OIDC sign-in failed with status ${response.status}.`,
-        );
+        return response;
       }
 
       const body = (await response

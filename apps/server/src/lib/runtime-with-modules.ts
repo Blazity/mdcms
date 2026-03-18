@@ -17,7 +17,11 @@ import {
   createDatabaseSchemaStore,
   mountSchemaApiRoutes,
 } from "./schema-api.js";
-import { createAuthService, mountAuthRoutes } from "./auth.js";
+import {
+  createAuthService,
+  mountAuthRoutes,
+  resolveStartupOidcProviders,
+} from "./auth.js";
 import { mountCollaborationRoutes } from "./collaboration-auth.js";
 import {
   createDatabaseEnvironmentStore,
@@ -208,6 +212,13 @@ export async function prepareServerRequestHandlerWithModules(
 ): Promise<ServerRequestHandlerWithModulesResult> {
   const rawEnv = options.env ?? process.env;
   const env = parseServerEnv(rawEnv);
+  const resolvedOidcProviders = await resolveStartupOidcProviders(
+    env.MDCMS_AUTH_OIDC_PROVIDERS,
+  );
+  const resolvedEnv: NodeJS.ProcessEnv = {
+    ...rawEnv,
+    MDCMS_AUTH_OIDC_PROVIDERS: JSON.stringify(resolvedOidcProviders),
+  };
   const logger =
     options.logger ??
     createConsoleLogger({
@@ -234,6 +245,7 @@ export async function prepareServerRequestHandlerWithModules(
 
   return createServerRequestHandlerWithModules({
     ...options,
+    env: resolvedEnv,
     logger,
     moduleLoadReport,
     serverOptions: {
