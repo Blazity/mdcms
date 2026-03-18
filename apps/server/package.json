@@ -21,6 +21,7 @@
   },
   "scripts": {
     "test": "bun test ./src",
+    "test:integration:content": "bun test ./src/lib/content-api.integration.test.ts",
     "dev": "DATABASE_URL=${DATABASE_URL:-postgresql://mdcms:mdcms@localhost:5432/mdcms} bun --watch --conditions @mdcms/source src/bin/http-server.ts",
     "start": "bun --conditions @mdcms/source src/bin/http-server.ts",
     "demo:seed": "bun --conditions @mdcms/source src/bin/demo-seed-api-key.ts",

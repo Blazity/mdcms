@@ -153,6 +153,19 @@ Backend API/runtime package boundary for MDCMS.
   - when synced schema registry data is present for the source type, variant
     creation is limited to localized types and supported locales
 
+## Content Integration Verification (CMS-32)
+
+- Canonical DB-backed content regression suite:
+  - from workspace root: `bun run integration:content`
+  - from `apps/server` when the compose stack is already healthy:
+    `bun run test:integration:content`
+- The DB-backed suite lives in `src/lib/content-api.integration.test.ts`.
+- The fast route-contract suite remains `src/lib/content-api.test.ts` and keeps
+  the in-memory store coverage.
+- `bun run integration:content` starts Docker Compose, waits for Postgres,
+  `db-migrate`, and the server health check, runs the DB-backed content suite,
+  then tears the stack down with volumes.
+
 ## Session Auth Endpoints (CMS-36)
 
 - Server-side Studio session auth is implemented with `better-auth` + Drizzle adapter.
