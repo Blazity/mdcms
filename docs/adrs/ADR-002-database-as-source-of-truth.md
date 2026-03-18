@@ -34,6 +34,6 @@ Use the database as the single source of truth for content state. Files in the a
 
 ## Related Specs
 
-- `/Users/karol/Desktop/mdcms/docs/specs/SPEC-001-platform-overview-and-scope.md`
-- `/Users/karol/Desktop/mdcms/docs/specs/SPEC-003-content-storage-versioning-and-migrations.md`
-- `/Users/karol/Desktop/mdcms/docs/specs/SPEC-008-cli-and-sdk.md`
+- `docs/specs/SPEC-001-platform-overview-and-scope.md`
+- `docs/specs/SPEC-003-content-storage-versioning-and-migrations.md`
+- `docs/specs/SPEC-008-cli-and-sdk.md`

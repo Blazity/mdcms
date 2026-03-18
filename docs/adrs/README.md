@@ -14,8 +14,8 @@ This directory holds the accepted architectural decisions for MDCMS. ADRs captur
 
 ## Relationship to Specs
 
-- ADR-001 supports the backend/runtime decisions described in `/Users/karol/Desktop/mdcms/docs/specs/SPEC-002-system-architecture-and-extensibility.md` and `/Users/karol/Desktop/mdcms/docs/specs/SPEC-011-local-development-and-operations.md`.
-- ADR-002 explains the database-first decision that underpins `/Users/karol/Desktop/mdcms/docs/specs/SPEC-003-content-storage-versioning-and-migrations.md` and `/Users/karol/Desktop/mdcms/docs/specs/SPEC-008-cli-and-sdk.md`.
-- ADR-003 explains the Studio delivery model used by `/Users/karol/Desktop/mdcms/docs/specs/SPEC-006-studio-runtime-and-ui.md`.
-- ADR-004 explains the hierarchy assumptions used by `/Users/karol/Desktop/mdcms/docs/specs/SPEC-005-auth-authorization-and-request-routing.md` and `/Users/karol/Desktop/mdcms/docs/specs/SPEC-009-i18n-and-environments.md`.
-- ADR-005 explains the typed action catalog contract owned by `/Users/karol/Desktop/mdcms/docs/specs/SPEC-002-system-architecture-and-extensibility.md`.
+- ADR-001 supports the backend/runtime decisions described in `docs/specs/SPEC-002-system-architecture-and-extensibility.md` and `docs/specs/SPEC-011-local-development-and-operations.md`.
+- ADR-002 explains the database-first decision that underpins `docs/specs/SPEC-003-content-storage-versioning-and-migrations.md` and `docs/specs/SPEC-008-cli-and-sdk.md`.
+- ADR-003 explains the Studio delivery model used by `docs/specs/SPEC-006-studio-runtime-and-ui.md`.
+- ADR-004 explains the hierarchy assumptions used by `docs/specs/SPEC-005-auth-authorization-and-request-routing.md` and `docs/specs/SPEC-009-i18n-and-environments.md`.
+- ADR-005 explains the typed action catalog contract owned by `docs/specs/SPEC-002-system-architecture-and-extensibility.md`.

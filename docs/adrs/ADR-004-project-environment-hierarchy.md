@@ -33,5 +33,5 @@ Use a Project -> Environment hierarchy for the self-hosted product. Keep the dat
 
 ## Related Specs
 
-- `/Users/karol/Desktop/mdcms/docs/specs/SPEC-005-auth-authorization-and-request-routing.md`
-- `/Users/karol/Desktop/mdcms/docs/specs/SPEC-009-i18n-and-environments.md`
+- `docs/specs/SPEC-005-auth-authorization-and-request-routing.md`
+- `docs/specs/SPEC-009-i18n-and-environments.md`

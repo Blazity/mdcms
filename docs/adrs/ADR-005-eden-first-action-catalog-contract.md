@@ -35,6 +35,6 @@ Use a typed action registry exposed through `/api/v1/actions` and `/api/v1/actio
 
 ## Related Specs
 
-- `/Users/karol/Desktop/mdcms/docs/specs/SPEC-002-system-architecture-and-extensibility.md`
-- `/Users/karol/Desktop/mdcms/docs/specs/SPEC-006-studio-runtime-and-ui.md`
-- `/Users/karol/Desktop/mdcms/docs/specs/SPEC-008-cli-and-sdk.md`
+- `docs/specs/SPEC-002-system-architecture-and-extensibility.md`
+- `docs/specs/SPEC-006-studio-runtime-and-ui.md`
+- `docs/specs/SPEC-008-cli-and-sdk.md`

@@ -169,7 +169,7 @@ Execution-mode decision:
 
 ## Core Runtime and Studio Runtime Endpoints
 
-This spec owns the Studio runtime subset of legacy section `24.2`. The action catalog endpoints from the same legacy section remain owned by `/Users/karol/Desktop/mdcms/docs/specs/SPEC-002-system-architecture-and-extensibility.md`.
+This spec owns the Studio runtime subset of legacy section `24.2`. The action catalog endpoints from the same legacy section remain owned by `docs/specs/SPEC-002-system-architecture-and-extensibility.md`.
 
 | Method | Path                               | Auth Mode | Required Scope | Target Routing | Request              | Success                                                     | Deterministic Errors                                |
 | ------ | ---------------------------------- | --------- | -------------- | -------------- | -------------------- | ----------------------------------------------------------- | --------------------------------------------------- |

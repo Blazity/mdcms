@@ -41,6 +41,6 @@ Publish `@mdcms/studio` as the host-facing Studio package, but load the actual S
 
 ## Related Specs
 
-- `/Users/karol/Desktop/mdcms/docs/specs/SPEC-002-system-architecture-and-extensibility.md`
-- `/Users/karol/Desktop/mdcms/docs/specs/SPEC-006-studio-runtime-and-ui.md`
-- `/Users/karol/Desktop/mdcms/docs/specs/SPEC-007-editor-mdx-and-collaboration.md`
+- `docs/specs/SPEC-002-system-architecture-and-extensibility.md`
+- `docs/specs/SPEC-006-studio-runtime-and-ui.md`
+- `docs/specs/SPEC-007-editor-mdx-and-collaboration.md`

@@ -39,6 +39,6 @@ Post-MVP real-time collaboration remains the main uncertainty. Hocuspocus is cur
 
 ## Related Specs
 
-- `/Users/karol/Desktop/mdcms/docs/specs/SPEC-002-system-architecture-and-extensibility.md`
-- `/Users/karol/Desktop/mdcms/docs/specs/SPEC-007-editor-mdx-and-collaboration.md`
-- `/Users/karol/Desktop/mdcms/docs/specs/SPEC-011-local-development-and-operations.md`
+- `docs/specs/SPEC-002-system-architecture-and-extensibility.md`
+- `docs/specs/SPEC-007-editor-mdx-and-collaboration.md`
+- `docs/specs/SPEC-011-local-development-and-operations.md`

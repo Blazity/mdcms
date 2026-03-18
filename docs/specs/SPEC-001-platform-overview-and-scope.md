@@ -27,7 +27,7 @@ MDCMS is an open-source CMS built around Markdown and MDX files. It takes any ar
 
 ## Scope Summary
 
-Detailed execution tracking lives in `/Users/karol/Desktop/mdcms/ROADMAP_TASKS.md`. This section keeps only the product-scope split that was previously embedded in the legacy monolithic spec.
+Detailed execution tracking lives in `ROADMAP_TASKS.md`. This section keeps only the product-scope split that was previously embedded in the legacy monolithic spec.
 
 ### MVP
 

@@ -412,7 +412,7 @@ apps/cli/src/lib/
 
 ## Extensibility Contract Endpoints
 
-This spec owns the action-catalog side of legacy section `6.11`. The Studio runtime delivery endpoints from that legacy section are owned by `/Users/karol/Desktop/mdcms/docs/specs/SPEC-006-studio-runtime-and-ui.md`.
+This spec owns the action-catalog side of legacy section `6.11`. The Studio runtime delivery endpoints from that legacy section are owned by `docs/specs/SPEC-006-studio-runtime-and-ui.md`.
 
 | Method | Path                  | Auth Mode                              | Required Scope | Target Routing | Request         | Success                                     | Deterministic Errors                                                                                |
 | ------ | --------------------- | -------------------------------------- | -------------- | -------------- | --------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------- |

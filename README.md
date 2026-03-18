@@ -15,7 +15,7 @@ It is initialized as a Bun-based Nx workspace with app/package boundaries and mo
 
 ## Workspace Commands
 
-Run from `/Users/karol/Desktop/mdcms`:
+Run from the workspace root:
 
 - `bun run build` - Build all projects with Nx.
 - `bun run typecheck` - Typecheck all projects with Nx.
@@ -44,7 +44,7 @@ Run from `/Users/karol/Desktop/mdcms`:
 
 ## Local Docker Stack
 
-Run from `/Users/karol/Desktop/mdcms`:
+Run from the workspace root:
 
 ```bash
 docker compose up -d --build
