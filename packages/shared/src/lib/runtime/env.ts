@@ -1,5 +1,6 @@
 import { RuntimeError } from "./error.js";
 import type { LogLevel } from "./logger.js";
+import { z } from "zod";
 
 export type NodeEnv = "development" | "test" | "production";
 
@@ -29,58 +30,34 @@ const LOG_LEVEL_VALUES: LogLevel[] = [
   "error",
   "fatal",
 ];
+const NonEmptyEnvStringSchema = z.string().trim().min(1);
+const CoreEnvSchema = z.object({
+  NODE_ENV: NonEmptyEnvStringSchema.pipe(z.enum(NODE_ENV_VALUES))
+    .optional()
+    .default("development"),
+  LOG_LEVEL: NonEmptyEnvStringSchema.pipe(z.enum(LOG_LEVEL_VALUES))
+    .optional()
+    .default("info"),
+  APP_VERSION: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() || "0.0.0"),
+});
+const DatabaseEnvSchema = z.object({
+  DATABASE_URL: NonEmptyEnvStringSchema,
+});
 
-function parseRequiredString(
+function throwInvalidEnvError(
   key: string,
-  value: string | undefined,
-  description: string,
-): string {
-  const resolvedValue = value?.trim();
-
-  if (resolvedValue && resolvedValue.length > 0) {
-    return resolvedValue;
-  }
-
+  value: unknown,
+  message: string,
+): never {
   throw new RuntimeError({
     code: "INVALID_ENV",
-    message: `${key} must be set ${description}.`,
+    message,
     details: {
       key,
       value,
-    },
-  });
-}
-
-function parseNodeEnv(value: string | undefined): NodeEnv {
-  const resolvedValue = value ?? "development";
-
-  if (NODE_ENV_VALUES.includes(resolvedValue as NodeEnv)) {
-    return resolvedValue as NodeEnv;
-  }
-
-  throw new RuntimeError({
-    code: "INVALID_ENV",
-    message: "NODE_ENV must be development, test, or production.",
-    details: {
-      key: "NODE_ENV",
-      value: resolvedValue,
-    },
-  });
-}
-
-function parseLogLevel(value: string | undefined): LogLevel {
-  const resolvedValue = value ?? "info";
-
-  if (LOG_LEVEL_VALUES.includes(resolvedValue as LogLevel)) {
-    return resolvedValue as LogLevel;
-  }
-
-  throw new RuntimeError({
-    code: "INVALID_ENV",
-    message: "LOG_LEVEL must be trace, debug, info, warn, error, or fatal.",
-    details: {
-      key: "LOG_LEVEL",
-      value: resolvedValue,
     },
   });
 }
@@ -89,13 +66,17 @@ function parseLogLevel(value: string | undefined): LogLevel {
  * parseDatabaseEnv validates baseline database settings for server packages.
  */
 export function parseDatabaseEnv(rawEnv: NodeJS.ProcessEnv): DatabaseEnv {
-  return {
-    DATABASE_URL: parseRequiredString(
-      "DATABASE_URL",
-      rawEnv.DATABASE_URL,
-      "to run database-backed workflows",
-    ),
-  };
+  const parsed = DatabaseEnvSchema.safeParse(rawEnv);
+
+  if (parsed.success) {
+    return parsed.data;
+  }
+
+  return throwInvalidEnvError(
+    "DATABASE_URL",
+    rawEnv.DATABASE_URL,
+    "DATABASE_URL must be set to run database-backed workflows.",
+  );
 }
 
 /**
@@ -103,11 +84,28 @@ export function parseDatabaseEnv(rawEnv: NodeJS.ProcessEnv): DatabaseEnv {
  * by server and runtime adapters.
  */
 export function parseCoreEnv(rawEnv: NodeJS.ProcessEnv): CoreEnv {
-  return {
-    NODE_ENV: parseNodeEnv(rawEnv.NODE_ENV),
-    LOG_LEVEL: parseLogLevel(rawEnv.LOG_LEVEL),
-    APP_VERSION: rawEnv.APP_VERSION?.trim() || "0.0.0",
-  };
+  const parsed = CoreEnvSchema.safeParse(rawEnv);
+
+  if (parsed.success) {
+    return parsed.data;
+  }
+
+  const issue = parsed.error.issues[0];
+  const key = issue?.path[0];
+
+  if (key === "LOG_LEVEL") {
+    return throwInvalidEnvError(
+      "LOG_LEVEL",
+      rawEnv.LOG_LEVEL,
+      "LOG_LEVEL must be trace, debug, info, warn, error, or fatal.",
+    );
+  }
+
+  return throwInvalidEnvError(
+    "NODE_ENV",
+    rawEnv.NODE_ENV,
+    "NODE_ENV must be development, test, or production.",
+  );
 }
 
 /**

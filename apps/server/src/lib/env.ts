@@ -4,6 +4,7 @@ import {
   parseCoreEnv,
   type CoreEnv,
 } from "@mdcms/shared";
+import { z } from "zod";
 
 const OIDC_PROVIDER_IDS = [
   "okta",
@@ -16,6 +17,87 @@ const TOKEN_ENDPOINT_AUTH_METHODS = [
   "client_secret_basic",
   "client_secret_post",
 ] as const;
+const NonEmptyStringSchema = z.string().trim().min(1);
+const AbsoluteUrlStringSchema = NonEmptyStringSchema.url();
+const NormalizedAbsoluteUrlSchema = AbsoluteUrlStringSchema.transform((raw) =>
+  normalizeAbsoluteUrl(raw),
+);
+const OriginSchema = AbsoluteUrlStringSchema.transform((raw, ctx) => {
+  const normalized = normalizeAbsoluteUrl(raw);
+  const url = new URL(normalized);
+
+  if (
+    url.pathname !== "/" ||
+    url.search.length > 0 ||
+    url.hash.length > 0 ||
+    (normalized !== url.origin && normalized !== url.origin + "/")
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "must be an absolute origin in scheme://host[:port] form.",
+    });
+    return z.NEVER;
+  }
+
+  return url.origin;
+});
+const OidcProviderSchema = z.object({
+  providerId: NonEmptyStringSchema.pipe(z.enum(OIDC_PROVIDER_IDS)),
+  issuer: NormalizedAbsoluteUrlSchema,
+  domain: NonEmptyStringSchema.transform((value) => value.toLowerCase()),
+  clientId: NonEmptyStringSchema,
+  clientSecret: NonEmptyStringSchema,
+  scopes: z
+    .array(NonEmptyStringSchema)
+    .min(1)
+    .default([...DEFAULT_OIDC_SCOPES]),
+  trustedOrigins: z.array(OriginSchema).optional(),
+  discoveryOverrides: z
+    .object({
+      authorizationEndpoint: NormalizedAbsoluteUrlSchema.optional(),
+      tokenEndpoint: NormalizedAbsoluteUrlSchema.optional(),
+      userInfoEndpoint: NormalizedAbsoluteUrlSchema.optional(),
+      jwksUri: NormalizedAbsoluteUrlSchema.optional(),
+      tokenEndpointAuthMethod: z.enum(TOKEN_ENDPOINT_AUTH_METHODS).optional(),
+    })
+    .strict()
+    .optional(),
+});
+const OidcProvidersSchema = z
+  .array(OidcProviderSchema)
+  .superRefine((providers, ctx) => {
+    const providerIds = new Set<string>();
+    const domains = new Set<string>();
+
+    for (const [index, provider] of providers.entries()) {
+      if (providerIds.has(provider.providerId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index, "providerId"],
+          message: `providerId ${provider.providerId} must be unique.`,
+        });
+      } else {
+        providerIds.add(provider.providerId);
+      }
+
+      if (domains.has(provider.domain)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index, "domain"],
+          message: `domain ${provider.domain} must be unique.`,
+        });
+      } else {
+        domains.add(provider.domain);
+      }
+    }
+  });
+const ServerEnvExtensionSchema = z.object({
+  PORT: z.coerce.number().int().min(1).max(65535).optional().default(4000),
+  SERVICE_NAME: z
+    .string()
+    .optional()
+    .transform((value) => value?.trim() || "mdcms-server"),
+});
 
 export type OidcProviderId = (typeof OIDC_PROVIDER_IDS)[number];
 export type OidcTokenEndpointAuthMethod =
@@ -46,22 +128,19 @@ export type ServerEnv = CoreEnv & {
   MDCMS_AUTH_OIDC_PROVIDERS: OidcProviderConfig[];
 };
 
-function parsePort(rawValue: string | undefined): number {
-  const resolvedValue = rawValue ?? "4000";
-  const parsedPort = Number(resolvedValue);
+function normalizeAbsoluteUrl(raw: string): string {
+  const url = new URL(raw);
 
-  if (Number.isInteger(parsedPort) && parsedPort >= 1 && parsedPort <= 65535) {
-    return parsedPort;
+  if (
+    url.pathname === "/" &&
+    url.search.length === 0 &&
+    url.hash.length === 0 &&
+    !raw.endsWith("/")
+  ) {
+    return url.origin;
   }
 
-  throw new RuntimeError({
-    code: "INVALID_ENV",
-    message: "PORT must be an integer between 1 and 65535.",
-    details: {
-      key: "PORT",
-      value: resolvedValue,
-    },
-  });
+  return url.toString();
 }
 
 function createInvalidEnvError(
@@ -80,62 +159,131 @@ function createInvalidEnvError(
   });
 }
 
-function parseNonEmptyString(
-  value: unknown,
-  field: string,
-  index: number,
-): string {
-  if (typeof value === "string" && value.trim().length > 0) {
-    return value.trim();
-  }
-
-  throw createInvalidEnvError(value, `${field} must be a non-empty string.`, {
-    field,
-    index,
+function throwInvalidPortEnvError(rawValue: string | undefined): never {
+  throw new RuntimeError({
+    code: "INVALID_ENV",
+    message: "PORT must be an integer between 1 and 65535.",
+    details: {
+      key: "PORT",
+      value: rawValue ?? "4000",
+    },
   });
 }
 
-function parseAbsoluteUrl(
+function readIssueValue(
   value: unknown,
-  field: string,
-  index: number,
-): string {
-  const resolved = parseNonEmptyString(value, field, index);
+  path: readonly (string | number)[],
+): unknown {
+  let current = value;
 
-  try {
-    const url = new URL(resolved);
-
+  for (const segment of path) {
     if (
-      url.pathname === "/" &&
-      url.search.length === 0 &&
-      url.hash.length === 0 &&
-      !resolved.endsWith("/")
+      current === null ||
+      current === undefined ||
+      typeof current !== "object"
     ) {
-      return url.origin;
+      return current;
     }
 
-    return url.toString();
-  } catch {
-    throw createInvalidEnvError(value, `${field} must be an absolute URL.`, {
-      field,
+    current = (current as Record<string | number, unknown>)[segment];
+  }
+
+  return current;
+}
+
+function isNonEmptyStringIssue(issue: z.ZodIssue): boolean {
+  return issue.code === "invalid_type" || issue.code === "too_small";
+}
+
+function throwOidcProvidersEnvError(
+  parsedValue: unknown,
+  error: z.ZodError,
+): never {
+  const issue = error.issues[0];
+  const [indexCandidate, fieldCandidate, nestedCandidate] = issue?.path ?? [];
+
+  if (typeof indexCandidate !== "number") {
+    throw createInvalidEnvError(
+      parsedValue,
+      "MDCMS_AUTH_OIDC_PROVIDERS must be a JSON array.",
+    );
+  }
+
+  const index = indexCandidate;
+
+  if (fieldCandidate === undefined) {
+    throw createInvalidEnvError(
+      readIssueValue(parsedValue, [index]),
+      "Each OIDC provider entry must be an object.",
+      { index },
+    );
+  }
+
+  const field = String(fieldCandidate);
+  const issuePath = issue.path.filter(
+    (segment): segment is string | number =>
+      typeof segment === "string" || typeof segment === "number",
+  );
+  const issueValue = readIssueValue(parsedValue, issuePath);
+
+  if (field === "providerId") {
+    if (issue.code === "invalid_value") {
+      throw createInvalidEnvError(issueValue, "providerId is not supported.", {
+        field: "providerId",
+        index,
+      });
+    }
+
+    if (issue.code === "custom") {
+      throw createInvalidEnvError(issueValue, issue.message, {
+        field: "providerId",
+        index,
+      });
+    }
+
+    throw createInvalidEnvError(
+      issueValue,
+      "providerId must be a non-empty string.",
+      {
+        field: "providerId",
+        index,
+      },
+    );
+  }
+
+  if (field === "domain") {
+    if (issue.code === "custom") {
+      throw createInvalidEnvError(issueValue, issue.message, {
+        field: "domain",
+        index,
+      });
+    }
+
+    throw createInvalidEnvError(
+      issueValue,
+      "domain must be a non-empty string.",
+      {
+        field: "domain",
+        index,
+      },
+    );
+  }
+
+  if (field === "issuer") {
+    const message = isNonEmptyStringIssue(issue)
+      ? "issuer must be a non-empty string."
+      : "issuer must be an absolute URL.";
+
+    throw createInvalidEnvError(issueValue, message, {
+      field: "issuer",
       index,
     });
   }
-}
 
-function parseOrigin(value: unknown, field: string, index: number): string {
-  const resolved = parseAbsoluteUrl(value, field, index);
-  const url = new URL(resolved);
-
-  if (
-    url.pathname !== "/" ||
-    url.search.length > 0 ||
-    url.hash.length > 0 ||
-    (resolved !== url.origin && resolved !== url.origin + "/")
-  ) {
+  if (field === "clientId" || field === "clientSecret") {
     throw createInvalidEnvError(
-      value,
-      `${field} must be an absolute origin in scheme://host[:port] form.`,
+      issueValue,
+      `${field} must be a non-empty string.`,
       {
         field,
         index,
@@ -143,46 +291,47 @@ function parseOrigin(value: unknown, field: string, index: number): string {
     );
   }
 
-  return url.origin;
-}
+  if (field === "scopes") {
+    if (issue.path.length >= 3) {
+      throw createInvalidEnvError(
+        issueValue,
+        "scopes must be a non-empty string.",
+        {
+          field: "scopes",
+          index,
+        },
+      );
+    }
 
-function parseScopes(value: unknown, index: number): string[] {
-  if (value === undefined) {
-    return [...DEFAULT_OIDC_SCOPES];
-  }
+    const message =
+      issue.code === "too_small"
+        ? "scopes must not be empty."
+        : "scopes must be an array of strings.";
 
-  if (!Array.isArray(value)) {
-    throw createInvalidEnvError(value, "scopes must be an array of strings.", {
-      field: "scopes",
-      index,
-    });
-  }
-
-  const scopes = value.map((scope) =>
-    parseNonEmptyString(scope, "scopes", index),
-  );
-
-  if (scopes.length === 0) {
-    throw createInvalidEnvError(value, "scopes must not be empty.", {
-      field: "scopes",
-      index,
-    });
-  }
-
-  return scopes;
-}
-
-function parseTrustedOrigins(
-  value: unknown,
-  index: number,
-): string[] | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (!Array.isArray(value)) {
     throw createInvalidEnvError(
-      value,
+      readIssueValue(parsedValue, [index, "scopes"]),
+      message,
+      {
+        field: "scopes",
+        index,
+      },
+    );
+  }
+
+  if (field === "trustedOrigins") {
+    if (issue.path.length >= 3) {
+      const message = isNonEmptyStringIssue(issue)
+        ? "trustedOrigins must be a non-empty string."
+        : "trustedOrigins must be an absolute origin in scheme://host[:port] form.";
+
+      throw createInvalidEnvError(issueValue, message, {
+        field: "trustedOrigins",
+        index,
+      });
+    }
+
+    throw createInvalidEnvError(
+      readIssueValue(parsedValue, [index, "trustedOrigins"]),
       "trustedOrigins must be an array of absolute origins.",
       {
         field: "trustedOrigins",
@@ -191,114 +340,59 @@ function parseTrustedOrigins(
     );
   }
 
-  return value.map((origin) => parseOrigin(origin, "trustedOrigins", index));
-}
-
-function parseDiscoveryOverrides(
-  value: unknown,
-  index: number,
-): OidcDiscoveryOverrides | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw createInvalidEnvError(
-      value,
-      "discoveryOverrides must be an object when provided.",
-      {
-        field: "discoveryOverrides",
-        index,
-      },
-    );
-  }
-
-  const input = value as Record<string, unknown>;
-  const allowedKeys = new Set([
-    "authorizationEndpoint",
-    "tokenEndpoint",
-    "userInfoEndpoint",
-    "jwksUri",
-    "tokenEndpointAuthMethod",
-  ]);
-
-  for (const key of Object.keys(input)) {
-    if (!allowedKeys.has(key)) {
+  if (field === "discoveryOverrides") {
+    if (issue.code === "invalid_type" && issue.path.length === 2) {
       throw createInvalidEnvError(
-        value,
-        `discoveryOverrides.${key} is not supported.`,
+        readIssueValue(parsedValue, [index, "discoveryOverrides"]),
+        "discoveryOverrides must be an object when provided.",
         {
           field: "discoveryOverrides",
           index,
-          overrideKey: key,
         },
       );
     }
-  }
 
-  const tokenEndpointAuthMethod = input.tokenEndpointAuthMethod;
-  if (
-    tokenEndpointAuthMethod !== undefined &&
-    !TOKEN_ENDPOINT_AUTH_METHODS.includes(
-      tokenEndpointAuthMethod as OidcTokenEndpointAuthMethod,
-    )
-  ) {
-    throw createInvalidEnvError(
-      tokenEndpointAuthMethod,
-      "discoveryOverrides.tokenEndpointAuthMethod must be client_secret_basic or client_secret_post.",
-      {
-        field: "discoveryOverrides.tokenEndpointAuthMethod",
+    if (issue.code === "unrecognized_keys" && issue.keys[0]) {
+      throw createInvalidEnvError(
+        readIssueValue(parsedValue, [index, "discoveryOverrides"]),
+        `discoveryOverrides.${issue.keys[0]} is not supported.`,
+        {
+          field: "discoveryOverrides",
+          index,
+          overrideKey: issue.keys[0],
+        },
+      );
+    }
+
+    if (nestedCandidate === "tokenEndpointAuthMethod") {
+      throw createInvalidEnvError(
+        issueValue,
+        "discoveryOverrides.tokenEndpointAuthMethod must be client_secret_basic or client_secret_post.",
+        {
+          field: "discoveryOverrides.tokenEndpointAuthMethod",
+          index,
+        },
+      );
+    }
+
+    if (typeof nestedCandidate === "string") {
+      const fieldPath = `discoveryOverrides.${nestedCandidate}`;
+      const message = isNonEmptyStringIssue(issue)
+        ? `${fieldPath} must be a non-empty string.`
+        : `${fieldPath} must be an absolute URL.`;
+
+      throw createInvalidEnvError(issueValue, message, {
+        field: fieldPath,
         index,
-      },
-    );
+      });
+    }
   }
 
-  return {
-    authorizationEndpoint:
-      input.authorizationEndpoint === undefined
-        ? undefined
-        : parseAbsoluteUrl(
-            input.authorizationEndpoint,
-            "discoveryOverrides.authorizationEndpoint",
-            index,
-          ),
-    tokenEndpoint:
-      input.tokenEndpoint === undefined
-        ? undefined
-        : parseAbsoluteUrl(
-            input.tokenEndpoint,
-            "discoveryOverrides.tokenEndpoint",
-            index,
-          ),
-    userInfoEndpoint:
-      input.userInfoEndpoint === undefined
-        ? undefined
-        : parseAbsoluteUrl(
-            input.userInfoEndpoint,
-            "discoveryOverrides.userInfoEndpoint",
-            index,
-          ),
-    jwksUri:
-      input.jwksUri === undefined
-        ? undefined
-        : parseAbsoluteUrl(input.jwksUri, "discoveryOverrides.jwksUri", index),
-    tokenEndpointAuthMethod: tokenEndpointAuthMethod as
-      | OidcTokenEndpointAuthMethod
-      | undefined,
-  };
-}
-
-function parseOidcProviderId(value: unknown, index: number): OidcProviderId {
-  const providerId = parseNonEmptyString(value, "providerId", index);
-
-  if (OIDC_PROVIDER_IDS.includes(providerId as OidcProviderId)) {
-    return providerId as OidcProviderId;
-  }
-
-  throw createInvalidEnvError(value, "providerId is not supported.", {
-    field: "providerId",
-    index,
-  });
+  throw createInvalidEnvError(
+    readIssueValue(parsedValue, [index]),
+    "Each OIDC provider entry must be an object.",
+    { index },
+  );
 }
 
 function parseOidcProviders(
@@ -320,69 +414,13 @@ function parseOidcProviders(
     );
   }
 
-  if (!Array.isArray(parsed)) {
-    throw createInvalidEnvError(
-      parsed,
-      "MDCMS_AUTH_OIDC_PROVIDERS must be a JSON array.",
-    );
+  const validated = OidcProvidersSchema.safeParse(parsed);
+
+  if (validated.success) {
+    return validated.data;
   }
 
-  const providerIds = new Set<string>();
-  const domains = new Set<string>();
-
-  return parsed.map((entry, index) => {
-    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
-      throw createInvalidEnvError(
-        entry,
-        "Each OIDC provider entry must be an object.",
-        { index },
-      );
-    }
-
-    const input = entry as Record<string, unknown>;
-    const providerId = parseOidcProviderId(input.providerId, index);
-    const domain = parseNonEmptyString(
-      input.domain,
-      "domain",
-      index,
-    ).toLowerCase();
-
-    if (providerIds.has(providerId)) {
-      throw createInvalidEnvError(
-        providerId,
-        `providerId ${providerId} must be unique.`,
-        { field: "providerId", index },
-      );
-    }
-
-    if (domains.has(domain)) {
-      throw createInvalidEnvError(domain, `domain ${domain} must be unique.`, {
-        field: "domain",
-        index,
-      });
-    }
-
-    providerIds.add(providerId);
-    domains.add(domain);
-
-    return {
-      providerId,
-      issuer: parseAbsoluteUrl(input.issuer, "issuer", index),
-      domain,
-      clientId: parseNonEmptyString(input.clientId, "clientId", index),
-      clientSecret: parseNonEmptyString(
-        input.clientSecret,
-        "clientSecret",
-        index,
-      ),
-      scopes: parseScopes(input.scopes, index),
-      trustedOrigins: parseTrustedOrigins(input.trustedOrigins, index),
-      discoveryOverrides: parseDiscoveryOverrides(
-        input.discoveryOverrides,
-        index,
-      ),
-    };
-  });
+  return throwOidcProvidersEnvError(parsed, validated.error);
 }
 
 /**
@@ -391,10 +429,14 @@ function parseOidcProviders(
  */
 export function parseServerEnv(rawEnv: NodeJS.ProcessEnv): ServerEnv {
   const core = parseCoreEnv(rawEnv);
+  const parsedExtension = ServerEnvExtensionSchema.safeParse(rawEnv);
+
+  if (!parsedExtension.success) {
+    return throwInvalidPortEnvError(rawEnv.PORT);
+  }
 
   return extendEnv(core, () => ({
-    PORT: parsePort(rawEnv.PORT),
-    SERVICE_NAME: rawEnv.SERVICE_NAME?.trim() || "mdcms-server",
+    ...parsedExtension.data,
     MDCMS_AUTH_OIDC_PROVIDERS: parseOidcProviders(
       rawEnv.MDCMS_AUTH_OIDC_PROVIDERS,
     ),

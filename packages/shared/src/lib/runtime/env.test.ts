@@ -26,6 +26,36 @@ test("parseCoreEnv rejects invalid NODE_ENV and LOG_LEVEL values", () => {
   );
 });
 
+test("parseCoreEnv trims NODE_ENV and LOG_LEVEL values before validation", () => {
+  const env = parseCoreEnv({
+    NODE_ENV: " production ",
+    LOG_LEVEL: " warn ",
+  } as NodeJS.ProcessEnv);
+
+  assert.equal(env.NODE_ENV, "production");
+  assert.equal(env.LOG_LEVEL, "warn");
+});
+
+test("parseCoreEnv rejects blank NODE_ENV and LOG_LEVEL values", () => {
+  assert.throws(
+    () => parseCoreEnv({ NODE_ENV: "   " } as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_ENV" &&
+      error.details?.key === "NODE_ENV" &&
+      error.details?.value === "   ",
+  );
+
+  assert.throws(
+    () => parseCoreEnv({ LOG_LEVEL: "   " } as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_ENV" &&
+      error.details?.key === "LOG_LEVEL" &&
+      error.details?.value === "   ",
+  );
+});
+
 test("extendEnv composes extension values on top of CoreEnv", () => {
   const core = parseCoreEnv({
     NODE_ENV: "test",

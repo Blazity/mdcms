@@ -82,6 +82,21 @@ test("parseServerEnv rejects malformed OIDC provider JSON", () => {
   );
 });
 
+test("parseServerEnv rejects non-array OIDC provider payloads", () => {
+  assert.throws(
+    () =>
+      parseServerEnv({
+        MDCMS_AUTH_OIDC_PROVIDERS: JSON.stringify({
+          providerId: "okta",
+        }),
+      } as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_ENV" &&
+      error.message === "MDCMS_AUTH_OIDC_PROVIDERS must be a JSON array.",
+  );
+});
+
 test("parseServerEnv rejects unsupported OIDC provider IDs", () => {
   assert.throws(
     () =>
@@ -143,5 +158,141 @@ test("parseServerEnv rejects missing required OIDC provider fields", () => {
       } as NodeJS.ProcessEnv),
     (error: unknown) =>
       error instanceof RuntimeError && error.code === "INVALID_ENV",
+  );
+});
+
+test("parseServerEnv rejects blank scope entries as non-empty strings", () => {
+  assert.throws(
+    () =>
+      parseServerEnv({
+        MDCMS_AUTH_OIDC_PROVIDERS: JSON.stringify([
+          {
+            providerId: "okta",
+            issuer: "https://example.okta.com/oauth2/default",
+            domain: "example.com",
+            clientId: "client-id",
+            clientSecret: "client-secret",
+            scopes: ["openid", "   "],
+          },
+        ]),
+      } as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_ENV" &&
+      error.message === "scopes must be a non-empty string.",
+  );
+});
+
+test("parseServerEnv rejects empty scopes arrays", () => {
+  assert.throws(
+    () =>
+      parseServerEnv({
+        MDCMS_AUTH_OIDC_PROVIDERS: JSON.stringify([
+          {
+            providerId: "okta",
+            issuer: "https://example.okta.com/oauth2/default",
+            domain: "example.com",
+            clientId: "client-id",
+            clientSecret: "client-secret",
+            scopes: [],
+          },
+        ]),
+      } as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_ENV" &&
+      error.message === "scopes must not be empty.",
+  );
+});
+
+test("parseServerEnv preserves non-empty-string errors for blank OIDC URL fields", () => {
+  assert.throws(
+    () =>
+      parseServerEnv({
+        MDCMS_AUTH_OIDC_PROVIDERS: JSON.stringify([
+          {
+            providerId: "okta",
+            issuer: "",
+            domain: "example.com",
+            clientId: "client-id",
+            clientSecret: "client-secret",
+          },
+        ]),
+      } as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_ENV" &&
+      error.message === "issuer must be a non-empty string.",
+  );
+
+  assert.throws(
+    () =>
+      parseServerEnv({
+        MDCMS_AUTH_OIDC_PROVIDERS: JSON.stringify([
+          {
+            providerId: "okta",
+            issuer: "https://example.okta.com/oauth2/default",
+            domain: "example.com",
+            clientId: "client-id",
+            clientSecret: "client-secret",
+            discoveryOverrides: {
+              authorizationEndpoint: "",
+            },
+          },
+        ]),
+      } as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_ENV" &&
+      error.message ===
+        "discoveryOverrides.authorizationEndpoint must be a non-empty string.",
+  );
+});
+
+test("parseServerEnv preserves discovery override unknown-key and auth-method envelopes", () => {
+  assert.throws(
+    () =>
+      parseServerEnv({
+        MDCMS_AUTH_OIDC_PROVIDERS: JSON.stringify([
+          {
+            providerId: "okta",
+            issuer: "https://example.okta.com/oauth2/default",
+            domain: "example.com",
+            clientId: "client-id",
+            clientSecret: "client-secret",
+            discoveryOverrides: {
+              unsupported: "https://fixtures.mdcms.local/unsupported",
+            },
+          },
+        ]),
+      } as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_ENV" &&
+      error.message === "discoveryOverrides.unsupported is not supported." &&
+      error.details?.overrideKey === "unsupported",
+  );
+
+  assert.throws(
+    () =>
+      parseServerEnv({
+        MDCMS_AUTH_OIDC_PROVIDERS: JSON.stringify([
+          {
+            providerId: "okta",
+            issuer: "https://example.okta.com/oauth2/default",
+            domain: "example.com",
+            clientId: "client-id",
+            clientSecret: "client-secret",
+            discoveryOverrides: {
+              tokenEndpointAuthMethod: "private_key_jwt",
+            },
+          },
+        ]),
+      } as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_ENV" &&
+      error.message ===
+        "discoveryOverrides.tokenEndpointAuthMethod must be client_secret_basic or client_secret_post.",
   );
 });
