@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { createConsoleLogger } from "@mdcms/shared";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import postgres from "postgres";
 
 import {
@@ -22,8 +22,10 @@ import {
   startMockOidcProvider,
 } from "./auth-oidc-fixtures.js";
 import {
+  authAccounts,
   authLoginBackoffs,
   authSessions,
+  authUsers,
   cliLoginChallenges,
   environments,
   projects,
@@ -138,6 +140,11 @@ test("auth oidc provider config builds static Better Auth providers", () => {
         emailVerified: "email_verified",
         name: "name",
         image: "picture",
+        extraFields: {
+          givenName: "given_name",
+          familyName: "family_name",
+          preferredUsername: "preferred_username",
+        },
       },
     },
   });
@@ -359,6 +366,60 @@ function extractCookieValue(
     ?.slice(name.length + 1);
 }
 
+async function startOidcSignIn(
+  handler: (request: Request) => Promise<Response>,
+  providerId: string,
+  callbackURL = "/studio",
+): Promise<{
+  signInResponse: Response;
+  redirectUri: string;
+  state: string;
+}> {
+  const signInResponse = await handler(
+    new Request("http://localhost/api/v1/auth/sign-in/sso", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        providerId,
+        callbackURL,
+      }),
+    }),
+  );
+
+  assert.equal(signInResponse.status, 302);
+  const location = signInResponse.headers.get("location");
+  assert.ok(location);
+
+  const redirect = new URL(location);
+  const state = redirect.searchParams.get("state");
+  const redirectUri = redirect.searchParams.get("redirect_uri");
+  assert.ok(state);
+  assert.ok(redirectUri);
+
+  return {
+    signInResponse,
+    redirectUri,
+    state,
+  };
+}
+
+async function completeOidcCallback(
+  handler: (request: Request) => Promise<Response>,
+  signInResponse: Response,
+  redirectUri: string,
+  state: string,
+): Promise<Response> {
+  return handler(
+    new Request(`${redirectUri}?code=mock-code&state=${state}`, {
+      headers: {
+        cookie: toCookieHeader(extractSetCookie(signInResponse)),
+      },
+    }),
+  );
+}
+
 function createCsrfHeaders(
   loginResult: {
     cookie: string;
@@ -542,6 +603,86 @@ for (const providerId of ["azure-ad", "google-workspace", "auth0"] as const) {
   );
 }
 
+for (const providerId of OIDC_FIXTURE_PROVIDER_IDS) {
+  testWithDatabase(
+    `auth oidc callback persists canonical mapped user fields for ${providerId}`,
+    async () => {
+      const fixture = createOidcFixture(providerId);
+      const claims = {
+        ...fixture.claims,
+        sub: `${providerId}-oidc-${Date.now()}`,
+        email: uniqueEmail(),
+      };
+      const expectedUser = normalizeOidcFixtureClaims(claims);
+      const provider = await startMockOidcProvider(claims, {
+        clientId: fixture.providerConfig.clientId,
+      });
+      const { handler, dbConnection } = createServerRequestHandlerWithModules({
+        env: createOidcEnv(provider, env, providerId),
+        logger,
+      });
+
+      try {
+        const { signInResponse, redirectUri, state } = await startOidcSignIn(
+          handler,
+          providerId,
+        );
+        const callbackResponse = await completeOidcCallback(
+          handler,
+          signInResponse,
+          redirectUri,
+          state,
+        );
+
+        assert.equal(callbackResponse.status, 302);
+        const callbackLocation = callbackResponse.headers.get("location");
+        assert.ok(callbackLocation);
+        assert.equal(
+          new URL(callbackLocation, "http://localhost").pathname,
+          "/studio",
+        );
+        assert.ok(extractSetCookie(callbackResponse));
+
+        const [account] = await dbConnection.db
+          .select({
+            userId: authAccounts.userId,
+            accountId: authAccounts.accountId,
+            providerId: authAccounts.providerId,
+          })
+          .from(authAccounts)
+          .where(
+            and(
+              eq(authAccounts.providerId, providerId),
+              eq(authAccounts.accountId, expectedUser.id),
+            ),
+          );
+        assert.ok(account);
+
+        const [user] = await dbConnection.db
+          .select({
+            id: authUsers.id,
+            email: authUsers.email,
+            emailVerified: authUsers.emailVerified,
+            name: authUsers.name,
+            image: authUsers.image,
+          })
+          .from(authUsers)
+          .where(eq(authUsers.id, account.userId));
+        assert.deepEqual(user, {
+          id: account.userId,
+          email: expectedUser.email,
+          emailVerified: expectedUser.emailVerified,
+          name: expectedUser.name,
+          image: expectedUser.image,
+        });
+      } finally {
+        await provider.close();
+        await dbConnection.close();
+      }
+    },
+  );
+}
+
 testWithDatabase(
   "auth oidc sign-in rejects unconfigured providers",
   async () => {
@@ -581,6 +722,254 @@ testWithDatabase(
     } finally {
       await provider.close();
       await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "auth oidc callback does not implicitly link to an existing local user with the same email",
+  async () => {
+    const localEmail = uniqueEmail();
+    const provider = await startMockOidcProvider(
+      {
+        sub: `okta-local-link-${Date.now()}`,
+        email: localEmail,
+        email_verified: true,
+        name: "OIDC User",
+      },
+      {
+        clientId: "okta-client-id",
+      },
+    );
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env: createOidcEnv(provider, env),
+      logger,
+    });
+
+    try {
+      await signUp(handler, {
+        email: localEmail,
+        password: "Admin12345!",
+      });
+
+      const [localUser] = await dbConnection.db
+        .select({
+          id: authUsers.id,
+        })
+        .from(authUsers)
+        .where(eq(authUsers.email, localEmail));
+      assert.ok(localUser);
+
+      const { signInResponse, redirectUri, state } = await startOidcSignIn(
+        handler,
+        "okta",
+      );
+      const callbackResponse = await completeOidcCallback(
+        handler,
+        signInResponse,
+        redirectUri,
+        state,
+      );
+
+      assert.notEqual(callbackResponse.status, 302);
+
+      const linkedAccounts = await dbConnection.db
+        .select({
+          id: authAccounts.id,
+        })
+        .from(authAccounts)
+        .where(
+          and(
+            eq(authAccounts.userId, localUser.id),
+            eq(authAccounts.providerId, "okta"),
+          ),
+        );
+
+      assert.equal(linkedAccounts.length, 0);
+    } finally {
+      await provider.close();
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "auth oidc callback uses userinfo-only fallback claims when the id token omits them",
+  async () => {
+    const providerId = "auth0";
+    const email = uniqueEmail();
+    const sub = `auth0-userinfo-only-${Date.now()}`;
+    const provider = await startMockOidcProvider(
+      {
+        sub,
+        email,
+        email_verified: true,
+      },
+      {
+        clientId: "auth0-client-id",
+        userInfoClaims: {
+          sub,
+          email,
+          email_verified: true,
+          preferred_username: "Fixture User",
+          picture: "https://fixtures.mdcms.local/userinfo-avatar.png",
+        },
+      },
+    );
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env: createOidcEnv(provider, env, providerId),
+      logger,
+    });
+
+    try {
+      const { signInResponse, redirectUri, state } = await startOidcSignIn(
+        handler,
+        providerId,
+      );
+      const callbackResponse = await completeOidcCallback(
+        handler,
+        signInResponse,
+        redirectUri,
+        state,
+      );
+
+      assert.equal(callbackResponse.status, 302);
+
+      const [account] = await dbConnection.db
+        .select({
+          userId: authAccounts.userId,
+        })
+        .from(authAccounts)
+        .where(
+          and(
+            eq(authAccounts.providerId, providerId),
+            eq(authAccounts.accountId, sub),
+          ),
+        );
+      assert.ok(account);
+
+      const [user] = await dbConnection.db
+        .select({
+          name: authUsers.name,
+          image: authUsers.image,
+        })
+        .from(authUsers)
+        .where(eq(authUsers.id, account.userId));
+
+      assert.deepEqual(user, {
+        name: "Fixture User",
+        image: "https://fixtures.mdcms.local/userinfo-avatar.png",
+      });
+    } finally {
+      await provider.close();
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "auth oidc callback defaults emailVerified to false when providers omit email_verified on repeat login",
+  async () => {
+    const providerId = "auth0";
+    const sub = `auth0-repeat-email-verified-${Date.now()}`;
+    const email = uniqueEmail();
+
+    const firstProvider = await startMockOidcProvider(
+      {
+        sub,
+        email,
+        email_verified: true,
+        name: "First Login",
+      },
+      {
+        clientId: "auth0-client-id",
+      },
+    );
+    const firstBundle = createServerRequestHandlerWithModules({
+      env: createOidcEnv(firstProvider, env, providerId),
+      logger,
+    });
+
+    try {
+      const { signInResponse, redirectUri, state } = await startOidcSignIn(
+        firstBundle.handler,
+        providerId,
+      );
+      const callbackResponse = await completeOidcCallback(
+        firstBundle.handler,
+        signInResponse,
+        redirectUri,
+        state,
+      );
+
+      assert.equal(callbackResponse.status, 302);
+    } finally {
+      await firstProvider.close();
+      await firstBundle.dbConnection.close();
+    }
+
+    const secondProvider = await startMockOidcProvider(
+      {
+        sub,
+        email,
+        name: "Second Login",
+      },
+      {
+        clientId: "auth0-client-id",
+        userInfoClaims: {
+          sub,
+          email,
+          name: "Second Login",
+        },
+      },
+    );
+    const secondBundle = createServerRequestHandlerWithModules({
+      env: createOidcEnv(secondProvider, env, providerId),
+      logger,
+    });
+
+    try {
+      const { signInResponse, redirectUri, state } = await startOidcSignIn(
+        secondBundle.handler,
+        providerId,
+      );
+      const callbackResponse = await completeOidcCallback(
+        secondBundle.handler,
+        signInResponse,
+        redirectUri,
+        state,
+      );
+
+      assert.equal(callbackResponse.status, 302);
+
+      const [account] = await secondBundle.dbConnection.db
+        .select({
+          userId: authAccounts.userId,
+        })
+        .from(authAccounts)
+        .where(
+          and(
+            eq(authAccounts.providerId, providerId),
+            eq(authAccounts.accountId, sub),
+          ),
+        );
+      assert.ok(account);
+
+      const [user] = await secondBundle.dbConnection.db
+        .select({
+          emailVerified: authUsers.emailVerified,
+          name: authUsers.name,
+        })
+        .from(authUsers)
+        .where(eq(authUsers.id, account.userId));
+
+      assert.deepEqual(user, {
+        emailVerified: false,
+        name: "Second Login",
+      });
+    } finally {
+      await secondProvider.close();
+      await secondBundle.dbConnection.close();
     }
   },
 );
@@ -632,6 +1021,160 @@ testWithDatabase(
 
       assert.equal(callbackResponse.status, 401);
       assert.equal(body.code, "AUTH_OIDC_REQUIRED_CLAIM_MISSING");
+    } finally {
+      await provider.close();
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "auth oidc callback rejects whitespace-only email claims without persisting auth rows",
+  async () => {
+    const fixture = createOidcFixture("auth0");
+    const claims = {
+      ...fixture.claims,
+      sub: `auth0-whitespace-email-${Date.now()}`,
+      email: " ".repeat(3 + (Date.now() % 7)),
+    };
+    const provider = await startMockOidcProvider(claims, {
+      clientId: fixture.providerConfig.clientId,
+    });
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env: createOidcEnv(provider, env, "auth0"),
+      logger,
+    });
+
+    try {
+      const existingAccounts = await dbConnection.db
+        .select({
+          id: authAccounts.id,
+        })
+        .from(authAccounts)
+        .where(
+          and(
+            eq(authAccounts.providerId, "auth0"),
+            eq(authAccounts.accountId, claims.sub),
+          ),
+        );
+      const existingUsers = await dbConnection.db
+        .select({
+          id: authUsers.id,
+        })
+        .from(authUsers)
+        .where(eq(authUsers.email, claims.email));
+      const { signInResponse, redirectUri, state } = await startOidcSignIn(
+        handler,
+        "auth0",
+      );
+      const callbackResponse = await completeOidcCallback(
+        handler,
+        signInResponse,
+        redirectUri,
+        state,
+      );
+      const body = (await callbackResponse.json()) as { code: string };
+
+      assert.equal(callbackResponse.status, 401);
+      assert.equal(body.code, "AUTH_OIDC_REQUIRED_CLAIM_MISSING");
+
+      const accounts = await dbConnection.db
+        .select({
+          id: authAccounts.id,
+        })
+        .from(authAccounts)
+        .where(
+          and(
+            eq(authAccounts.providerId, "auth0"),
+            eq(authAccounts.accountId, claims.sub),
+          ),
+        );
+      const users = await dbConnection.db
+        .select({
+          id: authUsers.id,
+        })
+        .from(authUsers)
+        .where(eq(authUsers.email, claims.email));
+
+      assert.equal(accounts.length, existingAccounts.length);
+      assert.equal(users.length, existingUsers.length);
+    } finally {
+      await provider.close();
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "auth oidc callback rejects whitespace-only sub claims without persisting auth rows",
+  async () => {
+    const fixture = createOidcFixture("auth0");
+    const claims = {
+      ...fixture.claims,
+      sub: " ".repeat(3 + (Date.now() % 7)),
+      email: uniqueEmail(),
+    };
+    const provider = await startMockOidcProvider(claims, {
+      clientId: fixture.providerConfig.clientId,
+    });
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env: createOidcEnv(provider, env, "auth0"),
+      logger,
+    });
+
+    try {
+      const existingAccounts = await dbConnection.db
+        .select({
+          id: authAccounts.id,
+        })
+        .from(authAccounts)
+        .where(
+          and(
+            eq(authAccounts.providerId, "auth0"),
+            eq(authAccounts.accountId, claims.sub),
+          ),
+        );
+      const existingUsers = await dbConnection.db
+        .select({
+          id: authUsers.id,
+        })
+        .from(authUsers)
+        .where(eq(authUsers.email, claims.email));
+      const { signInResponse, redirectUri, state } = await startOidcSignIn(
+        handler,
+        "auth0",
+      );
+      const callbackResponse = await completeOidcCallback(
+        handler,
+        signInResponse,
+        redirectUri,
+        state,
+      );
+      const body = (await callbackResponse.json()) as { code: string };
+
+      assert.equal(callbackResponse.status, 401);
+      assert.equal(body.code, "AUTH_OIDC_REQUIRED_CLAIM_MISSING");
+
+      const accounts = await dbConnection.db
+        .select({
+          id: authAccounts.id,
+        })
+        .from(authAccounts)
+        .where(
+          and(
+            eq(authAccounts.providerId, "auth0"),
+            eq(authAccounts.accountId, claims.sub),
+          ),
+        );
+      const users = await dbConnection.db
+        .select({
+          id: authUsers.id,
+        })
+        .from(authUsers)
+        .where(eq(authUsers.email, claims.email));
+
+      assert.equal(accounts.length, existingAccounts.length);
+      assert.equal(users.length, existingUsers.length);
     } finally {
       await provider.close();
       await dbConnection.close();

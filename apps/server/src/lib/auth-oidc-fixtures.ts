@@ -183,6 +183,7 @@ export async function startMockOidcProvider(
   claims: OidcFixtureClaims,
   options: {
     clientId?: string;
+    userInfoClaims?: OidcFixtureClaims;
   } = {},
 ): Promise<MockOidcProvider> {
   const keyPair = await crypto.subtle.generateKey(
@@ -283,7 +284,7 @@ export async function startMockOidcProvider(
     }
 
     if (url.pathname === "/userinfo") {
-      await writeJson(response, 200, claims);
+      await writeJson(response, 200, options.userInfoClaims ?? claims);
       return;
     }
 

@@ -4,6 +4,7 @@ import { RuntimeError, serializeError } from "@mdcms/shared";
 import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { createAuthMiddleware } from "better-auth/api";
 import { DiscoveryError, discoverOIDCConfig, sso } from "@better-auth/sso";
 import { z } from "zod";
 
@@ -63,6 +64,7 @@ const LOGIN_BACKOFF_DELAYS_SECONDS = [1, 2, 4, 8, 16, 32] as const;
 const CSRF_COOKIE_NAME = "mdcms_csrf";
 const CSRF_HEADER_NAME = "x-mdcms-csrf-token";
 const CSRF_TOKEN_BYTES = 24;
+const OIDC_CALLBACK_PROVISIONING_WINDOW_MS = 5_000;
 const CLI_LOGIN_DEFAULT_SCOPES: readonly ApiKeyOperationScope[] = [
   "content:read",
   "content:read:draft",
@@ -271,8 +273,37 @@ type StaticOidcProvider = {
       emailVerified: "email_verified";
       name: "name";
       image: "picture";
+      extraFields: {
+        givenName: "given_name";
+        familyName: "family_name";
+        preferredUsername: "preferred_username";
+      };
     };
   };
+};
+
+type OidcCanonicalClaims = {
+  id: string;
+  email: string;
+  emailVerified: boolean;
+  name: string;
+  image: string | null;
+};
+
+type OidcCallbackRecord = {
+  sessionId: string;
+  sessionCreatedAt: Date;
+  userId: string;
+  userCreatedAt: Date;
+  userEmail: string;
+  userEmailVerified: boolean;
+  userName: string;
+  userImage: string | null;
+  accountRowId: string;
+  accountCreatedAt: Date;
+  accountId: string;
+  accountAccessToken: string | null;
+  accountIdToken: string | null;
 };
 
 const CreateApiKeyInputSchema = z.object({
@@ -374,6 +405,99 @@ function appendSetCookieHeaders(
     .filter((value, index, array) => array.indexOf(value) === index);
 
   return normalized.length > 0 ? normalized.join(", ") : undefined;
+}
+
+function normalizeOptionalOidcClaimString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function selectOidcClaimString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const normalized = normalizeOptionalOidcClaimString(value);
+
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return undefined;
+}
+
+function selectOidcBooleanClaim(...values: unknown[]): boolean | undefined {
+  for (const value of values) {
+    if (value === true || value === false) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function decodeJwtPayload(
+  token: string | null | undefined,
+): Record<string, unknown> | undefined {
+  if (!token) {
+    return undefined;
+  }
+
+  const [, payload] = token.split(".");
+
+  if (!payload) {
+    return undefined;
+  }
+
+  try {
+    const decoded = Buffer.from(payload, "base64url").toString("utf8");
+    return JSON.parse(decoded) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeOidcClaims(
+  claims: Record<string, unknown>,
+): OidcCanonicalClaims {
+  const id = normalizeOptionalOidcClaimString(claims.sub);
+  const email = normalizeOptionalOidcClaimString(claims.email);
+
+  if (!id || !email) {
+    throw createRequiredOidcClaimError();
+  }
+
+  const combinedName = [
+    normalizeOptionalOidcClaimString(claims.given_name),
+    normalizeOptionalOidcClaimString(claims.family_name),
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" ")
+    .trim();
+
+  return {
+    id,
+    email,
+    emailVerified: claims.email_verified === true,
+    name:
+      normalizeOptionalOidcClaimString(claims.name) ||
+      combinedName ||
+      normalizeOptionalOidcClaimString(claims.preferred_username) ||
+      email,
+    image: normalizeOptionalOidcClaimString(claims.picture) ?? null,
+  };
+}
+
+function wasCreatedDuringOidcCallback(
+  createdAt: Date,
+  sessionCreatedAt: Date,
+): boolean {
+  return (
+    Math.abs(createdAt.getTime() - sessionCreatedAt.getTime()) <=
+    OIDC_CALLBACK_PROVISIONING_WINDOW_MS
+  );
 }
 
 function serializeCookie(input: {
@@ -752,6 +876,11 @@ function createStartupDiscoveryConfig(provider: OidcProviderConfig) {
       emailVerified: "email_verified" as const,
       name: "name" as const,
       image: "picture" as const,
+      extraFields: {
+        givenName: "given_name" as const,
+        familyName: "family_name" as const,
+        preferredUsername: "preferred_username" as const,
+      },
     },
   };
 }
@@ -849,6 +978,11 @@ export function buildStaticOidcProviders(
           emailVerified: "email_verified",
           name: "name",
           image: "picture",
+          extraFields: {
+            givenName: "given_name",
+            familyName: "family_name",
+            preferredUsername: "preferred_username",
+          },
         },
       },
     };
@@ -1205,9 +1339,16 @@ export function createAuthService(
     baseUrl,
     parsedEnv.MDCMS_AUTH_OIDC_PROVIDERS,
   );
+  const oidcProviderConfigById = new Map(
+    parsedEnv.MDCMS_AUTH_OIDC_PROVIDERS.map((provider) => [
+      provider.providerId,
+      provider,
+    ]),
+  );
   const oidcProviderIds = new Set(
     oidcProviders.map((provider) => provider.providerId),
   );
+  const oidcCallbackHookErrors = new Map<string, RuntimeError>();
   const isAdminSession =
     options.isAdminSession ??
     ((session: StudioSession) =>
@@ -1234,6 +1375,222 @@ export function createAuthService(
       secure: useSecureCookies,
       maxAge: 0,
     });
+  }
+
+  async function loadOidcCallbackRecord(
+    sessionId: string,
+    userId: string,
+    providerId: string,
+  ): Promise<OidcCallbackRecord> {
+    const [record] = await options.db
+      .select({
+        sessionId: authSessions.id,
+        sessionCreatedAt: authSessions.createdAt,
+        userId: authUsers.id,
+        userCreatedAt: authUsers.createdAt,
+        userEmail: authUsers.email,
+        userEmailVerified: authUsers.emailVerified,
+        userName: authUsers.name,
+        userImage: authUsers.image,
+        accountRowId: authAccounts.id,
+        accountCreatedAt: authAccounts.createdAt,
+        accountId: authAccounts.accountId,
+        accountAccessToken: authAccounts.accessToken,
+        accountIdToken: authAccounts.idToken,
+      })
+      .from(authSessions)
+      .innerJoin(authUsers, eq(authUsers.id, authSessions.userId))
+      .innerJoin(
+        authAccounts,
+        and(
+          eq(authAccounts.userId, authUsers.id),
+          eq(authAccounts.providerId, providerId),
+        ),
+      )
+      .where(and(eq(authSessions.id, sessionId), eq(authUsers.id, userId)))
+      .orderBy(desc(authAccounts.updatedAt))
+      .limit(1);
+
+    if (!record) {
+      throw new RuntimeError({
+        code: "INTERNAL_ERROR",
+        message: "OIDC callback did not produce a persisted auth account.",
+        statusCode: 500,
+        details: {
+          providerId,
+          sessionId,
+          userId,
+        },
+      });
+    }
+
+    return record;
+  }
+
+  async function loadOidcUserInfoClaims(
+    providerId: string,
+    accessToken: string | null,
+  ): Promise<Record<string, unknown> | undefined> {
+    const provider = oidcProviderConfigById.get(
+      providerId as OidcProviderConfig["providerId"],
+    );
+    const userInfoEndpoint = provider?.discoveryOverrides?.userInfoEndpoint;
+
+    if (!accessToken || !userInfoEndpoint) {
+      return undefined;
+    }
+
+    try {
+      const response = await fetch(userInfoEndpoint, {
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        return undefined;
+      }
+
+      const body = (await response.json().catch(() => undefined)) as
+        | Record<string, unknown>
+        | undefined;
+
+      return body && !Array.isArray(body) ? body : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async function rollbackInvalidOidcCallbackRecord(
+    record: OidcCallbackRecord,
+  ): Promise<void> {
+    await options.db
+      .delete(authSessions)
+      .where(eq(authSessions.id, record.sessionId));
+
+    const createdAccountDuringCallback = wasCreatedDuringOidcCallback(
+      record.accountCreatedAt,
+      record.sessionCreatedAt,
+    );
+
+    if (createdAccountDuringCallback) {
+      await options.db
+        .delete(authAccounts)
+        .where(eq(authAccounts.id, record.accountRowId));
+    }
+
+    const [remainingAccount] = await options.db
+      .select({
+        id: authAccounts.id,
+      })
+      .from(authAccounts)
+      .where(eq(authAccounts.userId, record.userId))
+      .limit(1);
+    const [remainingSession] = await options.db
+      .select({
+        id: authSessions.id,
+      })
+      .from(authSessions)
+      .where(eq(authSessions.userId, record.userId))
+      .limit(1);
+
+    if (!remainingAccount && !remainingSession) {
+      await options.db.delete(authUsers).where(eq(authUsers.id, record.userId));
+    }
+  }
+
+  async function synchronizeOidcCallbackUser(
+    sessionId: string,
+    userId: string,
+    providerId: string,
+  ): Promise<void> {
+    const record = await loadOidcCallbackRecord(sessionId, userId, providerId);
+    const idTokenClaims = decodeJwtPayload(record.accountIdToken);
+    const userInfoClaims = await loadOidcUserInfoClaims(
+      providerId,
+      record.accountAccessToken,
+    );
+    let normalized: OidcCanonicalClaims;
+
+    try {
+      normalized = normalizeOidcClaims({
+        sub: selectOidcClaimString(
+          idTokenClaims?.sub,
+          userInfoClaims?.sub,
+          record.accountId,
+        ),
+        email: selectOidcClaimString(
+          idTokenClaims?.email,
+          userInfoClaims?.email,
+          record.userEmail,
+        ),
+        email_verified:
+          selectOidcBooleanClaim(
+            idTokenClaims?.email_verified,
+            userInfoClaims?.email_verified,
+          ) ?? false,
+        name: selectOidcClaimString(
+          idTokenClaims?.name,
+          userInfoClaims?.name,
+          record.userName,
+        ),
+        picture: selectOidcClaimString(
+          idTokenClaims?.picture,
+          userInfoClaims?.picture,
+          record.userImage,
+        ),
+        preferred_username: selectOidcClaimString(
+          idTokenClaims?.preferred_username,
+          userInfoClaims?.preferred_username,
+        ),
+        given_name: selectOidcClaimString(
+          idTokenClaims?.given_name,
+          userInfoClaims?.given_name,
+        ),
+        family_name: selectOidcClaimString(
+          idTokenClaims?.family_name,
+          userInfoClaims?.family_name,
+        ),
+      });
+    } catch (error) {
+      await rollbackInvalidOidcCallbackRecord(record);
+
+      if (error instanceof RuntimeError) {
+        throw error;
+      }
+
+      throw createRequiredOidcClaimError();
+    }
+
+    if (record.accountId !== normalized.id) {
+      await options.db
+        .update(authAccounts)
+        .set({
+          accountId: normalized.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(authAccounts.id, record.accountRowId));
+    }
+
+    if (
+      record.userEmail === normalized.email &&
+      record.userEmailVerified === normalized.emailVerified &&
+      record.userName === normalized.name &&
+      record.userImage === normalized.image
+    ) {
+      return;
+    }
+
+    await options.db
+      .update(authUsers)
+      .set({
+        email: normalized.email,
+        emailVerified: normalized.emailVerified,
+        name: normalized.name,
+        image: normalized.image,
+        updatedAt: new Date(),
+      })
+      .where(eq(authUsers.id, record.userId));
   }
 
   const auth = betterAuth({
@@ -1276,6 +1633,49 @@ export function createAuthService(
         defaultSSO: oidcProviders,
         providersLimit: 0,
       }),
+      {
+        id: "mdcms-oidc-callback-normalization",
+        hooks: {
+          after: [
+            {
+              matcher(context: { path?: string }) {
+                return context.path?.startsWith("/sso/callback/") ?? false;
+              },
+              handler: createAuthMiddleware(async (ctx) => {
+                const newSession = ctx.context.newSession;
+
+                if (!newSession?.session?.id || !newSession.user?.id) {
+                  return;
+                }
+
+                const providerId =
+                  typeof ctx.params?.providerId === "string"
+                    ? ctx.params.providerId
+                    : undefined;
+
+                if (!providerId) {
+                  return;
+                }
+
+                try {
+                  await synchronizeOidcCallbackUser(
+                    assertNonEmptyString(newSession.session.id, "session.id"),
+                    assertNonEmptyString(newSession.user.id, "user.id"),
+                    providerId,
+                  );
+                } catch (error) {
+                  if (error instanceof RuntimeError && ctx.request?.url) {
+                    oidcCallbackHookErrors.set(ctx.request.url, error);
+                    return;
+                  }
+
+                  throw error;
+                }
+              }),
+            },
+          ],
+        },
+      },
     ],
   });
 
@@ -2423,6 +2823,12 @@ export function createAuthService(
       );
 
       const response = await auth.handler(request);
+      const hookError = oidcCallbackHookErrors.get(request.url);
+
+      if (hookError) {
+        oidcCallbackHookErrors.delete(request.url);
+        throw hookError;
+      }
 
       if (response.status !== 302) {
         return response;
@@ -2436,11 +2842,11 @@ export function createAuthService(
 
       const mappedError = mapSsoCallbackErrorCode(location, providerId);
 
-      if (!mappedError) {
-        return response;
+      if (mappedError) {
+        throw mappedError;
       }
 
-      throw mappedError;
+      return response;
     },
 
     handleAuthRequest(request) {
