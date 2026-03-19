@@ -296,3 +296,172 @@ test("parseServerEnv preserves discovery override unknown-key and auth-method en
         "discoveryOverrides.tokenEndpointAuthMethod must be client_secret_basic or client_secret_post.",
   );
 });
+
+test("parseServerEnv parses valid SAML provider config", () => {
+  const env = parseServerEnv({
+    MDCMS_AUTH_SAML_PROVIDERS: JSON.stringify([
+      {
+        providerId: "okta-saml",
+        issuer: "https://www.okta.com/exk123456789",
+        domain: "example.com",
+        entryPoint: "https://example.okta.com/app/example/sso/saml",
+        cert: "-----BEGIN CERTIFICATE-----\\nabc\\n-----END CERTIFICATE-----",
+        audience: "https://cms.example.com/saml/okta-saml/sp",
+        spEntityId: "https://cms.example.com/saml/okta-saml/sp",
+        identifierFormat:
+          "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+        authnRequestsSigned: true,
+        wantAssertionsSigned: true,
+        attributeMapping: {
+          id: "nameID",
+          email: "email",
+          name: "displayName",
+          firstName: "givenName",
+          lastName: "surname",
+        },
+      },
+    ]),
+  } as NodeJS.ProcessEnv);
+
+  assert.equal(env.MDCMS_AUTH_SAML_PROVIDERS.length, 1);
+  assert.deepEqual(env.MDCMS_AUTH_SAML_PROVIDERS[0], {
+    providerId: "okta-saml",
+    issuer: "https://www.okta.com/exk123456789",
+    domain: "example.com",
+    entryPoint: "https://example.okta.com/app/example/sso/saml",
+    cert: "-----BEGIN CERTIFICATE-----\\nabc\\n-----END CERTIFICATE-----",
+    audience: "https://cms.example.com/saml/okta-saml/sp",
+    spEntityId: "https://cms.example.com/saml/okta-saml/sp",
+    identifierFormat:
+      "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+    authnRequestsSigned: true,
+    wantAssertionsSigned: true,
+    attributeMapping: {
+      id: "nameID",
+      email: "email",
+      name: "displayName",
+      firstName: "givenName",
+      lastName: "surname",
+    },
+  });
+});
+
+test("parseServerEnv treats absent or blank SAML provider config as no providers", () => {
+  assert.deepEqual(
+    parseServerEnv({} as NodeJS.ProcessEnv).MDCMS_AUTH_SAML_PROVIDERS,
+    [],
+  );
+  assert.deepEqual(
+    parseServerEnv({
+      MDCMS_AUTH_SAML_PROVIDERS: "   ",
+    } as NodeJS.ProcessEnv).MDCMS_AUTH_SAML_PROVIDERS,
+    [],
+  );
+});
+
+test("parseServerEnv rejects malformed SAML provider JSON", () => {
+  assert.throws(
+    () =>
+      parseServerEnv({
+        MDCMS_AUTH_SAML_PROVIDERS: "not-json",
+      } as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_ENV" &&
+      error.details?.key === "MDCMS_AUTH_SAML_PROVIDERS",
+  );
+});
+
+test("parseServerEnv rejects non-array SAML provider payloads", () => {
+  assert.throws(
+    () =>
+      parseServerEnv({
+        MDCMS_AUTH_SAML_PROVIDERS: JSON.stringify({
+          providerId: "okta-saml",
+        }),
+      } as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_ENV" &&
+      error.message === "MDCMS_AUTH_SAML_PROVIDERS must be a JSON array.",
+  );
+});
+
+test("parseServerEnv rejects missing required SAML provider fields", () => {
+  assert.throws(
+    () =>
+      parseServerEnv({
+        MDCMS_AUTH_SAML_PROVIDERS: JSON.stringify([
+          {
+            providerId: "okta-saml",
+            issuer: "",
+            domain: "example.com",
+            entryPoint: "https://example.okta.com/app/example/sso/saml",
+            cert: "-----BEGIN CERTIFICATE-----\\nabc\\n-----END CERTIFICATE-----",
+          },
+        ]),
+      } as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_ENV" &&
+      error.details?.key === "MDCMS_AUTH_SAML_PROVIDERS",
+  );
+});
+
+test("parseServerEnv rejects duplicate SAML domains", () => {
+  assert.throws(
+    () =>
+      parseServerEnv({
+        MDCMS_AUTH_SAML_PROVIDERS: JSON.stringify([
+          {
+            providerId: "okta-saml",
+            issuer: "https://www.okta.com/exk123456789",
+            domain: "example.com",
+            entryPoint: "https://example.okta.com/app/example/sso/saml",
+            cert: "-----BEGIN CERTIFICATE-----\\nabc\\n-----END CERTIFICATE-----",
+          },
+          {
+            providerId: "azure-saml",
+            issuer: "https://sts.windows.net/tenant-id/",
+            domain: "example.com",
+            entryPoint: "https://login.microsoftonline.com/tenant-id/saml2",
+            cert: "-----BEGIN CERTIFICATE-----\\ndef\\n-----END CERTIFICATE-----",
+          },
+        ]),
+      } as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_ENV" &&
+      error.details?.key === "MDCMS_AUTH_SAML_PROVIDERS",
+  );
+});
+
+test("parseServerEnv rejects duplicate providerId across OIDC and SAML providers", () => {
+  assert.throws(
+    () =>
+      parseServerEnv({
+        MDCMS_AUTH_OIDC_PROVIDERS: JSON.stringify([
+          {
+            providerId: "okta",
+            issuer: "https://example.okta.com/oauth2/default",
+            domain: "oidc.example.com",
+            clientId: "client-id",
+            clientSecret: "client-secret",
+          },
+        ]),
+        MDCMS_AUTH_SAML_PROVIDERS: JSON.stringify([
+          {
+            providerId: "okta",
+            issuer: "https://www.okta.com/exk123456789",
+            domain: "saml.example.com",
+            entryPoint: "https://example.okta.com/app/example/sso/saml",
+            cert: "-----BEGIN CERTIFICATE-----\\nabc\\n-----END CERTIFICATE-----",
+          },
+        ]),
+      } as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_ENV" &&
+      error.message === "providerId okta must be unique across OIDC and SAML.",
+  );
+});

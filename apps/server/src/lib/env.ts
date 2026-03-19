@@ -63,8 +63,58 @@ const OidcProviderSchema = z.object({
     .strict()
     .optional(),
 });
+const SamlAttributeMappingSchema = z
+  .object({
+    id: NonEmptyStringSchema.optional(),
+    email: NonEmptyStringSchema.optional(),
+    name: NonEmptyStringSchema.optional(),
+    firstName: NonEmptyStringSchema.optional(),
+    lastName: NonEmptyStringSchema.optional(),
+  })
+  .strict();
 const OidcProvidersSchema = z
   .array(OidcProviderSchema)
+  .superRefine((providers, ctx) => {
+    const providerIds = new Set<string>();
+    const domains = new Set<string>();
+
+    for (const [index, provider] of providers.entries()) {
+      if (providerIds.has(provider.providerId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index, "providerId"],
+          message: `providerId ${provider.providerId} must be unique.`,
+        });
+      } else {
+        providerIds.add(provider.providerId);
+      }
+
+      if (domains.has(provider.domain)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index, "domain"],
+          message: `domain ${provider.domain} must be unique.`,
+        });
+      } else {
+        domains.add(provider.domain);
+      }
+    }
+  });
+const SamlProviderSchema = z.object({
+  providerId: NonEmptyStringSchema,
+  issuer: NonEmptyStringSchema,
+  domain: NonEmptyStringSchema.transform((value) => value.toLowerCase()),
+  entryPoint: NormalizedAbsoluteUrlSchema,
+  cert: NonEmptyStringSchema,
+  audience: NonEmptyStringSchema.optional(),
+  spEntityId: NonEmptyStringSchema.optional(),
+  identifierFormat: NonEmptyStringSchema.optional(),
+  authnRequestsSigned: z.boolean().optional(),
+  wantAssertionsSigned: z.boolean().optional(),
+  attributeMapping: SamlAttributeMappingSchema.optional(),
+});
+const SamlProvidersSchema = z
+  .array(SamlProviderSchema)
   .superRefine((providers, ctx) => {
     const providerIds = new Set<string>();
     const domains = new Set<string>();
@@ -122,10 +172,33 @@ export type OidcProviderConfig = {
   discoveryOverrides?: OidcDiscoveryOverrides;
 };
 
+export type SamlAttributeMapping = {
+  id?: string;
+  email?: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+};
+
+export type SamlProviderConfig = {
+  providerId: string;
+  issuer: string;
+  domain: string;
+  entryPoint: string;
+  cert: string;
+  audience?: string;
+  spEntityId?: string;
+  identifierFormat?: string;
+  authnRequestsSigned?: boolean;
+  wantAssertionsSigned?: boolean;
+  attributeMapping?: SamlAttributeMapping;
+};
+
 export type ServerEnv = CoreEnv & {
   PORT: number;
   SERVICE_NAME: string;
   MDCMS_AUTH_OIDC_PROVIDERS: OidcProviderConfig[];
+  MDCMS_AUTH_SAML_PROVIDERS: SamlProviderConfig[];
 };
 
 function normalizeAbsoluteUrl(raw: string): string {
@@ -153,6 +226,22 @@ function createInvalidEnvError(
     message,
     details: {
       key: "MDCMS_AUTH_OIDC_PROVIDERS",
+      value,
+      ...details,
+    },
+  });
+}
+
+function createSamlInvalidEnvError(
+  value: unknown,
+  message: string,
+  details: Record<string, unknown> = {},
+): RuntimeError {
+  return new RuntimeError({
+    code: "INVALID_ENV",
+    message,
+    details: {
+      key: "MDCMS_AUTH_SAML_PROVIDERS",
       value,
       ...details,
     },
@@ -395,6 +484,140 @@ function throwOidcProvidersEnvError(
   );
 }
 
+function throwSamlProvidersEnvError(
+  parsedValue: unknown,
+  error: z.ZodError,
+): never {
+  const issue = error.issues[0];
+  const [indexCandidate, fieldCandidate, nestedCandidate] = issue?.path ?? [];
+
+  if (typeof indexCandidate !== "number") {
+    throw createSamlInvalidEnvError(
+      parsedValue,
+      "MDCMS_AUTH_SAML_PROVIDERS must be a JSON array.",
+    );
+  }
+
+  const index = indexCandidate;
+
+  if (fieldCandidate === undefined) {
+    throw createSamlInvalidEnvError(
+      readIssueValue(parsedValue, [index]),
+      "Each SAML provider entry must be an object.",
+      { index },
+    );
+  }
+
+  const field = String(fieldCandidate);
+  const issuePath = issue.path.filter(
+    (segment): segment is string | number =>
+      typeof segment === "string" || typeof segment === "number",
+  );
+  const issueValue = readIssueValue(parsedValue, issuePath);
+
+  if (field === "providerId" || field === "domain") {
+    if (issue.code === "custom") {
+      throw createSamlInvalidEnvError(issueValue, issue.message, {
+        field,
+        index,
+      });
+    }
+
+    throw createSamlInvalidEnvError(
+      issueValue,
+      `${field} must be a non-empty string.`,
+      {
+        field,
+        index,
+      },
+    );
+  }
+
+  if (
+    field === "issuer" ||
+    field === "cert" ||
+    field === "audience" ||
+    field === "spEntityId" ||
+    field === "identifierFormat"
+  ) {
+    throw createSamlInvalidEnvError(
+      issueValue,
+      `${field} must be a non-empty string.`,
+      {
+        field,
+        index,
+      },
+    );
+  }
+
+  if (field === "entryPoint") {
+    const message = isNonEmptyStringIssue(issue)
+      ? "entryPoint must be a non-empty string."
+      : "entryPoint must be an absolute URL.";
+
+    throw createSamlInvalidEnvError(issueValue, message, {
+      field: "entryPoint",
+      index,
+    });
+  }
+
+  if (
+    field === "authnRequestsSigned" ||
+    field === "wantAssertionsSigned"
+  ) {
+    throw createSamlInvalidEnvError(
+      issueValue,
+      `${field} must be a boolean when provided.`,
+      {
+        field,
+        index,
+      },
+    );
+  }
+
+  if (field === "attributeMapping") {
+    if (issue.code === "invalid_type" && issue.path.length === 2) {
+      throw createSamlInvalidEnvError(
+        readIssueValue(parsedValue, [index, "attributeMapping"]),
+        "attributeMapping must be an object when provided.",
+        {
+          field: "attributeMapping",
+          index,
+        },
+      );
+    }
+
+    if (issue.code === "unrecognized_keys" && issue.keys[0]) {
+      throw createSamlInvalidEnvError(
+        readIssueValue(parsedValue, [index, "attributeMapping"]),
+        `attributeMapping.${issue.keys[0]} is not supported.`,
+        {
+          field: "attributeMapping",
+          index,
+          attribute: issue.keys[0],
+        },
+      );
+    }
+
+    if (typeof nestedCandidate === "string") {
+      throw createSamlInvalidEnvError(
+        issueValue,
+        `attributeMapping.${nestedCandidate} must be a non-empty string.`,
+        {
+          field: `attributeMapping.${nestedCandidate}`,
+          index,
+        },
+      );
+    }
+  }
+
+  throw createSamlInvalidEnvError(
+    readIssueValue(parsedValue, [index]),
+    "Each SAML provider entry must be an object.",
+    { index },
+  );
+}
+
 function parseOidcProviders(
   rawValue: string | undefined,
 ): OidcProviderConfig[] {
@@ -423,6 +646,58 @@ function parseOidcProviders(
   return throwOidcProvidersEnvError(parsed, validated.error);
 }
 
+function parseSamlProviders(
+  rawValue: string | undefined,
+): SamlProviderConfig[] {
+  const resolvedValue = rawValue?.trim();
+
+  if (!resolvedValue) {
+    return [];
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(resolvedValue);
+  } catch {
+    throw createSamlInvalidEnvError(
+      rawValue,
+      "MDCMS_AUTH_SAML_PROVIDERS must be valid JSON.",
+    );
+  }
+
+  const validated = SamlProvidersSchema.safeParse(parsed);
+
+  if (validated.success) {
+    return validated.data;
+  }
+
+  return throwSamlProvidersEnvError(parsed, validated.error);
+}
+
+function assertUniqueSsoProviderIds(
+  oidcProviders: OidcProviderConfig[],
+  samlProviders: SamlProviderConfig[],
+): void {
+  const providerIds = new Set(
+    oidcProviders.map((provider) => provider.providerId),
+  );
+
+  for (const provider of samlProviders) {
+    if (providerIds.has(provider.providerId)) {
+      throw createSamlInvalidEnvError(
+        provider.providerId,
+        `providerId ${provider.providerId} must be unique across OIDC and SAML.`,
+        {
+          field: "providerId",
+          providerId: provider.providerId,
+        },
+      );
+    }
+
+    providerIds.add(provider.providerId);
+  }
+}
+
 /**
  * parseServerEnv extends the shared core runtime env with server-specific
  * settings used for health and request handling.
@@ -435,10 +710,13 @@ export function parseServerEnv(rawEnv: NodeJS.ProcessEnv): ServerEnv {
     return throwInvalidPortEnvError(rawEnv.PORT);
   }
 
+  const oidcProviders = parseOidcProviders(rawEnv.MDCMS_AUTH_OIDC_PROVIDERS);
+  const samlProviders = parseSamlProviders(rawEnv.MDCMS_AUTH_SAML_PROVIDERS);
+  assertUniqueSsoProviderIds(oidcProviders, samlProviders);
+
   return extendEnv(core, () => ({
     ...parsedExtension.data,
-    MDCMS_AUTH_OIDC_PROVIDERS: parseOidcProviders(
-      rawEnv.MDCMS_AUTH_OIDC_PROVIDERS,
-    ),
+    MDCMS_AUTH_OIDC_PROVIDERS: oidcProviders,
+    MDCMS_AUTH_SAML_PROVIDERS: samlProviders,
   }));
 }
