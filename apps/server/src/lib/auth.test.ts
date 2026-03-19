@@ -6,6 +6,8 @@ import { and, eq } from "drizzle-orm";
 import postgres from "postgres";
 
 import {
+  buildStaticSamlProviders,
+  buildStaticSsoPluginOptions,
   buildStaticOidcProviders,
   mapSsoCallbackErrorCode,
   resolveStartupOidcProviders,
@@ -46,6 +48,29 @@ const logger = createConsoleLogger({
   level: "error",
   sink: () => undefined,
 });
+
+function createSamlProviderConfig() {
+  return {
+    providerId: "okta-saml",
+    issuer: "https://www.okta.com/exk123456789",
+    domain: "example.com",
+    entryPoint: "https://example.okta.com/app/example/sso/saml",
+    cert: "-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----",
+    audience: "https://cms.example.com/saml/okta-saml/sp",
+    spEntityId: "https://cms.example.com/saml/okta-saml/sp",
+    identifierFormat:
+      "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+    authnRequestsSigned: true,
+    wantAssertionsSigned: true,
+    attributeMapping: {
+      id: "nameID",
+      email: "email",
+      name: "displayName",
+      firstName: "givenName",
+      lastName: "surname",
+    },
+  };
+}
 
 async function canConnectToDatabase(): Promise<boolean> {
   const client = postgres(env.DATABASE_URL ?? "", {
@@ -251,6 +276,88 @@ test("auth oidc sign-in payload rejects unsupported Better Auth fields", () => {
       ),
     /invalid/i,
   );
+});
+
+test("auth sso sign-in payload accepts configured SAML provider ids", () => {
+  const options = buildStaticSsoPluginOptions("http://localhost:4000", [], [
+    createSamlProviderConfig(),
+  ]);
+
+  const payload = validateSsoSignInPayload(
+    {
+      providerId: "okta-saml",
+      callbackURL: "/studio",
+    },
+    "http://localhost:4000",
+    new Set(options.defaultSSO.map((provider) => provider.providerId)),
+  );
+
+  assert.equal(payload.providerId, "okta-saml");
+});
+
+test("auth sso provider-not-configured errors are protocol-neutral", () => {
+  assert.throws(
+    () =>
+      validateSsoSignInPayload(
+        {
+          providerId: "missing-saml",
+          callbackURL: "/studio",
+        },
+        "http://localhost:4000",
+        new Set(["okta-saml"]),
+      ),
+    (error: unknown) =>
+      error instanceof Error &&
+      error.message === 'SSO provider "missing-saml" is not configured.',
+  );
+
+  assert.equal(
+    mapSsoCallbackErrorCode(
+      "http://localhost:4000/studio?error=discovery_failed&error_description=timeout",
+    )?.message,
+    "SSO provider callback failed.",
+  );
+});
+
+test("auth saml provider config builds static Better Auth providers and required protections", () => {
+  const providers = buildStaticSamlProviders("http://localhost:4000", [
+    createSamlProviderConfig(),
+  ]);
+  const options = buildStaticSsoPluginOptions("http://localhost:4000", [], [
+    createSamlProviderConfig(),
+  ]);
+
+  assert.equal(providers.length, 1);
+  assert.deepEqual(providers[0], {
+    providerId: "okta-saml",
+    domain: "example.com",
+    samlConfig: {
+      issuer: "https://www.okta.com/exk123456789",
+      entryPoint: "https://example.okta.com/app/example/sso/saml",
+      cert: "-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----",
+      callbackUrl: "http://localhost:4000/api/v1/auth/sso/saml2/sp/acs/okta-saml",
+      audience: "https://cms.example.com/saml/okta-saml/sp",
+      spMetadata: {
+        entityID: "https://cms.example.com/saml/okta-saml/sp",
+      },
+      identifierFormat:
+        "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+      authnRequestsSigned: true,
+      wantAssertionsSigned: true,
+      mapping: {
+        id: "nameID",
+        email: "email",
+        name: "displayName",
+        firstName: "givenName",
+        lastName: "surname",
+      },
+    },
+  });
+  assert.deepEqual(options.saml, {
+    enableInResponseToValidation: true,
+    allowIdpInitiated: false,
+    requireTimestamps: true,
+  });
 });
 
 for (const providerId of OIDC_FIXTURE_PROVIDER_IDS) {

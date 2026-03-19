@@ -30,6 +30,7 @@ import {
   parseServerEnv,
   type OidcProviderConfig,
   type OidcTokenEndpointAuthMethod,
+  type SamlProviderConfig,
 } from "./env.js";
 import {
   createJsonResponse,
@@ -281,6 +282,27 @@ type StaticOidcProvider = {
     };
   };
 };
+
+type StaticSamlProvider = {
+  providerId: SamlProviderConfig["providerId"];
+  domain: string;
+  samlConfig: {
+    issuer: string;
+    entryPoint: string;
+    cert: string;
+    callbackUrl: string;
+    audience?: string;
+    spMetadata: {
+      entityID?: string;
+    };
+    identifierFormat?: string;
+    authnRequestsSigned?: boolean;
+    wantAssertionsSigned?: boolean;
+    mapping?: SamlProviderConfig["attributeMapping"];
+  };
+};
+
+type StaticSsoPluginOptions = NonNullable<Parameters<typeof sso>[0]>;
 
 type OidcCanonicalClaims = {
   id: string;
@@ -787,7 +809,7 @@ function createInvalidInputError(
 function createSsoProviderNotConfiguredError(providerId: string): RuntimeError {
   return new RuntimeError({
     code: "SSO_PROVIDER_NOT_CONFIGURED",
-    message: `OIDC provider "${providerId}" is not configured.`,
+    message: `SSO provider "${providerId}" is not configured.`,
     statusCode: 404,
     details: {
       providerId,
@@ -809,7 +831,7 @@ function createAuthProviderError(
 ): RuntimeError {
   return new RuntimeError({
     code: "AUTH_PROVIDER_ERROR",
-    message: "OIDC provider callback failed.",
+    message: "SSO provider callback failed.",
     statusCode: 502,
     details: {
       providerError: error,
@@ -825,6 +847,10 @@ function createDiscoveryEndpoint(issuer: string): string {
   url.search = "";
   url.hash = "";
   return url.toString();
+}
+
+function createAuthRouteUrl(baseUrl: string, path: string): string {
+  return new URL(path, baseUrl).toString();
 }
 
 function hasResolvedDiscoveryOverrides(provider: OidcProviderConfig): boolean {
@@ -989,6 +1015,52 @@ export function buildStaticOidcProviders(
   });
 }
 
+export function buildStaticSamlProviders(
+  baseUrl: string,
+  providers: SamlProviderConfig[],
+): StaticSamlProvider[] {
+  return providers.map((provider) => ({
+    providerId: provider.providerId,
+    domain: provider.domain,
+    samlConfig: {
+      issuer: provider.issuer,
+      entryPoint: provider.entryPoint,
+      cert: provider.cert,
+      callbackUrl: createAuthRouteUrl(
+        baseUrl,
+        `/api/v1/auth/sso/saml2/sp/acs/${provider.providerId}`,
+      ),
+      audience: provider.audience,
+      spMetadata: {
+        entityID: provider.spEntityId,
+      },
+      identifierFormat: provider.identifierFormat,
+      authnRequestsSigned: provider.authnRequestsSigned,
+      wantAssertionsSigned: provider.wantAssertionsSigned,
+      mapping: provider.attributeMapping,
+    },
+  }));
+}
+
+export function buildStaticSsoPluginOptions(
+  baseUrl: string,
+  oidcProviders: OidcProviderConfig[],
+  samlProviders: SamlProviderConfig[],
+): StaticSsoPluginOptions {
+  return {
+    defaultSSO: [
+      ...buildStaticOidcProviders(baseUrl, oidcProviders),
+      ...buildStaticSamlProviders(baseUrl, samlProviders),
+    ],
+    providersLimit: 0,
+    saml: {
+      enableInResponseToValidation: true,
+      allowIdpInitiated: false,
+      requireTimestamps: true,
+    },
+  };
+}
+
 export function validateSsoRedirectUrl(
   value: string,
   field: string,
@@ -1072,7 +1144,7 @@ export function validateSsoSignInPayload(
   const parsed = SsoSignInInputSchema.safeParse(payload);
 
   if (!parsed.success) {
-    throw createInvalidInputError("OIDC sign-in payload is invalid.", {
+    throw createInvalidInputError("SSO sign-in payload is invalid.", {
       issues: parsed.error.issues,
     });
   }
@@ -1331,9 +1403,10 @@ export function createAuthService(
   const secret = resolveAuthSecret(rawEnv);
   const useSecureCookies = resolveSecureCookiePolicy(rawEnv);
   const adminAllowlist = resolveAdminAllowlist(rawEnv);
-  const oidcProviders = buildStaticOidcProviders(
+  const ssoPluginOptions = buildStaticSsoPluginOptions(
     baseUrl,
     parsedEnv.MDCMS_AUTH_OIDC_PROVIDERS,
+    parsedEnv.MDCMS_AUTH_SAML_PROVIDERS,
   );
   const trustedOrigins = collectTrustedOrigins(
     baseUrl,
@@ -1345,8 +1418,8 @@ export function createAuthService(
       provider,
     ]),
   );
-  const oidcProviderIds = new Set(
-    oidcProviders.map((provider) => provider.providerId),
+  const configuredSsoProviderIds = new Set(
+    ssoPluginOptions.defaultSSO?.map((provider) => provider.providerId) ?? [],
   );
   const oidcCallbackHookErrors = new Map<string, RuntimeError>();
   const isAdminSession =
@@ -1629,10 +1702,7 @@ export function createAuthService(
       enabled: false,
     },
     plugins: [
-      sso({
-        defaultSSO: oidcProviders,
-        providersLimit: 0,
-      }),
+      sso(ssoPluginOptions),
       {
         id: "mdcms-oidc-callback-normalization",
         hooks: {
@@ -1680,7 +1750,7 @@ export function createAuthService(
   });
 
   function assertConfiguredSsoProvider(providerId: string): void {
-    if (!oidcProviderIds.has(providerId as OidcProviderConfig["providerId"])) {
+    if (!configuredSsoProviderIds.has(providerId)) {
       throw createSsoProviderNotConfiguredError(providerId);
     }
   }
@@ -1697,11 +1767,11 @@ export function createAuthService(
       .json()
       .catch(() => {
         throw createInvalidInputError(
-          "OIDC sign-in requires a valid JSON request body.",
+          "SSO sign-in requires a valid JSON request body.",
         );
       });
 
-    return validateSsoSignInPayload(payload, baseUrl, oidcProviderIds);
+    return validateSsoSignInPayload(payload, baseUrl, configuredSsoProviderIds);
   }
 
   function toRedirectResponse(response: Response, location: string): Response {
@@ -2780,11 +2850,11 @@ export function createAuthService(
       }
 
       if (response.status === 400) {
-        throw createInvalidInputError("OIDC sign-in payload is invalid.");
+        throw createInvalidInputError("SSO sign-in payload is invalid.");
       }
 
       if (response.status >= 500) {
-        throw createAuthProviderError("sign_in_failed", "OIDC sign-in failed.");
+        throw createAuthProviderError("sign_in_failed", "SSO sign-in failed.");
       }
 
       if (response.status >= 400) {
@@ -2808,7 +2878,7 @@ export function createAuthService(
       if (!location) {
         throw new RuntimeError({
           code: "INTERNAL_ERROR",
-          message: "OIDC sign-in did not return a provider redirect URL.",
+          message: "SSO sign-in did not return a provider redirect URL.",
           statusCode: 500,
         });
       }
