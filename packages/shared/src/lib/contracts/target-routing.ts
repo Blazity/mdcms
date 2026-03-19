@@ -1,4 +1,5 @@
 import { RuntimeError } from "../runtime/error.js";
+import { z } from "zod";
 
 export const MDCMS_PROJECT_HEADER = "X-MDCMS-Project" as const;
 export const MDCMS_ENVIRONMENT_HEADER = "X-MDCMS-Environment" as const;
@@ -17,13 +18,22 @@ export type ResolvedRequestTargetRouting = {
   environmentSource?: TargetRoutingFieldSource;
 };
 
+const TargetRoutingValueSchema = z.string().trim().min(1);
+const ProjectRoutingRequirementSchema = z.object({
+  project: z.string().min(1),
+});
+const ProjectEnvironmentRoutingRequirementSchema = z.object({
+  project: z.string().min(1),
+  environment: z.string().min(1),
+});
+
 function normalizeTargetRoutingValue(value: string | null): string | undefined {
   if (value === null) {
     return undefined;
   }
 
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+  const parsed = TargetRoutingValueSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function resolveRequestUrl(request: Request): URL {
@@ -166,17 +176,25 @@ export function assertRequestTargetRouting(
   requirement: TargetRoutingRequirement,
 ): ResolvedRequestTargetRouting {
   const resolved = resolveRequestTargetRouting(request);
-  const missingFields: Array<"project" | "environment"> = [];
+  const requirementSchema =
+    requirement === "project"
+      ? ProjectRoutingRequirementSchema
+      : ProjectEnvironmentRoutingRequirementSchema;
+  const parsed = requirementSchema.safeParse(resolved);
 
-  if (!resolved.project) {
-    missingFields.push("project");
-  }
+  if (!parsed.success) {
+    const missingFieldSet = new Set(
+      parsed.error.issues
+        .map((issue) => issue.path[0])
+        .filter(
+          (value): value is "project" | "environment" =>
+            value === "project" || value === "environment",
+        ),
+    );
+    const missingFields = (["project", "environment"] as const).filter(
+      (field) => missingFieldSet.has(field),
+    );
 
-  if (requirement === "project_environment" && !resolved.environment) {
-    missingFields.push("environment");
-  }
-
-  if (missingFields.length > 0) {
     throw new RuntimeError({
       code: "MISSING_TARGET_ROUTING",
       message: `Explicit target routing is required (${missingFields.join(", ")}).`,

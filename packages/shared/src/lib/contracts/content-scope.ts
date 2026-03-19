@@ -1,4 +1,5 @@
 import { RuntimeError } from "../runtime/error.js";
+import { z } from "zod";
 
 /**
  * ContentScope identifies the project + environment pair that scopes
@@ -11,10 +12,10 @@ export type ContentScope = {
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const ContentScopeSchema = z.object({
+  projectId: z.string().regex(UUID_PATTERN),
+  environmentId: z.string().regex(UUID_PATTERN),
+});
 
 /**
  * assertContentScope validates that the given value is a valid ContentScope
@@ -24,7 +25,16 @@ export function assertContentScope(
   value: unknown,
   path = "scope",
 ): asserts value is ContentScope {
-  if (!isRecord(value)) {
+  const parsed = ContentScopeSchema.safeParse(value);
+
+  if (parsed.success) {
+    return;
+  }
+
+  const issue = parsed.error.issues[0];
+  const issuePath = issue?.path?.[0];
+
+  if (issuePath !== "projectId" && issuePath !== "environmentId") {
     throw new RuntimeError({
       code: "INVALID_CONTENT_SCOPE",
       message: `${path} must be an object.`,
@@ -33,27 +43,16 @@ export function assertContentScope(
     });
   }
 
-  if (
-    typeof value.projectId !== "string" ||
-    !UUID_PATTERN.test(value.projectId)
-  ) {
-    throw new RuntimeError({
-      code: "INVALID_CONTENT_SCOPE",
-      message: `${path}.projectId must be a valid UUID.`,
-      statusCode: 400,
-      details: { path: `${path}.projectId`, value: value.projectId },
-    });
-  }
+  const fieldPath = `${path}.${issuePath}`;
+  const fieldValue =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)[issuePath]
+      : undefined;
 
-  if (
-    typeof value.environmentId !== "string" ||
-    !UUID_PATTERN.test(value.environmentId)
-  ) {
-    throw new RuntimeError({
-      code: "INVALID_CONTENT_SCOPE",
-      message: `${path}.environmentId must be a valid UUID.`,
-      statusCode: 400,
-      details: { path: `${path}.environmentId`, value: value.environmentId },
-    });
-  }
+  throw new RuntimeError({
+    code: "INVALID_CONTENT_SCOPE",
+    message: `${fieldPath} must be a valid UUID.`,
+    statusCode: 400,
+    details: { path: fieldPath, value: fieldValue },
+  });
 }

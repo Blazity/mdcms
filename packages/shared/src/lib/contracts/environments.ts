@@ -1,4 +1,5 @@
 import { RuntimeError } from "../runtime/error.js";
+import { z } from "zod";
 
 export type EnvironmentSummary = {
   id: string;
@@ -13,6 +14,20 @@ export type EnvironmentCreateInput = {
   name: string;
   extends?: string;
 };
+
+const NonEmptyStringSchema = z.string().trim().min(1);
+const EnvironmentCreateInputSchema = z.object({
+  name: NonEmptyStringSchema,
+  extends: NonEmptyStringSchema.nullable().optional(),
+});
+const EnvironmentSummarySchema = z.object({
+  id: NonEmptyStringSchema,
+  project: NonEmptyStringSchema,
+  name: NonEmptyStringSchema,
+  extends: NonEmptyStringSchema.nullable().optional(),
+  isDefault: z.boolean(),
+  createdAt: NonEmptyStringSchema,
+});
 
 function invalidInput(
   path: string,
@@ -30,53 +45,44 @@ function invalidInput(
   });
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function assertNonEmptyString(
+function assertWithSchema<T>(
+  schema: z.ZodType<T>,
   value: unknown,
   path: string,
-): asserts value is string {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    invalidInput(path, "must be a non-empty string.");
+): asserts value is T {
+  const parsed = schema.safeParse(value);
+
+  if (parsed.success) {
+    return;
   }
+
+  const issue = parsed.error.issues[0];
+  const issuePath =
+    issue?.path && issue.path.length > 0
+      ? `${path}.${issue.path.join(".")}`
+      : path;
+
+  if (issuePath === path) {
+    invalidInput(path, "must be an object.");
+  }
+
+  if (issuePath.endsWith(".isDefault")) {
+    invalidInput(issuePath, "must be a boolean.");
+  }
+
+  invalidInput(issuePath, "must be a non-empty string.");
 }
 
 export function assertEnvironmentCreateInput(
   value: unknown,
   path = "value",
 ): asserts value is EnvironmentCreateInput {
-  if (!isRecord(value)) {
-    invalidInput(path, "must be an object.");
-  }
-
-  assertNonEmptyString(value.name, `${path}.name`);
-
-  if (value.extends !== undefined && value.extends !== null) {
-    assertNonEmptyString(value.extends, `${path}.extends`);
-  }
+  assertWithSchema(EnvironmentCreateInputSchema, value, path);
 }
 
 export function assertEnvironmentSummary(
   value: unknown,
   path = "value",
 ): asserts value is EnvironmentSummary {
-  if (!isRecord(value)) {
-    invalidInput(path, "must be an object.");
-  }
-
-  assertNonEmptyString(value.id, `${path}.id`);
-  assertNonEmptyString(value.project, `${path}.project`);
-  assertNonEmptyString(value.name, `${path}.name`);
-
-  if (value.extends !== null && value.extends !== undefined) {
-    assertNonEmptyString(value.extends, `${path}.extends`);
-  }
-
-  if (typeof value.isDefault !== "boolean") {
-    invalidInput(`${path}.isDefault`, "must be a boolean.");
-  }
-
-  assertNonEmptyString(value.createdAt, `${path}.createdAt`);
+  assertWithSchema(EnvironmentSummarySchema, value, path);
 }
