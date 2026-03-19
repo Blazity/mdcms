@@ -332,7 +332,7 @@ flowchart LR
 | **Database**          | PostgreSQL                       | Primary data store. Append-only content storage.                                        |
 | **Cache / Buffer**    | Redis                            | Session management, short-lived caches, and future collaboration buffering.             |
 | **Object Storage**    | S3-compatible (MinIO for dev)    | Media files (any file type).                                                            |
-| **Auth**              | better-auth                      | Email/password + OIDC + SAML (SAML in Beta for MVP).                                    |
+| **Auth**              | better-auth                      | Email/password + OIDC + SAML.                                                           |
 | **Studio UI**         | React + Shadcn/ui + Tailwind CSS | `@mdcms/studio` embedded in host app; runtime bundle served by backend (Approach C).    |
 | **Editor**            | TipTap                           | Rich text editing with Markdown/MDX serialization. Real-time collaboration is Post-MVP. |
 | **Schema Validation** | Standard Schema (Zod primary)    | Developer-facing schema definitions.                                                    |

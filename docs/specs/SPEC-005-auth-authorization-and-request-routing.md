@@ -138,7 +138,7 @@ Implemented via **better-auth**.
 **Supported methods:**
 
 - **Email + password** — Required. Always available.
-- **SSO (OIDC + SAML)** — Required for MVP. OIDC is the default recommended provider profile. SAML is supported in MVP behind a beta flag and must be enabled per instance where provider support is needed.
+- **SSO (OIDC + SAML)** — Required for MVP. OIDC is the default recommended provider profile. SAML 2.0 is supported for startup-configured enterprise providers.
 - Enterprise providers supported include Okta, Azure AD, Google Workspace, Auth0.
 
 Authentication state is managed via sessions. The Studio communicates with the backend over the same session.
@@ -159,6 +159,7 @@ Authentication state is managed via sessions. The Studio communicates with the b
 #### OIDC Startup Configuration (Normative)
 
 - OIDC providers are configured through `MDCMS_AUTH_OIDC_PROVIDERS`, a JSON array of provider profiles loaded during server startup.
+- OIDC is available when one or more valid provider profiles are configured. An absent or empty `MDCMS_AUTH_OIDC_PROVIDERS` value means no OIDC providers are available for sign-in.
 - Each provider profile must include:
   - `providerId` (`okta` | `azure-ad` | `google-workspace` | `auth0`)
   - `issuer`
@@ -224,6 +225,81 @@ MDCMS rejects sign-in with `AUTH_OIDC_REQUIRED_CLAIM_MISSING` (`401`) when:
 
 - `sub` is missing or empty
 - `email` is missing, empty, or unusable as an account identifier
+
+#### SAML Provider Support
+
+- MDCMS standardizes on the Better Auth SSO plugin for SAML 2.0 support.
+- SAML uses startup-configured provider profiles only. Runtime provider registration, Studio provider settings, email/domain-based provider discovery, IdP-initiated login, and SAML Single Logout are out of scope.
+- Deny-by-default applies to provider selection:
+  - only explicitly configured provider profiles are available for sign-in
+  - requests for unsupported or unconfigured provider IDs fail with `SSO_PROVIDER_NOT_CONFIGURED` (`404`)
+
+#### SAML Startup Configuration (Normative)
+
+- SAML providers are configured through `MDCMS_AUTH_SAML_PROVIDERS`, a JSON array of provider profiles loaded during server startup.
+- SAML is available when one or more valid provider profiles are configured. An absent or empty `MDCMS_AUTH_SAML_PROVIDERS` value means no SAML providers are available for sign-in.
+- `MDCMS_AUTH_OIDC_PROVIDERS` and `MDCMS_AUTH_SAML_PROVIDERS` remain separate operator-facing env vars.
+- Each SAML provider profile must include:
+  - `providerId`
+  - `issuer`
+  - `domain`
+  - `entryPoint`
+  - `cert`
+- Optional fields:
+  - `audience`
+  - `spEntityId`
+  - `identifierFormat`
+  - `authnRequestsSigned`
+  - `wantAssertionsSigned`
+  - `attributeMapping` with optional keys `id`, `email`, `name`, `firstName`, and `lastName`
+- `providerId` must be unique across all configured OIDC and SAML providers.
+- `domain` must be unique within the configured SAML provider set.
+- Startup validation failures are deterministic `INVALID_ENV` boot failures, not deferred runtime warnings.
+- SAML provider configuration is instance-global and requires process restart after changes.
+- MDCMS derives the canonical Assertion Consumer Service (ACS) endpoint as `${MDCMS_SERVER_URL}/api/v1/auth/sso/saml2/sp/acs/<providerId>`.
+- MDCMS derives provider-specific SP metadata from `${MDCMS_SERVER_URL}/api/v1/auth/sso/saml2/sp/metadata?providerId=<providerId>&format=xml`.
+- When `spEntityId` is omitted, operators must treat the generated SP metadata as the source of truth for the effective SP entity identifier.
+- Operators must register the MDCMS SP metadata or ACS URL with each configured IdP.
+
+Example `MDCMS_AUTH_SAML_PROVIDERS` value:
+
+```json
+[
+  {
+    "providerId": "okta-saml",
+    "issuer": "http://www.okta.com/exk123456789",
+    "domain": "example.com",
+    "entryPoint": "https://example.okta.com/app/example/sso/saml",
+    "cert": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
+    "spEntityId": "https://cms.example.com/saml/okta-saml/sp",
+    "audience": "https://cms.example.com/saml/okta-saml/sp",
+    "attributeMapping": {
+      "id": "nameID",
+      "email": "email",
+      "name": "displayName",
+      "firstName": "givenName",
+      "lastName": "surname"
+    }
+  }
+]
+```
+
+#### Canonical SAML Attribute Mapping (Normative)
+
+All configured provider profiles normalize to the same MDCMS user fields:
+
+- `id <- attributeMapping.id`; fallback `NameID`
+- `email <- attributeMapping.email`; fallback `NameID` only when it is a usable email address
+- `emailVerified <- false`
+- `name <- firstName + lastName`; fallback order is `attributeMapping.name`, then `email`
+- `image <- null`
+
+Provider-specific attribute remapping is limited to the optional `attributeMapping` fields defined above.
+
+MDCMS rejects sign-in with `AUTH_SAML_REQUIRED_ATTRIBUTE_MISSING` (`401`) when:
+
+- the configured mapping plus `NameID` do not yield a usable `id`
+- the configured mapping plus `NameID` do not yield a usable `email`
 
 #### Session Security
 
@@ -392,22 +468,24 @@ API keys follow the same project/environment scoping model through tuple allowli
 - API-key authenticated routes in this endpoint family are exempt from CSRF validation.
 - CSRF validation failures return `FORBIDDEN` (`403`).
 
-| Method | Path                                             | Auth Mode             | Required Scope | Target Routing | Request                                                                                 | Success                                                 | Deterministic Errors                                                                                                                                                                        |
-| ------ | ------------------------------------------------ | --------------------- | -------------- | -------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/api/v1/auth/login`                             | public                | none           | none           | JSON: `{ email, password }`                                                             | `200` `{ data: { session } }` + `set-cookie`            | `INVALID_INPUT` (`400`), `AUTH_INVALID_CREDENTIALS` (`401`), `AUTH_BACKOFF_ACTIVE` (`429`), `INTERNAL_ERROR` (`500`)                                                                        |
-| GET    | `/api/v1/auth/session`                           | session               | none           | none           | session cookie                                                                          | `200` `{ data: { session } }`                           | `UNAUTHORIZED` (`401`)                                                                                                                                                                      |
-| GET    | `/api/v1/auth/get-session`                       | session               | none           | none           | session cookie                                                                          | `200` `{ data: { session } }`                           | `UNAUTHORIZED` (`401`)                                                                                                                                                                      |
-| POST   | `/api/v1/auth/logout`                            | session               | none           | none           | session cookie                                                                          | `200` `{ data: { revoked: boolean } }`                  | `INTERNAL_ERROR` (`500`)                                                                                                                                                                    |
-| POST   | `/api/v1/auth/users/:userId/sessions/revoke-all` | session (admin/owner) | none           | none           | `userId` path param                                                                     | `200` `{ data: { userId, revokedSessions } }`           | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                                                                                            |
-| GET    | `/api/v1/auth/api-keys`                          | session               | none           | none           | session cookie                                                                          | `200` `{ data: ApiKeyMetadata[] }`                      | `UNAUTHORIZED` (`401`)                                                                                                                                                                      |
-| POST   | `/api/v1/auth/api-keys`                          | session               | none           | none           | JSON: `{ label, scopes[], contextAllowlist[], expiresAt? }`                             | `200` `{ data: { key, ...metadata } }` (key shown once) | `UNAUTHORIZED` (`401`), `INVALID_INPUT` (`400`), `INTERNAL_ERROR` (`500`)                                                                                                                   |
-| POST   | `/api/v1/auth/api-keys/:keyId/revoke`            | session               | none           | none           | `keyId` path param                                                                      | `200` `{ data: ApiKeyMetadata }`                        | `UNAUTHORIZED` (`401`), `NOT_FOUND` (`404`)                                                                                                                                                 |
-| POST   | `/api/v1/auth/api-keys/self/revoke`              | api_key               | none           | none           | `Authorization: Bearer <mdcms_key_...>`                                                 | `200` `{ data: { revoked: true, keyId } }`              | `UNAUTHORIZED` (`401`)                                                                                                                                                                      |
-| POST   | `/api/v1/auth/sign-up/email`                     | public                | none           | none           | better-auth sign-up payload                                                             | better-auth success payload                             | better-auth deterministic auth/provider errors                                                                                                                                              |
-| POST   | `/api/v1/auth/sign-in/email`                     | public                | none           | none           | better-auth sign-in payload                                                             | better-auth success payload                             | better-auth deterministic auth/provider errors                                                                                                                                              |
-| POST   | `/api/v1/auth/sign-out`                          | session               | none           | none           | better-auth sign-out payload                                                            | better-auth sign-out payload                            | better-auth deterministic auth/provider errors                                                                                                                                              |
-| POST   | `/api/v1/auth/sign-in/sso`                       | public                | none           | none           | JSON: `{ providerId, callbackURL, errorCallbackURL?, newUserCallbackURL?, loginHint? }` | `302` redirect to configured provider authorization URL | `INVALID_INPUT` (`400`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`), `INTERNAL_ERROR` (`500`)                                                                                                    |
-| GET    | `/api/v1/auth/sso/callback/:providerId`          | public                | none           | none           | OIDC callback query per Better Auth SSO flow                                            | `302` redirect to validated callback URL + `set-cookie` | `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `AUTH_OIDC_REQUIRED_CLAIM_MISSING` (`401`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`), `AUTH_PROVIDER_ERROR` (`502`), `INTERNAL_ERROR` (`500`) |
+| Method | Path                                             | Auth Mode             | Required Scope | Target Routing | Request                                                                                 | Success                                                 | Deterministic Errors                                                                                                                                                                            |
+| ------ | ------------------------------------------------ | --------------------- | -------------- | -------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/v1/auth/login`                             | public                | none           | none           | JSON: `{ email, password }`                                                             | `200` `{ data: { session } }` + `set-cookie`            | `INVALID_INPUT` (`400`), `AUTH_INVALID_CREDENTIALS` (`401`), `AUTH_BACKOFF_ACTIVE` (`429`), `INTERNAL_ERROR` (`500`)                                                                            |
+| GET    | `/api/v1/auth/session`                           | session               | none           | none           | session cookie                                                                          | `200` `{ data: { session } }`                           | `UNAUTHORIZED` (`401`)                                                                                                                                                                          |
+| GET    | `/api/v1/auth/get-session`                       | session               | none           | none           | session cookie                                                                          | `200` `{ data: { session } }`                           | `UNAUTHORIZED` (`401`)                                                                                                                                                                          |
+| POST   | `/api/v1/auth/logout`                            | session               | none           | none           | session cookie                                                                          | `200` `{ data: { revoked: boolean } }`                  | `INTERNAL_ERROR` (`500`)                                                                                                                                                                        |
+| POST   | `/api/v1/auth/users/:userId/sessions/revoke-all` | session (admin/owner) | none           | none           | `userId` path param                                                                     | `200` `{ data: { userId, revokedSessions } }`           | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                                                                                                |
+| GET    | `/api/v1/auth/api-keys`                          | session               | none           | none           | session cookie                                                                          | `200` `{ data: ApiKeyMetadata[] }`                      | `UNAUTHORIZED` (`401`)                                                                                                                                                                          |
+| POST   | `/api/v1/auth/api-keys`                          | session               | none           | none           | JSON: `{ label, scopes[], contextAllowlist[], expiresAt? }`                             | `200` `{ data: { key, ...metadata } }` (key shown once) | `UNAUTHORIZED` (`401`), `INVALID_INPUT` (`400`), `INTERNAL_ERROR` (`500`)                                                                                                                       |
+| POST   | `/api/v1/auth/api-keys/:keyId/revoke`            | session               | none           | none           | `keyId` path param                                                                      | `200` `{ data: ApiKeyMetadata }`                        | `UNAUTHORIZED` (`401`), `NOT_FOUND` (`404`)                                                                                                                                                     |
+| POST   | `/api/v1/auth/api-keys/self/revoke`              | api_key               | none           | none           | `Authorization: Bearer <mdcms_key_...>`                                                 | `200` `{ data: { revoked: true, keyId } }`              | `UNAUTHORIZED` (`401`)                                                                                                                                                                          |
+| POST   | `/api/v1/auth/sign-up/email`                     | public                | none           | none           | better-auth sign-up payload                                                             | better-auth success payload                             | better-auth deterministic auth/provider errors                                                                                                                                                  |
+| POST   | `/api/v1/auth/sign-in/email`                     | public                | none           | none           | better-auth sign-in payload                                                             | better-auth success payload                             | better-auth deterministic auth/provider errors                                                                                                                                                  |
+| POST   | `/api/v1/auth/sign-out`                          | session               | none           | none           | better-auth sign-out payload                                                            | better-auth sign-out payload                            | better-auth deterministic auth/provider errors                                                                                                                                                  |
+| POST   | `/api/v1/auth/sign-in/sso`                       | public                | none           | none           | JSON: `{ providerId, callbackURL, errorCallbackURL?, newUserCallbackURL?, loginHint? }` | `302` redirect to configured provider sign-in URL       | `INVALID_INPUT` (`400`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`), `INTERNAL_ERROR` (`500`)                                                                                                        |
+| GET    | `/api/v1/auth/sso/callback/:providerId`          | public                | none           | none           | OIDC callback query per Better Auth SSO flow                                            | `302` redirect to validated callback URL + `set-cookie` | `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `AUTH_OIDC_REQUIRED_CLAIM_MISSING` (`401`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`), `AUTH_PROVIDER_ERROR` (`502`), `INTERNAL_ERROR` (`500`)     |
+| POST   | `/api/v1/auth/sso/saml2/sp/acs/:providerId`      | public                | none           | none           | form or body: `SAMLResponse`, optional `RelayState`                                     | `302` redirect to validated callback URL + `set-cookie` | `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `AUTH_SAML_REQUIRED_ATTRIBUTE_MISSING` (`401`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`), `AUTH_PROVIDER_ERROR` (`502`), `INTERNAL_ERROR` (`500`) |
+| GET    | `/api/v1/auth/sso/saml2/sp/metadata`             | public                | none           | none           | query: `providerId`, optional `format` enum (`xml` or `json`)                           | `200` provider-specific SP metadata                     | `INVALID_INPUT` (`400`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`)                                                                                                                                  |
 
 ## OIDC Sign-In Semantics
 
@@ -428,6 +506,30 @@ API keys follow the same project/environment scoping model through tuple allowli
   - `google-workspace`
   - `auth0`
   - missing required-claim failures
+  - unconfigured-provider rejection
+
+## SAML Sign-In Semantics
+
+- MDCMS uses the Better Auth SSO plugin route family under `/api/v1/auth/*` for SAML SP-initiated sign-in and ACS handling.
+- SAML sign-in initiation is restricted to explicit `providerId` selection. SAML and OIDC share `POST /api/v1/auth/sign-in/sso`; `providerId` must match a startup-configured provider profile.
+- `callbackURL`, `errorCallbackURL`, and `newUserCallbackURL` follow the same validation rules used for OIDC:
+  - relative application paths, or
+  - absolute URLs whose origin matches `MDCMS_SERVER_URL`
+- External callback origins are rejected with `INVALID_INPUT` (`400`).
+- The canonical SAML ACS route is `/api/v1/auth/sso/saml2/sp/acs/:providerId`.
+- The canonical SAML SP metadata route is `/api/v1/auth/sso/saml2/sp/metadata?providerId=<providerId>&format=xml|json`.
+- Callback success issues the same session authentication contract used for email/password and OIDC login.
+- SAML is SP-initiated only in MVP. IdP-initiated responses are rejected.
+- InResponseTo validation is required for SAML sign-in responses.
+- Assertion timestamp conditions are required for accepted SAML sign-in responses.
+- Assertion or response signatures must validate against the configured IdP certificate for the targeted provider profile.
+- Assertion validation failures, replay detection, issuer mismatch, signature or certificate failures, and other provider-side SAML failures return `AUTH_PROVIDER_ERROR` (`502`) unless a stricter deterministic error above applies.
+- Requests targeting unsupported or unconfigured provider profiles remain deny-by-default and return `SSO_PROVIDER_NOT_CONFIGURED` (`404`).
+- Verification must include deterministic SAML coverage for:
+  - configured-provider happy path
+  - missing required-attribute failures
+  - unsolicited IdP response rejection
+  - replay rejection
   - unconfigured-provider rejection
 
 ## CLI Browser Login Endpoints
