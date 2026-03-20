@@ -250,6 +250,94 @@ export MDCMS_AUTH_OIDC_PROVIDERS='[
 ]'
 ```
 
+## SAML Provider Support
+
+- SAML 2.0 sign-in is implemented with the Better Auth SSO plugin.
+- Provider profiles are loaded from `MDCMS_AUTH_SAML_PROVIDERS` at server startup.
+- SAML is enabled by provider presence:
+  - an absent or blank `MDCMS_AUTH_SAML_PROVIDERS` value means no SAML providers are available
+  - only explicitly configured provider profiles are available for sign-in
+- SAML and OIDC remain separate operator-facing env vars:
+  - `MDCMS_AUTH_SAML_PROVIDERS`
+  - `MDCMS_AUTH_OIDC_PROVIDERS`
+- The env value must be a JSON array whose entries include:
+  - `providerId`
+  - `issuer`
+  - `domain`
+  - `entryPoint`
+  - `cert`
+- Optional per-provider fields:
+  - `audience`
+  - `spEntityId`
+  - `identifierFormat`
+  - `authnRequestsSigned`
+  - `wantAssertionsSigned`
+  - `attributeMapping` with optional keys:
+    - `id`
+    - `email`
+    - `name`
+    - `firstName`
+    - `lastName`
+- Validation and uniqueness rules:
+  - `providerId` must be unique across configured OIDC and SAML providers
+  - `domain` must be unique within the configured SAML provider set
+  - startup validation failures are deterministic `INVALID_ENV` boot failures
+- Config changes require process restart.
+- Supported SAML routes exposed under `/api/v1/auth`:
+  - `POST /api/v1/auth/sign-in/sso`
+  - `POST /api/v1/auth/sso/saml2/sp/acs/:providerId`
+  - `GET /api/v1/auth/sso/saml2/sp/metadata?providerId=<providerId>&format=xml|json`
+- MDCMS is SP-initiated only:
+  - IdP-initiated responses are rejected
+  - SAML Single Logout is out of scope
+- The shared SSO redirect restrictions still apply:
+  - `callbackURL`, `errorCallbackURL`, and `newUserCallbackURL` must be either relative app paths or absolute URLs on the same origin as `MDCMS_SERVER_URL`
+- For provider-side setup, register the MDCMS SP metadata or the canonical ACS URL:
+  - `${MDCMS_SERVER_URL}/api/v1/auth/sso/saml2/sp/acs/<providerId>`
+  - `${MDCMS_SERVER_URL}/api/v1/auth/sso/saml2/sp/metadata?providerId=<providerId>&format=xml`
+- Canonical user mapping:
+  - `id <- attributeMapping.id`, fallback `NameID`
+  - `email <- attributeMapping.email`, fallback `NameID` only when it yields a usable email address
+  - `name <- firstName + lastName`, fallback `attributeMapping.name`, then `email`
+  - missing required `id` or `email` fails with `AUTH_SAML_REQUIRED_ATTRIBUTE_MISSING` (`401`)
+
+Example:
+
+```json
+[
+  {
+    "providerId": "okta-saml",
+    "issuer": "http://www.okta.com/exk123456789",
+    "domain": "example.com",
+    "entryPoint": "https://example.okta.com/app/example/sso/saml",
+    "cert": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
+    "spEntityId": "https://cms.example.com/saml/okta-saml/sp",
+    "audience": "https://cms.example.com/saml/okta-saml/sp",
+    "attributeMapping": {
+      "id": "nameID",
+      "email": "email",
+      "name": "displayName",
+      "firstName": "givenName",
+      "lastName": "surname"
+    }
+  }
+]
+```
+
+Shell example:
+
+```bash
+export MDCMS_AUTH_SAML_PROVIDERS='[
+  {
+    "providerId": "okta-saml",
+    "issuer": "http://www.okta.com/exk123456789",
+    "domain": "example.com",
+    "entryPoint": "https://example.okta.com/app/example/sso/saml",
+    "cert": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+  }
+]'
+```
+
 ## Session Security Policy (CMS-37)
 
 - Session cookie policy:
