@@ -1,4 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
+import { createRequire } from "node:module";
+import { inflateRawSync } from "node:zlib";
 
 import { RuntimeError, serializeError } from "@mdcms/shared";
 import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
@@ -66,6 +68,7 @@ const CSRF_COOKIE_NAME = "mdcms_csrf";
 const CSRF_HEADER_NAME = "x-mdcms-csrf-token";
 const CSRF_TOKEN_BYTES = 24;
 const OIDC_CALLBACK_PROVISIONING_WINDOW_MS = 5_000;
+const SAML_AUTHN_REQUEST_TTL_MS = 5 * 60 * 1000;
 const CLI_LOGIN_DEFAULT_SCOPES: readonly ApiKeyOperationScope[] = [
   "content:read",
   "content:read:draft",
@@ -221,6 +224,8 @@ export type AuthService = {
   }>;
   startSsoSignIn: (request: Request) => Promise<Response>;
   handleSsoCallback: (request: Request) => Promise<Response>;
+  handleSamlAcs: (request: Request) => Promise<Response>;
+  handleSamlMetadata: (request: Request) => Promise<Response>;
   handleAuthRequest: (request: Request) => Promise<Response>;
 };
 
@@ -328,6 +333,49 @@ type OidcCallbackRecord = {
   accountIdToken: string | null;
 };
 
+type SamlCallbackRecord = {
+  sessionId: string;
+  sessionCreatedAt: Date;
+  userId: string;
+  userCreatedAt: Date;
+  userEmail: string;
+  userEmailVerified: boolean;
+  userName: string;
+  userImage: string | null;
+  accountRowId: string;
+  accountCreatedAt: Date;
+  accountId: string;
+};
+
+type SamlCanonicalClaims = {
+  id: string;
+  email: string;
+  name: string;
+  emailVerified: boolean;
+};
+
+type SamlifyMetadataBuilder = {
+  getMetadata(): string;
+};
+
+type SamlifyModule = {
+  SPMetadata: (options: Record<string, unknown>) => SamlifyMetadataBuilder;
+};
+
+type AuthHandlerErrorPayload = {
+  code?: unknown;
+  details?: unknown;
+  message?: unknown;
+};
+
+const DEFAULT_SAML_ATTRIBUTE_MAPPING = {
+  id: "nameID",
+  email: "email",
+  name: "displayName",
+  firstName: "givenName",
+  lastName: "surname",
+} as const;
+
 const CreateApiKeyInputSchema = z.object({
   label: z.string().trim().min(1).max(128),
   scopes: z.array(z.enum(API_KEY_OPERATION_SCOPES)).min(1),
@@ -365,6 +413,11 @@ const SsoSignInInputSchema = z
     loginHint: z.string().trim().min(1).optional(),
   })
   .strict();
+
+const SamlMetadataQuerySchema = z.object({
+  providerId: z.string().trim().min(1),
+  format: z.enum(["xml", "json"]).default("xml"),
+});
 
 function toIsoString(value: unknown): string {
   if (value instanceof Date) {
@@ -413,17 +466,57 @@ function extractCookiePair(setCookieHeader: string | null): string {
   return pair.trim();
 }
 
+function splitSetCookieHeader(setCookieHeader: string): string[] {
+  const values: string[] = [];
+  let current = "";
+  let index = 0;
+
+  while (index < setCookieHeader.length) {
+    const character = setCookieHeader[index];
+
+    if (character === ",") {
+      const lower = current.toLowerCase();
+
+      if (lower.includes("expires=") && !lower.includes("gmt")) {
+        current += character;
+        index += 1;
+        continue;
+      }
+
+      const trimmed = current.trim();
+
+      if (trimmed.length > 0) {
+        values.push(trimmed);
+      }
+
+      current = "";
+      index += 1;
+
+      if (index < setCookieHeader.length && setCookieHeader[index] === " ") {
+        index += 1;
+      }
+
+      continue;
+    }
+
+    current += character;
+    index += 1;
+  }
+
+  const trimmed = current.trim();
+
+  if (trimmed.length > 0) {
+    values.push(trimmed);
+  }
+
+  return values;
+}
+
 function appendSetCookieHeaders(
   ...values: Array<string | null | undefined>
 ): string | undefined {
   const normalized = values
-    .flatMap(
-      (value) =>
-        value
-          ?.split(/,(?=\s*[A-Za-z0-9_-]+=)/)
-          .map((part) => part.trim())
-          .filter((part) => part.length > 0) ?? [],
-    )
+    .flatMap((value) => (value ? splitSetCookieHeader(value) : []))
     .filter((value, index, array) => array.indexOf(value) === index);
 
   return normalized.length > 0 ? normalized.join(", ") : undefined;
@@ -840,6 +933,280 @@ function createAuthProviderError(
   });
 }
 
+function createRequiredSamlAttributeError(
+  missingFields: string[] = ["id", "email"],
+): RuntimeError {
+  return new RuntimeError({
+    code: "AUTH_SAML_REQUIRED_ATTRIBUTE_MISSING",
+    message: "SAML provider response is missing required attributes.",
+    statusCode: 401,
+    details: {
+      missingFields,
+    },
+  });
+}
+
+function readUnknownErrorText(error: unknown): string {
+  if (error instanceof Error) {
+    return `${error.name} ${error.message} ${error.stack ?? ""}`;
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "";
+  }
+}
+
+function isMissingRequiredSamlAttributeFailure(error: unknown): boolean {
+  const normalized = readUnknownErrorText(error).toLowerCase();
+
+  return (
+    normalized.includes("unable to extract user id or email") ||
+    normalized.includes("tolowercase is not a function") ||
+    normalized.includes("cannot read properties of undefined")
+  );
+}
+
+function loadSamlifyModule(): SamlifyModule {
+  const require = createRequire(import.meta.url);
+  const ssoEntry = require.resolve("@better-auth/sso");
+  const samlifyEntry = require.resolve("samlify", {
+    paths: [ssoEntry],
+  });
+
+  return require(samlifyEntry) as SamlifyModule;
+}
+
+function decodeXmlEntities(value: string): string {
+  return value
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&#39;", "'")
+    .replaceAll("&amp;", "&");
+}
+
+function normalizeXmlText(value: string): string {
+  return decodeXmlEntities(
+    value.replaceAll(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1"),
+  )
+    .replaceAll(/\s+/g, " ")
+    .trim();
+}
+
+function decodeSamlResponseXml(samlResponse: string): string {
+  try {
+    return Buffer.from(samlResponse, "base64").toString("utf8");
+  } catch {
+    throw createAuthProviderError(
+      "invalid_saml_response",
+      "SAML response payload could not be decoded.",
+    );
+  }
+}
+
+function decodeSamlRedirectRequestXml(payload: string): string {
+  const decoded = Buffer.from(payload, "base64");
+
+  try {
+    return inflateRawSync(decoded).toString("utf8");
+  } catch {
+    return decoded.toString("utf8");
+  }
+}
+
+function extractSamlAuthnRequestId(location: string): string | undefined {
+  const url = new URL(location);
+  const samlRequest = url.searchParams.get("SAMLRequest");
+
+  if (!samlRequest) {
+    return undefined;
+  }
+
+  const xml = decodeSamlRedirectRequestXml(samlRequest);
+  const match =
+    /<(?:\w+:)?AuthnRequest\b[^>]*\bID=(?:"([^"]*)"|'([^']*)')[^>]*>/i.exec(
+      xml,
+    );
+  const requestId = (match?.[1] ?? match?.[2] ?? "").trim();
+
+  return requestId.length > 0 ? requestId : undefined;
+}
+
+function extractSamlNameId(xml: string): string | undefined {
+  const match = /<(?:\w+:)?NameID\b[^>]*>([\s\S]*?)<\/(?:\w+:)?NameID>/i.exec(
+    xml,
+  );
+  const value = match ? normalizeXmlText(match[1]) : "";
+  return value.length > 0 ? value : undefined;
+}
+
+function extractSamlInResponseTo(xml: string): string | undefined {
+  const responseMatch =
+    /<(?:\w+:)?Response\b[^>]*\bInResponseTo=(?:"([^"]*)"|'([^']*)')[^>]*>/i.exec(
+      xml,
+    );
+  const subjectMatch =
+    /<(?:\w+:)?SubjectConfirmationData\b[^>]*\bInResponseTo=(?:"([^"]*)"|'([^']*)')[^>]*>/i.exec(
+      xml,
+    );
+  const value =
+    responseMatch?.[1] ??
+    responseMatch?.[2] ??
+    subjectMatch?.[1] ??
+    subjectMatch?.[2] ??
+    "";
+
+  return value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function extractSamlAttributes(xml: string): Map<string, string[]> {
+  const attributes = new Map<string, string[]>();
+  const attributePattern =
+    /<(?:\w+:)?Attribute\b[^>]*\bName=(?:"([^"]*)"|'([^']*)')[^>]*>([\s\S]*?)<\/(?:\w+:)?Attribute>/gi;
+
+  for (const match of xml.matchAll(attributePattern)) {
+    const name = (match[1] ?? match[2] ?? "").trim();
+
+    if (!name) {
+      continue;
+    }
+
+    const values = [
+      ...(match[3] ?? "").matchAll(
+        /<(?:\w+:)?AttributeValue\b[^>]*>([\s\S]*?)<\/(?:\w+:)?AttributeValue>/gi,
+      ),
+    ]
+      .map((valueMatch) => normalizeXmlText(valueMatch[1]))
+      .filter((value) => value.length > 0);
+
+    attributes.set(name, values);
+  }
+
+  return attributes;
+}
+
+function resolveSamlAttributeMapping(provider: SamlProviderConfig) {
+  return {
+    ...DEFAULT_SAML_ATTRIBUTE_MAPPING,
+    ...(provider.attributeMapping ?? {}),
+  };
+}
+
+function readSamlMappedValue(
+  source: string | undefined,
+  nameId: string | undefined,
+  attributes: Map<string, string[]>,
+): string | undefined {
+  if (!source) {
+    return undefined;
+  }
+
+  if (source === "nameID") {
+    return nameId;
+  }
+
+  const value = attributes
+    .get(source)
+    ?.find((candidate) => candidate.length > 0);
+  return value;
+}
+
+function normalizeSamlResponseClaims(
+  samlResponse: string,
+  provider: SamlProviderConfig,
+): SamlCanonicalClaims {
+  const xml = decodeSamlResponseXml(samlResponse);
+  const nameId = extractSamlNameId(xml);
+  const attributes = extractSamlAttributes(xml);
+  const mapping = resolveSamlAttributeMapping(provider);
+  const id = readSamlMappedValue(mapping.id, nameId, attributes);
+  const email = readSamlMappedValue(mapping.email, nameId, attributes);
+  const missingFields = [...(id ? [] : ["id"]), ...(email ? [] : ["email"])];
+
+  if (missingFields.length > 0) {
+    throw createRequiredSamlAttributeError(missingFields);
+  }
+
+  const firstName = readSamlMappedValue(mapping.firstName, nameId, attributes);
+  const lastName = readSamlMappedValue(mapping.lastName, nameId, attributes);
+  const displayName = readSamlMappedValue(mapping.name, nameId, attributes);
+  const normalizedEmail = assertNonEmptyString(
+    email,
+    "saml.email",
+  ).toLowerCase();
+  const name =
+    [firstName, lastName].filter(Boolean).join(" ").trim() ||
+    displayName ||
+    normalizedEmail;
+
+  return {
+    id: assertNonEmptyString(id, "saml.id"),
+    email: normalizedEmail,
+    name,
+    emailVerified: false,
+  };
+}
+
+function createStaticSamlMetadataXml(provider: StaticSamlProvider): string {
+  const samlify = loadSamlifyModule();
+  const metadata = samlify.SPMetadata({
+    entityID:
+      provider.samlConfig.spMetadata.entityID ?? provider.samlConfig.issuer,
+    assertionConsumerService: [
+      {
+        Binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
+        Location: provider.samlConfig.callbackUrl,
+      },
+    ],
+    wantMessageSigned: provider.samlConfig.wantAssertionsSigned ?? false,
+    authnRequestsSigned: provider.samlConfig.authnRequestsSigned ?? false,
+    nameIDFormat: provider.samlConfig.identifierFormat
+      ? [provider.samlConfig.identifierFormat]
+      : undefined,
+  });
+
+  return metadata.getMetadata();
+}
+
+function createStaticSamlMetadataJson(provider: StaticSamlProvider) {
+  return {
+    providerId: provider.providerId,
+    entityID:
+      provider.samlConfig.spMetadata.entityID ?? provider.samlConfig.issuer,
+    assertionConsumerService: [
+      {
+        binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
+        location: provider.samlConfig.callbackUrl,
+      },
+    ],
+    nameIDFormat: provider.samlConfig.identifierFormat
+      ? [provider.samlConfig.identifierFormat]
+      : [],
+    authnRequestsSigned: provider.samlConfig.authnRequestsSigned ?? false,
+    wantAssertionsSigned: provider.samlConfig.wantAssertionsSigned ?? false,
+  };
+}
+
+async function readAuthHandlerErrorPayload(
+  response: Response,
+): Promise<AuthHandlerErrorPayload> {
+  return ((await response
+    .clone()
+    .json()
+    .catch(async () => ({
+      message: await response
+        .clone()
+        .text()
+        .catch(() => undefined),
+    }))) ?? {}) as AuthHandlerErrorPayload;
+}
+
 function createDiscoveryEndpoint(issuer: string): string {
   const url = new URL(issuer);
   const normalizedPath = url.pathname.replace(/\/$/, "");
@@ -1129,6 +1496,18 @@ export function mapSsoCallbackErrorCode(
     return createSsoProviderNotConfiguredError(providerId ?? "unknown");
   }
 
+  if (
+    [
+      "invalid_saml_response",
+      "multiple_assertions",
+      "no_assertion",
+      "replay_detected",
+      "unsolicited_response",
+    ].includes(error)
+  ) {
+    return createAuthProviderError(error, errorDescription);
+  }
+
   if (error === "invalid_state") {
     return createInvalidInputError("OIDC callback state is invalid.");
   }
@@ -1403,11 +1782,25 @@ export function createAuthService(
   const secret = resolveAuthSecret(rawEnv);
   const useSecureCookies = resolveSecureCookiePolicy(rawEnv);
   const adminAllowlist = resolveAdminAllowlist(rawEnv);
+  const staticSamlProviders = buildStaticSamlProviders(
+    baseUrl,
+    parsedEnv.MDCMS_AUTH_SAML_PROVIDERS,
+  );
   const ssoPluginOptions = buildStaticSsoPluginOptions(
     baseUrl,
     parsedEnv.MDCMS_AUTH_OIDC_PROVIDERS,
     parsedEnv.MDCMS_AUTH_SAML_PROVIDERS,
   );
+  const runtimeSsoPluginOptions: StaticSsoPluginOptions = {
+    ...ssoPluginOptions,
+    saml: {
+      ...ssoPluginOptions.saml,
+      // Better Auth currently reads samlify's InResponseTo field from the
+      // wrong extraction path, so MDCMS enforces the same validation in the
+      // ACS wrapper against the persisted authn-request records instead.
+      enableInResponseToValidation: false,
+    },
+  };
   const trustedOrigins = collectTrustedOrigins(
     baseUrl,
     parsedEnv.MDCMS_AUTH_OIDC_PROVIDERS,
@@ -1418,10 +1811,23 @@ export function createAuthService(
       provider,
     ]),
   );
-  const configuredSsoProviderIds = new Set(
-    ssoPluginOptions.defaultSSO?.map((provider) => provider.providerId) ?? [],
+  const samlProviderConfigById = new Map(
+    parsedEnv.MDCMS_AUTH_SAML_PROVIDERS.map((provider) => [
+      provider.providerId,
+      provider,
+    ]),
   );
+  const staticSamlProviderById = new Map(
+    staticSamlProviders.map((provider) => [provider.providerId, provider]),
+  );
+  const configuredSsoProviderIds = new Set(
+    runtimeSsoPluginOptions.defaultSSO?.map(
+      (provider) => provider.providerId,
+    ) ?? [],
+  );
+  const configuredSamlProviderIds = new Set(samlProviderConfigById.keys());
   const oidcCallbackHookErrors = new Map<string, RuntimeError>();
+  const samlCallbackHookErrors = new Map<string, RuntimeError>();
   const isAdminSession =
     options.isAdminSession ??
     ((session: StudioSession) =>
@@ -1534,8 +1940,56 @@ export function createAuthService(
     }
   }
 
-  async function rollbackInvalidOidcCallbackRecord(
-    record: OidcCallbackRecord,
+  async function loadSamlCallbackRecord(
+    sessionId: string,
+    userId: string,
+    providerId: string,
+  ): Promise<SamlCallbackRecord> {
+    const [record] = await options.db
+      .select({
+        sessionId: authSessions.id,
+        sessionCreatedAt: authSessions.createdAt,
+        userId: authUsers.id,
+        userCreatedAt: authUsers.createdAt,
+        userEmail: authUsers.email,
+        userEmailVerified: authUsers.emailVerified,
+        userName: authUsers.name,
+        userImage: authUsers.image,
+        accountRowId: authAccounts.id,
+        accountCreatedAt: authAccounts.createdAt,
+        accountId: authAccounts.accountId,
+      })
+      .from(authSessions)
+      .innerJoin(authUsers, eq(authUsers.id, authSessions.userId))
+      .innerJoin(
+        authAccounts,
+        and(
+          eq(authAccounts.userId, authUsers.id),
+          eq(authAccounts.providerId, providerId),
+        ),
+      )
+      .where(and(eq(authSessions.id, sessionId), eq(authUsers.id, userId)))
+      .orderBy(desc(authAccounts.updatedAt))
+      .limit(1);
+
+    if (!record) {
+      throw new RuntimeError({
+        code: "INTERNAL_ERROR",
+        message: "SAML callback did not produce a persisted auth account.",
+        statusCode: 500,
+        details: {
+          providerId,
+          sessionId,
+          userId,
+        },
+      });
+    }
+
+    return record;
+  }
+
+  async function rollbackInvalidCallbackRecord(
+    record: SamlCallbackRecord | OidcCallbackRecord,
   ): Promise<void> {
     await options.db
       .delete(authSessions)
@@ -1626,7 +2080,7 @@ export function createAuthService(
         ),
       });
     } catch (error) {
-      await rollbackInvalidOidcCallbackRecord(record);
+      await rollbackInvalidCallbackRecord(record);
 
       if (error instanceof RuntimeError) {
         throw error;
@@ -1661,6 +2115,64 @@ export function createAuthService(
         emailVerified: normalized.emailVerified,
         name: normalized.name,
         image: normalized.image,
+        updatedAt: new Date(),
+      })
+      .where(eq(authUsers.id, record.userId));
+  }
+
+  async function synchronizeSamlCallbackUser(
+    sessionId: string,
+    userId: string,
+    providerId: string,
+    samlResponse: string,
+  ): Promise<void> {
+    const provider = samlProviderConfigById.get(
+      providerId as SamlProviderConfig["providerId"],
+    );
+
+    if (!provider) {
+      throw createSsoProviderNotConfiguredError(providerId);
+    }
+
+    const record = await loadSamlCallbackRecord(sessionId, userId, providerId);
+    let normalized: SamlCanonicalClaims;
+
+    try {
+      normalized = normalizeSamlResponseClaims(samlResponse, provider);
+    } catch (error) {
+      await rollbackInvalidCallbackRecord(record);
+
+      if (error instanceof RuntimeError) {
+        throw error;
+      }
+
+      throw createRequiredSamlAttributeError();
+    }
+
+    if (record.accountId !== normalized.id) {
+      await options.db
+        .update(authAccounts)
+        .set({
+          accountId: normalized.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(authAccounts.id, record.accountRowId));
+    }
+
+    if (
+      record.userEmail === normalized.email &&
+      record.userEmailVerified === normalized.emailVerified &&
+      record.userName === normalized.name
+    ) {
+      return;
+    }
+
+    await options.db
+      .update(authUsers)
+      .set({
+        email: normalized.email,
+        emailVerified: normalized.emailVerified,
+        name: normalized.name,
         updatedAt: new Date(),
       })
       .where(eq(authUsers.id, record.userId));
@@ -1702,7 +2214,7 @@ export function createAuthService(
       enabled: false,
     },
     plugins: [
-      sso(ssoPluginOptions),
+      sso(runtimeSsoPluginOptions),
       {
         id: "mdcms-oidc-callback-normalization",
         hooks: {
@@ -1746,11 +2258,65 @@ export function createAuthService(
           ],
         },
       },
+      {
+        id: "mdcms-saml-callback-normalization",
+        hooks: {
+          after: [
+            {
+              matcher(context: { path?: string }) {
+                return context.path?.startsWith("/sso/saml2/sp/acs/") ?? false;
+              },
+              handler: createAuthMiddleware(async (ctx) => {
+                const newSession = ctx.context.newSession;
+
+                if (!newSession?.session?.id || !newSession.user?.id) {
+                  return;
+                }
+
+                const providerId =
+                  typeof ctx.params?.providerId === "string"
+                    ? ctx.params.providerId
+                    : undefined;
+                const samlResponse =
+                  typeof ctx.body?.SAMLResponse === "string"
+                    ? ctx.body.SAMLResponse
+                    : undefined;
+
+                if (!providerId || !samlResponse) {
+                  return;
+                }
+
+                try {
+                  await synchronizeSamlCallbackUser(
+                    assertNonEmptyString(newSession.session.id, "session.id"),
+                    assertNonEmptyString(newSession.user.id, "user.id"),
+                    providerId,
+                    samlResponse,
+                  );
+                } catch (error) {
+                  if (error instanceof RuntimeError && ctx.request?.url) {
+                    samlCallbackHookErrors.set(ctx.request.url, error);
+                    return;
+                  }
+
+                  throw error;
+                }
+              }),
+            },
+          ],
+        },
+      },
     ],
   });
 
   function assertConfiguredSsoProvider(providerId: string): void {
     if (!configuredSsoProviderIds.has(providerId)) {
+      throw createSsoProviderNotConfiguredError(providerId);
+    }
+  }
+
+  function assertConfiguredSamlProvider(providerId: string): void {
+    if (!configuredSamlProviderIds.has(providerId)) {
       throw createSsoProviderNotConfiguredError(providerId);
     }
   }
@@ -1772,6 +2338,158 @@ export function createAuthService(
       });
 
     return validateSsoSignInPayload(payload, baseUrl, configuredSsoProviderIds);
+  }
+
+  async function parseSamlAcsPayload(request: Request): Promise<{
+    RelayState?: string;
+    SAMLResponse?: string;
+  }> {
+    const clonedRequest = request.clone();
+    const contentType = clonedRequest.headers.get("content-type") ?? "";
+
+    if (contentType.includes("application/x-www-form-urlencoded")) {
+      const formData = await clonedRequest.formData().catch(() => undefined);
+      const samlResponse = formData?.get("SAMLResponse");
+      const relayState = formData?.get("RelayState");
+
+      return {
+        SAMLResponse:
+          typeof samlResponse === "string" ? samlResponse : undefined,
+        RelayState: typeof relayState === "string" ? relayState : undefined,
+      };
+    }
+
+    if (contentType.includes("application/json")) {
+      const payload = (await clonedRequest.json().catch(() => ({}))) as {
+        RelayState?: unknown;
+        SAMLResponse?: unknown;
+      };
+
+      return {
+        SAMLResponse:
+          typeof payload.SAMLResponse === "string"
+            ? payload.SAMLResponse
+            : undefined,
+        RelayState:
+          typeof payload.RelayState === "string"
+            ? payload.RelayState
+            : undefined,
+      };
+    }
+
+    return {};
+  }
+
+  function parseSamlMetadataQuery(
+    request: Request,
+  ): z.infer<typeof SamlMetadataQuerySchema> {
+    const url = new URL(request.url);
+    const parsed = SamlMetadataQuerySchema.safeParse({
+      providerId: url.searchParams.get("providerId") ?? undefined,
+      format: url.searchParams.get("format") ?? undefined,
+    });
+
+    if (!parsed.success) {
+      throw createInvalidInputError("SAML SP metadata query is invalid.", {
+        issues: parsed.error.issues,
+      });
+    }
+
+    return parsed.data;
+  }
+
+  async function validateSamlAcsInResponseTo(
+    request: Request,
+    providerId: string,
+  ): Promise<void> {
+    const payload = await parseSamlAcsPayload(request);
+
+    if (!payload.SAMLResponse) {
+      return;
+    }
+
+    const samlResponseXml = decodeSamlResponseXml(payload.SAMLResponse);
+    const inResponseTo = extractSamlInResponseTo(samlResponseXml);
+
+    if (!inResponseTo) {
+      throw createAuthProviderError(
+        "unsolicited_response",
+        "IdP-initiated SSO not allowed",
+      );
+    }
+
+    const identifier = `saml-authn-request:${inResponseTo}`;
+    const [storedRequest] = await options.db
+      .select({
+        id: authVerifications.id,
+        value: authVerifications.value,
+        expiresAt: authVerifications.expiresAt,
+      })
+      .from(authVerifications)
+      .where(eq(authVerifications.identifier, identifier))
+      .limit(1);
+
+    if (!storedRequest) {
+      throw createAuthProviderError(
+        "invalid_saml_response",
+        "Unknown or expired request ID",
+      );
+    }
+
+    if (storedRequest.expiresAt.getTime() < Date.now()) {
+      await options.db
+        .delete(authVerifications)
+        .where(eq(authVerifications.id, storedRequest.id));
+      throw createAuthProviderError(
+        "invalid_saml_response",
+        "Unknown or expired request ID",
+      );
+    }
+
+    let storedPayload: { providerId?: unknown } | undefined;
+
+    try {
+      storedPayload = JSON.parse(storedRequest.value) as {
+        providerId?: unknown;
+      };
+    } catch {
+      storedPayload = undefined;
+    }
+
+    if (storedPayload?.providerId !== providerId) {
+      await options.db
+        .delete(authVerifications)
+        .where(eq(authVerifications.id, storedRequest.id));
+      throw createAuthProviderError(
+        "invalid_saml_response",
+        "Provider mismatch",
+      );
+    }
+
+    await options.db
+      .delete(authVerifications)
+      .where(eq(authVerifications.id, storedRequest.id));
+  }
+
+  async function validateSamlAcsRequiredAttributes(
+    request: Request,
+    providerId: string,
+  ): Promise<void> {
+    const payload = await parseSamlAcsPayload(request);
+
+    if (!payload.SAMLResponse) {
+      return;
+    }
+
+    const provider = samlProviderConfigById.get(
+      providerId as SamlProviderConfig["providerId"],
+    );
+
+    if (!provider) {
+      throw createSsoProviderNotConfiguredError(providerId);
+    }
+
+    normalizeSamlResponseClaims(payload.SAMLResponse, provider);
   }
 
   function toRedirectResponse(response: Response, location: string): Response {
@@ -2883,6 +3601,38 @@ export function createAuthService(
         });
       }
 
+      if (configuredSamlProviderIds.has(payload.providerId)) {
+        const requestId = extractSamlAuthnRequestId(location);
+
+        if (!requestId) {
+          throw createAuthProviderError(
+            "invalid_saml_request",
+            "SAML sign-in did not produce an AuthnRequest ID.",
+          );
+        }
+
+        const now = Date.now();
+        const expiresAt = new Date(now + SAML_AUTHN_REQUEST_TTL_MS);
+        const identifier = `saml-authn-request:${requestId}`;
+
+        await options.db
+          .delete(authVerifications)
+          .where(eq(authVerifications.identifier, identifier));
+        await options.db.insert(authVerifications).values({
+          id: randomBytes(24).toString("base64url"),
+          identifier,
+          value: JSON.stringify({
+            id: requestId,
+            providerId: payload.providerId,
+            createdAt: now,
+            expiresAt: expiresAt.getTime(),
+          }),
+          expiresAt,
+          createdAt: new Date(now),
+          updatedAt: new Date(now),
+        });
+      }
+
       return toRedirectResponse(response, location);
     },
 
@@ -2917,6 +3667,123 @@ export function createAuthService(
       }
 
       return response;
+    },
+
+    async handleSamlAcs(request) {
+      const providerId = assertNonEmptyString(
+        new URL(request.url).pathname.split("/").at(-1),
+        "providerId",
+      );
+      assertConfiguredSamlProvider(providerId);
+      await validateSamlAcsInResponseTo(request, providerId);
+      await validateSamlAcsRequiredAttributes(request, providerId);
+
+      let response: Response;
+
+      try {
+        response = await auth.handler(request);
+      } catch (error) {
+        if (isMissingRequiredSamlAttributeFailure(error)) {
+          throw createRequiredSamlAttributeError();
+        }
+
+        throw error;
+      }
+
+      const hookError = samlCallbackHookErrors.get(request.url);
+
+      if (hookError) {
+        samlCallbackHookErrors.delete(request.url);
+        throw hookError;
+      }
+
+      if (response.status === 404) {
+        throw createSsoProviderNotConfiguredError(providerId);
+      }
+
+      if (response.status === 400) {
+        const payload = await readAuthHandlerErrorPayload(response);
+        const message =
+          typeof payload.message === "string" ? payload.message : "";
+        const normalizedMessage = message.toLowerCase();
+
+        if (normalizedMessage.includes("unable to extract user id or email")) {
+          throw createRequiredSamlAttributeError();
+        }
+
+        if (
+          normalizedMessage.includes("state error") ||
+          normalizedMessage.includes("samlresponse is required") ||
+          normalizedMessage.includes("maximum allowed size")
+        ) {
+          throw createInvalidInputError(
+            message || "SAML Assertion Consumer Service request is invalid.",
+          );
+        }
+
+        throw createAuthProviderError(
+          "invalid_saml_response",
+          typeof payload.details === "string"
+            ? payload.details
+            : message || "Invalid SAML response",
+        );
+      }
+
+      if (response.status >= 500) {
+        const payload = await readAuthHandlerErrorPayload(response);
+        const message =
+          typeof payload.message === "string" ? payload.message : "";
+        const details =
+          typeof payload.details === "string" ? payload.details : "";
+        if (isMissingRequiredSamlAttributeFailure(`${message} ${details}`)) {
+          throw createRequiredSamlAttributeError();
+        }
+
+        throw createAuthProviderError("acs_failed", "SAML ACS request failed.");
+      }
+
+      if (response.status !== 302) {
+        return response;
+      }
+
+      const location = response.headers.get("location");
+
+      if (!location) {
+        return response;
+      }
+
+      const mappedError = mapSsoCallbackErrorCode(location, providerId);
+
+      if (mappedError) {
+        throw mappedError;
+      }
+
+      return response;
+    },
+
+    async handleSamlMetadata(request) {
+      const query = parseSamlMetadataQuery(request);
+      const provider = staticSamlProviderById.get(query.providerId);
+
+      if (!provider) {
+        throw createSsoProviderNotConfiguredError(query.providerId);
+      }
+
+      if (query.format === "json") {
+        return createJsonResponse(
+          {
+            data: createStaticSamlMetadataJson(provider),
+          },
+          200,
+        );
+      }
+
+      return new Response(createStaticSamlMetadataXml(provider), {
+        status: 200,
+        headers: {
+          "content-type": "application/xml; charset=utf-8",
+        },
+      });
     },
 
     handleAuthRequest(request) {
@@ -3267,6 +4134,18 @@ export function mountAuthRoutes(
     executeWithRuntimeErrorsHandled(request, async () =>
       options.authService.handleSsoCallback(request),
     ),
+  );
+  authApp.get?.("/api/v1/auth/sso/saml2/sp/metadata", ({ request }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () =>
+      options.authService.handleSamlMetadata(request),
+    ),
+  );
+  authApp.post?.(
+    "/api/v1/auth/sso/saml2/sp/acs/:providerId",
+    ({ request }: any) =>
+      executeWithRuntimeErrorsHandled(request, async () =>
+        options.authService.handleSamlAcs(request),
+      ),
   );
   authApp.post?.("/api/v1/auth/sign-out", ({ request }: any) =>
     executeWithRuntimeErrorsHandled(request, async () => {

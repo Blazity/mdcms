@@ -119,6 +119,17 @@ function createAuthServiceStub(overrides: Partial<AuthService>): AuthService {
         },
       });
     },
+    async handleSamlAcs() {
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: "http://localhost/studio",
+        },
+      });
+    },
+    async handleSamlMetadata() {
+      return new Response(null, { status: 200 });
+    },
     async startCliLogin() {
       return {
         challengeId: "11111111-1111-4111-8111-111111111111",

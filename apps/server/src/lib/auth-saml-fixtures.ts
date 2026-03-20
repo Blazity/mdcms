@@ -5,7 +5,7 @@ import { inflateRawSync } from "node:zlib";
 import type { SamlProviderConfig } from "./env.js";
 
 const DEFAULT_BASE_URL = "http://localhost:4000";
-const DEFAULT_NOW_MS = Date.parse("2026-03-20T12:00:00.000Z");
+export const SAML_TEST_NOW_MS = Date.parse("2026-03-20T12:00:00.000Z");
 const SAML_POST_BINDING = "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST";
 const SAML_REDIRECT_BINDING =
   "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect";
@@ -89,11 +89,21 @@ type SamlifyModule = {
       requestInfo: Record<string, unknown>,
       binding: string,
       user: Record<string, unknown>,
+      customTagReplacement?: (template: string) => { context: string },
     ) => Promise<{ context: string }>;
   };
   SamlLib: {
+    attributeStatementBuilder: (
+      attributes: Record<string, unknown>[],
+      attributeTemplate?: { context: string },
+      attributeStatementTemplate?: { context: string },
+    ) => string;
+    replaceTagsByValue: (
+      rawXML: string,
+      tagValues: Record<string, unknown>,
+    ) => string;
     defaultLoginResponseTemplate: {
-      additionalTemplates?: Record<string, { context: string }>;
+      additionalTemplates: Record<string, { context: string }>;
       context: string;
     };
   };
@@ -110,20 +120,17 @@ function loadSamlify(): SamlifyModule {
   return require(samlifyEntry) as SamlifyModule;
 }
 
-function withFrozenNow<T>(
-  nowMs: number,
-  run: () => Promise<T>,
-): Promise<T> {
+function withFrozenNow<T>(nowMs: number, run: () => Promise<T>): Promise<T> {
   const OriginalDate = Date;
 
   class FrozenDate extends OriginalDate {
-    constructor(...args: ConstructorParameters<DateConstructor>) {
-      if (args.length === 0) {
+    constructor(value?: string | number | Date) {
+      if (value === undefined) {
         super(nowMs);
         return;
       }
 
-      super(...args);
+      super(value);
     }
 
     static override now(): number {
@@ -212,7 +219,9 @@ function extractXmlAttribute(
   return match?.[1];
 }
 
-function createFixtureUser(kind: SamlResponseFixtureKind): Record<string, unknown> {
+function createFixtureUser(
+  kind: SamlResponseFixtureKind,
+): Record<string, unknown> {
   if (kind === "missing-email") {
     return {
       email: "",
@@ -299,6 +308,56 @@ function buildIdentityProvider(
   });
 }
 
+function createLoginResponseTemplateReplacement(
+  samlify: SamlifyModule,
+  providerConfig: SamlProviderConfig,
+  seed: string,
+  user: Record<string, unknown>,
+  requestId?: string,
+): (template: string) => { context: string } {
+  return (template: string) => {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 5 * 60 * 1000);
+    const acsUrl = createAcsUrl(providerConfig.providerId);
+    const entityId = providerConfig.spEntityId ?? providerConfig.issuer;
+    const additionalTemplates =
+      samlify.SamlLib.defaultLoginResponseTemplate.additionalTemplates;
+    const attributeStatement = samlify.SamlLib.attributeStatementBuilder(
+      createAttributeDefinitions(),
+      additionalTemplates.attributeTemplate,
+      additionalTemplates.attributeStatementTemplate,
+    );
+
+    return {
+      context: samlify.SamlLib.replaceTagsByValue(template, {
+        ID: `_${seed}-0`,
+        AssertionID: `_${seed}-1`,
+        Destination: acsUrl,
+        Audience: entityId,
+        EntityID: entityId,
+        SubjectRecipient: acsUrl,
+        Issuer: providerConfig.issuer,
+        IssueInstant: now.toISOString(),
+        AssertionConsumerServiceURL: acsUrl,
+        StatusCode: "urn:oasis:names:tc:SAML:2.0:status:Success",
+        ConditionsNotBefore: now.toISOString(),
+        ConditionsNotOnOrAfter: expiresAt.toISOString(),
+        SubjectConfirmationDataNotOnOrAfter: expiresAt.toISOString(),
+        NameIDFormat: providerConfig.identifierFormat ?? "",
+        NameID: String(user.subjectId ?? ""),
+        InResponseTo: requestId ?? "",
+        AuthnStatement: "",
+        AttributeStatement: attributeStatement,
+        attrSubjectId: String(user.subjectId ?? ""),
+        attrMail: String(user.mail ?? ""),
+        attrDisplayName: String(user.displayName ?? ""),
+        attrGivenName: String(user.givenName ?? ""),
+        attrSurname: String(user.surname ?? ""),
+      }),
+    };
+  };
+}
+
 export function createSamlProviderConfig(
   overrides: Partial<SamlProviderConfig> = {},
 ): SamlProviderConfig {
@@ -310,8 +369,7 @@ export function createSamlProviderConfig(
     cert: TEST_SAML_CERT,
     audience: "https://cms.example.com/saml/okta-saml/sp",
     spEntityId: "https://cms.example.com/saml/okta-saml/sp",
-    identifierFormat:
-      "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+    identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
     authnRequestsSigned: false,
     wantAssertionsSigned: true,
     attributeMapping: {
@@ -360,7 +418,9 @@ export function decodeSamlSignInRedirect(
   const requestId = extractXmlAttribute(xml, "AuthnRequest", "ID");
 
   if (!requestId) {
-    throw new Error("SAML sign-in redirect does not contain an AuthnRequest ID.");
+    throw new Error(
+      "SAML sign-in redirect does not contain an AuthnRequest ID.",
+    );
   }
 
   return {
@@ -384,6 +444,7 @@ export async function createSamlResponseFixture(input: {
     `${input.kind}-${input.requestId ?? "unsolicited"}`,
   );
   const idp = buildIdentityProvider(samlify, providerConfig, idSeed);
+  const user = createFixtureUser(input.kind);
   const requestInfo = {
     extract: {
       request: {
@@ -392,12 +453,19 @@ export async function createSamlResponseFixture(input: {
     },
   };
 
-  const response = await withFrozenNow(input.nowMs ?? DEFAULT_NOW_MS, () =>
+  const response = await withFrozenNow(input.nowMs ?? SAML_TEST_NOW_MS, () =>
     idp.createLoginResponse(
       sp,
       requestInfo,
       "post",
-      createFixtureUser(input.kind),
+      user,
+      createLoginResponseTemplateReplacement(
+        samlify,
+        providerConfig,
+        idSeed,
+        user,
+        input.kind === "unsolicited" ? undefined : input.requestId,
+      ),
     ),
   );
   const xml = Buffer.from(response.context, "base64").toString("utf8");

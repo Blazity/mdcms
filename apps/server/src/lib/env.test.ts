@@ -332,8 +332,7 @@ test("parseServerEnv parses valid SAML provider config", () => {
     cert: "-----BEGIN CERTIFICATE-----\\nabc\\n-----END CERTIFICATE-----",
     audience: "https://cms.example.com/saml/okta-saml/sp",
     spEntityId: "https://cms.example.com/saml/okta-saml/sp",
-    identifierFormat:
-      "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+    identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
     authnRequestsSigned: true,
     wantAssertionsSigned: true,
     attributeMapping: {

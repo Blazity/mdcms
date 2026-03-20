@@ -28,6 +28,7 @@ import {
   createSamlProviderConfig,
   createSamlResponseFixture,
   decodeSamlSignInRedirect,
+  SAML_TEST_NOW_MS,
 } from "./auth-saml-fixtures.js";
 import {
   authAccounts,
@@ -262,9 +263,11 @@ test("auth oidc sign-in payload rejects unsupported Better Auth fields", () => {
 });
 
 test("auth sso sign-in payload accepts configured SAML provider ids", () => {
-  const options = buildStaticSsoPluginOptions("http://localhost:4000", [], [
-    createSamlProviderConfig(),
-  ]);
+  const options = buildStaticSsoPluginOptions(
+    "http://localhost:4000",
+    [],
+    [createSamlProviderConfig()],
+  );
 
   const payload = validateSsoSignInPayload(
     {
@@ -272,7 +275,7 @@ test("auth sso sign-in payload accepts configured SAML provider ids", () => {
       callbackURL: "/studio",
     },
     "http://localhost:4000",
-    new Set(options.defaultSSO.map((provider) => provider.providerId)),
+    new Set((options.defaultSSO ?? []).map((provider) => provider.providerId)),
   );
 
   assert.equal(payload.providerId, "okta-saml");
@@ -309,9 +312,11 @@ test("auth saml provider config builds static Better Auth providers and required
   const providers = buildStaticSamlProviders("http://localhost:4000", [
     providerConfig,
   ]);
-  const options = buildStaticSsoPluginOptions("http://localhost:4000", [], [
-    providerConfig,
-  ]);
+  const options = buildStaticSsoPluginOptions(
+    "http://localhost:4000",
+    [],
+    [providerConfig],
+  );
 
   assert.equal(providers.length, 1);
   assert.deepEqual(providers[0], {
@@ -321,7 +326,8 @@ test("auth saml provider config builds static Better Auth providers and required
       issuer: "https://www.okta.com/exk123456789",
       entryPoint: "https://example.okta.com/app/example/sso/saml",
       cert: providerConfig.cert,
-      callbackUrl: "http://localhost:4000/api/v1/auth/sso/saml2/sp/acs/okta-saml",
+      callbackUrl:
+        "http://localhost:4000/api/v1/auth/sso/saml2/sp/acs/okta-saml",
       audience: "https://cms.example.com/saml/okta-saml/sp",
       spMetadata: {
         entityID: "https://cms.example.com/saml/okta-saml/sp",
@@ -430,16 +436,61 @@ function uniqueEmail(): string {
 }
 
 function extractSetCookie(response: Response): string {
+  const setCookieValues = response.headers.getSetCookie?.();
+
+  if (setCookieValues && setCookieValues.length > 0) {
+    return setCookieValues.join(", ");
+  }
+
   const header = response.headers.get("set-cookie");
   assert.ok(header);
   return header;
 }
 
 function splitSetCookieHeader(header: string): string[] {
-  return header
-    .split(/,(?=\s*[A-Za-z0-9_-]+=)/)
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0);
+  const values: string[] = [];
+  let current = "";
+  let index = 0;
+
+  while (index < header.length) {
+    const character = header[index];
+
+    if (character === ",") {
+      const lower = current.toLowerCase();
+
+      if (lower.includes("expires=") && !lower.includes("gmt")) {
+        current += character;
+        index += 1;
+        continue;
+      }
+
+      const trimmed = current.trim();
+
+      if (trimmed.length > 0) {
+        values.push(trimmed);
+      }
+
+      current = "";
+      index += 1;
+
+      if (index < header.length && header[index] === " ") {
+        index += 1;
+      }
+
+      continue;
+    }
+
+    current += character;
+    index += 1;
+  }
+
+  const trimmed = current.trim();
+
+  if (trimmed.length > 0) {
+    values.push(trimmed);
+  }
+
+  return values;
 }
 
 function toCookieHeader(setCookie: string): string {
@@ -517,22 +568,25 @@ async function startSamlSignIn(
   handler: (request: Request) => Promise<Response>,
   callbackURL = "/studio",
 ): Promise<{
+  cookie?: string;
   signInResponse: Response;
   location: string;
   requestId: string;
   relayState?: string;
 }> {
-  const signInResponse = await handler(
-    new Request("http://localhost:4000/api/v1/auth/sign-in/sso", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        providerId: "okta-saml",
-        callbackURL,
+  const signInResponse = await withMockedNow(SAML_TEST_NOW_MS, () =>
+    handler(
+      new Request("http://localhost:4000/api/v1/auth/sign-in/sso", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          providerId: "okta-saml",
+          callbackURL,
+        }),
       }),
-    }),
+    ),
   );
 
   assert.equal(signInResponse.status, 302);
@@ -541,6 +595,7 @@ async function startSamlSignIn(
   const decoded = decodeSamlSignInRedirect(location);
 
   return {
+    cookie: signInResponse.headers.get("set-cookie") ?? undefined,
     signInResponse,
     location,
     requestId: decoded.requestId,
@@ -551,6 +606,7 @@ async function startSamlSignIn(
 function postSamlAcs(
   handler: (request: Request) => Promise<Response>,
   input: {
+    cookie?: string;
     providerId?: string;
     SAMLResponse: string;
     RelayState?: string;
@@ -564,16 +620,23 @@ function postSamlAcs(
     body.set("RelayState", input.RelayState);
   }
 
-  return handler(
-    new Request(
-      `http://localhost:4000/api/v1/auth/sso/saml2/sp/acs/${input.providerId ?? "okta-saml"}`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/x-www-form-urlencoded",
+  return withMockedNow(SAML_TEST_NOW_MS, () =>
+    handler(
+      new Request(
+        `http://localhost:4000/api/v1/auth/sso/saml2/sp/acs/${input.providerId ?? "okta-saml"}`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+            ...(input.cookie
+              ? {
+                  cookie: toCookieHeader(input.cookie),
+                }
+              : {}),
+          },
+          body,
         },
-        body,
-      },
+      ),
     ),
   );
 }
@@ -912,6 +975,7 @@ testWithDatabase(
 testWithDatabase(
   "auth saml metadata endpoint returns 200 for a configured provider",
   async () => {
+    const providerConfig = createSamlProviderConfig();
     const { handler, dbConnection } = createServerRequestHandlerWithModules({
       env: createSamlEnv(env),
       logger,
@@ -923,8 +987,19 @@ testWithDatabase(
           "http://localhost:4000/api/v1/auth/sso/saml2/sp/metadata?providerId=okta-saml&format=xml",
         ),
       );
+      const body = await response.text();
 
       assert.equal(response.status, 200);
+      assert.match(
+        body,
+        new RegExp(
+          `entityID="${providerConfig.spEntityId?.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`,
+        ),
+      );
+      assert.match(
+        body,
+        /Location="http:\/\/localhost:4000\/api\/v1\/auth\/sso\/saml2\/sp\/acs\/okta-saml"/,
+      );
     } finally {
       await dbConnection.close();
     }
@@ -940,25 +1015,33 @@ testWithDatabase(
     });
 
     try {
-      const { requestId, relayState } = await startSamlSignIn(handler);
+      const { cookie, requestId, relayState } = await startSamlSignIn(handler);
       const responseFixture = await createSamlResponseFixture({
         kind: "success",
         requestId,
         relayState,
       });
-      const acsResponse = await postSamlAcs(handler, responseFixture);
+      const acsResponse = await postSamlAcs(handler, {
+        ...responseFixture,
+        cookie,
+      });
 
       assert.equal(acsResponse.status, 302);
       const location = acsResponse.headers.get("location");
       assert.ok(location);
-      assert.equal(new URL(location, "http://localhost:4000").pathname, "/studio");
+      assert.equal(
+        new URL(location, "http://localhost:4000").pathname,
+        "/studio",
+      );
 
-      const sessionResponse = await handler(
-        new Request("http://localhost:4000/api/v1/auth/session", {
-          headers: {
-            cookie: toCookieHeader(extractSetCookie(acsResponse)),
-          },
-        }),
+      const sessionResponse = await withMockedNow(SAML_TEST_NOW_MS, () =>
+        handler(
+          new Request("http://localhost:4000/api/v1/auth/session", {
+            headers: {
+              cookie: toCookieHeader(extractSetCookie(acsResponse)),
+            },
+          }),
+        ),
       );
 
       assert.equal(sessionResponse.status, 200);
@@ -978,13 +1061,17 @@ for (const kind of ["missing-email", "missing-id"] as const) {
       });
 
       try {
-        const { requestId, relayState } = await startSamlSignIn(handler);
+        const { cookie, requestId, relayState } =
+          await startSamlSignIn(handler);
         const responseFixture = await createSamlResponseFixture({
           kind,
           requestId,
           relayState,
         });
-        const acsResponse = await postSamlAcs(handler, responseFixture);
+        const acsResponse = await postSamlAcs(handler, {
+          ...responseFixture,
+          cookie,
+        });
         const body = (await acsResponse.json()) as { code: string };
 
         assert.equal(acsResponse.status, 401);
@@ -996,87 +1083,85 @@ for (const kind of ["missing-email", "missing-id"] as const) {
   );
 }
 
-testWithDatabase(
-  "auth saml acs rejects an unconfigured provider",
-  async () => {
-    const { handler, dbConnection } = createServerRequestHandlerWithModules({
-      env: createSamlEnv(env),
-      logger,
+testWithDatabase("auth saml acs rejects an unconfigured provider", async () => {
+  const { handler, dbConnection } = createServerRequestHandlerWithModules({
+    env: createSamlEnv(env),
+    logger,
+  });
+
+  try {
+    const { cookie, requestId, relayState } = await startSamlSignIn(handler);
+    const responseFixture = await createSamlResponseFixture({
+      kind: "success",
+      requestId,
+      relayState,
+    });
+    const acsResponse = await postSamlAcs(handler, {
+      ...responseFixture,
+      cookie,
+      providerId: "missing-saml",
+    });
+    const body = (await acsResponse.json()) as { code: string };
+
+    assert.equal(acsResponse.status, 404);
+    assert.equal(body.code, "SSO_PROVIDER_NOT_CONFIGURED");
+  } finally {
+    await dbConnection.close();
+  }
+});
+
+testWithDatabase("auth saml unsolicited responses are rejected", async () => {
+  const { handler, dbConnection } = createServerRequestHandlerWithModules({
+    env: createSamlEnv(env),
+    logger,
+  });
+
+  try {
+    const responseFixture = await createSamlResponseFixture({
+      kind: "unsolicited",
+    });
+    const acsResponse = await postSamlAcs(handler, responseFixture);
+    const body = (await acsResponse.json()) as { code: string };
+
+    assert.equal(acsResponse.status, 502);
+    assert.equal(body.code, "AUTH_PROVIDER_ERROR");
+  } finally {
+    await dbConnection.close();
+  }
+});
+
+testWithDatabase("auth saml replayed assertions are rejected", async () => {
+  const { handler, dbConnection } = createServerRequestHandlerWithModules({
+    env: createSamlEnv(env),
+    logger,
+  });
+
+  try {
+    const { cookie, requestId, relayState } = await startSamlSignIn(handler);
+    const responseFixture = await createSamlResponseFixture({
+      kind: "success",
+      requestId,
+      relayState,
+    });
+    const firstResponse = await postSamlAcs(handler, {
+      ...responseFixture,
+      cookie,
     });
 
-    try {
-      const { requestId, relayState } = await startSamlSignIn(handler);
-      const responseFixture = await createSamlResponseFixture({
-        kind: "success",
-        requestId,
-        relayState,
-      });
-      const acsResponse = await postSamlAcs(handler, {
-        ...responseFixture,
-        providerId: "missing-saml",
-      });
-      const body = (await acsResponse.json()) as { code: string };
+    assert.equal(firstResponse.status, 302);
 
-      assert.equal(acsResponse.status, 404);
-      assert.equal(body.code, "SSO_PROVIDER_NOT_CONFIGURED");
-    } finally {
-      await dbConnection.close();
-    }
-  },
-);
-
-testWithDatabase(
-  "auth saml unsolicited responses are rejected",
-  async () => {
-    const { handler, dbConnection } = createServerRequestHandlerWithModules({
-      env: createSamlEnv(env),
-      logger,
+    const replayResponse = await postSamlAcs(handler, {
+      ...responseFixture,
+      cookie,
     });
+    const replayBody = (await replayResponse.json()) as { code: string };
 
-    try {
-      const responseFixture = await createSamlResponseFixture({
-        kind: "unsolicited",
-      });
-      const acsResponse = await postSamlAcs(handler, responseFixture);
-      const body = (await acsResponse.json()) as { code: string };
-
-      assert.equal(acsResponse.status, 502);
-      assert.equal(body.code, "AUTH_PROVIDER_ERROR");
-    } finally {
-      await dbConnection.close();
-    }
-  },
-);
-
-testWithDatabase(
-  "auth saml replayed assertions are rejected",
-  async () => {
-    const { handler, dbConnection } = createServerRequestHandlerWithModules({
-      env: createSamlEnv(env),
-      logger,
-    });
-
-    try {
-      const { requestId, relayState } = await startSamlSignIn(handler);
-      const responseFixture = await createSamlResponseFixture({
-        kind: "success",
-        requestId,
-        relayState,
-      });
-      const firstResponse = await postSamlAcs(handler, responseFixture);
-
-      assert.equal(firstResponse.status, 302);
-
-      const replayResponse = await postSamlAcs(handler, responseFixture);
-      const replayBody = (await replayResponse.json()) as { code: string };
-
-      assert.equal(replayResponse.status, 502);
-      assert.equal(replayBody.code, "AUTH_PROVIDER_ERROR");
-    } finally {
-      await dbConnection.close();
-    }
-  },
-);
+    assert.equal(replayResponse.status, 502);
+    assert.equal(replayBody.code, "AUTH_PROVIDER_ERROR");
+  } finally {
+    await dbConnection.close();
+  }
+});
 
 testWithDatabase(
   "auth oidc callback does not implicitly link to an existing local user with the same email",

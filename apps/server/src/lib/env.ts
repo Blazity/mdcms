@@ -561,10 +561,7 @@ function throwSamlProvidersEnvError(
     });
   }
 
-  if (
-    field === "authnRequestsSigned" ||
-    field === "wantAssertionsSigned"
-  ) {
+  if (field === "authnRequestsSigned" || field === "wantAssertionsSigned") {
     throw createSamlInvalidEnvError(
       issueValue,
       `${field} must be a boolean when provided.`,
@@ -678,7 +675,7 @@ function assertUniqueSsoProviderIds(
   oidcProviders: OidcProviderConfig[],
   samlProviders: SamlProviderConfig[],
 ): void {
-  const providerIds = new Set(
+  const providerIds = new Set<string>(
     oidcProviders.map((provider) => provider.providerId),
   );
 
