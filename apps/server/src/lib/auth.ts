@@ -368,6 +368,11 @@ type AuthHandlerErrorPayload = {
   message?: unknown;
 };
 
+type SamlAcsPayload = {
+  RelayState?: string;
+  SAMLResponse?: string;
+};
+
 const DEFAULT_SAML_ATTRIBUTE_MAPPING = {
   id: "nameID",
   email: "email",
@@ -512,6 +517,17 @@ function splitSetCookieHeader(setCookieHeader: string): string[] {
   return values;
 }
 
+function createSamlAcsRequestKey(
+  requestUrl: string,
+  samlResponse: string | undefined,
+): string {
+  if (!samlResponse) {
+    return requestUrl;
+  }
+
+  return `${requestUrl}#${createHash("sha256").update(samlResponse).digest("hex")}`;
+}
+
 function appendSetCookieHeaders(
   ...values: Array<string | null | undefined>
 ): string | undefined {
@@ -529,6 +545,17 @@ function normalizeOptionalOidcClaimString(value: unknown): string | undefined {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeUsableSamlEmail(value: unknown): string | undefined {
+  const normalized = normalizeOptionalOidcClaimString(value);
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  const parsed = z.string().email().safeParse(normalized);
+  return parsed.success ? parsed.data.toLowerCase() : undefined;
 }
 
 function selectOidcClaimString(...values: unknown[]): string | undefined {
@@ -1125,8 +1152,14 @@ function normalizeSamlResponseClaims(
   const nameId = extractSamlNameId(xml);
   const attributes = extractSamlAttributes(xml);
   const mapping = resolveSamlAttributeMapping(provider);
-  const id = readSamlMappedValue(mapping.id, nameId, attributes);
-  const email = readSamlMappedValue(mapping.email, nameId, attributes);
+  const id =
+    normalizeOptionalOidcClaimString(
+      readSamlMappedValue(mapping.id, nameId, attributes),
+    ) ?? normalizeOptionalOidcClaimString(nameId);
+  const email =
+    normalizeUsableSamlEmail(
+      readSamlMappedValue(mapping.email, nameId, attributes),
+    ) ?? normalizeUsableSamlEmail(nameId);
   const missingFields = [...(id ? [] : ["id"]), ...(email ? [] : ["email"])];
 
   if (missingFields.length > 0) {
@@ -2295,7 +2328,10 @@ export function createAuthService(
                   );
                 } catch (error) {
                   if (error instanceof RuntimeError && ctx.request?.url) {
-                    samlCallbackHookErrors.set(ctx.request.url, error);
+                    samlCallbackHookErrors.set(
+                      createSamlAcsRequestKey(ctx.request.url, samlResponse),
+                      error,
+                    );
                     return;
                   }
 
@@ -2340,10 +2376,9 @@ export function createAuthService(
     return validateSsoSignInPayload(payload, baseUrl, configuredSsoProviderIds);
   }
 
-  async function parseSamlAcsPayload(request: Request): Promise<{
-    RelayState?: string;
-    SAMLResponse?: string;
-  }> {
+  async function parseSamlAcsPayload(
+    request: Request,
+  ): Promise<SamlAcsPayload> {
     const clonedRequest = request.clone();
     const contentType = clonedRequest.headers.get("content-type") ?? "";
 
@@ -2399,11 +2434,9 @@ export function createAuthService(
   }
 
   async function validateSamlAcsInResponseTo(
-    request: Request,
+    payload: SamlAcsPayload,
     providerId: string,
   ): Promise<void> {
-    const payload = await parseSamlAcsPayload(request);
-
     if (!payload.SAMLResponse) {
       return;
     }
@@ -2472,11 +2505,9 @@ export function createAuthService(
   }
 
   async function validateSamlAcsRequiredAttributes(
-    request: Request,
+    payload: SamlAcsPayload,
     providerId: string,
   ): Promise<void> {
-    const payload = await parseSamlAcsPayload(request);
-
     if (!payload.SAMLResponse) {
       return;
     }
@@ -3675,8 +3706,13 @@ export function createAuthService(
         "providerId",
       );
       assertConfiguredSamlProvider(providerId);
-      await validateSamlAcsInResponseTo(request, providerId);
-      await validateSamlAcsRequiredAttributes(request, providerId);
+      const payload = await parseSamlAcsPayload(request);
+      const requestKey = createSamlAcsRequestKey(
+        request.url,
+        payload.SAMLResponse,
+      );
+      await validateSamlAcsInResponseTo(payload, providerId);
+      await validateSamlAcsRequiredAttributes(payload, providerId);
 
       let response: Response;
 
@@ -3690,10 +3726,10 @@ export function createAuthService(
         throw error;
       }
 
-      const hookError = samlCallbackHookErrors.get(request.url);
+      const hookError = samlCallbackHookErrors.get(requestKey);
 
       if (hookError) {
-        samlCallbackHookErrors.delete(request.url);
+        samlCallbackHookErrors.delete(requestKey);
         throw hookError;
       }
 

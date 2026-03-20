@@ -63,6 +63,7 @@ I6Pf0dUulNp0HDSadMxrsiznanKRZme8Yg==
 
 export type SamlResponseFixtureKind =
   | "success"
+  | "nameid-email-fallback"
   | "missing-email"
   | "missing-id"
   | "unsolicited";
@@ -238,6 +239,17 @@ function createFixtureUser(
       email: "",
       mail: "fixture-user@example.com",
       subjectId: "",
+      displayName: "Fixture User",
+      givenName: "Fixture",
+      surname: "User",
+    };
+  }
+
+  if (kind === "nameid-email-fallback") {
+    return {
+      email: "nameid@example.com",
+      mail: "",
+      subjectId: "nameid@example.com",
       displayName: "Fixture User",
       givenName: "Fixture",
       surname: "User",

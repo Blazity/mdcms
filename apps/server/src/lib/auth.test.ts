@@ -1051,6 +1051,45 @@ testWithDatabase(
   },
 );
 
+testWithDatabase(
+  "auth saml falls back to NameID when it is a usable email address",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env: createSamlEnv(env, {
+        attributeMapping: {
+          id: "customId",
+          email: "customMail",
+        },
+      }),
+      logger,
+    });
+
+    try {
+      const { cookie, requestId, relayState } = await startSamlSignIn(handler);
+      const responseFixture = await createSamlResponseFixture({
+        kind: "nameid-email-fallback",
+        requestId,
+        relayState,
+      });
+      const acsResponse = await postSamlAcs(handler, {
+        ...responseFixture,
+        cookie,
+      });
+
+      assert.equal(acsResponse.status, 302);
+      assert.equal(
+        new URL(
+          acsResponse.headers.get("location") ?? "",
+          "http://localhost:4000",
+        ).pathname,
+        "/studio",
+      );
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
 for (const kind of ["missing-email", "missing-id"] as const) {
   testWithDatabase(
     `auth saml ${kind} responses map to AUTH_SAML_REQUIRED_ATTRIBUTE_MISSING`,
