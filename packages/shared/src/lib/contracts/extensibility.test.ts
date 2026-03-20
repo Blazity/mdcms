@@ -263,7 +263,7 @@ test("assertStudioBootstrapManifest rejects blank signature and invalid mode", (
         ...validStudioBootstrapManifest,
         mode: "worker",
       }),
-    /studioBootstrapManifest\.mode .*iframe.*module/,
+    /studioBootstrapManifest\.mode.*module/,
   );
 });
 
@@ -282,6 +282,7 @@ test("runtime contract validators cover positive and negative shapes", () => {
   assert.doesNotThrow(() =>
     assertStudioMountContext({
       apiBaseUrl: "http://localhost:4000",
+      basePath: "/admin",
       auth: { mode: "cookie" },
       hostBridge: validHostBridge,
     }),
@@ -291,6 +292,17 @@ test("runtime contract validators cover positive and negative shapes", () => {
     () =>
       assertStudioMountContext({
         apiBaseUrl: "http://localhost:4000",
+        auth: { mode: "cookie" },
+        hostBridge: validHostBridge,
+      }),
+    /basePath/,
+  );
+
+  assert.throws(
+    () =>
+      assertStudioMountContext({
+        apiBaseUrl: "http://localhost:4000",
+        basePath: "/admin",
         auth: { mode: "token" },
         hostBridge: validHostBridge,
       }),

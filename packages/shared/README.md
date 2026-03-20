@@ -129,6 +129,10 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
   - `ModuleManifest`, `MdcmsModulePackage`, `ServerSurface`, `CliSurface`
   - `StudioBootstrapManifest`, `StudioMountContext`, `HostBridgeV1`, `RemoteStudioModule`
   - CLI support surfaces: `CliActionAlias`, `CliOutputFormatter`, `CliPreflightHook`
+- Studio runtime contract rules:
+  - MVP runtime mode is `module` only.
+  - `StudioMountContext` includes `basePath` so deep links can resolve under an embed subtree without framework-specific router adapters.
+  - The shell owns only startup validation/loading failures; after `mount(...)` succeeds, the remote runtime owns Studio UI states and routing.
 - Runtime validators:
   - Implemented with strict `zod` schemas (`.strict()` + custom refinements) and normalized `RuntimeError` output.
   - `assertModuleManifest(...)`

@@ -183,3 +183,25 @@ test("buildStudioRuntimeArtifacts writes bundled JavaScript runtime entry", asyn
     );
   });
 });
+
+test("buildStudioRuntimeArtifacts forces the bootstrap manifest to module mode", async () => {
+  await withTempDir("studio-runtime-", async (directory) => {
+    const sourceFile = join(directory, "app.ts");
+    const outDir = join(directory, "dist");
+
+    await writeFile(
+      sourceFile,
+      "export const mount = () => () => {};\n",
+      "utf8",
+    );
+
+    const build = await buildStudioRuntimeArtifacts({
+      sourceFile,
+      outDir,
+      studioVersion: "1.2.3",
+      mode: "iframe" as unknown as "module",
+    });
+
+    assert.equal(build.manifest.mode, "module");
+  });
+});

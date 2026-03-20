@@ -52,7 +52,7 @@ export type MdcmsModulePackage<App = unknown, AppDeps = unknown> = {
   cli?: CliSurface;
 };
 
-export type StudioExecutionMode = "iframe" | "module";
+export type StudioExecutionMode = "module";
 
 export type StudioBootstrapManifest = {
   apiVersion: typeof EXTENSIBILITY_API_VERSION;
@@ -81,6 +81,7 @@ export type HostBridgeV1 = {
 
 export type StudioMountContext = {
   apiBaseUrl: string;
+  basePath: string;
   auth: {
     mode: "cookie" | "token";
     token?: string;
@@ -111,7 +112,7 @@ type StrictSemver = {
 };
 
 const MODULE_KIND_VALUES = ["domain", "core"] as const;
-const STUDIO_MODE_VALUES = ["iframe", "module"] as const;
+const STUDIO_MODE_VALUES = ["module"] as const;
 const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 const nonEmptyStringSchema = z.string().trim().min(1, {
@@ -285,6 +286,7 @@ const studioMountAuthSchema = z
 const studioMountContextSchema = z
   .object({
     apiBaseUrl: nonEmptyStringSchema,
+    basePath: nonEmptyStringSchema,
     auth: studioMountAuthSchema,
     hostBridge: hostBridgeV1Schema,
   })

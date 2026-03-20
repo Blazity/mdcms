@@ -1,203 +1,68 @@
-import type { MdcmsConfig as SharedMdcmsConfig } from "@mdcms/shared";
+"use client";
 
-import { Button } from "./ui/button.js";
-import { roundTripMarkdown } from "./markdown-pipeline.js";
-import type { StudioDocumentShell } from "./document-shell.js";
+import { useEffect, useRef, useState, type RefObject } from "react";
 
-export type MdcmsConfig = SharedMdcmsConfig & {
-  environment: string;
-};
+import type { HostBridgeV1, StudioMountContext } from "@mdcms/shared";
 
-export type StudioRole = "owner" | "admin" | "editor" | "viewer";
+import {
+  loadStudioRuntime,
+  type MdcmsConfig,
+  type StudioLoaderOptions,
+} from "./studio-loader.js";
 
-export type StudioShellState =
-  | "loading"
-  | "ready"
-  | "empty"
-  | "error"
-  | "forbidden";
+export type { MdcmsConfig } from "./studio-loader.js";
+
+export type StudioStartupState = "loading" | "ready" | "error";
 
 export type StudioProps = {
   config: MdcmsConfig;
-  path?: string | string[];
-  state?: StudioShellState;
+  basePath: string;
+  auth?: StudioMountContext["auth"];
+  hostBridge?: HostBridgeV1;
+  fetcher?: StudioLoaderOptions["fetcher"];
+  loadRemoteModule?: StudioLoaderOptions["loadRemoteModule"];
+};
+
+export type StudioShellFrameProps = {
+  config: MdcmsConfig;
+  basePath: string;
+  startupState: StudioStartupState;
   errorMessage?: string;
-  role?: StudioRole;
-  documentShell?: StudioDocumentShell;
+  containerRef?: RefObject<HTMLDivElement | null>;
 };
 
-export type StudioInternalRoute =
-  | "dashboard"
-  | "content"
-  | "trash"
-  | "environments"
-  | "users"
-  | "settings";
-
-export type ContentNavigationMode = "schema" | "folder";
-
-const ROUTE_LABELS: Record<StudioInternalRoute, string> = {
-  dashboard: "Dashboard",
-  content: "Content",
-  trash: "Trash",
-  environments: "Environments",
-  users: "Users",
-  settings: "Settings",
-};
-
-type StudioRoleCapabilities = {
-  canMutateContent: boolean;
-  hasAdminAccess: boolean;
-};
-
-const ROLE_CAPABILITIES: Record<StudioRole, StudioRoleCapabilities> = {
-  owner: {
-    canMutateContent: true,
-    hasAdminAccess: true,
-  },
-  admin: {
-    canMutateContent: true,
-    hasAdminAccess: true,
-  },
-  editor: {
-    canMutateContent: true,
-    hasAdminAccess: false,
-  },
-  viewer: {
-    canMutateContent: false,
-    hasAdminAccess: false,
-  },
-};
-
-function normalizeRoutePath(path: StudioProps["path"]): string[] {
-  if (!path) {
-    return [];
+function getStartupMessage(
+  startupState: StudioStartupState,
+  errorMessage?: string,
+): string {
+  if (startupState === "loading") {
+    return "Loading Studio...";
   }
 
-  if (Array.isArray(path)) {
-    return path.map((segment) => segment.trim()).filter(Boolean);
+  if (startupState === "error") {
+    return errorMessage?.trim() || "Failed to initialize Studio.";
   }
 
-  return path
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter(Boolean);
+  return "Studio runtime ready.";
 }
 
-function resolveInternalRoute(path: StudioProps["path"]): {
-  route: StudioInternalRoute;
-  subPath: string[];
-  isUnknown: boolean;
-  contentViewMode: ContentNavigationMode;
-} {
-  const [first, ...rest] = normalizeRoutePath(path);
-
-  if (!first) {
-    return {
-      route: "dashboard",
-      subPath: [],
-      isUnknown: false,
-      contentViewMode: "schema",
-    };
-  }
-
-  if (first === "content") {
-    const [modeMarker, ...modeSubPath] = rest;
-    return {
-      route: "content",
-      subPath: modeMarker === "by-path" ? modeSubPath : rest,
-      isUnknown: false,
-      contentViewMode: modeMarker === "by-path" ? "folder" : "schema",
-    };
-  }
-
-  if (
-    first === "dashboard" ||
-    first === "trash" ||
-    first === "environments" ||
-    first === "users" ||
-    first === "settings"
-  ) {
-    return {
-      route: first,
-      subPath: rest,
-      isUnknown: false,
-      contentViewMode: "schema",
-    };
-  }
-
-  return {
-    route: "dashboard",
-    subPath: [],
-    isUnknown: true,
-    contentViewMode: "schema",
-  };
-}
-
-/**
- * Studio is the host-embedded entrypoint for MDCMS Studio.
- * CMS-47 adds Tailwind/shadcn-style shell composition, deterministic
- * state handling, and role-aware interaction constraints.
- */
-export function Studio({
+export function StudioShellFrame({
   config,
-  path,
-  state = "ready",
+  basePath,
+  startupState,
   errorMessage,
-  role = "viewer",
-  documentShell,
-}: StudioProps) {
-  const capabilities = ROLE_CAPABILITIES[role];
-  const resolvedRoute = resolveInternalRoute(path);
-  const routeRequiresAdmin =
-    resolvedRoute.route === "users" || resolvedRoute.route === "settings";
-  const effectiveState: StudioShellState =
-    state === "ready" && routeRequiresAdmin && !capabilities.hasAdminAccess
-      ? "forbidden"
-      : state === "ready" && resolvedRoute.isUnknown
-        ? "empty"
-        : state;
-
-  const subRouteLabel =
-    resolvedRoute.route === "content" && resolvedRoute.subPath.length > 0
-      ? `/content/${resolvedRoute.subPath.join("/")}`
-      : null;
-  const isDocumentShellRoute =
-    resolvedRoute.route === "content" && resolvedRoute.subPath.length >= 2;
-  let documentRoundTripBody: string | undefined;
-
-  if (documentShell?.state === "ready" && documentShell.data) {
-    try {
-      documentRoundTripBody = roundTripMarkdown(
-        documentShell.data.body,
-      ).markdown;
-    } catch {
-      documentRoundTripBody = documentShell.data.body;
-    }
-  }
-  const statusMessage =
-    effectiveState === "loading"
-      ? "Loading Studio..."
-      : effectiveState === "empty"
-        ? "No content found for this route."
-        : effectiveState === "forbidden"
-          ? "You do not have permission to access Studio."
-          : effectiveState === "error"
-            ? errorMessage?.trim() || "Failed to initialize Studio."
-            : "Studio shell ready.";
+  containerRef,
+}: StudioShellFrameProps) {
+  const statusMessage = getStartupMessage(startupState, errorMessage);
 
   return (
     <section
       data-testid="mdcms-studio-root"
       data-mdcms-project={config.project}
       data-mdcms-server-url={config.serverUrl}
-      data-mdcms-state={effectiveState}
+      data-mdcms-base-path={basePath}
+      data-mdcms-state={startupState}
       data-mdcms-brand="MDCMS"
-      data-mdcms-role={role}
-      data-mdcms-route={resolvedRoute.route}
-      data-mdcms-content-view={resolvedRoute.contentViewMode}
-      data-mdcms-can-write={capabilities.canMutateContent ? "true" : "false"}
-      data-mdcms-can-publish={capabilities.canMutateContent ? "true" : "false"}
       className="mx-auto w-full max-w-5xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
     >
       <header className="mb-6 flex items-center justify-between gap-3">
@@ -209,190 +74,109 @@ export function Studio({
           <p className="text-sm text-slate-600">{statusMessage}</p>
         </div>
         <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
-          {role}
+          {basePath}
         </span>
       </header>
 
-      {effectiveState === "loading" ? (
+      {startupState === "loading" ? (
         <div className="space-y-3" aria-live="polite">
           <div className="h-4 w-2/5 animate-pulse rounded bg-slate-200" />
           <div className="h-20 w-full animate-pulse rounded bg-slate-100" />
         </div>
-      ) : effectiveState === "error" ? (
+      ) : startupState === "error" ? (
         <div
           role="alert"
           className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
         >
           {statusMessage}
         </div>
-      ) : effectiveState === "forbidden" ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          {statusMessage}
-        </div>
-      ) : effectiveState === "empty" ? (
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-          {statusMessage}
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <nav className="flex flex-wrap gap-2" aria-label="Studio routes">
-            {(
-              [
-                "dashboard",
-                "content",
-                "trash",
-                "environments",
-                "users",
-                "settings",
-              ] as const
-            ).map((route) => (
-              <span
-                key={route}
-                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700"
-                data-mdcms-nav-route={route}
-                data-mdcms-nav-active={
-                  route === resolvedRoute.route ? "true" : "false"
-                }
-              >
-                {ROUTE_LABELS[route]}
-              </span>
-            ))}
-          </nav>
+      ) : null}
 
-          {resolvedRoute.route === "content" ? (
-            <div
-              className="flex flex-wrap items-center gap-2"
-              data-mdcms-content-view-toggle="true"
-            >
-              <a
-                href="/admin/content"
-                className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-700"
-                data-mdcms-content-view-option="schema"
-                data-mdcms-content-view-active={
-                  resolvedRoute.contentViewMode === "schema" ? "true" : "false"
-                }
-              >
-                Schema View
-              </a>
-              <a
-                href="/admin/content/by-path"
-                className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-700"
-                data-mdcms-content-view-option="folder"
-                data-mdcms-content-view-active={
-                  resolvedRoute.contentViewMode === "folder" ? "true" : "false"
-                }
-              >
-                Folder View
-              </a>
-            </div>
-          ) : null}
-
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-            <div>
-              Connected to <span className="font-mono">{config.serverUrl}</span>{" "}
-              for <span className="font-medium">{config.project}</span>/
-              <span className="font-medium">{config.environment}</span>.
-            </div>
-            <div className="mt-1">
-              Active route: <strong>{ROUTE_LABELS[resolvedRoute.route]}</strong>
-              {subRouteLabel ? (
-                <>
-                  {" "}
-                  <span className="text-slate-500">({subRouteLabel})</span>
-                </>
-              ) : null}
-            </div>
-            {resolvedRoute.route === "content" ? (
-              <div className="mt-1 text-slate-600">
-                Browsing mode:{" "}
-                <strong>
-                  {resolvedRoute.contentViewMode === "schema"
-                    ? "Schema-first"
-                    : "Folder-path"}
-                </strong>
-              </div>
-            ) : null}
-          </div>
-
-          {isDocumentShellRoute ? (
-            <div
-              className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-800"
-              data-mdcms-document-shell="true"
-              data-mdcms-editor-engine="tiptap-markdown"
-            >
-              <div className="mb-2 text-xs text-slate-500">
-                Document Shell Route
-              </div>
-              <div>
-                Type: <strong>{resolvedRoute.subPath[0]}</strong>
-              </div>
-              <div>
-                Document ID: <code>{resolvedRoute.subPath[1]}</code>
-              </div>
-              <div>
-                Locale: <strong>{documentShell?.locale ?? "en"}</strong>
-              </div>
-              {documentShell?.state === "loading" ? (
-                <div className="mt-2 text-slate-600">Loading document...</div>
-              ) : documentShell?.state === "error" ? (
-                <div
-                  className="mt-2 text-red-700"
-                  data-mdcms-document-shell-error-code={
-                    documentShell.errorCode ?? "UNKNOWN_ERROR"
-                  }
-                >
-                  {documentShell.errorCode
-                    ? `${documentShell.errorCode}: `
-                    : ""}
-                  {documentShell.errorMessage ?? "Failed to load document."}
-                </div>
-              ) : documentShell?.data ? (
-                <div className="mt-2 space-y-1">
-                  <div>
-                    Path: <code>{documentShell.data.path}</code>
-                  </div>
-                  <div>
-                    Updated:{" "}
-                    <span className="font-mono">
-                      {documentShell.data.updatedAt}
-                    </span>
-                  </div>
-                  <pre className="max-h-44 overflow-auto rounded border border-slate-200 bg-slate-50 p-2 text-xs">
-                    {documentRoundTripBody}
-                  </pre>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              disabled={!capabilities.canMutateContent}
-              data-mdcms-action="create-content"
-            >
-              New Document
-            </Button>
-            <Button
-              type="button"
-              disabled={!capabilities.canMutateContent}
-              data-mdcms-action="publish-content"
-              variant="outline"
-            >
-              Publish
-            </Button>
-          </div>
-        </div>
-      )}
-
-      <small
-        data-mdcms-capability="viewer-safe"
-        className="mt-6 block text-xs text-slate-500"
-      >
-        {capabilities.canMutateContent
-          ? "Role permits content mutations in this shell state."
-          : "Viewer-safe mode: mutating actions remain disabled."}
-      </small>
+      <div
+        ref={containerRef}
+        data-mdcms-runtime-container="true"
+        hidden={startupState !== "ready"}
+        className={startupState === "ready" ? "min-h-[20rem]" : "hidden"}
+      />
     </section>
+  );
+}
+
+/**
+ * Studio is the host-embedded entrypoint for MDCMS Studio.
+ * It owns only bootstrap-time loading and fatal startup failures; once the
+ * remote runtime mounts successfully, the remote app owns all Studio UI.
+ */
+export function Studio({
+  config,
+  basePath,
+  auth,
+  hostBridge,
+  fetcher,
+  loadRemoteModule,
+}: StudioProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [startupState, setStartupState] =
+    useState<StudioStartupState>("loading");
+  const [errorMessage, setErrorMessage] = useState<string | undefined>();
+
+  useEffect(() => {
+    const container = containerRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    let isDisposed = false;
+    let unmountRuntime: (() => void) | undefined;
+
+    setStartupState("loading");
+    setErrorMessage(undefined);
+
+    void loadStudioRuntime({
+      config,
+      basePath,
+      container,
+      auth,
+      hostBridge,
+      fetcher,
+      loadRemoteModule,
+    })
+      .then((dispose) => {
+        if (isDisposed) {
+          dispose();
+          return;
+        }
+
+        unmountRuntime = dispose;
+        setStartupState("ready");
+      })
+      .catch((error: unknown) => {
+        if (isDisposed) {
+          return;
+        }
+
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "Failed to initialize Studio.",
+        );
+        setStartupState("error");
+      });
+
+    return () => {
+      isDisposed = true;
+      unmountRuntime?.();
+    };
+  }, [auth, basePath, config, fetcher, hostBridge, loadRemoteModule]);
+
+  return (
+    <StudioShellFrame
+      config={config}
+      basePath={basePath}
+      startupState={startupState}
+      errorMessage={errorMessage}
+      containerRef={containerRef}
+    />
   );
 }

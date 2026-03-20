@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-11
+last_updated: 2026-03-21
 ---
 
 # SPEC-006 Studio Runtime and UI
@@ -14,7 +14,7 @@ This is the live canonical document under `docs/`.
 Studio is loaded through `@mdcms/studio` embedded in host app. The component fetches a bootstrap manifest and executes backend-served Studio runtime.
 
 ```typescript
-export type StudioExecutionMode = "iframe" | "module";
+export type StudioExecutionMode = "module";
 
 export type StudioBootstrapManifest = {
   apiVersion: "1";
@@ -40,6 +40,7 @@ export type RemoteStudioModule = {
 
 export type StudioMountContext = {
   apiBaseUrl: string;
+  basePath: string;
   auth: { mode: "cookie" | "token"; token?: string };
   hostBridge: HostBridgeV1;
 };
@@ -64,7 +65,7 @@ export type HostBridgeV1 = {
 
 ### Embedding
 
-The Studio is a React component published as `@mdcms/studio`. Developers embed it in their app at a catch-all route. On mount, the component fetches `/studio/bootstrap`, verifies integrity/compatibility, and loads the Studio runtime bundle.
+The Studio is a React component published as `@mdcms/studio`. Developers embed it in their app at a catch-all route and pass the Studio subtree root through `basePath`. On mount, the shell fetches `/studio/bootstrap`, verifies integrity/compatibility, loads the Studio runtime bundle, creates the host bridge, and calls the remote `mount(...)` entrypoint.
 
 ```tsx
 // app/admin/[[...path]]/page.tsx (Next.js App Router example)
@@ -72,13 +73,24 @@ import { Studio } from "@mdcms/studio";
 import config from "../../../mdcms.config";
 
 export default function AdminPage() {
-  return <Studio config={config} />;
+  return <Studio config={config} basePath="/admin" />;
 }
 ```
 
+The shell owns only fatal startup failures:
+
+- bootstrap fetch failed
+- bootstrap manifest invalid or incompatible
+- runtime asset load failed
+- remote `mount(...)` failed
+
+After `mount(...)` succeeds, the remote Studio runtime owns all user-visible Studio UI states.
+
 ### Routing
 
-The Studio uses its own internal path-based router within the catch-all route subtree. The user's app framework must be configured to pass all `/admin/*` routes to the Studio component.
+The remote Studio runtime uses its own internal path-based router within the catch-all route subtree. The host app framework must be configured to pass all `/admin/*` routes to the Studio shell, and the shell must provide the subtree root through `basePath`.
+
+The remote runtime owns browser-path syncing through the History API after startup. No framework-specific router adapter is required beyond the catch-all route.
 
 Internal Studio routes (examples):
 
@@ -122,9 +134,9 @@ Studio behavior is resolved in this order:
 
 1. Read backend action catalog contract (`/actions` + `/actions/:id`) including action metadata.
 2. Fetch and verify Studio bootstrap manifest (`/studio/bootstrap`) and runtime artifact.
-3. Execute Studio runtime in selected mode (`iframe` or `module`).
-4. Render default Studio UI for actions/forms/widgets from metadata.
-5. Apply Studio runtime customizations composed in the Studio runtime build.
+3. Execute the verified Studio runtime in `module` mode.
+4. Remote Studio runtime builds its internal composition registry and validates it before first render.
+5. Remote Studio runtime renders default UI for actions/forms/widgets from metadata and applies runtime customizations.
 
 Supported Studio extension surfaces in v1:
 
@@ -149,16 +161,24 @@ Standard slot IDs:
 7. `settings.sidebar`
 8. `settings.panel.<id>`
 
+Runtime composition rules:
+
+- `routes` must be unique after normalized path matching; `/settings` and `/settings/` conflict, and equivalent parameterized shapes also conflict.
+- `navItems` sort deterministically by explicit order, then `id`.
+- `slotWidgets` must declare explicit numeric `priority`; widgets sort by `priority` descending, then `id` ascending.
+- `fieldKinds`, `editorNodes`, `actionOverrides`, and `settingsPanels` must be unique by identifier.
+- `settings.sidebar` entries must reference a registered settings panel.
+- Unknown or unregistered field kinds fall back to a safe JSON editor and emit structured warning logs instead of failing the runtime.
+
 Security model:
 
 - Action catalog metadata is non-executable and drives generated defaults only.
-- `iframe` mode: remote Studio executes in sandboxed iframe with strict typed bridge.
 - `module` mode: remote Studio executes in host JS context via verified runtime artifacts and capability-limited host bridge.
 - Backend authorization remains final authority for every operation.
 
-Execution-mode decision:
+Execution mode:
 
-- Mode selection (`iframe` vs `module`) is finalized during implementation after spike evaluation against MDX preview fidelity, security, complexity, and performance criteria.
+- `module` is the only supported Studio execution mode in MVP.
 
 ---
 

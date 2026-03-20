@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-11
+last_updated: 2026-03-21
 ---
 
 # SPEC-002 System Architecture and Extensibility
@@ -17,7 +17,7 @@ MDCMS consists of two deployable units:
 
 1. **Backend Server** — A standalone, self-hosted server process. Provides the REST API, Studio runtime delivery, module/action surfaces, and all business logic. Runs as a Docker Compose stack alongside PostgreSQL, Redis, and S3-compatible object storage. Post-MVP, the same deployment may also host collaboration/presence WebSocket services.
 
-2. **Studio UI (Approach C)** — A React component (`<Studio />`) from `@mdcms/studio`, embedded in the user's app at a catch-all route (e.g., `/admin/*`). The component loads a backend-served Studio runtime bundle and executes it either in an iframe or via in-process module mode. Host app integration remains required for MDX custom component preview.
+2. **Studio UI (Approach C)** — A React component (`<Studio />`) from `@mdcms/studio`, embedded in the user's app at a catch-all route (for example `/admin/*`). The component acts as a thin loader shell: it fetches a backend-served Studio runtime bundle, verifies compatibility and integrity, provides the host bridge plus `basePath`, and executes the remote Studio app in-process through the module runtime contract. Host app integration remains required for MDX custom component preview.
 
 ```mermaid
 flowchart LR
@@ -60,7 +60,7 @@ MDCMS uses a unified feature-module package model for backend and CLI, and an Ap
 - Modules are first-party only in v1 (workspace/local private npm dependencies).
 - Server and CLI module surfaces are compile-time local.
 - Studio is delivered via backend-served runtime bundle loaded by npm package `@mdcms/studio`.
-- Execution mode (`iframe` vs `module`) is finalized during implementation after spike evaluation.
+- Studio runtime execution is `module`-only in MVP.
 
 **Module manifest and package contract (server + CLI):**
 
@@ -209,10 +209,11 @@ Rules:
 1. Build step bundles local module packages for server and CLI.
 2. Server boots, validates manifests, mounts server surfaces, and publishes typed action catalog endpoints.
 3. Server publishes Studio bootstrap manifest and runtime artifacts.
-4. Host app embeds `@mdcms/studio` (`<Studio />`) and fetches bootstrap manifest at runtime.
-5. Shim verifies manifest signature/hash/compatibility and runs Studio via selected mode (`iframe` or `module`).
-6. Studio runtime reads backend action catalog metadata (`/actions`, `/actions/:id`) and renders defaults/custom behavior.
-7. CLI reads backend action catalog and executes via generic action runner; local CLI aliases/formatters/preflight hooks are applied.
+4. Host app embeds `@mdcms/studio` (`<Studio />`) at a catch-all route and provides the Studio subtree root as `basePath`.
+5. The loader shell verifies manifest signature/hash/compatibility, loads the runtime bundle, and calls the remote `mount(...)` contract in `module` mode.
+6. The remote Studio runtime owns browser-path syncing, application states, and route rendering under the provided `basePath`.
+7. The remote Studio runtime reads backend action catalog metadata (`/actions`, `/actions/:id`) and renders defaults/custom behavior.
+8. CLI reads backend action catalog and executes via generic action runner; local CLI aliases/formatters/preflight hooks are applied.
 
 ### Validation, Collision, and Safety Rules
 
@@ -222,10 +223,11 @@ Rules:
 4. Bootstrap manifest signature or hash mismatch blocks Studio startup.
 5. Incompatible Studio package/runtime/bridge versions block Studio startup with actionable error.
 6. Unknown Studio field kind falls back to a safe JSON editor and logs a warning.
-7. `iframe` mode requires strict sandbox + origin-validated typed message bridge.
-8. `module` mode executes runtime code in host JS context and must use a capability-limited host bridge.
-9. Action catalog metadata is data-only; no executable payloads in metadata.
-10. Authorization is always server-enforced; Studio/CLI visibility is advisory only.
+7. Duplicate normalized Studio route paths fail startup with actionable error output.
+8. Slot widget collisions are allowed only when every widget declares explicit numeric `priority`; ordering is deterministic by `priority` descending, then `id` ascending.
+9. `module` mode executes runtime code in host JS context and must use a capability-limited host bridge.
+10. Action catalog metadata is data-only; no executable payloads in metadata.
+11. Authorization is always server-enforced; Studio/CLI visibility is advisory only.
 
 ### Versioning and Compatibility
 
@@ -275,9 +277,10 @@ flowchart LR
 
 1. Bootstrap verification (signature/hash/compatibility) and failure fallbacks.
 2. Metadata-driven default rendering correctness.
-3. `iframe` bridge contract and origin validation checks.
-4. `module` host bridge contract and capability boundaries.
-5. MDX preview behavior with host components.
+3. `module` host bridge contract and capability boundaries.
+4. Deep-link routing correctness under an explicit `basePath`.
+5. Composition-registry collision handling, deterministic ordering, and unknown field-kind fallback.
+6. MDX preview behavior with host components.
 
 **CLI tests**
 
@@ -297,7 +300,7 @@ flowchart LR
 1. A new backend feature appears in Studio/CLI defaults from the typed action catalog.
 2. Studio runs from backend-served runtime through `@mdcms/studio` with integrity + compatibility checks.
 3. CLI can run backend actions without building custom command trees.
-4. Studio runtime failures support deterministic rollback/kill-switch behavior.
+4. Shell startup failures are deterministic, and after mount the remote runtime owns all Studio application UI states.
 5. Compatibility and collisions fail fast with actionable errors.
 
 ### Implementation Sequence
@@ -306,11 +309,10 @@ flowchart LR
 2. Implement server manifest validator and module bootstrap for server/CLI.
 3. Implement typed action registry emission and `/actions` contract validation.
 4. Implement Studio bootstrap manifest endpoint + signed runtime artifact pipeline.
-5. Implement `@mdcms/studio` runtime loader with integrity checks and mode dispatcher.
-6. Implement C1 (`iframe`) and C2 (`module`) spikes against one real MDX preview/editor flow.
-7. Select execution mode and harden security controls for chosen mode.
-8. Implement CLI generic action runner with aliases/formatters/hooks.
-9. Add CI checks for compatibility, contracts, and Studio runtime integrity.
+5. Implement `@mdcms/studio` runtime loader with integrity checks, `basePath` handoff, and startup failure handling.
+6. Implement the remote Studio app and runtime composition registry in `module` mode.
+7. Implement CLI generic action runner with aliases/formatters/hooks.
+8. Add CI checks for compatibility, contracts, and Studio runtime integrity.
 
 ### Assumptions and Defaults
 
@@ -318,7 +320,7 @@ flowchart LR
 2. Studio is delivered as backend-served runtime loaded via npm package `@mdcms/studio`.
 3. Typed action registry endpoints (`/actions`, `/actions/:id`) remain the generated-default contract source.
 4. Backend authorization remains the final authority.
-5. C1/C2 mode is decided during implementation via explicit spike criteria.
+5. The remote Studio runtime owns routing and application states after the shell completes startup.
 6. Third-party sandboxing is a separate post-v1 phase.
 
 ---

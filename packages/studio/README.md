@@ -2,37 +2,23 @@
 
 Host-embedded Studio package boundary for MDCMS.
 
-## Studio Embed Shell (CMS-47)
+## Studio Embed Shell
 
 - `Studio` is exported from `@mdcms/studio` as the host app entrypoint.
-- Internal Studio surfaces are resolved from catch-all route path segments:
-  - `dashboard`
-  - `content`
-    - schema-first mode: `/admin/content`
-    - folder-path mode: `/admin/content/by-path/*`
-  - `trash`
-  - `environments`
-  - `users`
-  - `settings`
-- CMS-47 shell states are supported via `state` prop:
-  - `loading`
-  - `ready` (default)
-  - `empty`
-  - `error`
-  - `forbidden`
-- Role-aware shell behavior is supported via `role` prop:
-  - `owner`
-  - `admin`
-  - `editor`
-  - `viewer` (default; viewer-safe action constraints)
-- Branding is fixed to `MDCMS` in MVP.
-- Admin-only surfaces (`users`, `settings`) render `forbidden` for
-  non-admin/non-owner roles when state is otherwise `ready`.
-- Content surface supports deterministic mode switching between:
-  - schema-first navigation
-  - folder-path navigation
-- Runtime loader/bootstrap execution is deferred to later roadmap tasks.
-- Shell composition follows a Tailwind + shadcn-style component approach.
+- The shell is intentionally thin:
+  - fetches `GET /api/v1/studio/bootstrap`
+  - validates compatibility and runtime integrity
+  - loads the remote Studio module
+  - creates the host bridge
+  - passes `basePath` plus auth/api config into `mount(...)`
+- The shell owns only fatal startup failures:
+  - bootstrap fetch failed
+  - bootstrap manifest invalid/incompatible
+  - runtime asset load failed
+  - remote mount failed
+- After `mount(...)` succeeds, the remote runtime owns routing, navigation,
+  loading/empty/forbidden/error states, and all normal Studio rendering.
+- MVP runtime execution is `module` only.
 
 Usage:
 
@@ -41,19 +27,24 @@ import config from "../../apps/studio-example/mdcms.config";
 import { Studio } from "@mdcms/studio";
 
 export default function AdminPage() {
-  return <Studio config={config} path={["content", "posts"]} />;
+  return <Studio config={config} basePath="/admin" />;
 }
 ```
 
 - `config.environment` is required by the Studio shell even though the shared
   `mdcms.config.ts` contract keeps it optional for CLI default-routing use
   cases.
+- `basePath` is required because the remote runtime cannot infer its subtree
+  root from deep links alone.
 - The recommended host-app setup is to keep a single `mdcms.config.ts`
   authored with `defineConfig(...)` from `@mdcms/cli`, then pass that object to
   Studio.
 
 ## Document Shell Route (CMS-50)
 
+- This helper remains available for the current shell-first implementation
+  slices, but the remote runtime becomes the owner of document-route behavior
+  once the runtime loader path is fully enabled.
 - Route contract: `/admin/content/:type/:documentId`
 - `loadStudioDocumentShell(config, { type, documentId, locale })` fetches draft
   content from:
@@ -98,15 +89,31 @@ export default function AdminPage() {
   - `dist/assets/<buildId>/<entryFile>`
   - `dist/bootstrap/<buildId>.json`
 - `buildId` and `integritySha256` are derived from bundled artifact bytes.
-- `src/lib/remote-module.ts` provides the typed `RemoteStudioModule` mount entrypoint.
-- Under CMS-34, runtime artifacts are still built in `@mdcms/studio`, but publication now happens from `@mdcms/server` through:
+- `src/lib/remote-module.ts` provides the typed `RemoteStudioModule` mount entrypoint for the full remote Studio app.
+- Runtime artifacts are built in `@mdcms/studio`, but publication happens from `@mdcms/server` through:
   - `GET /api/v1/studio/bootstrap`
   - `GET /api/v1/studio/assets/:buildId/*`
-- The MVP bootstrap contract is fixed to `mode: "module"`.
-- CMS-35 adds test coverage for bootstrap manifest shape, compatibility bounds,
-  runtime-byte integrity, and the current placeholder signature/key invariants
-  emitted by the builder.
-- Loader-side runtime fetch, integrity verification, and execution remain deferred to CMS-60.
+- The bootstrap contract is fixed to `mode: "module"`.
+- The shell validates manifest shape, compatibility bounds, runtime-byte
+  integrity, and the current placeholder signature/key invariants before mount.
+
+## Remote Runtime Composition
+
+- The remote runtime is the full Studio app after startup.
+- Composition surfaces are resolved inside the remote runtime, not registered by
+  the shell:
+  - `routes`
+  - `navItems`
+  - `slotWidgets`
+  - `fieldKinds`
+  - `editorNodes`
+  - `actionOverrides`
+  - `settingsPanels`
+- Collision rules are deterministic:
+  - normalized route conflicts fail startup
+  - `slotWidgets` require explicit numeric `priority`
+  - slot ordering sorts by `priority` descending, then `id` ascending
+  - unknown field kinds fall back to a safe JSON editor with warning logs
 
 ## Build
 

@@ -9,73 +9,8 @@ import {
   resolveStudioEnv,
 } from "./studio.js";
 import { createStudioActionCatalogAdapter } from "./action-catalog-adapter.js";
-import { Studio } from "./studio-component.js";
+import { StudioShellFrame } from "./studio-component.js";
 import { loadStudioDocumentShell } from "./document-shell.js";
-
-type ReactLikeNode = {
-  props?: Record<string, unknown>;
-};
-
-function findNodeByDataAction(
-  root: unknown,
-  action: string,
-): ReactLikeNode | undefined {
-  if (!root || typeof root !== "object") {
-    return undefined;
-  }
-
-  const node = root as ReactLikeNode;
-  if (node.props?.["data-mdcms-action"] === action) {
-    return node;
-  }
-
-  const children = node.props?.children;
-  if (!children) {
-    return undefined;
-  }
-
-  const queue = Array.isArray(children) ? [...children] : [children];
-  while (queue.length > 0) {
-    const candidate = queue.shift();
-    const found = findNodeByDataAction(candidate, action);
-    if (found) {
-      return found;
-    }
-  }
-
-  return undefined;
-}
-
-function findNodeByProp(
-  root: unknown,
-  key: string,
-  value: unknown,
-): ReactLikeNode | undefined {
-  if (!root || typeof root !== "object") {
-    return undefined;
-  }
-
-  const node = root as ReactLikeNode;
-  if (node.props?.[key] === value) {
-    return node;
-  }
-
-  const children = node.props?.children;
-  if (!children) {
-    return undefined;
-  }
-
-  const queue = Array.isArray(children) ? [...children] : [children];
-  while (queue.length > 0) {
-    const candidate = queue.shift();
-    const found = findNodeByProp(candidate, key, value);
-    if (found) {
-      return found;
-    }
-  }
-
-  return undefined;
-}
 
 test("resolveStudioEnv parses core env and applies Studio defaults", () => {
   const env = resolveStudioEnv({
@@ -174,32 +109,35 @@ test("createStudioActionCatalogAdapter resolves detail and validates shape", asy
   assert.equal(result.id, "content.publish");
 });
 
-test("Studio renders deterministic embed shell marker", () => {
-  const node = Studio({
+test("StudioShellFrame renders deterministic startup metadata", () => {
+  const node = StudioShellFrame({
     config: {
       project: "marketing-site",
       environment: "staging",
       serverUrl: "http://localhost:4000",
     },
+    basePath: "/admin",
+    startupState: "loading",
   });
 
   assert.equal(typeof node, "object");
   assert.equal(node.props["data-testid"], "mdcms-studio-root");
   assert.equal(node.props["data-mdcms-project"], "marketing-site");
   assert.equal(node.props["data-mdcms-server-url"], "http://localhost:4000");
+  assert.equal(node.props["data-mdcms-base-path"], "/admin");
   assert.equal(node.props["data-mdcms-brand"], "MDCMS");
-  assert.equal(node.props["data-mdcms-state"], "ready");
-  assert.equal(node.props["data-mdcms-role"], "viewer");
+  assert.equal(node.props["data-mdcms-state"], "loading");
 });
 
-test("Studio supports loading shell state", () => {
-  const node = Studio({
+test("StudioShellFrame renders loading startup message", () => {
+  const node = StudioShellFrame({
     config: {
       project: "marketing-site",
       environment: "staging",
       serverUrl: "http://localhost:4000",
     },
-    state: "loading",
+    basePath: "/admin",
+    startupState: "loading",
   });
 
   assert.equal(node.props["data-mdcms-state"], "loading");
@@ -209,31 +147,15 @@ test("Studio supports loading shell state", () => {
   );
 });
 
-test("Studio supports forbidden shell state", () => {
-  const node = Studio({
+test("StudioShellFrame renders fatal startup errors", () => {
+  const node = StudioShellFrame({
     config: {
       project: "marketing-site",
       environment: "staging",
       serverUrl: "http://localhost:4000",
     },
-    state: "forbidden",
-  });
-
-  assert.equal(node.props["data-mdcms-state"], "forbidden");
-  assert.equal(
-    node.props.children[1].props.children,
-    "You do not have permission to access Studio.",
-  );
-});
-
-test("Studio supports error shell state with custom message", () => {
-  const node = Studio({
-    config: {
-      project: "marketing-site",
-      environment: "staging",
-      serverUrl: "http://localhost:4000",
-    },
-    state: "error",
+    basePath: "/admin",
+    startupState: "error",
     errorMessage: "Bootstrap request failed.",
   });
 
@@ -242,144 +164,6 @@ test("Studio supports error shell state with custom message", () => {
     node.props.children[1].props.children,
     "Bootstrap request failed.",
   );
-});
-
-test("Studio supports empty shell state", () => {
-  const node = Studio({
-    config: {
-      project: "marketing-site",
-      environment: "staging",
-      serverUrl: "http://localhost:4000",
-    },
-    state: "empty",
-  });
-
-  assert.equal(node.props["data-mdcms-state"], "empty");
-  assert.equal(
-    node.props.children[1].props.children,
-    "No content found for this route.",
-  );
-});
-
-test("Studio enforces viewer-safe interaction constraints", () => {
-  const node = Studio({
-    config: {
-      project: "marketing-site",
-      environment: "staging",
-      serverUrl: "http://localhost:4000",
-    },
-    state: "ready",
-    role: "viewer",
-  });
-  const createButton = findNodeByDataAction(node, "create-content");
-  const publishButton = findNodeByDataAction(node, "publish-content");
-
-  assert.equal(node.props["data-mdcms-can-write"], "false");
-  assert.equal(node.props["data-mdcms-can-publish"], "false");
-  assert.equal(createButton?.props?.disabled, true);
-  assert.equal(publishButton?.props?.disabled, true);
-});
-
-test("Studio enables editing actions for editor role", () => {
-  const node = Studio({
-    config: {
-      project: "marketing-site",
-      environment: "staging",
-      serverUrl: "http://localhost:4000",
-    },
-    state: "ready",
-    role: "editor",
-  });
-  const createButton = findNodeByDataAction(node, "create-content");
-  const publishButton = findNodeByDataAction(node, "publish-content");
-
-  assert.equal(node.props["data-mdcms-can-write"], "true");
-  assert.equal(node.props["data-mdcms-can-publish"], "true");
-  assert.equal(createButton?.props?.disabled, false);
-  assert.equal(publishButton?.props?.disabled, false);
-});
-
-test("Studio resolves content route from catch-all path segments", () => {
-  const node = Studio({
-    config: {
-      project: "marketing-site",
-      environment: "staging",
-      serverUrl: "http://localhost:4000",
-    },
-    state: "ready",
-    role: "editor",
-    path: ["content", "posts"],
-  });
-
-  assert.equal(node.props["data-mdcms-route"], "content");
-  assert.equal(node.props["data-mdcms-state"], "ready");
-  assert.equal(node.props["data-mdcms-content-view"], "schema");
-});
-
-test("Studio enforces admin-only route access for users/settings", () => {
-  const editorNode = Studio({
-    config: {
-      project: "marketing-site",
-      environment: "staging",
-      serverUrl: "http://localhost:4000",
-    },
-    state: "ready",
-    role: "editor",
-    path: ["users"],
-  });
-  const adminNode = Studio({
-    config: {
-      project: "marketing-site",
-      environment: "staging",
-      serverUrl: "http://localhost:4000",
-    },
-    state: "ready",
-    role: "admin",
-    path: ["users"],
-  });
-
-  assert.equal(editorNode.props["data-mdcms-state"], "forbidden");
-  assert.equal(adminNode.props["data-mdcms-state"], "ready");
-});
-
-test("Studio supports schema and folder-path content navigation modes", () => {
-  const schemaNode = Studio({
-    config: {
-      project: "marketing-site",
-      environment: "staging",
-      serverUrl: "http://localhost:4000",
-    },
-    state: "ready",
-    role: "editor",
-    path: ["content"],
-  });
-  const folderNode = Studio({
-    config: {
-      project: "marketing-site",
-      environment: "staging",
-      serverUrl: "http://localhost:4000",
-    },
-    state: "ready",
-    role: "editor",
-    path: ["content", "by-path", "blog"],
-  });
-
-  assert.equal(schemaNode.props["data-mdcms-content-view"], "schema");
-  assert.equal(folderNode.props["data-mdcms-content-view"], "folder");
-
-  const schemaOption = findNodeByProp(
-    schemaNode,
-    "data-mdcms-content-view-option",
-    "schema",
-  );
-  const folderOption = findNodeByProp(
-    folderNode,
-    "data-mdcms-content-view-option",
-    "folder",
-  );
-
-  assert.equal(schemaOption?.props?.["data-mdcms-content-view-active"], "true");
-  assert.equal(folderOption?.props?.["data-mdcms-content-view-active"], "true");
 });
 
 test("loadStudioDocumentShell fetches draft content with scoped headers", async () => {
@@ -471,73 +255,4 @@ test("loadStudioDocumentShell exposes typed error code for failed responses", as
   assert.equal(result.state, "error");
   assert.equal(result.errorCode, "FORBIDDEN");
   assert.equal(result.errorMessage, "Document is outside of allowed scope.");
-});
-
-test("Studio renders document shell state for content document routes", () => {
-  const node = Studio({
-    config: {
-      project: "marketing-site",
-      environment: "staging",
-      serverUrl: "http://localhost:4000",
-    },
-    state: "ready",
-    role: "editor",
-    path: ["content", "BlogPost", "11111111-1111-4111-8111-111111111111"],
-    documentShell: {
-      state: "ready",
-      type: "BlogPost",
-      documentId: "11111111-1111-4111-8111-111111111111",
-      locale: "en",
-      data: {
-        documentId: "11111111-1111-4111-8111-111111111111",
-        type: "BlogPost",
-        locale: "en",
-        path: "blog/launch-notes",
-        body: "# Launch Notes",
-        updatedAt: "2026-03-04T10:00:00.000Z",
-      },
-    },
-  });
-
-  assert.equal(node.props["data-mdcms-route"], "content");
-  assert.equal(node.props["data-mdcms-document-shell"], undefined);
-  const documentShellNode = findNodeByProp(
-    node,
-    "data-mdcms-document-shell",
-    "true",
-  );
-  assert.ok(documentShellNode);
-  assert.equal(
-    documentShellNode?.props?.["data-mdcms-editor-engine"],
-    "tiptap-markdown",
-  );
-});
-
-test("Studio renders document shell error code metadata", () => {
-  const node = Studio({
-    config: {
-      project: "marketing-site",
-      environment: "staging",
-      serverUrl: "http://localhost:4000",
-    },
-    state: "ready",
-    role: "editor",
-    path: ["content", "BlogPost", "11111111-1111-4111-8111-111111111111"],
-    documentShell: {
-      state: "error",
-      type: "BlogPost",
-      documentId: "11111111-1111-4111-8111-111111111111",
-      locale: "en",
-      errorCode: "FORBIDDEN",
-      errorMessage: "Document is outside of allowed scope.",
-    },
-  });
-
-  const errorNode = findNodeByProp(
-    node,
-    "data-mdcms-document-shell-error-code",
-    "FORBIDDEN",
-  );
-
-  assert.ok(errorNode);
 });

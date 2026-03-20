@@ -66,10 +66,6 @@ export type StudioRuntimeBuildResult = {
 };
 
 function normalizeMode(mode: string | undefined): StudioExecutionMode {
-  if (mode === "iframe" || mode === "module") {
-    return mode;
-  }
-
   return "module";
 }
 

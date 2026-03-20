@@ -38,7 +38,7 @@ test("createStudioRuntimePublication builds one validated manifest with mode mod
       sourceFile,
       outDir,
       studioVersion: "1.2.3",
-      mode: "iframe",
+      mode: "iframe" as unknown as "module",
     });
 
     const manifest = publication.manifest satisfies StudioBootstrapManifest;

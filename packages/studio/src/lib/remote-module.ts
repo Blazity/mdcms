@@ -1,22 +1,22 @@
+import { createElement } from "react";
+import { createRoot } from "react-dom/client";
+
 import {
+  assertStudioMountContext,
   type RemoteStudioModule,
   type StudioMountContext,
 } from "@mdcms/shared";
 
-type MountTarget = {
-  textContent?: string;
-};
+import { RemoteStudioApp } from "./remote-studio-app.js";
 
-function resolveMountTarget(container: unknown): MountTarget | undefined {
-  if (
-    typeof container === "object" &&
-    container !== null &&
-    "textContent" in container
-  ) {
-    return container as MountTarget;
+function resolveMountTarget(container: unknown): HTMLElement {
+  if (container instanceof HTMLElement) {
+    return container;
   }
 
-  return undefined;
+  throw new TypeError(
+    "Remote Studio runtime mount target must be an HTMLElement.",
+  );
 }
 
 /**
@@ -26,15 +26,14 @@ export const mount: RemoteStudioModule["mount"] = (
   container: unknown,
   context: StudioMountContext,
 ): (() => void) => {
-  const target = resolveMountTarget(container);
+  assertStudioMountContext(context);
 
-  if (target) {
-    target.textContent = `MDCMS Studio runtime loaded from ${context.apiBaseUrl} (${context.auth.mode})`;
-  }
+  const target = resolveMountTarget(container);
+  const root = createRoot(target);
+
+  root.render(createElement(RemoteStudioApp, { context }));
 
   return () => {
-    if (target) {
-      target.textContent = "";
-    }
+    root.unmount();
   };
 };
