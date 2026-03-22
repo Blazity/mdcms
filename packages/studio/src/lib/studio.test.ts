@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import { RuntimeError, type ActionCatalogItem } from "@mdcms/shared";
 
@@ -10,7 +11,10 @@ import {
   resolveStudioEnv,
 } from "./studio.js";
 import { createStudioActionCatalogAdapter } from "./action-catalog-adapter.js";
-import { StudioShellFrame } from "./studio-component.js";
+import {
+  StudioShellFrame,
+  describeStudioStartupError,
+} from "./studio-component.js";
 import { loadStudioDocumentShell } from "./document-shell.js";
 
 test("resolveStudioEnv parses core env and applies Studio defaults", () => {
@@ -174,47 +178,124 @@ test("StudioShellFrame renders deterministic startup metadata", () => {
 });
 
 test("StudioShellFrame renders loading startup message", () => {
-  const node = StudioShellFrame({
-    config: {
-      project: "marketing-site",
-      environment: "staging",
-      serverUrl: "http://localhost:4000",
-    },
-    basePath: "/admin",
-    startupState: "loading",
-  });
-
-  assert.equal(node.props["data-mdcms-state"], "loading");
-  assert.equal(
-    node.props.children[0].props.children[0].props.children[2].props.children,
-    "Loading Studio...",
+  const markup = renderToStaticMarkup(
+    StudioShellFrame({
+      config: {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+      },
+      basePath: "/admin",
+      startupState: "loading",
+    }),
   );
+
+  assert.match(markup, /Preparing Studio runtime/);
+  assert.match(
+    markup,
+    /Fetching the configured Studio bundle and validating it before launch\./,
+  );
+  assert.match(markup, /mdcms-studio-shell__/);
+  assert.match(markup, /<style>/);
+  assert.match(markup, /overflow-y:\s*auto/);
+  assert.match(markup, /overflow-x:\s*hidden/);
 });
 
-test("StudioShellFrame renders fatal startup errors", () => {
-  const node = StudioShellFrame({
-    config: {
-      project: "marketing-site",
-      environment: "staging",
-      serverUrl: "http://localhost:4000",
-    },
-    basePath: "/admin",
-    startupState: "error",
-    errorMessage: "Bootstrap request failed.",
-  });
+test("describeStudioStartupError classifies load failures with metadata", () => {
+  const viewModel = describeStudioStartupError(
+    new RuntimeError({
+      code: "STUDIO_BOOTSTRAP_FETCH_FAILED",
+      message:
+        "Failed to load Studio bootstrap fetch from http://localhost:4000/api/v1/studio/bootstrap.",
+      statusCode: 500,
+      details: {
+        url: "http://localhost:4000/api/v1/studio/bootstrap",
+        browserOrigin: "http://localhost:4173",
+        requestedOrigin: "http://localhost:4000",
+        isCrossOrigin: true,
+      },
+    }),
+  );
 
-  assert.equal(node.props["data-mdcms-state"], "error");
-  const headerChildren =
-    node.props.children[0].props.children[0].props.children.filter(Boolean);
-  assert.equal(headerChildren.length, 2);
+  assert.equal(viewModel.title, "Studio bundle could not be loaded");
   assert.equal(
-    node.props.children[1].props.children[0].props.children,
-    "Studio startup failed",
+    viewModel.summary,
+    "The shell could not retrieve the Studio runtime from the configured backend.",
   );
   assert.equal(
-    node.props.children[1].props.children[1].props.children,
-    "Bootstrap request failed.",
+    viewModel.note,
+    "The browser blocked the request before Studio could start.",
   );
+  assert.deepEqual(viewModel.metadata, [
+    { label: "Error code", value: "STUDIO_BOOTSTRAP_FETCH_FAILED" },
+    { label: "Host origin", value: "http://localhost:4173" },
+    { label: "Target origin", value: "http://localhost:4000" },
+    {
+      label: "Request URL",
+      value: "http://localhost:4000/api/v1/studio/bootstrap",
+    },
+  ]);
+});
+
+test("describeStudioStartupError classifies rejected and crashed failures", () => {
+  const rejected = describeStudioStartupError(
+    new RuntimeError({
+      code: "STUDIO_RUNTIME_INTEGRITY_MISMATCH",
+      message: "Integrity mismatch.",
+      statusCode: 500,
+    }),
+  );
+  const crashed = describeStudioStartupError(
+    new RuntimeError({
+      code: "INVALID_STUDIO_RUNTIME_CONTRACT",
+      message: "remoteStudioModule.mount must return an unmount function.",
+      statusCode: 500,
+    }),
+  );
+
+  assert.equal(rejected.title, "Studio bundle was rejected");
+  assert.equal(crashed.title, "Studio bundle crashed during startup");
+});
+
+test("StudioShellFrame renders categorized startup errors with technical details", () => {
+  const markup = renderToStaticMarkup(
+    StudioShellFrame({
+      config: {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+      },
+      basePath: "/admin",
+      startupState: "error",
+      startupError: new RuntimeError({
+        code: "STUDIO_BOOTSTRAP_FETCH_FAILED",
+        message:
+          "Failed to load Studio bootstrap fetch from http://localhost:4000/api/v1/studio/bootstrap.",
+        statusCode: 500,
+        details: {
+          url: "http://localhost:4000/api/v1/studio/bootstrap",
+          browserOrigin: "http://localhost:4173",
+          requestedOrigin: "http://localhost:4000",
+          isCrossOrigin: true,
+        },
+      }),
+    }),
+  );
+
+  assert.match(markup, /Studio bundle could not be loaded/);
+  assert.match(
+    markup,
+    /The shell could not retrieve the Studio runtime from the configured backend\./,
+  );
+  assert.match(markup, /Technical details/);
+  assert.doesNotMatch(markup, /mdcms-studio-shell__content--error/);
+  assert.doesNotMatch(markup, /<aside class="mdcms-studio-shell__aside"/);
+  assert.match(
+    markup,
+    /Failed to load Studio bootstrap fetch[\s\S]*Failure metadata[\s\S]*Host origin/,
+  );
+  assert.match(markup, /Host origin/);
+  assert.match(markup, /http:\/\/localhost:4173/);
 });
 
 test("loadStudioDocumentShell fetches draft content with scoped headers", async () => {
