@@ -5,6 +5,8 @@ Host-embedded Studio package boundary for MDCMS.
 ## Studio Embed Shell
 
 - `Studio` is exported from `@mdcms/studio` as the host app entrypoint.
+- The package root is intentionally client-only so host-app imports do not pull
+  remote runtime internals into server-component graphs.
 - The shell is intentionally thin:
   - fetches `GET /api/v1/studio/bootstrap`
   - validates compatibility and runtime integrity
@@ -25,15 +27,19 @@ Usage:
 ```tsx
 import config from "../../apps/studio-example/mdcms.config";
 import { Studio } from "@mdcms/studio";
+import { createStudioEmbedConfig } from "@mdcms/studio/runtime";
 
 export default function AdminPage() {
-  return <Studio config={config} basePath="/admin" />;
+  return <Studio config={createStudioEmbedConfig(config)} basePath="/admin" />;
 }
 ```
 
-- `config.environment` is required by the Studio shell even though the shared
-  `mdcms.config.ts` contract keeps it optional for CLI default-routing use
-  cases.
+- `createStudioEmbedConfig(...)` strips the authored `mdcms.config.ts` object
+  down to the plain `{ project, environment, serverUrl }` shape that a client
+  component can receive from a server route.
+- `config.environment` must still be present in the authored config even though
+  the shared `mdcms.config.ts` contract keeps it optional for CLI
+  default-routing use cases.
 - `basePath` is required because the remote runtime cannot infer its subtree
   root from deep links alone.
 - The recommended host-app setup is to keep a single `mdcms.config.ts`
@@ -42,6 +48,7 @@ export default function AdminPage() {
 
 ## Document Shell Route (CMS-50)
 
+- Import path: `@mdcms/studio/document-shell`
 - This helper remains available for the current shell-first implementation
   slices, but the remote runtime becomes the owner of document-route behavior
   once the runtime loader path is fully enabled.
@@ -61,6 +68,7 @@ export default function AdminPage() {
 
 ## TipTap Markdown Baseline (CMS-51)
 
+- Import path: `@mdcms/studio/markdown-pipeline`
 - Markdown editor baseline is wired through TipTap:
   - `@tiptap/core`
   - `@tiptap/starter-kit`
@@ -76,6 +84,7 @@ export default function AdminPage() {
 
 ## Action Catalog Adapter (CMS-5)
 
+- Import path: `@mdcms/studio/action-catalog-adapter`
 - `createStudioActionCatalogAdapter(baseUrl, options?)` provides a typed Eden/Treaty client for:
   - `list()` -> `GET /api/v1/actions`
   - `getById(actionId)` -> `GET /api/v1/actions/:id`
@@ -85,6 +94,7 @@ export default function AdminPage() {
 
 ## Runtime Artifact Builder
 
+- Import path: `@mdcms/studio/build-runtime`
 - `buildStudioRuntimeArtifacts(...)` bundles the remote Studio module entry and emits immutable artifacts:
   - `dist/assets/<buildId>/<entryFile>`
   - `dist/bootstrap/<buildId>.json`
@@ -114,6 +124,14 @@ export default function AdminPage() {
   - `slotWidgets` require explicit numeric `priority`
   - slot ordering sorts by `priority` descending, then `id` ascending
   - unknown field kinds fall back to a safe JSON editor with warning logs
+
+## Runtime Helpers
+
+- Import path: `@mdcms/studio/runtime`
+- `createStudioEmbedConfig(...)`, `resolveStudioEnv(...)`,
+  `createStudioRuntimeContext(...)`, and `formatStudioErrorEnvelope(...)`
+  remain available as explicit runtime helpers without widening the client root
+  entry.
 
 ## Build
 

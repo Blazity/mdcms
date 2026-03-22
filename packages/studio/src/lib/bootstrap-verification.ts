@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import {
   RuntimeError,
   assertStudioBootstrapCompatibility,
@@ -11,7 +9,7 @@ import {
 import {
   createDeterministicPlaceholderKeyId,
   createDeterministicPlaceholderSignature,
-} from "./build-runtime.js";
+} from "./runtime-placeholder.js";
 
 export type StudioRuntimePublicationVerificationInput = {
   manifest: StudioBootstrapManifest;
@@ -19,20 +17,36 @@ export type StudioRuntimePublicationVerificationInput = {
   compatibility: StudioBootstrapCompatibilityOptions;
 };
 
-function sha256Hex(value: Uint8Array): string {
-  return createHash("sha256").update(value).digest("hex");
+async function sha256Hex(value: Uint8Array): Promise<string> {
+  if (!globalThis.crypto?.subtle) {
+    throw new RuntimeError({
+      code: "STUDIO_RUNTIME_INTEGRITY_UNAVAILABLE",
+      message:
+        "Studio runtime integrity verification requires Web Crypto support.",
+      statusCode: 500,
+    });
+  }
+
+  const digestBytes = new Uint8Array(value.byteLength);
+  digestBytes.set(value);
+
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", digestBytes);
+
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
-export function assertStudioRuntimePublication(
+export async function assertStudioRuntimePublication(
   input: StudioRuntimePublicationVerificationInput,
-): void {
+): Promise<void> {
   assertStudioBootstrapManifest(
     input.manifest,
     "studioRuntimePublication.manifest",
   );
   assertStudioBootstrapCompatibility(input.manifest, input.compatibility);
 
-  const actualIntegrity = sha256Hex(input.runtimeBytes);
+  const actualIntegrity = await sha256Hex(input.runtimeBytes);
 
   if (actualIntegrity !== input.manifest.integritySha256) {
     throw new RuntimeError({

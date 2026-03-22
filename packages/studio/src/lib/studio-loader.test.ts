@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import type { HostBridgeV1 } from "@mdcms/shared";
+import { RuntimeError, type HostBridgeV1 } from "@mdcms/shared";
 
 import { buildStudioRuntimeArtifacts } from "./build-runtime.js";
 import { loadStudioRuntime } from "./studio-loader.js";
@@ -25,6 +25,33 @@ async function withTempDir<T>(
     return await run(directory);
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+}
+
+async function withLocationOrigin<T>(
+  origin: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const originalDescriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "location",
+  );
+
+  Object.defineProperty(globalThis, "location", {
+    configurable: true,
+    value: {
+      origin,
+    },
+  });
+
+  try {
+    return await run();
+  } finally {
+    if (originalDescriptor) {
+      Object.defineProperty(globalThis, "location", originalDescriptor);
+    } else {
+      Reflect.deleteProperty(globalThis, "location");
+    }
   }
 }
 
@@ -174,6 +201,39 @@ test("loadStudioRuntime rejects malformed bootstrap payloads", async () => {
       },
     }),
   );
+});
+
+test("loadStudioRuntime turns cross-origin bootstrap fetch failures into actionable errors", async () => {
+  await withLocationOrigin("http://localhost:4173", async () => {
+    await assert.rejects(
+      () =>
+        loadStudioRuntime({
+          config: {
+            project: "marketing-site",
+            environment: "staging",
+            serverUrl: "http://localhost:4000",
+          },
+          basePath: "/admin",
+          container: {},
+          hostBridge: validHostBridge,
+          fetcher: async () => {
+            throw new TypeError("Load failed");
+          },
+          loadRemoteModule: async () => {
+            throw new Error("should not import remote module");
+          },
+        }),
+      (error) => {
+        assert.ok(error instanceof RuntimeError);
+        assert.equal(error.code, "STUDIO_BOOTSTRAP_FETCH_FAILED");
+        assert.match(error.message, /cross-origin request/i);
+        assert.match(error.message, /localhost:4173/);
+        assert.match(error.message, /localhost:4000/);
+        assert.match(error.message, /Check CORS or proxy/i);
+        return true;
+      },
+    );
+  });
 });
 
 test("loadStudioRuntime rejects integrity mismatches before importing the remote module", async () => {

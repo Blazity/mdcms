@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { RuntimeError, type ActionCatalogItem } from "@mdcms/shared";
 
 import {
+  createStudioEmbedConfig,
   createStudioRuntimeContext,
   formatStudioErrorEnvelope,
   resolveStudioEnv,
@@ -35,6 +36,49 @@ test("createStudioRuntimeContext wires env and logger", () => {
 
   assert.equal(context.env.STUDIO_NAME, "authoring-ui");
   assert.ok(context.logger);
+});
+
+test("createStudioEmbedConfig returns a plain serializable studio shell config", () => {
+  const config = createStudioEmbedConfig({
+    project: "marketing-site",
+    environment: "staging",
+    serverUrl: "http://localhost:4000",
+    types: [
+      {
+        name: "post",
+        directory: "content/posts",
+        fields: {
+          title: {
+            "~standard": {
+              version: 1,
+              vendor: "test",
+              validate: () => ({ value: "title" }),
+            },
+          },
+        },
+        extend(overlay) {
+          return overlay;
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(config, {
+    project: "marketing-site",
+    environment: "staging",
+    serverUrl: "http://localhost:4000",
+  });
+});
+
+test("createStudioEmbedConfig rejects missing environment values", () => {
+  assert.throws(
+    () =>
+      createStudioEmbedConfig({
+        project: "marketing-site",
+        serverUrl: "http://localhost:4000",
+      }),
+    /environment/,
+  );
 });
 
 test("formatStudioErrorEnvelope keeps RuntimeError code", () => {
@@ -160,8 +204,15 @@ test("StudioShellFrame renders fatal startup errors", () => {
   });
 
   assert.equal(node.props["data-mdcms-state"], "error");
+  const headerChildren =
+    node.props.children[0].props.children[0].props.children.filter(Boolean);
+  assert.equal(headerChildren.length, 2);
   assert.equal(
-    node.props.children[1].props.children,
+    node.props.children[1].props.children[0].props.children,
+    "Studio startup failed",
+  );
+  assert.equal(
+    node.props.children[1].props.children[1].props.children,
     "Bootstrap request failed.",
   );
 });

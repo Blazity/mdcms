@@ -5,18 +5,16 @@ import {
   assertStudioBootstrapManifest,
   assertStudioMountContext,
   type HostBridgeV1,
-  type MdcmsConfig as SharedMdcmsConfig,
   type StudioMountContext,
 } from "@mdcms/shared";
 
 import { assertStudioRuntimePublication } from "./bootstrap-verification.js";
+import type { StudioEmbedConfig } from "./studio.js";
 
 export const STUDIO_PACKAGE_VERSION = "0.0.1";
 export const STUDIO_HOST_BRIDGE_COMPATIBILITY_VERSION = "1.0.0";
 
-export type MdcmsConfig = SharedMdcmsConfig & {
-  environment: string;
-};
+export type MdcmsConfig = StudioEmbedConfig;
 
 export type StudioLoaderOptions = {
   config: MdcmsConfig;
@@ -44,8 +42,53 @@ function createDefaultHostBridge(): HostBridgeV1 {
   };
 }
 
+function readBrowserOrigin(): string | undefined {
+  const origin = globalThis.location?.origin;
+
+  return typeof origin === "string" && origin.trim().length > 0
+    ? origin.trim()
+    : undefined;
+}
+
+function createStudioLoadFailure(input: {
+  code: string;
+  phase: "bootstrap fetch" | "runtime asset fetch" | "runtime module import";
+  url: string;
+  error: unknown;
+}): RuntimeError {
+  const browserOrigin = readBrowserOrigin();
+  const requestedOrigin = new URL(input.url).origin;
+  const causeMessage =
+    input.error instanceof Error ? input.error.message : String(input.error);
+  const isCrossOrigin =
+    browserOrigin !== undefined && browserOrigin !== requestedOrigin;
+  const message = isCrossOrigin
+    ? [
+        `Failed to load Studio ${input.phase} from ${input.url}.`,
+        `The browser blocked a cross-origin request from ${browserOrigin} to ${requestedOrigin}.`,
+        "Check CORS or proxy the Studio backend through the host app.",
+      ].join("\n")
+    : [`Failed to load Studio ${input.phase} from ${input.url}.`, causeMessage]
+        .filter((part) => part.length > 0)
+        .join("\n");
+
+  return new RuntimeError({
+    code: input.code,
+    message,
+    statusCode: 500,
+    details: {
+      url: input.url,
+      phase: input.phase,
+      browserOrigin: browserOrigin ?? null,
+      requestedOrigin,
+      causeMessage,
+      isCrossOrigin,
+    },
+  });
+}
+
 async function defaultLoadRemoteModule(entryUrl: string): Promise<unknown> {
-  return import(/* @vite-ignore */ entryUrl);
+  return import(/* webpackIgnore: true */ entryUrl);
 }
 
 export async function loadStudioRuntime(
@@ -54,7 +97,18 @@ export async function loadStudioRuntime(
   const apiBaseUrl = normalizeBaseUrl(options.config.serverUrl);
   const fetcher = options.fetcher ?? fetch;
   const bootstrapUrl = resolveUrl("/api/v1/studio/bootstrap", apiBaseUrl);
-  const bootstrapResponse = await fetcher(bootstrapUrl);
+  let bootstrapResponse: Response;
+
+  try {
+    bootstrapResponse = await fetcher(bootstrapUrl);
+  } catch (error) {
+    throw createStudioLoadFailure({
+      code: "STUDIO_BOOTSTRAP_FETCH_FAILED",
+      phase: "bootstrap fetch",
+      url: bootstrapUrl,
+      error,
+    });
+  }
 
   if (!bootstrapResponse.ok) {
     throw new RuntimeError({
@@ -75,7 +129,18 @@ export async function loadStudioRuntime(
 
   const manifest = bootstrapPayload.data;
   const runtimeUrl = resolveUrl(manifest.entryUrl, apiBaseUrl);
-  const runtimeResponse = await fetcher(runtimeUrl);
+  let runtimeResponse: Response;
+
+  try {
+    runtimeResponse = await fetcher(runtimeUrl);
+  } catch (error) {
+    throw createStudioLoadFailure({
+      code: "STUDIO_RUNTIME_ASSET_LOAD_FAILED",
+      phase: "runtime asset fetch",
+      url: runtimeUrl,
+      error,
+    });
+  }
 
   if (!runtimeResponse.ok) {
     throw new RuntimeError({
@@ -90,7 +155,7 @@ export async function loadStudioRuntime(
   }
 
   const runtimeBytes = new Uint8Array(await runtimeResponse.arrayBuffer());
-  assertStudioRuntimePublication({
+  await assertStudioRuntimePublication({
     manifest,
     runtimeBytes,
     compatibility: {
@@ -107,9 +172,21 @@ export async function loadStudioRuntime(
   };
   assertStudioMountContext(mountContext);
 
-  const remoteModule = await (
-    options.loadRemoteModule ?? defaultLoadRemoteModule
-  )(runtimeUrl);
+  let remoteModule: unknown;
+
+  try {
+    remoteModule = await (options.loadRemoteModule ?? defaultLoadRemoteModule)(
+      runtimeUrl,
+    );
+  } catch (error) {
+    throw createStudioLoadFailure({
+      code: "STUDIO_RUNTIME_ASSET_LOAD_FAILED",
+      phase: "runtime module import",
+      url: runtimeUrl,
+      error,
+    });
+  }
+
   assertRemoteStudioModule(remoteModule);
 
   const unmount = remoteModule.mount(options.container, mountContext);

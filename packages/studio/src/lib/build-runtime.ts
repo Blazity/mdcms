@@ -10,6 +10,11 @@ import {
   type StudioExecutionMode,
 } from "@mdcms/shared";
 
+import {
+  createDeterministicPlaceholderKeyId,
+  createDeterministicPlaceholderSignature,
+} from "./runtime-placeholder.js";
+
 type BunBuildResult = {
   success: boolean;
   outputs?: readonly BunBuildOutput[];
@@ -90,16 +95,6 @@ export function createStudioRuntimeEntryUrl(input: {
 }): string {
   const normalizedBasePath = normalizeAssetsBasePath(input.assetsBasePath);
   return `${normalizedBasePath}/${input.buildId}/${input.entryFile}`;
-}
-
-export function createDeterministicPlaceholderSignature(
-  buildId: string,
-): string {
-  return `placeholder-signature-${sha256Hex(`signature:${buildId}`)}`;
-}
-
-export function createDeterministicPlaceholderKeyId(buildId: string): string {
-  return `placeholder-key-${buildId}`;
 }
 
 function createRuntimeEntryFileName(buildId: string): string {

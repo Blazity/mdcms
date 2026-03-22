@@ -71,7 +71,9 @@ export function StudioShellFrame({
             MDCMS
           </p>
           <h1 className="text-2xl font-semibold text-slate-900">Studio</h1>
-          <p className="text-sm text-slate-600">{statusMessage}</p>
+          {startupState !== "error" ? (
+            <p className="text-sm text-slate-600">{statusMessage}</p>
+          ) : null}
         </div>
         <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
           {basePath}
@@ -88,7 +90,8 @@ export function StudioShellFrame({
           role="alert"
           className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
         >
-          {statusMessage}
+          <p className="font-semibold">Studio startup failed</p>
+          <p className="mt-2 whitespace-pre-line">{statusMessage}</p>
         </div>
       ) : null}
 

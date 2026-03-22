@@ -57,7 +57,7 @@ test("assertStudioRuntimePublication accepts a valid build output", async () => 
   await withTempDir("studio-runtime-verification-", async (directory) => {
     const input = await createVerificationInput(directory);
 
-    assert.doesNotThrow(() => assertStudioRuntimePublication(input));
+    await assert.doesNotReject(() => assertStudioRuntimePublication(input));
   });
 });
 
@@ -65,7 +65,7 @@ test("assertStudioRuntimePublication rejects incompatible compatibility bounds",
   await withTempDir("studio-runtime-verification-", async (directory) => {
     const input = await createVerificationInput(directory);
 
-    assert.throws(
+    await assert.rejects(
       () =>
         assertStudioRuntimePublication({
           ...input,
@@ -77,7 +77,7 @@ test("assertStudioRuntimePublication rejects incompatible compatibility bounds",
       /minStudioPackageVersion/,
     );
 
-    assert.throws(
+    await assert.rejects(
       () =>
         assertStudioRuntimePublication({
           ...input,
@@ -96,7 +96,7 @@ test("assertStudioRuntimePublication rejects integrity mismatches", async () => 
     const input = await createVerificationInput(directory);
     const tamperedBytes = new TextEncoder().encode("tampered-runtime");
 
-    assert.throws(
+    await assert.rejects(
       () =>
         assertStudioRuntimePublication({
           ...input,
@@ -111,7 +111,7 @@ test("assertStudioRuntimePublication rejects invalid placeholder signature and k
   await withTempDir("studio-runtime-verification-", async (directory) => {
     const input = await createVerificationInput(directory);
 
-    assert.throws(
+    await assert.rejects(
       () =>
         assertStudioRuntimePublication({
           ...input,
@@ -123,7 +123,7 @@ test("assertStudioRuntimePublication rejects invalid placeholder signature and k
       /signature/,
     );
 
-    assert.throws(
+    await assert.rejects(
       () =>
         assertStudioRuntimePublication({
           ...input,
@@ -141,7 +141,7 @@ test("assertStudioRuntimePublication rejects malformed manifest payloads", async
   await withTempDir("studio-runtime-verification-", async (directory) => {
     const input = await createVerificationInput(directory);
 
-    assert.throws(
+    await assert.rejects(
       () =>
         assertStudioRuntimePublication({
           ...input,

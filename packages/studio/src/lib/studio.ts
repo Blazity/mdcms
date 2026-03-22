@@ -2,6 +2,7 @@ import {
   createNamedRuntimeContext,
   formatRuntimeErrorEnvelope,
   resolveNamedRuntimeEnv,
+  type MdcmsConfig as SharedMdcmsConfig,
   type CoreEnv,
   type ErrorEnvelope,
   type RuntimeContext,
@@ -16,6 +17,28 @@ export type StudioEnv = CoreEnv & {
 };
 
 export type StudioRuntimeContext = RuntimeContext<StudioEnv>;
+
+export type StudioEmbedConfig = {
+  project: string;
+  environment: string;
+  serverUrl: string;
+};
+
+export function createStudioEmbedConfig(
+  config: SharedMdcmsConfig,
+): StudioEmbedConfig {
+  if (!config.environment || config.environment.trim().length === 0) {
+    throw new Error(
+      "Studio embed config requires a non-empty environment string.",
+    );
+  }
+
+  return {
+    project: config.project,
+    environment: config.environment,
+    serverUrl: config.serverUrl,
+  };
+}
 
 export function resolveStudioEnv(rawEnv: NodeJS.ProcessEnv): StudioEnv {
   return resolveNamedRuntimeEnv(rawEnv, ({ rawEnv: sourceEnv }) => ({
