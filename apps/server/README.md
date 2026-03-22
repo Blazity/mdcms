@@ -510,6 +510,9 @@ export MDCMS_AUTH_SAML_PROVIDERS='[
   `MDCMS_DEMO_ENVIRONMENT=staging`,  
   `MDCMS_DEMO_SEED_USER_EMAIL=demo@mdcms.local`,  
   `MDCMS_DEMO_SEED_USER_PASSWORD=Demo12345!`.
+- Non-production demo targets are provisioned from the repo's
+  `apps/studio-example/mdcms.config.ts` environment definitions before content
+  is seeded.
 - Seed content set (in `MDCMS_DEMO_PROJECT/MDCMS_DEMO_ENVIRONMENT`):
   - `post` / `content/posts/hello-mdcms` (`md`)
   - `post` / `content/posts/pull-push-demo` (`md`)

@@ -6,6 +6,7 @@ import { createAuthService } from "../lib/auth.js";
 import { createDatabaseContentStore } from "../lib/content-api.js";
 import { createDatabaseConnection } from "../lib/db.js";
 import { apiKeys, authUsers, rbacGrants } from "../lib/db/schema.js";
+import { ensureDemoSchemaSynced } from "../lib/demo-seed.js";
 
 const API_KEY_PREFIX = "mdcms_key_";
 const DEFAULT_DEMO_API_KEY = "mdcms_key_demo_local_compose_seed_2026_read";
@@ -40,7 +41,6 @@ const DEMO_CONTENT_DOCUMENTS: readonly DemoSeedDocument[] = [
       title: "Hello MDCMS",
       slug: "hello-mdcms",
       excerpt: "Seeded demo post generated for compose runs.",
-      author: "Demo User",
     },
     body: [
       "# Hello MDCMS",
@@ -413,6 +413,12 @@ async function main(): Promise<void> {
   });
 
   try {
+    await ensureDemoSchemaSynced({
+      db: connection.db,
+      project,
+      environment,
+    });
+
     const userId = await ensureDemoUser({
       db: connection.db,
       authService,

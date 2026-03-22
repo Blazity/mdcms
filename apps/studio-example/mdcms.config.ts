@@ -29,5 +29,11 @@ export default defineConfig({
   environment: "staging",
   serverUrl: "http://localhost:4000",
   contentDirectories: ["content"],
+  environments: {
+    production: {},
+    staging: {
+      extends: "production",
+    },
+  },
   types: [post, author, page],
 });
