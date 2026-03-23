@@ -2,7 +2,7 @@
 status: accepted
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-11
+last_updated: 2026-03-23
 ---
 
 # ADR-003 Studio Delivery: Approach C
@@ -21,7 +21,7 @@ Publish `@mdcms/studio` as the host-facing Studio package, but load the actual S
 
 - The backend publishes `/studio/bootstrap` and versioned immutable runtime assets.
 - The Studio package validates integrity and compatibility before executing the runtime.
-- Execution mode remains a gated implementation choice between `iframe` and `module`, with both evaluated against MDX preview and host bridge requirements.
+- MVP execution mode is `module`. The runtime executes in the host JavaScript context through a capability-limited host bridge so MDX custom component preview can resolve against host-app components without a separate iframe bridge layer.
 
 ## Rationale
 
@@ -33,7 +33,7 @@ Publish `@mdcms/studio` as the host-facing Studio package, but load the actual S
 
 - The runtime loader, signature checks, and compatibility checks are part of the core Studio contract.
 - Studio customization remains first-party and trusted in v1, not an untrusted plugin marketplace.
-- The final execution mode stays open until implementation spikes resolve the trade-offs.
+- `iframe` is not part of the MVP Studio delivery contract, so the bootstrap/runtime contract, package docs, and implementation verification should stay aligned on `module` only.
 
 ## Related Specs
 
