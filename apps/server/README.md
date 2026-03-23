@@ -31,11 +31,27 @@ Backend API/runtime package boundary for MDCMS.
 - Server exposes the canonical public Studio runtime publication endpoints:
   - `GET /api/v1/studio/bootstrap`
   - `GET /api/v1/studio/assets/:buildId/*`
-- `prepareServerRequestHandlerWithModules(...)` prepares one startup-owned Studio runtime publication snapshot and injects it into the shared request handler.
-- The bootstrap payload is served as `{ data: StudioBootstrapManifest }`.
+- `prepareServerRequestHandlerWithModules(...)` prepares startup-owned Studio
+  runtime publication state and injects it into the shared request handler.
+- Publication state includes:
+  - one `active` runtime build
+  - optional `lastKnownGood` runtime build
+  - operator kill-switch state
+- The bootstrap success payload is a ready envelope that carries:
+  - `status: "ready"`
+  - `source: "active" | "lastKnownGood"`
+  - `manifest: StudioBootstrapManifest`
+  - optional `recovery` metadata when the server serves `lastKnownGood`
 - MVP bootstrap execution mode is fixed to `module`.
-- `buildId` identifies an immutable asset snapshot. Asset URLs under `/api/v1/studio/assets/:buildId/*` are content-addressed and only serve files from the active published build root.
-- Missing publications, unknown `buildId` values, and missing asset paths normalize to the standard `NOT_FOUND` error envelope.
+- `buildId` identifies an immutable asset snapshot. Asset URLs under `/api/v1/studio/assets/:buildId/*` are content-addressed and only serve files from the server-selected safe publication root for that build id.
+- Shell rejection retry uses bootstrap query params:
+  - `rejectedBuildId`
+  - `rejectionReason` in `integrity | signature | compatibility`
+- Operator kill-switch returns `STUDIO_RUNTIME_DISABLED` (`503`).
+- When no safe runtime can be served, bootstrap returns
+  `STUDIO_RUNTIME_UNAVAILABLE` (`503`).
+- Unknown `buildId` values and missing asset paths still normalize to the
+  standard `NOT_FOUND` error envelope.
 
 ## Explicit Target Routing Guard (CMS-14)
 

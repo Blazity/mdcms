@@ -68,6 +68,29 @@ export type StudioBootstrapManifest = {
   expiresAt: string;
 };
 
+export type StudioBootstrapRejectionReason =
+  | "integrity"
+  | "signature"
+  | "compatibility";
+
+export type StudioBootstrapReadyResponse = {
+  data:
+    | {
+        status: "ready";
+        source: "active";
+        manifest: StudioBootstrapManifest;
+      }
+    | {
+        status: "ready";
+        source: "lastKnownGood";
+        manifest: StudioBootstrapManifest;
+        recovery?: {
+          rejectedBuildId: string;
+          rejectionReason: StudioBootstrapRejectionReason;
+        };
+      };
+};
+
 export type HostBridgeV1 = {
   version: typeof HOST_BRIDGE_VERSION;
   resolveComponent: (name: string) => unknown | null;
@@ -113,6 +136,11 @@ type StrictSemver = {
 
 const MODULE_KIND_VALUES = ["domain", "core"] as const;
 const STUDIO_MODE_VALUES = ["module"] as const;
+const STUDIO_BOOTSTRAP_REJECTION_REASON_VALUES = [
+  "integrity",
+  "signature",
+  "compatibility",
+] as const satisfies readonly StudioBootstrapRejectionReason[];
 const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 const nonEmptyStringSchema = z.string().trim().min(1, {
@@ -251,6 +279,35 @@ const studioBootstrapManifestSchema = z
         message: "must be an ISO-8601 date string.",
       },
     ),
+  })
+  .strict();
+
+const studioBootstrapRecoverySchema = z
+  .object({
+    rejectedBuildId: nonEmptyStringSchema,
+    rejectionReason: z.enum(STUDIO_BOOTSTRAP_REJECTION_REASON_VALUES),
+  })
+  .strict();
+
+const studioBootstrapReadyResponseSchema = z
+  .object({
+    data: z.discriminatedUnion("source", [
+      z
+        .object({
+          status: z.literal("ready"),
+          source: z.literal("active"),
+          manifest: studioBootstrapManifestSchema,
+        })
+        .strict(),
+      z
+        .object({
+          status: z.literal("ready"),
+          source: z.literal("lastKnownGood"),
+          manifest: studioBootstrapManifestSchema,
+          recovery: studioBootstrapRecoverySchema.optional(),
+        })
+        .strict(),
+    ]),
   })
   .strict();
 
@@ -489,6 +546,19 @@ export function assertStudioBootstrapManifest(
   );
 }
 
+export function assertStudioBootstrapReadyResponse(
+  value: unknown,
+  path = "studioBootstrapReadyResponse",
+): asserts value is StudioBootstrapReadyResponse {
+  assertWithSchema(
+    studioBootstrapReadyResponseSchema,
+    value,
+    path,
+    "INVALID_STUDIO_BOOTSTRAP_RESPONSE",
+    `${path} is invalid.`,
+  );
+}
+
 export function assertHostBridgeV1(
   value: unknown,
   path = "hostBridge",
@@ -669,4 +739,10 @@ export function isStudioBootstrapManifest(
   value: unknown,
 ): value is StudioBootstrapManifest {
   return studioBootstrapManifestSchema.safeParse(value).success;
+}
+
+export function isStudioBootstrapReadyResponse(
+  value: unknown,
+): value is StudioBootstrapReadyResponse {
+  return studioBootstrapReadyResponseSchema.safeParse(value).success;
 }

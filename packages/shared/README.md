@@ -127,17 +127,23 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
 - Shared extensibility contracts are framework-agnostic by design and avoid direct Elysia/React/DOM dependencies in `@mdcms/shared`.
 - Core exported types:
   - `ModuleManifest`, `MdcmsModulePackage`, `ServerSurface`, `CliSurface`
-  - `StudioBootstrapManifest`, `StudioMountContext`, `HostBridgeV1`, `RemoteStudioModule`
+  - `StudioBootstrapManifest`, `StudioBootstrapReadyResponse`, `StudioMountContext`, `HostBridgeV1`, `RemoteStudioModule`
   - CLI support surfaces: `CliActionAlias`, `CliOutputFormatter`, `CliPreflightHook`
 - Studio runtime contract rules:
   - MVP runtime mode is `module` only.
+  - bootstrap success is a ready envelope:
+    - `data.status = "ready"`
+    - `data.source = "active" | "lastKnownGood"`
+    - `data.manifest = StudioBootstrapManifest`
+    - optional `data.recovery` with `rejectedBuildId` and `rejectionReason` only when `data.source = "lastKnownGood"`
   - `StudioMountContext` includes `basePath` so deep links can resolve under an embed subtree without framework-specific router adapters.
-  - The shell owns only startup validation/loading failures; after `mount(...)` succeeds, the remote runtime owns Studio UI states and routing.
+  - The shell owns startup validation/loading failures plus startup-disabled outcomes such as `STUDIO_RUNTIME_DISABLED` and `STUDIO_RUNTIME_UNAVAILABLE`; after `mount(...)` succeeds, the remote runtime owns Studio UI states and routing.
 - Runtime validators:
   - Implemented with strict `zod` schemas (`.strict()` + custom refinements) and normalized `RuntimeError` output.
   - `assertModuleManifest(...)`
   - `assertMdcmsModulePackage(...)`
   - `assertStudioBootstrapManifest(...)`
+  - `assertStudioBootstrapReadyResponse(...)`
   - `assertStudioMountContext(...)`
   - `assertHostBridgeV1(...)`
   - `assertRemoteStudioModule(...)`

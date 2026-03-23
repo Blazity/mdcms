@@ -13,11 +13,22 @@ Host-embedded Studio package boundary for MDCMS.
   - loads the remote Studio module
   - creates the host bridge
   - passes `basePath` plus auth/api config into `mount(...)`
-- The shell owns only fatal startup failures:
+- The server owns Studio publication selection:
+  - one `active` build
+  - optional `lastKnownGood` build
+  - operator kill-switch state
+- The shell owns only fatal startup failures and startup-disabled outcomes:
   - bootstrap fetch failed
-  - bootstrap manifest invalid/incompatible
+  - bootstrap response invalid/incompatible
+  - bootstrap returned `STUDIO_RUNTIME_DISABLED` or `STUDIO_RUNTIME_UNAVAILABLE`
   - runtime asset load failed
   - remote mount failed
+- If integrity, signature, or compatibility validation rejects the served build,
+  the shell retries `GET /api/v1/studio/bootstrap` exactly once with:
+  - `rejectedBuildId`
+  - `rejectionReason`
+- The shell does not keep browser-local fallback state and does not choose
+  between active and fallback builds on its own.
 - After `mount(...)` succeeds, the remote runtime owns routing, navigation,
   loading/empty/forbidden/error states, and all normal Studio rendering.
 - MVP runtime execution is `module` only.
@@ -104,6 +115,8 @@ export default function AdminPage() {
   - `GET /api/v1/studio/bootstrap`
   - `GET /api/v1/studio/assets/:buildId/*`
 - The bootstrap contract is fixed to `mode: "module"`.
+- Bootstrap success returns a ready payload that identifies whether the served
+  runtime came from `active` or `lastKnownGood`.
 - The shell validates manifest shape, compatibility bounds, runtime-byte
   integrity, and the current placeholder signature/key invariants before mount.
 

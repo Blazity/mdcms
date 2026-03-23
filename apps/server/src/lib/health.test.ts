@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { ActionCatalogItem, StudioBootstrapManifest } from "@mdcms/shared";
+import type {
+  ActionCatalogItem,
+  StudioBootstrapManifest,
+  StudioBootstrapReadyResponse,
+} from "@mdcms/shared";
 
 import { createServerRequestHandler } from "./server.js";
 
@@ -266,7 +270,7 @@ test("unprefixed /actions path is rejected to enforce /api/v1 base path", async 
   assert.equal(body.code, "NOT_FOUND");
 });
 
-test("GET /api/v1/studio/bootstrap returns studio runtime manifest when publication exists", async () => {
+test("GET /api/v1/studio/bootstrap returns a ready payload for the active runtime build", async () => {
   const manifest: StudioBootstrapManifest = {
     apiVersion: "1",
     studioVersion: "1.2.3",
@@ -293,11 +297,137 @@ test("GET /api/v1/studio/bootstrap returns studio runtime manifest when publicat
   const response = await handler(
     new Request("http://localhost/api/v1/studio/bootstrap"),
   );
-  const body = (await response.json()) as { data: StudioBootstrapManifest };
+  const body = (await response.json()) as StudioBootstrapReadyResponse;
 
   assert.equal(response.status, 200);
-  assert.equal(body.data.mode, "module");
-  assert.equal(body.data.buildId, "build-123");
+  assert.equal(body.data.status, "ready");
+  assert.equal(body.data.source, "active");
+  assert.equal(body.data.manifest.mode, "module");
+  assert.equal(body.data.manifest.buildId, "build-123");
+});
+
+test("GET /api/v1/studio/bootstrap returns a fallback ready payload when the active build is rejected", async () => {
+  const activeManifest: StudioBootstrapManifest = {
+    apiVersion: "1",
+    studioVersion: "1.2.3",
+    mode: "module",
+    entryUrl: "/api/v1/studio/assets/build-active/runtime.mjs",
+    integritySha256: "abc123",
+    signature: "signature",
+    keyId: "key-1",
+    buildId: "build-active",
+    minStudioPackageVersion: "0.0.1",
+    minHostBridgeVersion: "1.0.0",
+    expiresAt: "2099-01-01T00:00:00.000Z",
+  };
+  const fallbackManifest: StudioBootstrapManifest = {
+    ...activeManifest,
+    entryUrl: "/api/v1/studio/assets/build-safe/runtime.mjs",
+    buildId: "build-safe",
+  };
+  const handler = createServerRequestHandler({
+    env: baseEnv,
+    now: () => new Date("2026-02-20T00:00:10.000Z"),
+    studioRuntimePublication: {
+      active: {
+        buildId: "build-active",
+        entryFile: "runtime.mjs",
+        manifest: activeManifest,
+        getAsset: async () => undefined,
+      },
+      lastKnownGood: {
+        buildId: "build-safe",
+        entryFile: "runtime.mjs",
+        manifest: fallbackManifest,
+        getAsset: async () => undefined,
+      },
+    },
+  });
+
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/studio/bootstrap?rejectedBuildId=build-active&rejectionReason=integrity",
+    ),
+  );
+  const body = (await response.json()) as StudioBootstrapReadyResponse;
+
+  assert.equal(response.status, 200);
+  assert.equal(body.data.status, "ready");
+  assert.equal(body.data.source, "lastKnownGood");
+  assert.equal(body.data.manifest.buildId, "build-safe");
+  assert.deepEqual(body.data.recovery, {
+    rejectedBuildId: "build-active",
+    rejectionReason: "integrity",
+  });
+});
+
+test("GET /api/v1/studio/bootstrap rejects malformed recovery query parameters", async () => {
+  const manifest: StudioBootstrapManifest = {
+    apiVersion: "1",
+    studioVersion: "1.2.3",
+    mode: "module",
+    entryUrl: "/api/v1/studio/assets/build-123/runtime.mjs",
+    integritySha256: "abc123",
+    signature: "signature",
+    keyId: "key-1",
+    buildId: "build-123",
+    minStudioPackageVersion: "0.0.1",
+    minHostBridgeVersion: "1.0.0",
+    expiresAt: "2099-01-01T00:00:00.000Z",
+  };
+  const handler = createServerRequestHandler({
+    env: baseEnv,
+    now: () => new Date("2026-02-20T00:00:10.000Z"),
+    studioRuntimePublication: {
+      buildId: "build-123",
+      entryFile: "runtime.mjs",
+      manifest,
+      getAsset: async () => undefined,
+    },
+  });
+
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/studio/bootstrap?rejectedBuildId=build-123",
+    ),
+  );
+  const body = (await response.json()) as Record<string, unknown>;
+
+  assert.equal(response.status, 400);
+  assert.equal(body.code, "INVALID_QUERY_PARAM");
+});
+
+test("GET /api/v1/studio/bootstrap returns STUDIO_RUNTIME_DISABLED when the operator kill switch is enabled", async () => {
+  const handler = createServerRequestHandler({
+    env: {
+      ...baseEnv,
+      MDCMS_STUDIO_RUNTIME_DISABLED: "true",
+    },
+    now: () => new Date("2026-02-20T00:00:10.000Z"),
+  });
+
+  const response = await handler(
+    new Request("http://localhost/api/v1/studio/bootstrap"),
+  );
+  const body = (await response.json()) as Record<string, unknown>;
+
+  assert.equal(response.status, 503);
+  assert.equal(body.code, "STUDIO_RUNTIME_DISABLED");
+});
+
+test("GET /api/v1/studio/bootstrap returns STUDIO_RUNTIME_UNAVAILABLE when no safe runtime exists", async () => {
+  const handler = createServerRequestHandler({
+    env: baseEnv,
+    now: () => new Date("2026-02-20T00:00:10.000Z"),
+  });
+
+  const response = await handler(
+    new Request("http://localhost/api/v1/studio/bootstrap"),
+  );
+  const body = (await response.json()) as Record<string, unknown>;
+
+  assert.equal(response.status, 503);
+  assert.equal(body.code, "STUDIO_RUNTIME_UNAVAILABLE");
 });
 
 test("GET /api/v1/studio/bootstrap echoes CORS headers for allowlisted Studio origins", async () => {
@@ -450,6 +580,67 @@ test("GET /api/v1/studio/assets/:buildId/* returns runtime asset when present", 
     "text/javascript; charset=utf-8",
   );
   assert.equal(body, "export const ok = true;\n");
+});
+
+test("GET /api/v1/studio/assets/:buildId/* serves fallback assets when lastKnownGood is selected", async () => {
+  const encoder = new TextEncoder();
+  const handler = createServerRequestHandler({
+    env: baseEnv,
+    now: () => new Date("2026-02-20T00:00:10.000Z"),
+    studioRuntimePublication: {
+      active: {
+        buildId: "build-active",
+        entryFile: "runtime.mjs",
+        manifest: {
+          apiVersion: "1",
+          studioVersion: "1.2.3",
+          mode: "module",
+          entryUrl: "/api/v1/studio/assets/build-active/runtime.mjs",
+          integritySha256: "abc123",
+          signature: "signature",
+          keyId: "key-1",
+          buildId: "build-active",
+          minStudioPackageVersion: "0.0.1",
+          minHostBridgeVersion: "1.0.0",
+          expiresAt: "2099-01-01T00:00:00.000Z",
+        },
+        getAsset: async () => undefined,
+      },
+      lastKnownGood: {
+        buildId: "build-safe",
+        entryFile: "runtime.mjs",
+        manifest: {
+          apiVersion: "1",
+          studioVersion: "1.2.3",
+          mode: "module",
+          entryUrl: "/api/v1/studio/assets/build-safe/runtime.mjs",
+          integritySha256: "safe123",
+          signature: "signature",
+          keyId: "key-1",
+          buildId: "build-safe",
+          minStudioPackageVersion: "0.0.1",
+          minHostBridgeVersion: "1.0.0",
+          expiresAt: "2099-01-01T00:00:00.000Z",
+        },
+        getAsset: async ({ buildId, assetPath }) =>
+          buildId === "build-safe" && assetPath === "runtime.mjs"
+            ? {
+                absolutePath: "/tmp/runtime.mjs",
+                contentType: "text/javascript; charset=utf-8",
+                body: encoder.encode("export const safe = true;\n"),
+              }
+            : undefined,
+      },
+    },
+  });
+
+  const response = await handler(
+    new Request("http://localhost/api/v1/studio/assets/build-safe/runtime.mjs"),
+  );
+  const body = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(body, "export const safe = true;\n");
 });
 
 test("GET /api/v1/studio/assets/:buildId/* returns NOT_FOUND envelope for unknown build id", async () => {

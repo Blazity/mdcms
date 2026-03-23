@@ -83,6 +83,31 @@ test("parseServerEnv parses studio allowed origins as normalized origin strings"
   ]);
 });
 
+test("parseServerEnv parses studio runtime disabled flag as boolean", () => {
+  const enabled = parseServerEnv({
+    MDCMS_STUDIO_RUNTIME_DISABLED: "true",
+  } as NodeJS.ProcessEnv);
+  const disabled = parseServerEnv({
+    MDCMS_STUDIO_RUNTIME_DISABLED: "false",
+  } as NodeJS.ProcessEnv);
+
+  assert.equal(enabled.MDCMS_STUDIO_RUNTIME_DISABLED, true);
+  assert.equal(disabled.MDCMS_STUDIO_RUNTIME_DISABLED, false);
+});
+
+test("parseServerEnv rejects invalid studio runtime disabled flag values", () => {
+  assert.throws(
+    () =>
+      parseServerEnv({
+        MDCMS_STUDIO_RUNTIME_DISABLED: "sometimes",
+      } as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_ENV" &&
+      error.details?.key === "MDCMS_STUDIO_RUNTIME_DISABLED",
+  );
+});
+
 test("parseServerEnv rejects studio allowed origins that are not absolute origins", () => {
   assert.throws(
     () =>

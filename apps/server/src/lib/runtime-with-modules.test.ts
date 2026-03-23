@@ -9,7 +9,7 @@ import {
   assertStudioBootstrapManifest,
   createConsoleLogger,
   type MdcmsModulePackage,
-  type StudioBootstrapManifest,
+  type StudioBootstrapReadyResponse,
 } from "@mdcms/shared";
 
 import { buildServerModuleLoadReport } from "./module-loader.js";
@@ -281,16 +281,33 @@ test("prepareServerRequestHandlerWithModules publishes module actions and studio
       const bootstrapResponse = await handler(
         new Request("http://localhost/api/v1/studio/bootstrap"),
       );
-      const bootstrapBody = (await bootstrapResponse.json()) as {
-        data: StudioBootstrapManifest;
-      };
+      const bootstrapBody =
+        (await bootstrapResponse.json()) as StudioBootstrapReadyResponse;
 
       assert.equal(bootstrapResponse.status, 200);
-      assertStudioBootstrapManifest(bootstrapBody.data, "bootstrap.data");
-      assert.equal(bootstrapBody.data.mode, "module");
+      assert.equal(bootstrapBody.data.status, "ready");
+      assert.equal(bootstrapBody.data.source, "active");
+      assertStudioBootstrapManifest(
+        bootstrapBody.data.manifest,
+        "bootstrap.data.manifest",
+      );
+      assert.equal(bootstrapBody.data.manifest.mode, "module");
+
+      const retryBootstrapResponse = await handler(
+        new Request(
+          "http://localhost/api/v1/studio/bootstrap?rejectedBuildId=" +
+            bootstrapBody.data.manifest.buildId +
+            "&rejectionReason=integrity",
+        ),
+      );
+      const retryBootstrapBody =
+        (await retryBootstrapResponse.json()) as Record<string, unknown>;
+
+      assert.equal(retryBootstrapResponse.status, 503);
+      assert.equal(retryBootstrapBody.code, "STUDIO_RUNTIME_UNAVAILABLE");
 
       const assetResponse = await handler(
-        new Request(`http://localhost${bootstrapBody.data.entryUrl}`),
+        new Request(`http://localhost${bootstrapBody.data.manifest.entryUrl}`),
       );
       const assetBody = await assetResponse.text();
 

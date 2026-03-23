@@ -197,6 +197,11 @@ export type SamlProviderConfig = {
 export type ServerEnv = CoreEnv & {
   PORT: number;
   SERVICE_NAME: string;
+  /**
+   * Operator kill switch for Studio runtime publication. Enable via env and
+   * restart/redeploy; there is no public mutation endpoint in v1.
+   */
+  MDCMS_STUDIO_RUNTIME_DISABLED: boolean;
   MDCMS_AUTH_OIDC_PROVIDERS: OidcProviderConfig[];
   MDCMS_AUTH_SAML_PROVIDERS: SamlProviderConfig[];
   MDCMS_STUDIO_ALLOWED_ORIGINS: string[];
@@ -261,6 +266,31 @@ function createStudioAllowedOriginsInvalidEnvError(
       key: "MDCMS_STUDIO_ALLOWED_ORIGINS",
       value,
       ...details,
+    },
+  });
+}
+
+function parseStudioRuntimeDisabledFlag(rawValue: string | undefined): boolean {
+  if (rawValue === undefined || rawValue.trim().length === 0) {
+    return false;
+  }
+
+  const normalized = rawValue.trim().toLowerCase();
+
+  if (normalized === "true") {
+    return true;
+  }
+
+  if (normalized === "false") {
+    return false;
+  }
+
+  throw new RuntimeError({
+    code: "INVALID_ENV",
+    message: "MDCMS_STUDIO_RUNTIME_DISABLED must be true or false.",
+    details: {
+      key: "MDCMS_STUDIO_RUNTIME_DISABLED",
+      value: rawValue,
     },
   });
 }
@@ -755,10 +785,14 @@ export function parseServerEnv(rawEnv: NodeJS.ProcessEnv): ServerEnv {
   const studioAllowedOrigins = parseStudioAllowedOrigins(
     rawEnv.MDCMS_STUDIO_ALLOWED_ORIGINS,
   );
+  const studioRuntimeDisabled = parseStudioRuntimeDisabledFlag(
+    rawEnv.MDCMS_STUDIO_RUNTIME_DISABLED,
+  );
   assertUniqueSsoProviderIds(oidcProviders, samlProviders);
 
   return extendEnv(core, () => ({
     ...parsedExtension.data,
+    MDCMS_STUDIO_RUNTIME_DISABLED: studioRuntimeDisabled,
     MDCMS_AUTH_OIDC_PROVIDERS: oidcProviders,
     MDCMS_AUTH_SAML_PROVIDERS: samlProviders,
     MDCMS_STUDIO_ALLOWED_ORIGINS: studioAllowedOrigins,

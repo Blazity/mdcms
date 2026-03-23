@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
-import { matchStudioRoute, stripStudioBasePath } from "./remote-studio-app.js";
+import type { ActionCatalogItem, StudioMountContext } from "@mdcms/shared";
+
+import {
+  RemoteStudioApp,
+  matchStudioRoute,
+  startDocumentPreview,
+  stripStudioBasePath,
+} from "./remote-studio-app.js";
 
 test("stripStudioBasePath resolves internal routes under an explicit base path", () => {
   assert.equal(stripStudioBasePath("/admin", "/admin"), "/");
@@ -45,4 +54,108 @@ test("matchStudioRoute resolves static and parameterized routes", () => {
     ])?.id,
     "content.document",
   );
+});
+
+test("startDocumentPreview calls the host bridge for document routes and cleanup runs on route change or unmount", () => {
+  const previewCalls: Array<{
+    componentName: string;
+    props: Record<string, unknown>;
+    key: string;
+  }> = [];
+  const cleanupCalls: string[] = [];
+  const cleanup = startDocumentPreview({
+    routeId: "content.document",
+    container: { nodeName: "preview" },
+    hostBridge: {
+      version: "1",
+      resolveComponent: () => null,
+      renderMdxPreview: (input) => {
+        previewCalls.push({
+          componentName: input.componentName,
+          props: input.props,
+          key: input.key,
+        });
+
+        return () => {
+          cleanupCalls.push(input.key);
+        };
+      },
+    },
+  });
+
+  assert.deepEqual(previewCalls, [
+    {
+      componentName: "HeroBanner",
+      props: { title: "Launch" },
+      key: "preview:content.document",
+    },
+  ]);
+
+  cleanup?.();
+
+  assert.deepEqual(cleanupCalls, ["preview:content.document"]);
+  assert.equal(
+    startDocumentPreview({
+      routeId: "dashboard",
+      container: { nodeName: "preview" },
+      hostBridge: {
+        version: "1",
+        resolveComponent: () => null,
+        renderMdxPreview: () => () => {},
+      },
+    }),
+    undefined,
+  );
+});
+
+test("RemoteStudioApp renders only the filtered action catalog on the document route", () => {
+  const context: StudioMountContext = {
+    apiBaseUrl: "http://localhost:4000",
+    basePath: "/admin",
+    auth: { mode: "cookie" },
+    hostBridge: {
+      version: "1",
+      resolveComponent: () => null,
+      renderMdxPreview: () => () => {},
+    },
+  };
+  const initialActions: ActionCatalogItem[] = [
+    {
+      id: "content.publish",
+      kind: "command",
+      method: "POST",
+      path: "/api/v1/content/:id/publish",
+      permissions: ["content:publish"],
+      studio: {
+        visible: true,
+        label: "Publish entry",
+      },
+    },
+    {
+      id: "content.archive",
+      kind: "command",
+      method: "POST",
+      path: "/api/v1/content/:id/archive",
+      permissions: ["content:write"],
+      studio: {
+        visible: true,
+        label: "Archive entry",
+      },
+    },
+  ];
+
+  const markup = renderToStaticMarkup(
+    createElement(RemoteStudioApp, {
+      context,
+      initialPathname: "/admin/content/posts/entry-1",
+      initialActions,
+    }),
+  );
+
+  assert.match(markup, /data-mdcms-action-id="content.publish"/);
+  assert.match(markup, />Publish</);
+  assert.match(markup, /data-mdcms-action-id="content.archive"/);
+  assert.match(markup, />Archive entry</);
+  assert.doesNotMatch(markup, /content\.hidden/);
+  assert.match(markup, /data-mdcms-preview-surface="content.document"/);
 });

@@ -1,11 +1,15 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import type { StudioMountContext } from "@mdcms/shared";
+import type { ActionCatalogItem, StudioMountContext } from "@mdcms/shared";
 
 import {
   buildStudioRuntimeRegistry,
   type StudioRouteDefinition,
 } from "./runtime-registry.js";
+import {
+  createStudioActionCatalogAdapter,
+  type StudioActionCatalogAdapter,
+} from "./action-catalog-adapter.js";
 
 type MatchableRoute = {
   id: string;
@@ -319,6 +323,91 @@ function renderSettingsPanel(panelId: string): ReactNode {
   );
 }
 
+type StudioActionStripState =
+  | {
+      status: "loading";
+      actions: ActionCatalogItem[];
+    }
+  | {
+      status: "ready";
+      actions: ActionCatalogItem[];
+    }
+  | {
+      status: "error";
+      actions: ActionCatalogItem[];
+    };
+
+export type RemoteStudioAppProps = {
+  context: StudioMountContext;
+  initialPathname?: string;
+  initialActions?: ActionCatalogItem[];
+  actionCatalogAdapter?: StudioActionCatalogAdapter;
+};
+
+export function createDocumentPreviewRequest(routeId: string | undefined):
+  | {
+      componentName: string;
+      props: Record<string, unknown>;
+      key: string;
+    }
+  | undefined {
+  if (routeId !== "content.document") {
+    return undefined;
+  }
+
+  return {
+    componentName: "HeroBanner",
+    props: { title: "Launch" },
+    key: "preview:content.document",
+  };
+}
+
+export function startDocumentPreview(input: {
+  routeId: string | undefined;
+  container: unknown | null;
+  hostBridge: StudioMountContext["hostBridge"];
+}): (() => void) | undefined {
+  const request = createDocumentPreviewRequest(input.routeId);
+
+  if (!request || !input.container) {
+    return undefined;
+  }
+
+  return input.hostBridge.renderMdxPreview({
+    container: input.container,
+    componentName: request.componentName,
+    props: request.props,
+    key: request.key,
+  });
+}
+
+function renderActionButton(action: ActionCatalogItem): ReactNode {
+  const override = DEFAULT_RUNTIME_REGISTRY.actionOverrides.get(action.id);
+
+  if (override) {
+    return (
+      <div key={action.id} data-mdcms-action-id={action.id}>
+        {override.render() as ReactNode}
+      </div>
+    );
+  }
+
+  const label = action.studio?.label?.trim().length
+    ? action.studio.label.trim()
+    : action.id;
+
+  return (
+    <button
+      key={action.id}
+      type="button"
+      data-mdcms-action-id={action.id}
+      className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+    >
+      {label}
+    </button>
+  );
+}
+
 function renderRouteContent(
   route: StudioRouteDefinition | undefined,
   internalPath: string,
@@ -334,10 +423,30 @@ function renderRouteContent(
   return route.render() as ReactNode;
 }
 
-export function RemoteStudioApp({ context }: { context: StudioMountContext }) {
+export function RemoteStudioApp({
+  context,
+  initialPathname,
+  initialActions,
+  actionCatalogAdapter,
+}: RemoteStudioAppProps) {
   const [pathname, setPathname] = useState(() =>
-    typeof window === "undefined" ? context.basePath : window.location.pathname,
+    typeof window === "undefined"
+      ? (initialPathname ?? context.basePath)
+      : window.location.pathname,
   );
+  const [actionStripState, setActionStripState] =
+    useState<StudioActionStripState>(
+      initialActions
+        ? {
+            status: "ready",
+            actions: initialActions,
+          }
+        : {
+            status: "loading",
+            actions: [],
+          },
+    );
+  const previewContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -355,10 +464,63 @@ export function RemoteStudioApp({ context }: { context: StudioMountContext }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (initialActions) {
+      return;
+    }
+
+    let cancelled = false;
+    const adapter =
+      actionCatalogAdapter ??
+      createStudioActionCatalogAdapter(context.apiBaseUrl, {
+        auth: context.auth,
+      });
+
+    setActionStripState({
+      status: "loading",
+      actions: [],
+    });
+
+    void adapter
+      .list()
+      .then((actions) => {
+        if (cancelled) {
+          return;
+        }
+
+        setActionStripState({
+          status: "ready",
+          actions,
+        });
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setActionStripState({
+          status: "error",
+          actions: [],
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [actionCatalogAdapter, context.apiBaseUrl, context.auth, initialActions]);
+
   const internalPath = stripStudioBasePath(pathname, context.basePath);
   const activeRoute =
     matchStudioRoute(internalPath, DEFAULT_RUNTIME_REGISTRY.routes) ??
     DEFAULT_RUNTIME_REGISTRY.routes[0];
+
+  useEffect(() => {
+    return startDocumentPreview({
+      routeId: activeRoute?.id,
+      container: previewContainerRef.current,
+      hostBridge: context.hostBridge,
+    });
+  }, [activeRoute?.id, context.hostBridge]);
 
   return (
     <section
@@ -419,6 +581,51 @@ export function RemoteStudioApp({ context }: { context: StudioMountContext }) {
         <div className="flex flex-wrap gap-3">
           {renderSlot("content.list.toolbar")}
         </div>
+      ) : null}
+
+      {activeRoute?.id === "content.document" ? (
+        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-wide text-slate-500">
+                Document actions
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {actionStripState.status === "loading" ? (
+                  <p
+                    data-mdcms-action-state="loading"
+                    className="text-sm text-slate-500"
+                  >
+                    Loading actions...
+                  </p>
+                ) : null}
+                {actionStripState.status === "error" ? (
+                  <p
+                    data-mdcms-action-state="error"
+                    className="text-sm text-amber-700"
+                  >
+                    Actions are temporarily unavailable.
+                  </p>
+                ) : null}
+                {actionStripState.status === "ready"
+                  ? actionStripState.actions.map((action) =>
+                      renderActionButton(action),
+                    )
+                  : null}
+              </div>
+            </div>
+          </div>
+          <aside className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-500">
+              MDX preview
+            </p>
+            <div
+              ref={previewContainerRef}
+              data-mdcms-preview-surface="content.document"
+              className="min-h-32 rounded-md border border-dashed border-slate-300 bg-white"
+            />
+          </aside>
+        </section>
       ) : null}
 
       <main>{renderRouteContent(activeRoute, internalPath)}</main>

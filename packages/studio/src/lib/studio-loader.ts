@@ -2,9 +2,13 @@ import {
   HOST_BRIDGE_VERSION,
   RuntimeError,
   assertRemoteStudioModule,
-  assertStudioBootstrapManifest,
+  assertStudioBootstrapReadyResponse,
   assertStudioMountContext,
+  isRuntimeErrorLike,
+  type ErrorEnvelope,
   type HostBridgeV1,
+  type StudioBootstrapReadyResponse,
+  type StudioBootstrapRejectionReason,
   type StudioMountContext,
 } from "@mdcms/shared";
 
@@ -26,12 +30,31 @@ export type StudioLoaderOptions = {
   loadRemoteModule?: (entryUrl: string) => Promise<unknown>;
 };
 
+type StudioBootstrapRetryContext = {
+  rejectedBuildId: string;
+  rejectionReason: StudioBootstrapRejectionReason;
+};
+
 function normalizeBaseUrl(serverUrl: string): string {
   return serverUrl.endsWith("/") ? serverUrl.slice(0, -1) : serverUrl;
 }
 
 function resolveUrl(pathOrUrl: string, apiBaseUrl: string): string {
   return new URL(pathOrUrl, `${apiBaseUrl}/`).href;
+}
+
+function resolveBootstrapUrl(
+  apiBaseUrl: string,
+  retry?: StudioBootstrapRetryContext,
+): string {
+  const url = new URL("/api/v1/studio/bootstrap", `${apiBaseUrl}/`);
+
+  if (retry) {
+    url.searchParams.set("rejectedBuildId", retry.rejectedBuildId);
+    url.searchParams.set("rejectionReason", retry.rejectionReason);
+  }
+
+  return url.href;
 }
 
 function createDefaultHostBridge(): HostBridgeV1 {
@@ -91,16 +114,31 @@ async function defaultLoadRemoteModule(entryUrl: string): Promise<unknown> {
   return import(/* webpackIgnore: true */ entryUrl);
 }
 
-export async function loadStudioRuntime(
-  options: StudioLoaderOptions,
-): Promise<() => void> {
-  const apiBaseUrl = normalizeBaseUrl(options.config.serverUrl);
-  const fetcher = options.fetcher ?? fetch;
-  const bootstrapUrl = resolveUrl("/api/v1/studio/bootstrap", apiBaseUrl);
+function isErrorEnvelope(value: unknown): value is ErrorEnvelope {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return (
+    candidate.status === "error" &&
+    typeof candidate.code === "string" &&
+    typeof candidate.message === "string" &&
+    typeof candidate.timestamp === "string"
+  );
+}
+
+async function fetchStudioBootstrapReadyResponse(input: {
+  apiBaseUrl: string;
+  fetcher: typeof fetch;
+  retry?: StudioBootstrapRetryContext;
+}): Promise<StudioBootstrapReadyResponse> {
+  const bootstrapUrl = resolveBootstrapUrl(input.apiBaseUrl, input.retry);
   let bootstrapResponse: Response;
 
   try {
-    bootstrapResponse = await fetcher(bootstrapUrl);
+    bootstrapResponse = await input.fetcher(bootstrapUrl);
   } catch (error) {
     throw createStudioLoadFailure({
       code: "STUDIO_BOOTSTRAP_FETCH_FAILED",
@@ -111,6 +149,23 @@ export async function loadStudioRuntime(
   }
 
   if (!bootstrapResponse.ok) {
+    let responseBody: unknown;
+
+    try {
+      responseBody = await bootstrapResponse.json();
+    } catch {
+      responseBody = undefined;
+    }
+
+    if (isErrorEnvelope(responseBody)) {
+      throw new RuntimeError({
+        code: responseBody.code,
+        message: responseBody.message,
+        statusCode: bootstrapResponse.status || 500,
+        details: responseBody.details,
+      });
+    }
+
     throw new RuntimeError({
       code: "STUDIO_BOOTSTRAP_FETCH_FAILED",
       message: `Failed to fetch Studio bootstrap manifest from ${bootstrapUrl}.`,
@@ -122,17 +177,61 @@ export async function loadStudioRuntime(
     });
   }
 
-  const bootstrapPayload = (await bootstrapResponse.json()) as {
-    data?: unknown;
-  };
-  assertStudioBootstrapManifest(bootstrapPayload.data);
+  const bootstrapPayload = (await bootstrapResponse.json()) as unknown;
+  assertStudioBootstrapReadyResponse(bootstrapPayload);
 
-  const manifest = bootstrapPayload.data;
-  const runtimeUrl = resolveUrl(manifest.entryUrl, apiBaseUrl);
+  return bootstrapPayload;
+}
+
+function classifyStudioBootstrapRetry(
+  error: unknown,
+  buildId: string,
+): StudioBootstrapRetryContext | undefined {
+  if (!isRuntimeErrorLike(error)) {
+    return undefined;
+  }
+
+  if (error.code === "STUDIO_RUNTIME_INTEGRITY_MISMATCH") {
+    return {
+      rejectedBuildId: buildId,
+      rejectionReason: "integrity",
+    };
+  }
+
+  if (
+    error.code === "INVALID_STUDIO_RUNTIME_SIGNATURE" ||
+    error.code === "INVALID_STUDIO_RUNTIME_KEY_ID"
+  ) {
+    return {
+      rejectedBuildId: buildId,
+      rejectionReason: "signature",
+    };
+  }
+
+  if (error.code === "INCOMPATIBLE_STUDIO_BOOTSTRAP_MANIFEST") {
+    return {
+      rejectedBuildId: buildId,
+      rejectionReason: "compatibility",
+    };
+  }
+
+  return undefined;
+}
+
+async function loadStudioRuntimeFromBootstrap(
+  options: StudioLoaderOptions,
+  input: {
+    apiBaseUrl: string;
+    fetcher: typeof fetch;
+    bootstrapResponse: StudioBootstrapReadyResponse;
+  },
+): Promise<() => void> {
+  const manifest = input.bootstrapResponse.data.manifest;
+  const runtimeUrl = resolveUrl(manifest.entryUrl, input.apiBaseUrl);
   let runtimeResponse: Response;
 
   try {
-    runtimeResponse = await fetcher(runtimeUrl);
+    runtimeResponse = await input.fetcher(runtimeUrl);
   } catch (error) {
     throw createStudioLoadFailure({
       code: "STUDIO_RUNTIME_ASSET_LOAD_FAILED",
@@ -165,7 +264,7 @@ export async function loadStudioRuntime(
   });
 
   const mountContext: StudioMountContext = {
-    apiBaseUrl,
+    apiBaseUrl: input.apiBaseUrl,
     basePath: options.basePath,
     auth: options.auth ?? { mode: "cookie" },
     hostBridge: options.hostBridge ?? createDefaultHostBridge(),
@@ -200,4 +299,44 @@ export async function loadStudioRuntime(
   }
 
   return unmount;
+}
+
+export async function loadStudioRuntime(
+  options: StudioLoaderOptions,
+): Promise<() => void> {
+  const apiBaseUrl = normalizeBaseUrl(options.config.serverUrl);
+  const fetcher = options.fetcher ?? fetch;
+  const bootstrapResponse = await fetchStudioBootstrapReadyResponse({
+    apiBaseUrl,
+    fetcher,
+  });
+
+  try {
+    return await loadStudioRuntimeFromBootstrap(options, {
+      apiBaseUrl,
+      fetcher,
+      bootstrapResponse,
+    });
+  } catch (error) {
+    const retry = classifyStudioBootstrapRetry(
+      error,
+      bootstrapResponse.data.manifest.buildId,
+    );
+
+    if (!retry) {
+      throw error;
+    }
+
+    const fallbackBootstrapResponse = await fetchStudioBootstrapReadyResponse({
+      apiBaseUrl,
+      fetcher,
+      retry,
+    });
+
+    return loadStudioRuntimeFromBootstrap(options, {
+      apiBaseUrl,
+      fetcher,
+      bootstrapResponse: fallbackBootstrapResponse,
+    });
+  }
 }

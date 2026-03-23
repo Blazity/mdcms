@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { RuntimeError } from "../runtime/error.js";
 import {
   assertHostBridgeV1,
   assertMdcmsModulePackage,
@@ -9,12 +10,15 @@ import {
   assertRemoteStudioModule,
   assertStudioBootstrapCompatibility,
   assertStudioBootstrapManifest,
+  assertStudioBootstrapReadyResponse,
   assertStudioMountContext,
   isModuleManifest,
   isStudioBootstrapManifest,
+  isStudioBootstrapReadyResponse,
   type MdcmsModulePackage,
   type ModuleManifest,
   type StudioBootstrapManifest,
+  type StudioBootstrapReadyResponse,
 } from "./extensibility.js";
 
 const validAction = {
@@ -66,6 +70,14 @@ const validHostBridge = {
   version: "1" as const,
   resolveComponent: () => null,
   renderMdxPreview: () => () => {},
+};
+
+const validStudioBootstrapReadyResponse: StudioBootstrapReadyResponse = {
+  data: {
+    status: "ready",
+    source: "active",
+    manifest: validStudioBootstrapManifest,
+  },
 };
 
 test("assertModuleManifest and assertMdcmsModulePackage accept valid values", () => {
@@ -267,6 +279,81 @@ test("assertStudioBootstrapManifest rejects blank signature and invalid mode", (
   );
 });
 
+test("assertStudioBootstrapReadyResponse accepts valid active and fallback payloads", () => {
+  assert.doesNotThrow(() =>
+    assertStudioBootstrapReadyResponse(validStudioBootstrapReadyResponse),
+  );
+
+  assert.doesNotThrow(() =>
+    assertStudioBootstrapReadyResponse({
+      data: {
+        status: "ready",
+        source: "lastKnownGood",
+        manifest: validStudioBootstrapManifest,
+        recovery: {
+          rejectedBuildId: "build-bad",
+          rejectionReason: "integrity",
+        },
+      },
+    }),
+  );
+});
+
+test("assertStudioBootstrapReadyResponse rejects malformed source and recovery reason", () => {
+  assert.throws(
+    () =>
+      assertStudioBootstrapReadyResponse({
+        data: {
+          status: "ready",
+          source: "active",
+          manifest: validStudioBootstrapManifest,
+          recovery: {
+            rejectedBuildId: "build-bad",
+            rejectionReason: "integrity",
+          },
+        },
+      } as unknown as StudioBootstrapReadyResponse),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_STUDIO_BOOTSTRAP_RESPONSE" &&
+      /recovery/.test(error.message),
+  );
+
+  assert.throws(
+    () =>
+      assertStudioBootstrapReadyResponse({
+        data: {
+          status: "ready",
+          source: "fallback",
+          manifest: validStudioBootstrapManifest,
+        },
+      } as unknown as StudioBootstrapReadyResponse),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_STUDIO_BOOTSTRAP_RESPONSE" &&
+      /source/.test(error.message),
+  );
+
+  assert.throws(
+    () =>
+      assertStudioBootstrapReadyResponse({
+        data: {
+          status: "ready",
+          source: "lastKnownGood",
+          manifest: validStudioBootstrapManifest,
+          recovery: {
+            rejectedBuildId: "build-bad",
+            rejectionReason: "hash",
+          },
+        },
+      } as unknown as StudioBootstrapReadyResponse),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_STUDIO_BOOTSTRAP_RESPONSE" &&
+      /rejectionReason/.test(error.message),
+  );
+});
+
 test("runtime contract validators cover positive and negative shapes", () => {
   assert.doesNotThrow(() => assertHostBridgeV1(validHostBridge));
 
@@ -330,4 +417,9 @@ test("isModuleManifest and isStudioBootstrapManifest return booleans without thr
 
   assert.equal(isStudioBootstrapManifest(validStudioBootstrapManifest), true);
   assert.equal(isStudioBootstrapManifest({}), false);
+  assert.equal(
+    isStudioBootstrapReadyResponse(validStudioBootstrapReadyResponse),
+    true,
+  );
+  assert.equal(isStudioBootstrapReadyResponse({}), false);
 });

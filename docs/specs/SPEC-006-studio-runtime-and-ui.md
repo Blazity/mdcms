@@ -11,7 +11,7 @@ This is the live canonical document under `docs/`.
 
 ## Studio Runtime Delivery Contract (Approach C)
 
-Studio is loaded through `@mdcms/studio` embedded in host app. The component fetches a bootstrap manifest and executes backend-served Studio runtime.
+Studio is loaded through `@mdcms/studio` embedded in host app. The component fetches a bootstrap startup payload and executes backend-served Studio runtime.
 
 ```typescript
 export type StudioExecutionMode = "module";
@@ -28,6 +28,29 @@ export type StudioBootstrapManifest = {
   minStudioPackageVersion: string;
   minHostBridgeVersion: string;
   expiresAt: string;
+};
+
+export type StudioBootstrapRejectionReason =
+  | "integrity"
+  | "signature"
+  | "compatibility";
+
+export type StudioBootstrapReadyResponse = {
+  data:
+    | {
+        status: "ready";
+        source: "active";
+        manifest: StudioBootstrapManifest;
+      }
+    | {
+        status: "ready";
+        source: "lastKnownGood";
+        manifest: StudioBootstrapManifest;
+        recovery?: {
+          rejectedBuildId: string;
+          rejectionReason: StudioBootstrapRejectionReason;
+        };
+      };
 };
 ```
 
@@ -70,7 +93,7 @@ export type HostBridgeV1 = {
 
 ### Embedding
 
-The Studio is a React component published as `@mdcms/studio`. Developers embed it in their app at a catch-all route and pass the Studio subtree root through `basePath`. On mount, the shell fetches `/studio/bootstrap`, verifies integrity/compatibility, loads the Studio runtime bundle, creates the host bridge, and calls the remote `mount(...)` entrypoint.
+The Studio is a React component published as `@mdcms/studio`. Developers embed it in their app at a catch-all route and pass the Studio subtree root through `basePath`. On mount, the shell fetches `/studio/bootstrap`, verifies the returned runtime manifest and asset, creates the host bridge, and calls the remote `mount(...)` entrypoint.
 
 ```tsx
 // app/admin/[[...path]]/page.tsx (Next.js App Router example)
@@ -84,12 +107,33 @@ export default function AdminPage() {
 
 The backend may live on a different origin from the host app. Cross-origin Studio embedding is a first-class path; a same-origin reverse proxy is optional, not required. Browser access to the backend follows the Studio origin allowlist and CORS contract defined in `SPEC-005`.
 
-The shell owns only fatal startup failures:
+Studio runtime publication selection is server-owned:
+
+- The server tracks one `active` runtime build, an optional `lastKnownGood` runtime build, and an operator kill-switch state.
+- `lastKnownGood` is the previously promoted verified publication snapshot. The server may serve it only as a recovery fallback; the shell never promotes or persists fallback builds on its own.
+- `GET /api/v1/studio/bootstrap` returns exactly one startup outcome for the caller:
+  - a ready payload for the `active` build
+  - a ready payload for the `lastKnownGood` build when the active build was rejected during startup validation
+  - a deterministic disabled or unavailable error response when no runtime should be started
+- The shell never keeps browser-local fallback state and never selects between builds on its own.
+- The MVP operator control surface for the kill switch is server configuration or environment only. Enabling or disabling it requires an operator configuration change followed by process restart or redeploy. No Studio UI toggle or public mutation endpoint is exposed in v1.
+
+The shell owns only fatal startup failures and startup-disabled outcomes:
 
 - bootstrap fetch failed
-- bootstrap manifest invalid or incompatible
+- bootstrap response invalid or incompatible
+- bootstrap returned `STUDIO_RUNTIME_DISABLED` or `STUDIO_RUNTIME_UNAVAILABLE`
 - runtime asset load failed
 - remote `mount(...)` failed
+
+If runtime validation fails because of integrity, signature, or compatibility rejection, the shell retries `GET /api/v1/studio/bootstrap` exactly once with:
+
+- `rejectedBuildId=<buildId>`
+- `rejectionReason=integrity|signature|compatibility`
+
+Retry query parameters are optional only as a pair. If either parameter is provided without the other, or if `rejectionReason` is outside the allowed values, bootstrap returns `INVALID_QUERY_PARAM` (`400`).
+
+The server then decides whether to serve `lastKnownGood` or return a deterministic disabled or unavailable response. The shell does not loop beyond that single retry.
 
 After `mount(...)` succeeds, the remote Studio runtime owns all user-visible Studio UI states.
 
@@ -140,7 +184,7 @@ Bulk operations are Post-MVP. When implemented, the content list view supports m
 Studio behavior is resolved in this order:
 
 1. Read backend action catalog contract (`/actions` + `/actions/:id`) including action metadata.
-2. Fetch and verify Studio bootstrap manifest (`/studio/bootstrap`) and runtime artifact.
+2. Fetch and verify Studio bootstrap startup payload (`/studio/bootstrap`) and runtime artifact.
 3. Execute the verified Studio runtime in `module` mode.
 4. Remote Studio runtime builds its internal composition registry and validates it before first render.
 5. Remote Studio runtime renders default UI for actions/forms/widgets from metadata and applies runtime customizations.
@@ -191,8 +235,8 @@ Execution mode:
 
 ## Core Runtime and Studio Runtime Endpoints
 
-| Method | Path                               | Auth Mode | Required Scope | Target Routing | Request              | Success                                                     | Deterministic Errors                                                      |
-| ------ | ---------------------------------- | --------- | -------------- | -------------- | -------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------- |
-| GET    | `/healthz`                         | public    | none           | none           | no body              | `200` health payload (service/version/uptime/startedAt/now) | `INTERNAL_ERROR` (`500`) when health provider fails                       |
-| GET    | `/api/v1/studio/bootstrap`         | public    | none           | none           | no body              | `200` `{ data: StudioBootstrapManifest }`                   | `FORBIDDEN_ORIGIN` (`403`), `NOT_FOUND` (`404`), `INTERNAL_ERROR` (`500`) |
-| GET    | `/api/v1/studio/assets/:buildId/*` | public    | none           | none           | `buildId` path param | `200` immutable runtime asset stream                        | `FORBIDDEN_ORIGIN` (`403`), `NOT_FOUND` (`404`)                           |
+| Method | Path                               | Auth Mode | Required Scope | Target Routing | Request                                                   | Success                                                     | Deterministic Errors                                                                                                                                         |
+| ------ | ---------------------------------- | --------- | -------------- | -------------- | --------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/healthz`                         | public    | none           | none           | no body                                                   | `200` health payload (service/version/uptime/startedAt/now) | `INTERNAL_ERROR` (`500`) when health provider fails                                                                                                          |
+| GET    | `/api/v1/studio/bootstrap`         | public    | none           | none           | optional query pair: `rejectedBuildId`, `rejectionReason` | `200` `StudioBootstrapReadyResponse`                        | `INVALID_QUERY_PARAM` (`400`), `FORBIDDEN_ORIGIN` (`403`), `STUDIO_RUNTIME_DISABLED` (`503`), `STUDIO_RUNTIME_UNAVAILABLE` (`503`), `INTERNAL_ERROR` (`500`) |
+| GET    | `/api/v1/studio/assets/:buildId/*` | public    | none           | none           | `buildId` path param                                      | `200` immutable runtime asset stream                        | `FORBIDDEN_ORIGIN` (`403`), `NOT_FOUND` (`404`)                                                                                                              |

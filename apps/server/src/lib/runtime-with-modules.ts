@@ -236,12 +236,14 @@ export async function prepareServerRequestHandlerWithModules(
     });
   const studioRuntimePublication =
     options.serverOptions?.studioRuntimePublication ??
-    (await createStudioRuntimePublication({
-      ...options.studioRuntimeOptions,
-      studioVersion:
-        options.studioRuntimeOptions?.studioVersion ??
-        (rawEnv.APP_VERSION?.trim() || "0.0.0"),
-    }));
+    ({
+      active: await createStudioRuntimePublication({
+        ...options.studioRuntimeOptions,
+        studioVersion:
+          options.studioRuntimeOptions?.studioVersion ??
+          (rawEnv.APP_VERSION?.trim() || "0.0.0"),
+      }),
+    } as const);
 
   return createServerRequestHandlerWithModules({
     ...options,

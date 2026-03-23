@@ -416,11 +416,17 @@ const LOAD_ERROR_CODES = new Set([
 
 const REJECTED_ERROR_CODES = new Set([
   "INVALID_STUDIO_BOOTSTRAP_MANIFEST",
+  "INVALID_STUDIO_BOOTSTRAP_RESPONSE",
   "INCOMPATIBLE_STUDIO_BOOTSTRAP_MANIFEST",
   "STUDIO_RUNTIME_INTEGRITY_UNAVAILABLE",
   "STUDIO_RUNTIME_INTEGRITY_MISMATCH",
   "INVALID_STUDIO_RUNTIME_SIGNATURE",
   "INVALID_STUDIO_RUNTIME_KEY_ID",
+]);
+
+const STARTUP_BLOCKED_ERROR_CODES = new Set([
+  "STUDIO_RUNTIME_DISABLED",
+  "STUDIO_RUNTIME_UNAVAILABLE",
 ]);
 
 function readDetailString(
@@ -499,6 +505,30 @@ export function describeStudioStartupError(
       title: "Studio bundle was rejected",
       summary:
         "The downloaded Studio runtime did not pass host validation, so startup was stopped.",
+      technicalDetails: error.message,
+      metadata,
+    };
+  }
+
+  if (STARTUP_BLOCKED_ERROR_CODES.has(error.code)) {
+    if (error.code === "STUDIO_RUNTIME_DISABLED") {
+      return {
+        categoryLabel: "Startup disabled",
+        title: "Studio startup is disabled",
+        summary:
+          "An operator has disabled Studio startup for this server, so the shell will not load a runtime bundle.",
+        note: "Update the server-side Studio runtime configuration and reload this route after the operator re-enables startup.",
+        technicalDetails: error.message,
+        metadata,
+      };
+    }
+
+    return {
+      categoryLabel: "Runtime unavailable",
+      title: "No safe Studio runtime is available",
+      summary:
+        "The server could not provide a safe runtime from either the active or last-known-good publication, so startup was stopped before the bundle loaded.",
+      note: "Publish or restore a verified Studio runtime on the server before retrying this route.",
       technicalDetails: error.message,
       metadata,
     };

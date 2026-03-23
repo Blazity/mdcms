@@ -15,7 +15,12 @@ import { toServerErrorResponse } from "./errors.js";
 import { createHealthzPayload } from "./health.js";
 import { createJsonResponse, resolvePathname } from "./http-utils.js";
 import { createTargetRoutingGuard } from "./target-routing-guard.js";
-import type { StudioRuntimePublication } from "./studio-bootstrap.js";
+import {
+  resolveStudioRuntimePublicationByBuildId,
+  selectStudioBootstrapReadyResponse,
+  type StudioBootstrapRetryContext,
+  type StudioRuntimePublicationInput,
+} from "./studio-bootstrap.js";
 
 export type ServerRequestHandler = (request: Request) => Promise<Response>;
 
@@ -28,7 +33,7 @@ export type CreateServerRequestHandlerOptions = {
   startedAtMs?: number;
   healthCheck?: () => HealthzPayload;
   actions?: ActionCatalogItem[];
-  studioRuntimePublication?: StudioRuntimePublication;
+  studioRuntimePublication?: StudioRuntimePublicationInput;
   isActionVisible?: ActionCatalogVisibilityPolicy;
   configureApp?: ServerAppConfigurator;
 };
@@ -173,6 +178,99 @@ function createNotFoundResponse(): Response {
   return new Response("Route not found.", { status: 404 });
 }
 
+function createRuntimeErrorResponse(
+  error: RuntimeError,
+  request: Request,
+): Response {
+  const requestId = request.headers.get("x-request-id") ?? undefined;
+  const errorResponse = toServerErrorResponse(error, {
+    requestId,
+    now: new Date(),
+  });
+
+  return createJsonResponse(errorResponse.body, errorResponse.statusCode);
+}
+
+function createInvalidStudioBootstrapQueryError(details: {
+  field: string;
+  value: unknown;
+}): RuntimeError {
+  return new RuntimeError({
+    code: "INVALID_QUERY_PARAM",
+    message:
+      'Query parameters "rejectedBuildId" and "rejectionReason" must be provided together, and "rejectionReason" must be one of integrity, signature, or compatibility.',
+    statusCode: 400,
+    details,
+  });
+}
+
+function createStudioRuntimeDisabledError(): RuntimeError {
+  return new RuntimeError({
+    code: "STUDIO_RUNTIME_DISABLED",
+    message: "Studio runtime publication is disabled by configuration.",
+    statusCode: 503,
+  });
+}
+
+function createStudioRuntimeUnavailableError(): RuntimeError {
+  return new RuntimeError({
+    code: "STUDIO_RUNTIME_UNAVAILABLE",
+    message: "No safe Studio runtime publication is available.",
+    statusCode: 503,
+  });
+}
+
+function parseStudioBootstrapRetryContext(
+  request: Request,
+): StudioBootstrapRetryContext | undefined {
+  const searchParams = new URL(request.url).searchParams;
+  const rejectedBuildIds = searchParams
+    .getAll("rejectedBuildId")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  const rejectionReasons = searchParams
+    .getAll("rejectionReason")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
+  if (rejectedBuildIds.length === 0 && rejectionReasons.length === 0) {
+    return undefined;
+  }
+
+  if (rejectedBuildIds.length !== 1 || rejectionReasons.length !== 1) {
+    throw createInvalidStudioBootstrapQueryError({
+      field: "rejectedBuildId|rejectionReason",
+      value: request.url,
+    });
+  }
+
+  const rejectedBuildId = rejectedBuildIds[0];
+  const rejectionReason = rejectionReasons[0];
+
+  if (!rejectedBuildId) {
+    throw createInvalidStudioBootstrapQueryError({
+      field: "rejectedBuildId",
+      value: rejectedBuildIds,
+    });
+  }
+
+  if (
+    rejectionReason !== "integrity" &&
+    rejectionReason !== "signature" &&
+    rejectionReason !== "compatibility"
+  ) {
+    throw createInvalidStudioBootstrapQueryError({
+      field: "rejectionReason",
+      value: rejectionReason,
+    });
+  }
+
+  return {
+    rejectedBuildId,
+    rejectionReason,
+  };
+}
+
 function normalizeActionCatalog(
   actions: ActionCatalogItem[],
 ): ActionCatalogItem[] {
@@ -222,7 +320,8 @@ async function filterVisibleActions(
 function createServerApp(options: {
   healthCheck: () => HealthzPayload;
   actions: ActionCatalogItem[];
-  studioRuntimePublication?: StudioRuntimePublication;
+  studioRuntimePublication?: StudioRuntimePublicationInput;
+  studioRuntimeDisabled: boolean;
   isActionVisible: ActionCatalogVisibilityPolicy;
   configureApp?: ServerAppConfigurator;
 }) {
@@ -254,20 +353,41 @@ function createServerApp(options: {
 
   const app = new Elysia()
     .get("/healthz", () => options.healthCheck())
-    .get("/api/v1/studio/bootstrap", () => {
-      if (!options.studioRuntimePublication) {
-        return createNotFoundResponse();
+    .get("/api/v1/studio/bootstrap", ({ request }) => {
+      let retryContext: ReturnType<typeof parseStudioBootstrapRetryContext>;
+
+      try {
+        retryContext = parseStudioBootstrapRetryContext(request);
+      } catch (error) {
+        if (error instanceof RuntimeError) {
+          return createRuntimeErrorResponse(error, request);
+        }
+
+        throw error;
       }
 
-      return {
-        data: options.studioRuntimePublication.manifest,
-      };
+      if (options.studioRuntimeDisabled) {
+        return createRuntimeErrorResponse(
+          createStudioRuntimeDisabledError(),
+          request,
+        );
+      }
+
+      const readyResponse = selectStudioBootstrapReadyResponse(
+        options.studioRuntimePublication,
+        retryContext,
+      );
+
+      if (!readyResponse) {
+        return createRuntimeErrorResponse(
+          createStudioRuntimeUnavailableError(),
+          request,
+        );
+      }
+
+      return readyResponse;
     })
     .get("/api/v1/studio/assets/:buildId/*", async ({ params }) => {
-      if (!options.studioRuntimePublication) {
-        return createNotFoundResponse();
-      }
-
       const buildId = params.buildId;
       const assetPath =
         (params as unknown as Record<string, string>)["*"] ?? "";
@@ -276,7 +396,16 @@ function createServerApp(options: {
         return createNotFoundResponse();
       }
 
-      const asset = await options.studioRuntimePublication.getAsset({
+      const publication = resolveStudioRuntimePublicationByBuildId(
+        options.studioRuntimePublication,
+        buildId,
+      );
+
+      if (!publication) {
+        return createNotFoundResponse();
+      }
+
+      const asset = await publication.getAsset({
         buildId,
         assetPath,
       });
@@ -371,6 +500,7 @@ export function createServerRequestHandler(
     healthCheck,
     actions,
     studioRuntimePublication: options.studioRuntimePublication,
+    studioRuntimeDisabled: env.MDCMS_STUDIO_RUNTIME_DISABLED,
     isActionVisible,
     configureApp: options.configureApp,
   });

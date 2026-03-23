@@ -3,6 +3,8 @@ import { dirname, extname, isAbsolute, relative, resolve } from "node:path";
 
 import {
   assertStudioBootstrapManifest,
+  type StudioBootstrapReadyResponse,
+  type StudioBootstrapRejectionReason,
   type StudioBootstrapManifest,
 } from "@mdcms/shared";
 import {
@@ -29,6 +31,20 @@ export type StudioRuntimePublication = {
     buildId: string;
     assetPath: string;
   }) => Promise<StudioRuntimeAsset | undefined>;
+};
+
+export type StudioRuntimePublicationSelection = {
+  active: StudioRuntimePublication;
+  lastKnownGood?: StudioRuntimePublication;
+};
+
+export type StudioRuntimePublicationInput =
+  | StudioRuntimePublication
+  | StudioRuntimePublicationSelection;
+
+export type StudioBootstrapRetryContext = {
+  rejectedBuildId: string;
+  rejectionReason: StudioBootstrapRejectionReason;
 };
 
 function normalizeAssetPath(assetPath: string): string | undefined {
@@ -65,6 +81,12 @@ function isPathInsideRoot(rootDir: string, absolutePath: string): boolean {
   }
 
   return true;
+}
+
+function isPublicationSelection(
+  publication: StudioRuntimePublicationInput,
+): publication is StudioRuntimePublicationSelection {
+  return "active" in publication;
 }
 
 function resolveContentType(assetPath: string): string {
@@ -143,6 +165,82 @@ export async function createStudioRuntimePublication(
       } catch {
         return undefined;
       }
+    },
+  };
+}
+
+export function normalizeStudioRuntimePublication(
+  publication?: StudioRuntimePublicationInput,
+): StudioRuntimePublicationSelection | undefined {
+  if (!publication) {
+    return undefined;
+  }
+
+  if (isPublicationSelection(publication)) {
+    return {
+      active: publication.active,
+      lastKnownGood: publication.lastKnownGood,
+    };
+  }
+
+  return { active: publication };
+}
+
+export function resolveStudioRuntimePublicationByBuildId(
+  publication: StudioRuntimePublicationInput | undefined,
+  buildId: string,
+): StudioRuntimePublication | undefined {
+  const selection = normalizeStudioRuntimePublication(publication);
+
+  if (!selection) {
+    return undefined;
+  }
+
+  if (selection.active.buildId === buildId) {
+    return selection.active;
+  }
+
+  if (selection.lastKnownGood?.buildId === buildId) {
+    return selection.lastKnownGood;
+  }
+
+  return undefined;
+}
+
+export function selectStudioBootstrapReadyResponse(
+  publication: StudioRuntimePublicationInput | undefined,
+  recovery?: StudioBootstrapRetryContext,
+): StudioBootstrapReadyResponse | undefined {
+  const selection = normalizeStudioRuntimePublication(publication);
+
+  if (!selection) {
+    return undefined;
+  }
+
+  if (
+    recovery &&
+    selection.active.buildId === recovery.rejectedBuildId &&
+    selection.lastKnownGood
+  ) {
+    return {
+      data: {
+        status: "ready",
+        source: "lastKnownGood",
+        manifest: selection.lastKnownGood.manifest,
+        recovery,
+      },
+    };
+  }
+
+  if (recovery && selection.active.buildId === recovery.rejectedBuildId) {
+    return undefined;
+  }
+
+  return {
+    data: {
+      status: "ready",
+      source: "active",
+      manifest: selection.active.manifest,
     },
   };
 }

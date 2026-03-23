@@ -208,12 +208,13 @@ Rules:
 
 1. Build step bundles local module packages for server and CLI.
 2. Server boots, validates manifests, mounts server surfaces, and publishes typed action catalog endpoints.
-3. Server publishes Studio bootstrap manifest and runtime artifacts.
+3. Server publishes Studio bootstrap startup outcomes and runtime artifacts, and owns `active`, optional `lastKnownGood`, and operator kill-switch publication state.
 4. Host app embeds `@mdcms/studio` (`<Studio />`) at a catch-all route and provides the Studio subtree root as `basePath`.
-5. The loader shell verifies manifest signature/hash/compatibility, performs the required allowlisted browser-origin requests, loads the runtime bundle, and calls the remote `mount(...)` contract in `module` mode.
-6. The remote Studio runtime owns browser-path syncing, application states, and route rendering under the provided `basePath`.
-7. The remote Studio runtime reads backend action catalog metadata (`/actions`, `/actions/:id`) and renders defaults/custom behavior.
-8. CLI reads backend action catalog and executes via generic action runner; local CLI aliases/formatters/preflight hooks are applied.
+5. The loader shell fetches one bootstrap startup outcome, verifies manifest signature/hash/compatibility, performs the required allowlisted browser-origin requests, loads the runtime bundle, and calls the remote `mount(...)` contract in `module` mode.
+6. If startup validation rejects the served build for integrity, signature, or compatibility reasons, the shell retries bootstrap exactly once with rejection context; the server then decides whether to serve `lastKnownGood` or return a deterministic disabled or unavailable response.
+7. The remote Studio runtime owns browser-path syncing, application states, and route rendering under the provided `basePath`.
+8. The remote Studio runtime reads backend action catalog metadata (`/actions`, `/actions/:id`) and renders defaults/custom behavior.
+9. CLI reads backend action catalog and executes via generic action runner; local CLI aliases/formatters/preflight hooks are applied.
 
 ### Validation, Collision, and Safety Rules
 
@@ -228,6 +229,7 @@ Rules:
 9. `module` mode executes runtime code in host JS context and must use a capability-limited host bridge.
 10. Action catalog metadata is data-only; no executable payloads in metadata.
 11. Authorization is always server-enforced; Studio/CLI visibility is advisory only.
+12. Build selection is always server-owned; the shell may report rejection context, but it does not persist browser-local fallback state or choose between active and fallback builds on its own.
 
 ### Versioning and Compatibility
 
@@ -263,7 +265,7 @@ flowchart LR
 **Contract tests**
 
 1. Validate module manifest schema.
-2. Validate Studio bootstrap manifest schema + signature verification path.
+2. Validate Studio bootstrap manifest schema, startup-ready envelope schema, and signature verification path.
 3. Validate action catalog schema (metadata shape + inline request/response schemas).
 4. Validate action ID uniqueness and deterministic catalog ordering.
 
@@ -275,7 +277,7 @@ flowchart LR
 
 **Studio tests**
 
-1. Bootstrap verification (signature/hash/compatibility) and failure fallbacks.
+1. Bootstrap verification (signature/hash/compatibility), one-shot rejection retry, and failure fallbacks.
 2. Metadata-driven default rendering correctness.
 3. `module` host bridge contract and capability boundaries.
 4. Deep-link routing correctness under an explicit `basePath`.
@@ -291,7 +293,7 @@ flowchart LR
 **End-to-end scenarios**
 
 1. Add a new action without custom Studio code and verify backend-driven default UI.
-2. Validate Studio startup rollback to last known-good build on integrity failure.
+2. Validate server-owned Studio startup rollback to last known-good build on integrity failure.
 3. Verify unauthorized action is hidden in UI and rejected by backend when forced.
 4. Verify MDX custom component preview path through host bridge.
 
@@ -305,10 +307,10 @@ flowchart LR
 
 ### Implementation Sequence
 
-1. Define shared contracts (`ModuleManifest`, `MdcmsModulePackage`, `ServerSurface`, `CliSurface`, `StudioBootstrapManifest`, `HostBridgeV1`).
+1. Define shared contracts (`ModuleManifest`, `MdcmsModulePackage`, `ServerSurface`, `CliSurface`, `StudioBootstrapManifest`, `StudioBootstrapReadyResponse`, `HostBridgeV1`).
 2. Implement server manifest validator and module bootstrap for server/CLI.
 3. Implement typed action registry emission and `/actions` contract validation.
-4. Implement Studio bootstrap manifest endpoint + signed runtime artifact pipeline.
+4. Implement Studio bootstrap startup endpoint, rejection retry contract, and signed runtime artifact pipeline.
 5. Implement `@mdcms/studio` runtime loader with integrity checks, `basePath` handoff, and startup failure handling.
 6. Implement the remote Studio app and runtime composition registry in `module` mode.
 7. Implement CLI generic action runner with aliases/formatters/hooks.

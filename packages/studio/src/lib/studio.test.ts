@@ -319,6 +319,50 @@ test("describeStudioStartupError classifies rejected and crashed failures", () =
   assert.equal(crashed.title, "Studio bundle crashed during startup");
 });
 
+test("describeStudioStartupError classifies disabled and unavailable startup blocks", () => {
+  const disabled = describeStudioStartupError(
+    new RuntimeError({
+      code: "STUDIO_RUNTIME_DISABLED",
+      message: "Studio runtime publication is disabled by configuration.",
+      statusCode: 503,
+    }),
+  );
+  const unavailable = describeStudioStartupError(
+    new RuntimeError({
+      code: "STUDIO_RUNTIME_UNAVAILABLE",
+      message: "No safe Studio runtime publication is available.",
+      statusCode: 503,
+    }),
+  );
+
+  assert.equal(disabled.title, "Studio startup is disabled");
+  assert.match(disabled.summary, /disabled/i);
+  assert.equal(unavailable.title, "No safe Studio runtime is available");
+  assert.match(unavailable.summary, /safe runtime/i);
+});
+
+test("StudioShellFrame renders operator-facing copy for disabled startup", () => {
+  const markup = renderToStaticMarkup(
+    StudioShellFrame({
+      config: {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+      },
+      basePath: "/admin",
+      startupState: "error",
+      startupError: new RuntimeError({
+        code: "STUDIO_RUNTIME_DISABLED",
+        message: "Studio runtime publication is disabled by configuration.",
+        statusCode: 503,
+      }),
+    }),
+  );
+
+  assert.match(markup, /Studio startup is disabled/);
+  assert.match(markup, /operator/i);
+});
+
 test("StudioShellFrame renders categorized startup errors with technical details", () => {
   const markup = renderToStaticMarkup(
     StudioShellFrame({

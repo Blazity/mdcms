@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { RuntimeError, type HostBridgeV1 } from "@mdcms/shared";
+import {
+  RuntimeError,
+  type HostBridgeV1,
+  type StudioBootstrapManifest,
+  type StudioBootstrapReadyResponse,
+} from "@mdcms/shared";
 
 import { buildStudioRuntimeArtifacts } from "./build-runtime.js";
 import { loadStudioRuntime } from "./studio-loader.js";
@@ -59,6 +64,8 @@ async function createRuntimeFixture(directory: string) {
   const sourceFile = join(directory, "remote.ts");
   const outDir = join(directory, "dist");
 
+  await mkdir(directory, { recursive: true });
+
   await writeFile(
     sourceFile,
     "export const mount = (_container, _ctx) => () => {};\n",
@@ -76,6 +83,34 @@ async function createRuntimeFixture(directory: string) {
   return {
     manifest: build.manifest,
     runtimeBytes: await readFile(build.entryPath),
+  };
+}
+
+function createReadyBootstrapPayload(input: {
+  manifest: StudioBootstrapManifest;
+  source?: "active" | "lastKnownGood";
+  recovery?: {
+    rejectedBuildId: string;
+    rejectionReason: "integrity" | "signature" | "compatibility";
+  };
+}): StudioBootstrapReadyResponse {
+  if (input.source === "lastKnownGood") {
+    return {
+      data: {
+        status: "ready",
+        source: "lastKnownGood",
+        manifest: input.manifest,
+        recovery: input.recovery,
+      },
+    };
+  }
+
+  return {
+    data: {
+      status: "ready",
+      source: "active",
+      manifest: input.manifest,
+    },
   };
 }
 
@@ -101,9 +136,11 @@ test("loadStudioRuntime fetches bootstrap, verifies runtime, and mounts the remo
 
         if (url === "http://localhost:4000/api/v1/studio/bootstrap") {
           return new Response(
-            JSON.stringify({
-              data: fixture.manifest,
-            }),
+            JSON.stringify(
+              createReadyBootstrapPayload({
+                manifest: fixture.manifest,
+              }),
+            ),
             {
               status: 200,
               headers: {
@@ -184,9 +221,13 @@ test("loadStudioRuntime rejects malformed bootstrap payloads", async () => {
         new Response(
           JSON.stringify({
             data: {
-              apiVersion: "1",
-              studioVersion: "1.2.3",
-              mode: "iframe",
+              status: "ready",
+              source: "active",
+              manifest: {
+                apiVersion: "1",
+                studioVersion: "1.2.3",
+                mode: "iframe",
+              },
             },
           }),
           {
@@ -256,9 +297,11 @@ test("loadStudioRuntime rejects integrity mismatches before importing the remote
 
           if (url === "http://localhost:4000/api/v1/studio/bootstrap") {
             return new Response(
-              JSON.stringify({
-                data: fixture.manifest,
-              }),
+              JSON.stringify(
+                createReadyBootstrapPayload({
+                  manifest: fixture.manifest,
+                }),
+              ),
               {
                 status: 200,
                 headers: {
@@ -308,9 +351,11 @@ test("loadStudioRuntime surfaces remote mount failures", async () => {
 
             if (url === "http://localhost:4000/api/v1/studio/bootstrap") {
               return new Response(
-                JSON.stringify({
-                  data: fixture.manifest,
-                }),
+                JSON.stringify(
+                  createReadyBootstrapPayload({
+                    manifest: fixture.manifest,
+                  }),
+                ),
                 {
                   status: 200,
                   headers: {
@@ -336,4 +381,262 @@ test("loadStudioRuntime surfaces remote mount failures", async () => {
       /mount failed/,
     );
   });
+});
+
+test("loadStudioRuntime retries bootstrap once on integrity rejection and mounts the fallback runtime", async () => {
+  await withTempDir("studio-loader-", async (directory) => {
+    const activeFixture = await createRuntimeFixture(join(directory, "active"));
+    const fallbackFixture = await createRuntimeFixture(
+      join(directory, "fallback"),
+    );
+    const fetchLog: string[] = [];
+    const importedUrls: string[] = [];
+
+    const unmount = await loadStudioRuntime({
+      config: {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+      },
+      basePath: "/admin",
+      container: {},
+      hostBridge: validHostBridge,
+      fetcher: async (input) => {
+        const url = String(input);
+        fetchLog.push(url);
+
+        if (url === "http://localhost:4000/api/v1/studio/bootstrap") {
+          return new Response(
+            JSON.stringify(
+              createReadyBootstrapPayload({
+                manifest: activeFixture.manifest,
+              }),
+            ),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        if (
+          url ===
+          "http://localhost:4000/api/v1/studio/bootstrap?rejectedBuildId=" +
+            activeFixture.manifest.buildId +
+            "&rejectionReason=integrity"
+        ) {
+          return new Response(
+            JSON.stringify(
+              createReadyBootstrapPayload({
+                manifest: fallbackFixture.manifest,
+                source: "lastKnownGood",
+                recovery: {
+                  rejectedBuildId: activeFixture.manifest.buildId,
+                  rejectionReason: "integrity",
+                },
+              }),
+            ),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        if (url === "http://localhost:4000" + activeFixture.manifest.entryUrl) {
+          return new Response(new TextEncoder().encode("tampered-runtime"), {
+            status: 200,
+            headers: {
+              "content-type": "text/javascript; charset=utf-8",
+            },
+          });
+        }
+
+        if (
+          url ===
+          "http://localhost:4000" + fallbackFixture.manifest.entryUrl
+        ) {
+          return new Response(new Uint8Array(fallbackFixture.runtimeBytes), {
+            status: 200,
+            headers: {
+              "content-type": "text/javascript; charset=utf-8",
+            },
+          });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+      },
+      loadRemoteModule: async (entryUrl) => {
+        importedUrls.push(entryUrl);
+
+        return {
+          mount: () => () => {},
+        };
+      },
+    });
+
+    assert.deepEqual(fetchLog, [
+      "http://localhost:4000/api/v1/studio/bootstrap",
+      "http://localhost:4000" + activeFixture.manifest.entryUrl,
+      "http://localhost:4000/api/v1/studio/bootstrap?rejectedBuildId=" +
+        activeFixture.manifest.buildId +
+        "&rejectionReason=integrity",
+      "http://localhost:4000" + fallbackFixture.manifest.entryUrl,
+    ]);
+    assert.deepEqual(importedUrls, [
+      "http://localhost:4000" + fallbackFixture.manifest.entryUrl,
+    ]);
+
+    unmount();
+  });
+});
+
+test("loadStudioRuntime stops after one retry when the fallback runtime is also rejected", async () => {
+  await withTempDir("studio-loader-", async (directory) => {
+    const activeFixture = await createRuntimeFixture(join(directory, "active"));
+    const fallbackFixture = await createRuntimeFixture(
+      join(directory, "fallback"),
+    );
+    const fetchLog: string[] = [];
+    let importCount = 0;
+
+    await assert.rejects(
+      () =>
+        loadStudioRuntime({
+          config: {
+            project: "marketing-site",
+            environment: "staging",
+            serverUrl: "http://localhost:4000",
+          },
+          basePath: "/admin",
+          container: {},
+          hostBridge: validHostBridge,
+          fetcher: async (input) => {
+            const url = String(input);
+            fetchLog.push(url);
+
+            if (url === "http://localhost:4000/api/v1/studio/bootstrap") {
+              return new Response(
+                JSON.stringify(
+                  createReadyBootstrapPayload({
+                    manifest: activeFixture.manifest,
+                  }),
+                ),
+                {
+                  status: 200,
+                  headers: {
+                    "content-type": "application/json",
+                  },
+                },
+              );
+            }
+
+            if (
+              url ===
+              "http://localhost:4000/api/v1/studio/bootstrap?rejectedBuildId=" +
+                activeFixture.manifest.buildId +
+                "&rejectionReason=integrity"
+            ) {
+              return new Response(
+                JSON.stringify(
+                  createReadyBootstrapPayload({
+                    manifest: fallbackFixture.manifest,
+                    source: "lastKnownGood",
+                    recovery: {
+                      rejectedBuildId: activeFixture.manifest.buildId,
+                      rejectionReason: "integrity",
+                    },
+                  }),
+                ),
+                {
+                  status: 200,
+                  headers: {
+                    "content-type": "application/json",
+                  },
+                },
+              );
+            }
+
+            return new Response(new TextEncoder().encode("tampered-runtime"), {
+              status: 200,
+              headers: {
+                "content-type": "text/javascript; charset=utf-8",
+              },
+            });
+          },
+          loadRemoteModule: async () => {
+            importCount += 1;
+
+            return {
+              mount: () => () => {},
+            };
+          },
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof RuntimeError);
+        assert.equal(error.code, "STUDIO_RUNTIME_INTEGRITY_MISMATCH");
+        return true;
+      },
+    );
+
+    assert.equal(importCount, 0);
+    assert.deepEqual(fetchLog, [
+      "http://localhost:4000/api/v1/studio/bootstrap",
+      "http://localhost:4000" + activeFixture.manifest.entryUrl,
+      "http://localhost:4000/api/v1/studio/bootstrap?rejectedBuildId=" +
+        activeFixture.manifest.buildId +
+        "&rejectionReason=integrity",
+      "http://localhost:4000" + fallbackFixture.manifest.entryUrl,
+    ]);
+  });
+});
+
+test("loadStudioRuntime surfaces deterministic bootstrap disabled and unavailable errors", async () => {
+  for (const code of [
+    "STUDIO_RUNTIME_DISABLED",
+    "STUDIO_RUNTIME_UNAVAILABLE",
+  ] as const) {
+    await assert.rejects(
+      () =>
+        loadStudioRuntime({
+          config: {
+            project: "marketing-site",
+            environment: "staging",
+            serverUrl: "http://localhost:4000",
+          },
+          basePath: "/admin",
+          container: {},
+          hostBridge: validHostBridge,
+          fetcher: async () =>
+            new Response(
+              JSON.stringify({
+                status: "error",
+                code,
+                message: `${code} from bootstrap`,
+                timestamp: "2026-03-23T00:00:00.000Z",
+              }),
+              {
+                status: 503,
+                headers: {
+                  "content-type": "application/json",
+                },
+              },
+            ),
+          loadRemoteModule: async () => {
+            throw new Error("should not import remote module");
+          },
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof RuntimeError);
+        assert.equal(error.code, code);
+        assert.equal(error.message, `${code} from bootstrap`);
+        assert.equal(error.statusCode, 503);
+        return true;
+      },
+    );
+  }
 });
