@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-21
+last_updated: 2026-03-23
 ---
 
 # SPEC-002 System Architecture and Extensibility
@@ -17,7 +17,7 @@ MDCMS consists of two deployable units:
 
 1. **Backend Server** — A standalone, self-hosted server process. Provides the REST API, Studio runtime delivery, module/action surfaces, and all business logic. Runs as a Docker Compose stack alongside PostgreSQL, Redis, and S3-compatible object storage. Post-MVP, the same deployment may also host collaboration/presence WebSocket services.
 
-2. **Studio UI (Approach C)** — A React component (`<Studio />`) from `@mdcms/studio`, embedded in the user's app at a catch-all route (for example `/admin/*`). The component acts as a thin loader shell: it fetches a backend-served Studio runtime bundle, verifies compatibility and integrity, provides the host bridge plus `basePath`, and executes the remote Studio app in-process through the module runtime contract. Host app integration remains required for MDX custom component preview.
+2. **Studio UI (Approach C)** — A React component (`<Studio />`) from `@mdcms/studio`, embedded in the user's app at a catch-all route (for example `/admin/*`). The component acts as a thin loader shell: it fetches a backend-served Studio runtime bundle, verifies compatibility and integrity, provides the host bridge plus `basePath`, and executes the remote Studio app in-process through the module runtime contract. Host app integration remains required for MDX custom component preview. Cross-origin embedding is a first-class path; the backend is not required to share the host app origin.
 
 ```mermaid
 flowchart LR
@@ -210,7 +210,7 @@ Rules:
 2. Server boots, validates manifests, mounts server surfaces, and publishes typed action catalog endpoints.
 3. Server publishes Studio bootstrap manifest and runtime artifacts.
 4. Host app embeds `@mdcms/studio` (`<Studio />`) at a catch-all route and provides the Studio subtree root as `basePath`.
-5. The loader shell verifies manifest signature/hash/compatibility, loads the runtime bundle, and calls the remote `mount(...)` contract in `module` mode.
+5. The loader shell verifies manifest signature/hash/compatibility, performs the required allowlisted browser-origin requests, loads the runtime bundle, and calls the remote `mount(...)` contract in `module` mode.
 6. The remote Studio runtime owns browser-path syncing, application states, and route rendering under the provided `basePath`.
 7. The remote Studio runtime reads backend action catalog metadata (`/actions`, `/actions/:id`) and renders defaults/custom behavior.
 8. CLI reads backend action catalog and executes via generic action runner; local CLI aliases/formatters/preflight hooks are applied.

@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-18
+last_updated: 2026-03-23
 ---
 
 # SPEC-005 Auth, Authorization, and Request Routing
@@ -33,7 +33,7 @@ Every endpoint contract in this section specifies:
 
 MDCMS supports two auth modes:
 
-- **Studio/browser clients:** session authentication (better-auth).
+- **Studio/browser clients:** session authentication (better-auth) by default. Embedded Studio may also use bearer API key authentication when the host selects Studio token mode.
 - **SDK/CLI/machine clients:** API key authentication.
 - **Post-MVP collaboration WebSocket:** Studio session authentication only (API keys are not accepted).
 
@@ -80,6 +80,46 @@ wss://<host>/api/v1/collaboration?project=marketing-site&environment=staging&doc
 ```
 
 The browser must send a valid Studio session cookie; API keys are not accepted on that endpoint.
+
+### Cross-Origin Studio Browser Contract (Normative)
+
+Cross-origin Studio embedding is a first-class deployment path. MDCMS must support a host app on a different origin from `MDCMS_SERVER_URL` without requiring a reverse proxy.
+
+Allowed browser origins are configured through `MDCMS_STUDIO_ALLOWED_ORIGINS`, a comma-separated list of absolute origins (`scheme://host[:port]`).
+
+Origin validation and CORS behavior apply to browser requests that include an `Origin` header for:
+
+- Studio runtime delivery endpoints (`/api/v1/studio/*`)
+- Studio action catalog endpoints (`/api/v1/actions`, `/api/v1/actions/:id`)
+- Studio auth/session bootstrap endpoints invoked through fetch/XHR (`/api/v1/auth/login`, `/api/v1/auth/session`, `/api/v1/auth/get-session`, `/api/v1/auth/logout`, `/api/v1/auth/sign-out`)
+- Studio-called domain APIs such as content, schema, and environment endpoints
+- Any future HTTP endpoint called directly by the Studio runtime from the browser
+
+Requests without an `Origin` header are not subject to this browser-origin allowlist.
+
+For an allowlisted origin, the server must:
+
+- echo the exact origin in `Access-Control-Allow-Origin`
+- emit `Vary: Origin`
+- emit `Access-Control-Allow-Credentials: true`
+- allow methods `GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS`
+- allow headers at minimum:
+  - `Authorization`
+  - `Content-Type`
+  - `X-MDCMS-Project`
+  - `X-MDCMS-Environment`
+  - `X-MDCMS-Locale`
+  - `X-MDCMS-Schema-Hash`
+  - `X-MDCMS-CSRF-Token`
+
+Studio browser request modes:
+
+- Session (`cookie`) mode sends browser requests with credentials included and relies on the session cookie plus CSRF token bootstrap.
+- Token mode sends `Authorization: Bearer <mdcms_key_...>` and does not rely on browser session cookies.
+
+Successful browser preflight requests (`OPTIONS`) for allowlisted origins return `204` with no body.
+
+If a browser request includes an `Origin` header that is not allowlisted, the server must reject both the preflight request and the actual request with `FORBIDDEN_ORIGIN` (`403`).
 
 ## Response Format
 
@@ -303,7 +343,8 @@ MDCMS rejects sign-in with `AUTH_SAML_REQUIRED_ATTRIBUTE_MISSING` (`401`) when:
 
 #### Session Security
 
-- Session cookies are `httpOnly`, `Secure`, `SameSite=Strict`, and scoped to `/`.
+- Session cookie is `httpOnly`, `Secure`, `SameSite=None`, and scoped to `/`.
+- `mdcms_csrf` cookie is readable, `Secure`, `SameSite=None`, and scoped to `/`.
 - Session lifetime: 2h rolling inactivity timeout with a 12h absolute max age.
 - Session IDs rotate on sign-in and privilege changes.
 - CSRF token required for Studio state-changing requests.
@@ -321,6 +362,10 @@ MDCMS rejects sign-in with `AUTH_SAML_REQUIRED_ATTRIBUTE_MISSING` (`401`) when:
 - Session-authenticated `POST`, `PUT`, `PATCH`, and `DELETE` requests require CSRF validation.
 - The server sets a readable `mdcms_csrf` cookie.
 - Clients must echo the same token value in the `x-mdcms-csrf-token` header.
+- Successful session bootstrap responses also return the same token in the response payload as `csrfToken` so cross-origin Studio clients can cache and replay it without reading cookies from the API origin:
+  - `POST /api/v1/auth/login`
+  - `GET /api/v1/auth/session`
+  - `GET /api/v1/auth/get-session`
 - CSRF validation succeeds only when a valid session cookie is present and the `mdcms_csrf` cookie matches the `x-mdcms-csrf-token` header value.
 - Read-only requests (`GET`, `HEAD`, `OPTIONS`) are exempt.
 - API-key authenticated requests are exempt.
@@ -422,7 +467,7 @@ Machine-to-machine access (SDK, CI/CD) uses API keys:
 
 `cms logout` clears local tuple credentials and calls `POST /api/v1/auth/api-keys/self/revoke` using the stored bearer token when available.
 
-Studio traffic uses session authentication and the same authorization layer.
+Studio traffic uses session authentication by default and may use bearer API key authentication when the embed host selects token mode. Both modes use the same authorization layer.
 
 ### Authorization (Role-Based, Per-Folder)
 
@@ -470,9 +515,9 @@ API keys follow the same project/environment scoping model through tuple allowli
 
 | Method | Path                                             | Auth Mode             | Required Scope | Target Routing | Request                                                                                 | Success                                                 | Deterministic Errors                                                                                                                                                                            |
 | ------ | ------------------------------------------------ | --------------------- | -------------- | -------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/api/v1/auth/login`                             | public                | none           | none           | JSON: `{ email, password }`                                                             | `200` `{ data: { session } }` + `set-cookie`            | `INVALID_INPUT` (`400`), `AUTH_INVALID_CREDENTIALS` (`401`), `AUTH_BACKOFF_ACTIVE` (`429`), `INTERNAL_ERROR` (`500`)                                                                            |
-| GET    | `/api/v1/auth/session`                           | session               | none           | none           | session cookie                                                                          | `200` `{ data: { session } }`                           | `UNAUTHORIZED` (`401`)                                                                                                                                                                          |
-| GET    | `/api/v1/auth/get-session`                       | session               | none           | none           | session cookie                                                                          | `200` `{ data: { session } }`                           | `UNAUTHORIZED` (`401`)                                                                                                                                                                          |
+| POST   | `/api/v1/auth/login`                             | public                | none           | none           | JSON: `{ email, password }`                                                             | `200` `{ data: { session, csrfToken } }` + `set-cookie` | `INVALID_INPUT` (`400`), `AUTH_INVALID_CREDENTIALS` (`401`), `AUTH_BACKOFF_ACTIVE` (`429`), `INTERNAL_ERROR` (`500`), `FORBIDDEN_ORIGIN` (`403`)                                                |
+| GET    | `/api/v1/auth/session`                           | session               | none           | none           | session cookie                                                                          | `200` `{ data: { session, csrfToken } }`                | `UNAUTHORIZED` (`401`), `FORBIDDEN_ORIGIN` (`403`)                                                                                                                                              |
+| GET    | `/api/v1/auth/get-session`                       | session               | none           | none           | session cookie                                                                          | `200` `{ data: { session, csrfToken } }`                | `UNAUTHORIZED` (`401`), `FORBIDDEN_ORIGIN` (`403`)                                                                                                                                              |
 | POST   | `/api/v1/auth/logout`                            | session               | none           | none           | session cookie                                                                          | `200` `{ data: { revoked: boolean } }`                  | `INTERNAL_ERROR` (`500`)                                                                                                                                                                        |
 | POST   | `/api/v1/auth/users/:userId/sessions/revoke-all` | session (admin/owner) | none           | none           | `userId` path param                                                                     | `200` `{ data: { userId, revokedSessions } }`           | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                                                                                                |
 | GET    | `/api/v1/auth/api-keys`                          | session               | none           | none           | session cookie                                                                          | `200` `{ data: ApiKeyMetadata[] }`                      | `UNAUTHORIZED` (`401`)                                                                                                                                                                          |

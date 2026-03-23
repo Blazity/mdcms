@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-21
+last_updated: 2026-03-23
 ---
 
 # SPEC-006 Studio Runtime and UI
@@ -46,6 +46,11 @@ export type StudioMountContext = {
 };
 ```
 
+`auth` semantics:
+
+- `cookie` mode is the default. The remote Studio runtime uses credentialed browser requests against `apiBaseUrl` and obtains CSRF bootstrap state from the auth/session endpoints.
+- `token` mode uses `Authorization: Bearer <token>` on Studio API requests. In MVP, this bearer token is an MDCMS API key.
+
 Host bridge (minimum):
 
 ```typescript
@@ -76,6 +81,8 @@ export default function AdminPage() {
   return <Studio config={config} basePath="/admin" />;
 }
 ```
+
+The backend may live on a different origin from the host app. Cross-origin Studio embedding is a first-class path; a same-origin reverse proxy is optional, not required. Browser access to the backend follows the Studio origin allowlist and CORS contract defined in `SPEC-005`.
 
 The shell owns only fatal startup failures:
 
@@ -184,8 +191,8 @@ Execution mode:
 
 ## Core Runtime and Studio Runtime Endpoints
 
-| Method | Path                               | Auth Mode | Required Scope | Target Routing | Request              | Success                                                     | Deterministic Errors                                |
-| ------ | ---------------------------------- | --------- | -------------- | -------------- | -------------------- | ----------------------------------------------------------- | --------------------------------------------------- |
-| GET    | `/healthz`                         | public    | none           | none           | no body              | `200` health payload (service/version/uptime/startedAt/now) | `INTERNAL_ERROR` (`500`) when health provider fails |
-| GET    | `/api/v1/studio/bootstrap`         | public    | none           | none           | no body              | `200` `{ data: StudioBootstrapManifest }`                   | `NOT_FOUND` (`404`), `INTERNAL_ERROR` (`500`)       |
-| GET    | `/api/v1/studio/assets/:buildId/*` | public    | none           | none           | `buildId` path param | `200` immutable runtime asset stream                        | `NOT_FOUND` (`404`)                                 |
+| Method | Path                               | Auth Mode | Required Scope | Target Routing | Request              | Success                                                     | Deterministic Errors                                                      |
+| ------ | ---------------------------------- | --------- | -------------- | -------------- | -------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------- |
+| GET    | `/healthz`                         | public    | none           | none           | no body              | `200` health payload (service/version/uptime/startedAt/now) | `INTERNAL_ERROR` (`500`) when health provider fails                       |
+| GET    | `/api/v1/studio/bootstrap`         | public    | none           | none           | no body              | `200` `{ data: StudioBootstrapManifest }`                   | `FORBIDDEN_ORIGIN` (`403`), `NOT_FOUND` (`404`), `INTERNAL_ERROR` (`500`) |
+| GET    | `/api/v1/studio/assets/:buildId/*` | public    | none           | none           | `buildId` path param | `200` immutable runtime asset stream                        | `FORBIDDEN_ORIGIN` (`403`), `NOT_FOUND` (`404`)                           |
