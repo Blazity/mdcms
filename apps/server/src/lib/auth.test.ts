@@ -644,11 +644,14 @@ function postSamlAcs(
 function createCsrfHeaders(
   loginResult: {
     cookie: string;
+    csrfToken?: string;
     setCookie: string;
   },
   headers: Record<string, string> = {},
 ): Record<string, string> {
-  const csrfToken = extractCookieValue(loginResult.setCookie, "mdcms_csrf");
+  const csrfToken =
+    loginResult.csrfToken ??
+    extractCookieValue(loginResult.setCookie, "mdcms_csrf");
   assert.ok(csrfToken);
 
   return {
@@ -691,6 +694,7 @@ async function login(
   },
 ): Promise<{
   cookie: string;
+  csrfToken?: string;
   setCookie: string;
   session: {
     id: string;
@@ -703,6 +707,7 @@ async function login(
   const loginResponse = await attemptLogin(handler, input);
   const loginBody = (await loginResponse.json()) as {
     data: {
+      csrfToken?: string;
       session: {
         id: string;
         userId: string;
@@ -717,6 +722,7 @@ async function login(
   const setCookie = extractSetCookie(loginResponse);
   return {
     cookie: toCookieHeader(setCookie),
+    csrfToken: loginBody.data.csrfToken,
     setCookie,
     session: loginBody.data.session,
   };
@@ -1904,6 +1910,10 @@ testWithDatabase(
       const loginResult = await login(handler, { email, password });
 
       assert.ok(extractCookieValue(loginResult.setCookie, "mdcms_csrf"));
+      assert.equal(
+        loginResult.csrfToken,
+        extractCookieValue(loginResult.setCookie, "mdcms_csrf"),
+      );
 
       const sessionResponse = await handler(
         new Request("http://localhost/api/v1/auth/session", {
@@ -1912,11 +1922,17 @@ testWithDatabase(
           },
         }),
       );
+      const sessionBody = (await sessionResponse.json()) as {
+        data: { csrfToken?: string };
+      };
 
       assert.equal(sessionResponse.status, 200);
-      assert.ok(
-        extractCookieValue(extractSetCookie(sessionResponse), "mdcms_csrf"),
+      const sessionCsrf = extractCookieValue(
+        extractSetCookie(sessionResponse),
+        "mdcms_csrf",
       );
+      assert.ok(sessionCsrf);
+      assert.equal(sessionBody.data.csrfToken, sessionCsrf);
     } finally {
       await dbConnection.close();
     }
@@ -1924,7 +1940,7 @@ testWithDatabase(
 );
 
 testWithDatabase(
-  "auth login cookie uses Strict policy and secure-by-default with local override",
+  "auth login cookie uses None policy and secure-by-default with local override",
   async () => {
     const secureDefaultEmail = uniqueEmail();
     const insecureOverrideEmail = uniqueEmail();
@@ -1953,7 +1969,7 @@ testWithDatabase(
       });
 
       assert.equal(secureLogin.setCookie.includes("HttpOnly"), true);
-      assert.equal(secureLogin.setCookie.includes("SameSite=Strict"), true);
+      assert.equal(secureLogin.setCookie.includes("SameSite=None"), true);
       assert.equal(secureLogin.setCookie.includes("Path=/"), true);
       assert.equal(secureLogin.setCookie.includes("Secure"), true);
 
@@ -1967,12 +1983,51 @@ testWithDatabase(
       });
 
       assert.equal(insecureLogin.setCookie.includes("HttpOnly"), true);
-      assert.equal(insecureLogin.setCookie.includes("SameSite=Strict"), true);
+      assert.equal(insecureLogin.setCookie.includes("SameSite=None"), true);
       assert.equal(insecureLogin.setCookie.includes("Path=/"), true);
       assert.equal(insecureLogin.setCookie.includes("Secure"), false);
     } finally {
       await secureHandlerBundle.dbConnection.close();
       await insecureHandlerBundle.dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "auth login rejects Studio browser origins outside the allowlist",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env: {
+        ...env,
+        MDCMS_STUDIO_ALLOWED_ORIGINS: "http://localhost:4173",
+      },
+      logger,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+
+    try {
+      await signUp(handler, { email, password });
+
+      const response = await handler(
+        new Request("http://localhost/api/v1/auth/login", {
+          method: "POST",
+          headers: {
+            origin: "http://localhost:9999",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            password,
+          }),
+        }),
+      );
+      const body = (await response.json()) as { code: string };
+
+      assert.equal(response.status, 403);
+      assert.equal(body.code, "FORBIDDEN_ORIGIN");
+    } finally {
+      await dbConnection.close();
     }
   },
 );

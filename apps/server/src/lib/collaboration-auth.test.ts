@@ -32,10 +32,11 @@ function createSession(userId = "user-1"): StudioSession {
 function createAuthServiceStub(overrides: Partial<AuthService>): AuthService {
   const session = createSession();
 
-  return {
-    async login() {
+  const stub: AuthService = {
+    async login(_request, _email, _password) {
       return {
         outcome: "success",
+        csrfToken: "fake",
         session,
         setCookie: "session_token=fake",
       };
@@ -70,8 +71,11 @@ function createAuthServiceStub(overrides: Partial<AuthService>): AuthService {
     async requireCsrfProtection() {
       return undefined;
     },
-    issueCsrfCookie() {
-      return "mdcms_csrf=fake";
+    issueCsrfBootstrap() {
+      return {
+        token: "fake",
+        setCookie: "mdcms_csrf=fake",
+      };
     },
     clearCsrfCookie() {
       return "mdcms_csrf=; Max-Age=0";
@@ -170,6 +174,10 @@ function createAuthServiceStub(overrides: Partial<AuthService>): AuthService {
     async handleAuthRequest() {
       return new Response("not implemented", { status: 501 });
     },
+  };
+
+  return {
+    ...stub,
     ...overrides,
   };
 }

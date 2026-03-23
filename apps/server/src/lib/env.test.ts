@@ -71,6 +71,31 @@ test("parseServerEnv preserves bare-origin OIDC issuers without adding a slash",
   );
 });
 
+test("parseServerEnv parses studio allowed origins as normalized origin strings", () => {
+  const env = parseServerEnv({
+    MDCMS_STUDIO_ALLOWED_ORIGINS:
+      " http://localhost:4173 , https://admin.example.com/ ",
+  } as NodeJS.ProcessEnv);
+
+  assert.deepEqual(env.MDCMS_STUDIO_ALLOWED_ORIGINS, [
+    "http://localhost:4173",
+    "https://admin.example.com",
+  ]);
+});
+
+test("parseServerEnv rejects studio allowed origins that are not absolute origins", () => {
+  assert.throws(
+    () =>
+      parseServerEnv({
+        MDCMS_STUDIO_ALLOWED_ORIGINS: "https://admin.example.com/path",
+      } as NodeJS.ProcessEnv),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_ENV" &&
+      error.details?.key === "MDCMS_STUDIO_ALLOWED_ORIGINS",
+  );
+});
+
 test("parseServerEnv rejects malformed OIDC provider JSON", () => {
   assert.throws(
     () =>

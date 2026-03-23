@@ -175,8 +175,25 @@ Backend API/runtime package boundary for MDCMS.
   - `GET /api/v1/auth/session`
   - `POST /api/v1/auth/logout`
 - Login issues an HttpOnly session cookie (Better Auth `session_token`).
+- `POST /api/v1/auth/login`, `GET /api/v1/auth/session`, and
+  `GET /api/v1/auth/get-session` also return `data.csrfToken` so embedded
+  cross-origin Studio hosts can replay CSRF-protected session mutations without
+  reading cookies from the API origin.
 - Session validation is deny-by-default: requests without a valid session token receive `401 UNAUTHORIZED`.
 - Better Auth native endpoints are also available under `/api/v1/auth/*` (for example `POST /api/v1/auth/sign-up/email`).
+
+## Cross-Origin Studio Browser Support
+
+- Cross-origin Studio embedding is a first-class path.
+- Allowed host-app origins are configured through
+  `MDCMS_STUDIO_ALLOWED_ORIGINS`, a comma-separated list of absolute origins.
+- Example:
+  `MDCMS_STUDIO_ALLOWED_ORIGINS=http://localhost:4173,https://admin.example.com`
+- Allowlisted origins receive credentialed CORS responses for Studio bootstrap,
+  runtime asset delivery, action catalog, auth/session bootstrap, and the
+  Studio-used content/schema/environment HTTP endpoints.
+- Browser requests from non-allowlisted origins fail with
+  `FORBIDDEN_ORIGIN` (`403`).
 
 ## OIDC Provider Support
 
@@ -342,7 +359,12 @@ export MDCMS_AUTH_SAML_PROVIDERS='[
 
 - Session cookie policy:
   - `HttpOnly`
-  - `SameSite=Strict`
+  - `SameSite=None`
+  - `Path=/`
+  - `Secure` by default (including local/dev), with explicit local override via `MDCMS_AUTH_INSECURE_COOKIES=true`.
+- CSRF cookie policy:
+  - readable `mdcms_csrf`
+  - `SameSite=None`
   - `Path=/`
   - `Secure` by default (including local/dev), with explicit local override via `MDCMS_AUTH_INSECURE_COOKIES=true`.
 - Session lifetime policy:
@@ -479,6 +501,9 @@ export MDCMS_AUTH_SAML_PROVIDERS='[
   - `GET /api/v1/auth/session`
   - `POST /api/v1/auth/logout`
 - Login issues an HttpOnly session cookie (Better Auth `session_token`).
+- `POST /api/v1/auth/login`, `GET /api/v1/auth/session`, and
+  `GET /api/v1/auth/get-session` also return `data.csrfToken` for embedded
+  cross-origin Studio clients.
 - Session validation is deny-by-default: requests without a valid session token receive `401 UNAUTHORIZED`.
 - Better Auth native endpoints are also available under `/api/v1/auth/*` (for example `POST /api/v1/auth/sign-up/email`).
 

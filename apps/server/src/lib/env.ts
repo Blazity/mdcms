@@ -199,6 +199,7 @@ export type ServerEnv = CoreEnv & {
   SERVICE_NAME: string;
   MDCMS_AUTH_OIDC_PROVIDERS: OidcProviderConfig[];
   MDCMS_AUTH_SAML_PROVIDERS: SamlProviderConfig[];
+  MDCMS_STUDIO_ALLOWED_ORIGINS: string[];
 };
 
 function normalizeAbsoluteUrl(raw: string): string {
@@ -248,6 +249,22 @@ function createSamlInvalidEnvError(
   });
 }
 
+function createStudioAllowedOriginsInvalidEnvError(
+  value: unknown,
+  message: string,
+  details: Record<string, unknown> = {},
+): RuntimeError {
+  return new RuntimeError({
+    code: "INVALID_ENV",
+    message,
+    details: {
+      key: "MDCMS_STUDIO_ALLOWED_ORIGINS",
+      value,
+      ...details,
+    },
+  });
+}
+
 function throwInvalidPortEnvError(rawValue: string | undefined): never {
   throw new RuntimeError({
     code: "INVALID_ENV",
@@ -257,6 +274,32 @@ function throwInvalidPortEnvError(rawValue: string | undefined): never {
       value: rawValue ?? "4000",
     },
   });
+}
+
+function parseStudioAllowedOrigins(rawValue: string | undefined): string[] {
+  if (!rawValue || rawValue.trim().length === 0) {
+    return [];
+  }
+
+  return rawValue
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .map((origin, index) => {
+      const parsed = OriginSchema.safeParse(origin);
+
+      if (!parsed.success) {
+        throw createStudioAllowedOriginsInvalidEnvError(
+          origin,
+          "MDCMS_STUDIO_ALLOWED_ORIGINS entries must be absolute origins in scheme://host[:port] form.",
+          {
+            index,
+          },
+        );
+      }
+
+      return parsed.data;
+    });
 }
 
 function readIssueValue(
@@ -709,11 +752,15 @@ export function parseServerEnv(rawEnv: NodeJS.ProcessEnv): ServerEnv {
 
   const oidcProviders = parseOidcProviders(rawEnv.MDCMS_AUTH_OIDC_PROVIDERS);
   const samlProviders = parseSamlProviders(rawEnv.MDCMS_AUTH_SAML_PROVIDERS);
+  const studioAllowedOrigins = parseStudioAllowedOrigins(
+    rawEnv.MDCMS_STUDIO_ALLOWED_ORIGINS,
+  );
   assertUniqueSsoProviderIds(oidcProviders, samlProviders);
 
   return extendEnv(core, () => ({
     ...parsedExtension.data,
     MDCMS_AUTH_OIDC_PROVIDERS: oidcProviders,
     MDCMS_AUTH_SAML_PROVIDERS: samlProviders,
+    MDCMS_STUDIO_ALLOWED_ORIGINS: studioAllowedOrigins,
   }));
 }

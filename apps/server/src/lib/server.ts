@@ -40,6 +40,123 @@ export type ActionCatalogVisibilityPolicy = (
 const DEFAULT_ACTION_VISIBILITY_POLICY: ActionCatalogVisibilityPolicy = () =>
   true;
 
+const STUDIO_CORS_ALLOW_METHODS =
+  "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS";
+const STUDIO_CORS_ALLOW_HEADERS = [
+  "Authorization",
+  "Content-Type",
+  "X-MDCMS-Project",
+  "X-MDCMS-Environment",
+  "X-MDCMS-Locale",
+  "X-MDCMS-Schema-Hash",
+  "X-MDCMS-CSRF-Token",
+].join(", ");
+const STUDIO_BROWSER_ROUTE_PREFIXES = [
+  "/api/v1/studio",
+  "/api/v1/actions",
+  "/api/v1/auth",
+  "/api/v1/content",
+  "/api/v1/schema",
+  "/api/v1/environments",
+  "/api/v1/media",
+  "/api/v1/search",
+  "/api/v1/webhooks",
+] as const;
+
+function matchesScopedPathPrefix(pathname: string, prefix: string): boolean {
+  if (!pathname.startsWith(prefix)) {
+    return false;
+  }
+
+  if (pathname.length === prefix.length) {
+    return true;
+  }
+
+  return pathname.charAt(prefix.length) === "/";
+}
+
+function isStudioBrowserRoute(pathname: string): boolean {
+  return STUDIO_BROWSER_ROUTE_PREFIXES.some((prefix) =>
+    matchesScopedPathPrefix(pathname, prefix),
+  );
+}
+
+function createForbiddenOriginError(
+  origin: string,
+  pathname: string,
+): RuntimeError {
+  return new RuntimeError({
+    code: "FORBIDDEN_ORIGIN",
+    message: "Browser origin is not allowed for Studio requests.",
+    statusCode: 403,
+    details: {
+      origin,
+      path: pathname,
+    },
+  });
+}
+
+function createStudioCorsHeaders(origin: string): Record<string, string> {
+  return {
+    "access-control-allow-origin": origin,
+    "access-control-allow-credentials": "true",
+    "access-control-allow-methods": STUDIO_CORS_ALLOW_METHODS,
+    "access-control-allow-headers": STUDIO_CORS_ALLOW_HEADERS,
+    vary: "Origin",
+  };
+}
+
+function appendResponseHeaders(
+  response: Response,
+  headers: Record<string, string>,
+): Response {
+  const mergedHeaders = new Headers(response.headers);
+
+  for (const [name, value] of Object.entries(headers)) {
+    mergedHeaders.set(name, value);
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: mergedHeaders,
+  });
+}
+
+function resolveStudioCorsContext(
+  request: Request,
+  allowedOrigins: readonly string[],
+): { headers: Record<string, string> } | null {
+  const pathname = resolvePathname(request);
+
+  if (!isStudioBrowserRoute(pathname)) {
+    return null;
+  }
+
+  const origin = request.headers.get("origin")?.trim();
+
+  if (!origin) {
+    return null;
+  }
+
+  const requestOrigin = new URL(request.url).origin;
+
+  if (origin !== requestOrigin && !allowedOrigins.includes(origin)) {
+    throw createForbiddenOriginError(origin, pathname);
+  }
+
+  return {
+    headers: createStudioCorsHeaders(origin),
+  };
+}
+
+function isStudioPreflightRequest(request: Request): boolean {
+  return (
+    request.method.toUpperCase() === "OPTIONS" &&
+    request.headers.has("access-control-request-method")
+  );
+}
+
 function createNotFoundError(method: string, path: string): RuntimeError {
   return new RuntimeError({
     code: "NOT_FOUND",
@@ -259,16 +376,34 @@ export function createServerRequestHandler(
   });
 
   return async (request: Request): Promise<Response> => {
+    let corsContext: { headers: Record<string, string> } | null = null;
+
     try {
+      corsContext = resolveStudioCorsContext(
+        request,
+        env.MDCMS_STUDIO_ALLOWED_ORIGINS,
+      );
+
+      if (corsContext && isStudioPreflightRequest(request)) {
+        return new Response(null, {
+          status: 204,
+          headers: corsContext.headers,
+        });
+      }
+
       targetRoutingGuard(request);
       const response = await app.fetch(request);
 
-      return normalizeElysiaErrorResponse({
+      const normalizedResponse = await normalizeElysiaErrorResponse({
         response,
         request,
         now: now(),
         logger,
       });
+
+      return corsContext
+        ? appendResponseHeaders(normalizedResponse, corsContext.headers)
+        : normalizedResponse;
     } catch (error) {
       const requestId = request.headers.get("x-request-id") ?? undefined;
       const errorResponse = toServerErrorResponse(error, {
@@ -283,7 +418,14 @@ export function createServerRequestHandler(
         code: errorResponse.body.code,
       });
 
-      return createJsonResponse(errorResponse.body, errorResponse.statusCode);
+      const response = createJsonResponse(
+        errorResponse.body,
+        errorResponse.statusCode,
+      );
+
+      return corsContext
+        ? appendResponseHeaders(response, corsContext.headers)
+        : response;
     }
   };
 }

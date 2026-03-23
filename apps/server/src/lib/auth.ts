@@ -196,7 +196,10 @@ export type AuthService = {
     requirement: AuthorizationRequirement,
   ) => Promise<AuthorizedRequest>;
   requireCsrfProtection: (request: Request) => Promise<void>;
-  issueCsrfCookie: () => string;
+  issueCsrfBootstrap: () => {
+    token: string;
+    setCookie: string;
+  };
   clearCsrfCookie: () => string;
   createApiKey: (
     request: Request,
@@ -245,6 +248,7 @@ type BetterAuthLikeSession = {
 type PasswordLoginResult =
   | {
       outcome: "success";
+      csrfToken: string;
       session: StudioSession;
       setCookie: string;
     }
@@ -1867,15 +1871,20 @@ export function createAuthService(
       adminAllowlist.userIds.has(session.userId) ||
       adminAllowlist.emails.has(session.email.toLowerCase()));
 
-  function createCsrfCookie(): string {
-    return serializeCookie({
-      name: CSRF_COOKIE_NAME,
-      value: randomBytes(CSRF_TOKEN_BYTES).toString("base64url"),
-      path: "/",
-      sameSite: "Strict",
-      secure: useSecureCookies,
-      maxAge: SESSION_INACTIVITY_TIMEOUT_SECONDS,
-    });
+  function createCsrfBootstrap(): { token: string; setCookie: string } {
+    const token = randomBytes(CSRF_TOKEN_BYTES).toString("base64url");
+
+    return {
+      token,
+      setCookie: serializeCookie({
+        name: CSRF_COOKIE_NAME,
+        value: token,
+        path: "/",
+        sameSite: "None",
+        secure: useSecureCookies,
+        maxAge: SESSION_INACTIVITY_TIMEOUT_SECONDS,
+      }),
+    };
   }
 
   function createClearedCsrfCookie(): string {
@@ -1883,7 +1892,7 @@ export function createAuthService(
       name: CSRF_COOKIE_NAME,
       value: "",
       path: "/",
-      sameSite: "Strict",
+      sameSite: "None",
       secure: useSecureCookies,
       maxAge: 0,
     });
@@ -2239,7 +2248,7 @@ export function createAuthService(
       defaultCookieAttributes: {
         path: "/",
         httpOnly: true,
-        sameSite: "strict",
+        sameSite: "none",
         secure: useSecureCookies,
       },
     },
@@ -3095,12 +3104,13 @@ export function createAuthService(
           ne(authSessions.id, studioSession.id),
         ),
       );
+    const csrf = createCsrfBootstrap();
 
     return {
+      csrfToken: csrf.token,
       outcome: "success",
       session: studioSession,
-      setCookie:
-        appendSetCookieHeaders(setCookie, createCsrfCookie()) ?? setCookie,
+      setCookie: appendSetCookieHeaders(setCookie, csrf.setCookie) ?? setCookie,
     };
   }
 
@@ -3269,8 +3279,8 @@ export function createAuthService(
       await assertCsrfProtection(request);
     },
 
-    issueCsrfCookie() {
-      return createCsrfCookie();
+    issueCsrfBootstrap() {
+      return createCsrfBootstrap();
     },
 
     clearCsrfCookie() {
@@ -3881,6 +3891,7 @@ export function mountAuthRoutes(
       return createJsonResponse(
         {
           data: {
+            csrfToken: result.csrfToken,
             session: result.session,
           },
         },
@@ -3898,15 +3909,17 @@ export function mountAuthRoutes(
         const session = requireSessionPayload(
           await options.authService.getSession(request),
         );
+        const csrf = options.authService.issueCsrfBootstrap();
         return createJsonResponse(
           {
             data: {
+              csrfToken: csrf.token,
               session,
             },
           },
           200,
           {
-            "set-cookie": options.authService.issueCsrfCookie(),
+            "set-cookie": csrf.setCookie,
           },
         );
       }),

@@ -17,6 +17,31 @@ import {
 } from "./studio-component.js";
 import { loadStudioDocumentShell } from "./document-shell.js";
 
+function readFetchHeader(
+  input: string | URL | Request,
+  init: RequestInit | undefined,
+  name: string,
+): string | null {
+  const initHeaders = init?.headers;
+
+  if (initHeaders instanceof Headers) {
+    return initHeaders.get(name);
+  }
+
+  if (initHeaders && !Array.isArray(initHeaders)) {
+    const value = (initHeaders as Record<string, string>)[name];
+    if (typeof value === "string") {
+      return value;
+    }
+  }
+
+  if (input instanceof Request) {
+    return input.headers.get(name);
+  }
+
+  return null;
+}
+
 test("resolveStudioEnv parses core env and applies Studio defaults", () => {
   const env = resolveStudioEnv({
     NODE_ENV: "production",
@@ -155,6 +180,43 @@ test("createStudioActionCatalogAdapter resolves detail and validates shape", asy
 
   const result = await adapter.getById("content.publish");
   assert.equal(result.id, "content.publish");
+});
+
+test("createStudioActionCatalogAdapter uses credentials for cookie auth", async () => {
+  const adapter = createStudioActionCatalogAdapter("http://localhost", {
+    auth: { mode: "cookie" },
+    fetcher: async (input: string | URL | Request, init?: RequestInit) => {
+      assert.equal(String(input), "http://localhost/api/v1/actions");
+      assert.equal(init?.credentials, "include");
+
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  await adapter.list();
+});
+
+test("createStudioActionCatalogAdapter adds bearer token for token auth", async () => {
+  const adapter = createStudioActionCatalogAdapter("http://localhost", {
+    auth: { mode: "token", token: "mdcms_key_test" },
+    fetcher: async (input: string | URL | Request, init?: RequestInit) => {
+      assert.equal(String(input), "http://localhost/api/v1/actions");
+      assert.equal(
+        readFetchHeader(input, init, "authorization"),
+        "Bearer mdcms_key_test",
+      );
+
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  await adapter.list();
 });
 
 test("StudioShellFrame renders deterministic startup metadata", () => {
@@ -317,17 +379,14 @@ test("loadStudioDocumentShell fetches draft content with scoped headers", async 
           "http://localhost:4000/api/v1/content/11111111-1111-4111-8111-111111111111?draft=true",
         );
         assert.equal(
-          (init?.headers as Record<string, string>)["x-mdcms-project"],
+          readFetchHeader(input, init, "x-mdcms-project"),
           "marketing-site",
         );
         assert.equal(
-          (init?.headers as Record<string, string>)["x-mdcms-environment"],
+          readFetchHeader(input, init, "x-mdcms-environment"),
           "staging",
         );
-        assert.equal(
-          (init?.headers as Record<string, string>)["x-mdcms-locale"],
-          "en",
-        );
+        assert.equal(readFetchHeader(input, init, "x-mdcms-locale"), "en");
 
         return new Response(
           JSON.stringify({
@@ -387,4 +446,77 @@ test("loadStudioDocumentShell exposes typed error code for failed responses", as
   assert.equal(result.state, "error");
   assert.equal(result.errorCode, "FORBIDDEN");
   assert.equal(result.errorMessage, "Document is outside of allowed scope.");
+});
+
+test("loadStudioDocumentShell uses credentials for cookie auth", async () => {
+  await loadStudioDocumentShell(
+    {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+    },
+    {
+      type: "BlogPost",
+      documentId: "11111111-1111-4111-8111-111111111111",
+    },
+    {
+      auth: { mode: "cookie" },
+      fetcher: async (_input, init) =>
+        new Response(
+          (() => {
+            assert.equal(init?.credentials, "include");
+            return JSON.stringify({
+              data: {
+                documentId: "11111111-1111-4111-8111-111111111111",
+                path: "blog/example",
+              },
+            });
+          })(),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+    },
+  );
+});
+
+test("loadStudioDocumentShell adds bearer token for token auth", async () => {
+  await loadStudioDocumentShell(
+    {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+    },
+    {
+      type: "BlogPost",
+      documentId: "11111111-1111-4111-8111-111111111111",
+    },
+    {
+      auth: { mode: "token", token: "mdcms_key_test" },
+      fetcher: async (_input, init) =>
+        new Response(
+          (() => {
+            assert.equal(
+              readFetchHeader(_input, init, "authorization"),
+              "Bearer mdcms_key_test",
+            );
+            return JSON.stringify({
+              data: {
+                documentId: "11111111-1111-4111-8111-111111111111",
+                path: "blog/example",
+              },
+            });
+          })(),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+    },
+  );
 });

@@ -1,5 +1,7 @@
 import { RuntimeError } from "@mdcms/shared";
 
+import type { StudioRuntimeAuth } from "./request-auth.js";
+import { applyStudioAuthToRequestInit } from "./request-auth.js";
 import type { MdcmsConfig } from "./studio-component.js";
 
 export type StudioDocumentShellState = "loading" | "ready" | "error";
@@ -38,6 +40,7 @@ export type LoadStudioDocumentShellInput = {
 };
 
 type LoadStudioDocumentShellOptions = {
+  auth?: StudioRuntimeAuth;
   fetcher?: typeof fetch;
 };
 
@@ -120,12 +123,14 @@ export async function loadStudioDocumentShell(
 
   try {
     const response = await fetcher(url, {
-      method: "GET",
-      headers: {
-        "x-mdcms-project": config.project,
-        "x-mdcms-environment": config.environment,
-        "x-mdcms-locale": locale,
-      },
+      ...applyStudioAuthToRequestInit(options.auth, {
+        method: "GET",
+        headers: {
+          "x-mdcms-project": config.project,
+          "x-mdcms-environment": config.environment,
+          "x-mdcms-locale": locale,
+        },
+      }),
     });
     const payload = (await response.json()) as ContentGetResponse;
 

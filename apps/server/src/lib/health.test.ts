@@ -300,6 +300,113 @@ test("GET /api/v1/studio/bootstrap returns studio runtime manifest when publicat
   assert.equal(body.data.buildId, "build-123");
 });
 
+test("GET /api/v1/studio/bootstrap echoes CORS headers for allowlisted Studio origins", async () => {
+  const manifest: StudioBootstrapManifest = {
+    apiVersion: "1",
+    studioVersion: "1.2.3",
+    mode: "module",
+    entryUrl: "/api/v1/studio/assets/build-123/runtime.mjs",
+    integritySha256: "abc123",
+    signature: "signature",
+    keyId: "key-1",
+    buildId: "build-123",
+    minStudioPackageVersion: "0.0.1",
+    minHostBridgeVersion: "1.0.0",
+    expiresAt: "2099-01-01T00:00:00.000Z",
+  };
+  const handler = createServerRequestHandler({
+    env: {
+      ...baseEnv,
+      MDCMS_STUDIO_ALLOWED_ORIGINS: "http://localhost:4173",
+    },
+    now: () => new Date("2026-02-20T00:00:10.000Z"),
+    studioRuntimePublication: {
+      buildId: "build-123",
+      entryFile: "runtime.mjs",
+      manifest,
+      getAsset: async () => undefined,
+    },
+  });
+
+  const response = await handler(
+    new Request("http://localhost/api/v1/studio/bootstrap", {
+      headers: {
+        origin: "http://localhost:4173",
+      },
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(
+    response.headers.get("access-control-allow-origin"),
+    "http://localhost:4173",
+  );
+  assert.equal(
+    response.headers.get("access-control-allow-credentials"),
+    "true",
+  );
+  assert.equal(response.headers.get("vary"), "Origin");
+});
+
+test("OPTIONS Studio preflight returns 204 for allowlisted origin", async () => {
+  const handler = createServerRequestHandler({
+    env: {
+      ...baseEnv,
+      MDCMS_STUDIO_ALLOWED_ORIGINS: "http://localhost:4173",
+    },
+    now: () => new Date("2026-02-20T00:00:10.000Z"),
+  });
+
+  const response = await handler(
+    new Request("http://localhost/api/v1/content", {
+      method: "OPTIONS",
+      headers: {
+        origin: "http://localhost:4173",
+        "access-control-request-method": "POST",
+        "access-control-request-headers":
+          "content-type,x-mdcms-project,x-mdcms-environment,x-mdcms-csrf-token",
+      },
+    }),
+  );
+
+  assert.equal(response.status, 204);
+  assert.equal(
+    response.headers.get("access-control-allow-origin"),
+    "http://localhost:4173",
+  );
+  assert.equal(
+    response.headers.get("access-control-allow-methods"),
+    "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
+  );
+  assert.match(
+    response.headers.get("access-control-allow-headers") ?? "",
+    /X-MDCMS-CSRF-Token/i,
+  );
+});
+
+test("GET /api/v1/actions rejects disallowed Studio origins", async () => {
+  const handler = createServerRequestHandler({
+    env: {
+      ...baseEnv,
+      MDCMS_STUDIO_ALLOWED_ORIGINS: "http://localhost:4173",
+    },
+    actions: actionCatalog,
+    now: () => new Date("2026-02-20T00:00:10.000Z"),
+  });
+
+  const response = await handler(
+    new Request("http://localhost/api/v1/actions", {
+      headers: {
+        origin: "http://localhost:9999",
+      },
+    }),
+  );
+  const body = (await response.json()) as Record<string, unknown>;
+
+  assert.equal(response.status, 403);
+  assert.equal(body.code, "FORBIDDEN_ORIGIN");
+});
+
 test("GET /api/v1/studio/assets/:buildId/* returns runtime asset when present", async () => {
   const encoder = new TextEncoder();
   const handler = createServerRequestHandler({

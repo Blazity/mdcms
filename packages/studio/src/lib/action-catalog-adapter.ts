@@ -7,6 +7,11 @@ import {
 } from "@mdcms/shared";
 import type { ActionCatalogContractApp } from "@mdcms/shared/action-catalog-contract";
 
+import {
+  applyStudioAuthToRequestInit,
+  type StudioRuntimeAuth,
+} from "./request-auth.js";
+
 export type ActionCatalogHeaders = Record<string, string>;
 
 export type ActionCatalogRequestOptions = {
@@ -15,6 +20,7 @@ export type ActionCatalogRequestOptions = {
 };
 
 export type StudioActionCatalogAdapterOptions = {
+  auth?: StudioRuntimeAuth;
   headers?: ActionCatalogHeaders;
   fetcher?: (
     input: string | URL | Request,
@@ -69,7 +75,11 @@ export function createStudioActionCatalogAdapter(
   options: StudioActionCatalogAdapterOptions = {},
 ): StudioActionCatalogAdapter {
   const client = treaty<ActionCatalogContractApp>(baseUrl, {
-    fetcher: options.fetcher,
+    fetcher: (input, init) =>
+      (options.fetcher ?? fetch)(
+        input,
+        applyStudioAuthToRequestInit(options.auth, init),
+      ),
   });
 
   return {
