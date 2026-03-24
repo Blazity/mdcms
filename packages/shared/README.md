@@ -46,6 +46,13 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
 - Reference fields:
   - `reference("TypeName")` returns a string validator with MDCMS reference
     metadata attached for downstream schema sync/registry work.
+- Component registrations:
+  - authored `components` entries may include runtime-only loader callbacks:
+    - `load?: () => Promise<unknown>`
+    - `loadPropsEditor?: () => Promise<unknown>`
+  - `parseMdcmsConfig(...)` keeps only serializable metadata (`name`,
+    `importPath`, `description`, `propHints`, `propsEditor`) and strips the
+    loader callbacks before the normalized config is consumed elsewhere.
 
 ## Environment Overlay Resolution (CMS-16)
 

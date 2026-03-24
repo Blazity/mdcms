@@ -1,0 +1,1 @@
+ALTER TABLE "schema_syncs" DROP COLUMN "extracted_components";

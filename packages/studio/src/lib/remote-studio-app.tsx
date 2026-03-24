@@ -423,6 +423,30 @@ function renderRouteContent(
   return route.render() as ReactNode;
 }
 
+function getRegisteredMdxComponents(
+  context: StudioMountContext,
+): NonNullable<StudioMountContext["mdx"]>["catalog"]["components"] {
+  return context.mdx?.catalog.components ?? [];
+}
+
+function hasRegisteredPropsEditor(
+  context: StudioMountContext,
+  componentName: string,
+): boolean {
+  return context.mdx?.resolvePropsEditor(componentName) != null;
+}
+
+function hasGeneratedPropsEditor(
+  component: NonNullable<
+    StudioMountContext["mdx"]
+  >["catalog"]["components"][number],
+): boolean {
+  return (
+    component.extractedProps !== undefined &&
+    Object.keys(component.extractedProps).length > 0
+  );
+}
+
 export function RemoteStudioApp({
   context,
   initialPathname,
@@ -513,6 +537,7 @@ export function RemoteStudioApp({
   const activeRoute =
     matchStudioRoute(internalPath, DEFAULT_RUNTIME_REGISTRY.routes) ??
     DEFAULT_RUNTIME_REGISTRY.routes[0];
+  const registeredMdxComponents = getRegisteredMdxComponents(context);
 
   useEffect(() => {
     return startDocumentPreview({
@@ -586,6 +611,46 @@ export function RemoteStudioApp({
       {activeRoute?.id === "content.document" ? (
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-wide text-slate-500">
+                MDX components
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {registeredMdxComponents.length === 0 ? (
+                  <p
+                    data-mdcms-mdx-component-state="empty"
+                    className="text-sm text-slate-500"
+                  >
+                    No local MDX components registered.
+                  </p>
+                ) : (
+                  registeredMdxComponents.map((component) => (
+                    <div
+                      key={component.name}
+                      data-mdcms-mdx-component={component.name}
+                      className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                    >
+                      <span>{component.name}</span>
+                      {hasRegisteredPropsEditor(context, component.name) ? (
+                        <span
+                          data-mdcms-mdx-props-editor={component.name}
+                          className="ml-2 text-xs uppercase tracking-wide text-slate-500"
+                        >
+                          Custom editor
+                        </span>
+                      ) : hasGeneratedPropsEditor(component) ? (
+                        <span
+                          data-mdcms-mdx-auto-form={component.name}
+                          className="ml-2 text-xs uppercase tracking-wide text-slate-500"
+                        >
+                          Auto form
+                        </span>
+                      ) : null}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
             <div className="space-y-2">
               <p className="text-xs uppercase tracking-wide text-slate-500">
                 Document actions

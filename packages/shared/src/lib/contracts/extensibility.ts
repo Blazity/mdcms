@@ -5,6 +5,7 @@ import {
   assertActionCatalogList,
   type ActionCatalogItem,
 } from "./action-catalog.js";
+import type { MdcmsComponentRegistration } from "./config.js";
 
 export const EXTENSIBILITY_API_VERSION = "1" as const;
 export const HOST_BRIDGE_VERSION = "1" as const;
@@ -91,6 +92,21 @@ export type StudioBootstrapReadyResponse = {
       };
 };
 
+export type MdxComponentCatalogEntry = Pick<
+  MdcmsComponentRegistration,
+  "name" | "importPath" | "description" | "propHints" | "propsEditor"
+> & {
+  extractedProps?: Record<string, unknown>;
+};
+
+export type MdxComponentCatalog = {
+  components: MdxComponentCatalogEntry[];
+};
+
+export type MdxComponentHostCapabilities = {
+  resolvePropsEditor: (name: string) => unknown | null;
+};
+
 export type HostBridgeV1 = {
   version: typeof HOST_BRIDGE_VERSION;
   resolveComponent: (name: string) => unknown | null;
@@ -110,6 +126,10 @@ export type StudioMountContext = {
     token?: string;
   };
   hostBridge: HostBridgeV1;
+  mdx?: {
+    catalog: MdxComponentCatalog;
+    resolvePropsEditor: MdxComponentHostCapabilities["resolvePropsEditor"];
+  };
 };
 
 export type RemoteStudioModule = {
@@ -324,6 +344,29 @@ const hostBridgeV1Schema = z
   })
   .strict();
 
+const mdxComponentCatalogEntrySchema = z
+  .object({
+    name: nonEmptyStringSchema,
+    importPath: nonEmptyStringSchema,
+    description: nonEmptyStringSchema.optional(),
+    propHints: z.record(z.string(), z.unknown()).optional(),
+    propsEditor: nonEmptyStringSchema.optional(),
+    extractedProps: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
+
+const mdxComponentCatalogSchema = z
+  .object({
+    components: z.array(mdxComponentCatalogEntrySchema),
+  })
+  .strict();
+
+const mdxComponentHostCapabilitiesSchema = z
+  .object({
+    resolvePropsEditor: functionSchema,
+  })
+  .strict();
+
 const studioMountAuthSchema = z
   .object({
     mode: z.enum(["cookie", "token"]),
@@ -346,6 +389,14 @@ const studioMountContextSchema = z
     basePath: nonEmptyStringSchema,
     auth: studioMountAuthSchema,
     hostBridge: hostBridgeV1Schema,
+    mdx: z
+      .object({
+        catalog: mdxComponentCatalogSchema,
+        resolvePropsEditor:
+          mdxComponentHostCapabilitiesSchema.shape.resolvePropsEditor,
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

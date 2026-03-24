@@ -36,26 +36,37 @@ Host-embedded Studio package boundary for MDCMS.
 Usage:
 
 ```tsx
+"use client";
+
 import config from "../../apps/studio-example/mdcms.config";
 import { Studio } from "@mdcms/studio";
-import { createStudioEmbedConfig } from "@mdcms/studio/runtime";
 
 export default function AdminPage() {
-  return <Studio config={createStudioEmbedConfig(config)} basePath="/admin" />;
+  return <Studio config={config} basePath="/admin" />;
 }
 ```
 
-- `createStudioEmbedConfig(...)` strips the authored `mdcms.config.ts` object
-  down to the plain `{ project, environment, serverUrl }` shape that a client
-  component can receive from a server route.
-- `config.environment` must still be present in the authored config even though
-  the shared `mdcms.config.ts` contract keeps it optional for CLI
-  default-routing use cases.
+- When authored MDX component registrations include runtime loader callbacks
+  (`components[*].load`, `components[*].loadPropsEditor`), the embedding
+  component must be client-side because those callbacks are not
+  server-to-client serializable.
+- The authored `mdcms.config.ts` object is the source of truth for local MDX
+  component metadata and runtime loaders. No backend component sync is
+  required.
+- `Studio` accepts the authored config directly as long as `environment` is
+  present.
+- `createStudioEmbedConfig(...)` remains available from `@mdcms/studio/runtime`
+  for server-safe routes that need only the plain
+  `{ project, environment, serverUrl }` shell config. It intentionally strips
+  client-only MDX loader callbacks.
+- `config.environment` must still be present in authored config even though the
+  shared `mdcms.config.ts` contract keeps it optional for CLI default-routing
+  use cases.
 - `basePath` is required because the remote runtime cannot infer its subtree
   root from deep links alone.
 - The recommended host-app setup is to keep a single `mdcms.config.ts`
   authored with `defineConfig(...)` from `@mdcms/cli`, then pass that object to
-  Studio.
+  Studio from a client component.
 
 ## Document Shell Route (CMS-50)
 

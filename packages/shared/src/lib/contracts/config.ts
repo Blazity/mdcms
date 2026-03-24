@@ -88,6 +88,8 @@ export type MdcmsComponentRegistration = {
   description?: string;
   propHints?: Record<string, unknown>;
   propsEditor?: string;
+  load?: () => Promise<unknown>;
+  loadPropsEditor?: () => Promise<unknown>;
 };
 
 export type MdcmsConfig = {
@@ -661,6 +663,8 @@ function parseComponents(value: unknown): ParsedMdcmsComponentRegistration[] {
       );
     }
 
+    // Runtime loader callbacks are host-local Studio concerns, so the shared parser
+    // intentionally strips them and keeps only serializable component metadata.
     const parsedComponent: ParsedMdcmsComponentRegistration = {
       name: parseRequiredString(component.name, `components[${index}].name`),
       importPath: parseRequiredString(

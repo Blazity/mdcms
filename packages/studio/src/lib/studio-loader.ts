@@ -1,3 +1,6 @@
+import { createElement } from "react";
+import { createRoot } from "react-dom/client";
+
 import {
   HOST_BRIDGE_VERSION,
   RuntimeError,
@@ -7,18 +10,18 @@ import {
   isRuntimeErrorLike,
   type ErrorEnvelope,
   type HostBridgeV1,
+  type MdxComponentCatalog,
   type StudioBootstrapReadyResponse,
   type StudioBootstrapRejectionReason,
   type StudioMountContext,
 } from "@mdcms/shared";
 
 import { assertStudioRuntimePublication } from "./bootstrap-verification.js";
-import type { StudioEmbedConfig } from "./studio.js";
+import type { MdcmsConfig } from "./studio.js";
 
 export const STUDIO_PACKAGE_VERSION = "0.0.1";
 export const STUDIO_HOST_BRIDGE_COMPATIBILITY_VERSION = "1.0.0";
-
-export type MdcmsConfig = StudioEmbedConfig;
+export type { MdcmsConfig } from "./studio.js";
 
 export type StudioLoaderOptions = {
   config: MdcmsConfig;
@@ -34,6 +37,30 @@ type StudioBootstrapRetryContext = {
   rejectedBuildId: string;
   rejectionReason: StudioBootstrapRejectionReason;
 };
+
+type LoadedLocalMdxRuntime = {
+  hostBridge: HostBridgeV1;
+  mdx: StudioMountContext["mdx"];
+};
+
+type LocalMdxPreviewMap = Map<string, unknown>;
+type LocalMdxPropsEditorMap = Map<string, unknown>;
+
+function readExtractedProps(
+  component: NonNullable<MdcmsConfig["components"]>[number],
+): Record<string, unknown> | undefined {
+  const candidate = (component as { extractedProps?: unknown }).extractedProps;
+
+  if (
+    typeof candidate === "object" &&
+    candidate !== null &&
+    !Array.isArray(candidate)
+  ) {
+    return candidate as Record<string, unknown>;
+  }
+
+  return undefined;
+}
 
 function normalizeBaseUrl(serverUrl: string): string {
   return serverUrl.endsWith("/") ? serverUrl.slice(0, -1) : serverUrl;
@@ -62,6 +89,126 @@ function createDefaultHostBridge(): HostBridgeV1 {
     version: HOST_BRIDGE_VERSION,
     resolveComponent: () => null,
     renderMdxPreview: () => () => {},
+  };
+}
+
+function createLoadedHostBridge(
+  previewComponents: LocalMdxPreviewMap,
+): HostBridgeV1 {
+  return {
+    version: HOST_BRIDGE_VERSION,
+    resolveComponent: (name) => previewComponents.get(name) ?? null,
+    renderMdxPreview: (input) => {
+      if (!(input.container instanceof HTMLElement)) {
+        return () => {};
+      }
+
+      const Component = previewComponents.get(input.componentName);
+
+      if (!Component) {
+        return () => {};
+      }
+
+      const root = createRoot(input.container);
+      root.render(
+        createElement(Component as never, { ...input.props, key: input.key }),
+      );
+
+      return () => {
+        root.unmount();
+      };
+    },
+  };
+}
+
+function hasResolvedComponent(bridge: HostBridgeV1, name: string): boolean {
+  const resolved = bridge.resolveComponent(name);
+
+  return resolved !== null && resolved !== undefined;
+}
+
+function composeHostBridges(input: {
+  primary: HostBridgeV1;
+  fallback: HostBridgeV1;
+}): HostBridgeV1 {
+  return {
+    version: HOST_BRIDGE_VERSION,
+    resolveComponent: (name) =>
+      input.primary.resolveComponent(name) ??
+      input.fallback.resolveComponent(name),
+    renderMdxPreview: (previewInput) => {
+      if (hasResolvedComponent(input.primary, previewInput.componentName)) {
+        return input.primary.renderMdxPreview(previewInput);
+      }
+
+      if (hasResolvedComponent(input.fallback, previewInput.componentName)) {
+        return input.fallback.renderMdxPreview(previewInput);
+      }
+
+      return input.primary.renderMdxPreview(previewInput);
+    },
+  };
+}
+
+async function createLoadedLocalMdxRuntime(
+  config: MdcmsConfig,
+): Promise<LoadedLocalMdxRuntime | undefined> {
+  const components = config.components ?? [];
+
+  if (components.length === 0) {
+    return undefined;
+  }
+
+  const previewComponents: LocalMdxPreviewMap = new Map();
+  const propsEditors: LocalMdxPropsEditorMap = new Map();
+
+  await Promise.all(
+    components.map(async (component) => {
+      const [previewResult, propsEditorResult] = await Promise.allSettled([
+        component.load?.(),
+        component.loadPropsEditor?.(),
+      ]);
+
+      if (previewResult?.status === "fulfilled" && previewResult.value) {
+        previewComponents.set(component.name, previewResult.value);
+      }
+
+      if (
+        propsEditorResult?.status === "fulfilled" &&
+        propsEditorResult.value
+      ) {
+        propsEditors.set(component.name, propsEditorResult.value);
+      }
+    }),
+  );
+
+  const catalog: MdxComponentCatalog = {
+    components: components.map((component) => {
+      const extractedProps = readExtractedProps(component);
+
+      return {
+        name: component.name,
+        importPath: component.importPath,
+        ...(component.description !== undefined
+          ? { description: component.description }
+          : {}),
+        ...(component.propHints !== undefined
+          ? { propHints: component.propHints }
+          : {}),
+        ...(component.propsEditor !== undefined
+          ? { propsEditor: component.propsEditor }
+          : {}),
+        ...(extractedProps !== undefined ? { extractedProps } : {}),
+      };
+    }),
+  };
+
+  return {
+    hostBridge: createLoadedHostBridge(previewComponents),
+    mdx: {
+      catalog,
+      resolvePropsEditor: (name) => propsEditors.get(name) ?? null,
+    },
   };
 }
 
@@ -224,6 +371,7 @@ async function loadStudioRuntimeFromBootstrap(
     apiBaseUrl: string;
     fetcher: typeof fetch;
     bootstrapResponse: StudioBootstrapReadyResponse;
+    localMdxRuntimePromise: Promise<LoadedLocalMdxRuntime | undefined>;
   },
 ): Promise<() => void> {
   const manifest = input.bootstrapResponse.data.manifest;
@@ -263,11 +411,22 @@ async function loadStudioRuntimeFromBootstrap(
     },
   });
 
+  const localMdxRuntime = await input.localMdxRuntimePromise;
+  const configHostBridge = localMdxRuntime?.hostBridge;
+  const hostBridge =
+    options.hostBridge && configHostBridge
+      ? composeHostBridges({
+          primary: options.hostBridge,
+          fallback: configHostBridge,
+        })
+      : (options.hostBridge ?? configHostBridge ?? createDefaultHostBridge());
+
   const mountContext: StudioMountContext = {
     apiBaseUrl: input.apiBaseUrl,
     basePath: options.basePath,
     auth: options.auth ?? { mode: "cookie" },
-    hostBridge: options.hostBridge ?? createDefaultHostBridge(),
+    hostBridge,
+    ...(localMdxRuntime?.mdx !== undefined ? { mdx: localMdxRuntime.mdx } : {}),
   };
   assertStudioMountContext(mountContext);
 
@@ -306,6 +465,7 @@ export async function loadStudioRuntime(
 ): Promise<() => void> {
   const apiBaseUrl = normalizeBaseUrl(options.config.serverUrl);
   const fetcher = options.fetcher ?? fetch;
+  const localMdxRuntimePromise = createLoadedLocalMdxRuntime(options.config);
   const bootstrapResponse = await fetchStudioBootstrapReadyResponse({
     apiBaseUrl,
     fetcher,
@@ -316,6 +476,7 @@ export async function loadStudioRuntime(
       apiBaseUrl,
       fetcher,
       bootstrapResponse,
+      localMdxRuntimePromise,
     });
   } catch (error) {
     const retry = classifyStudioBootstrapRetry(
@@ -337,6 +498,7 @@ export async function loadStudioRuntime(
       apiBaseUrl,
       fetcher,
       bootstrapResponse: fallbackBootstrapResponse,
+      localMdxRuntimePromise,
     });
   }
 }

@@ -47,7 +47,6 @@ export type SchemaRegistrySyncPayload = {
   rawConfigSnapshot: JsonObject;
   resolvedSchema: Record<string, SchemaRegistryTypeSnapshot>;
   schemaHash: string;
-  extractedComponents?: JsonValue;
 };
 
 type SerializerContext = {
@@ -400,6 +399,13 @@ export function assertSchemaRegistrySyncPayload(
     invalidInput(path, "must be an object.");
   }
 
+  if ("extractedComponents" in value) {
+    invalidInput(
+      `${path}.extractedComponents`,
+      "is no longer supported in schema sync payloads.",
+    );
+  }
+
   assertJsonObject(value.rawConfigSnapshot, `${path}.rawConfigSnapshot`);
 
   if (!isRecord(value.resolvedSchema)) {
@@ -429,10 +435,6 @@ export function assertSchemaRegistrySyncPayload(
   }
 
   assertNonEmptyString(value.schemaHash, `${path}.schemaHash`);
-
-  if (value.extractedComponents !== undefined) {
-    assertJsonValue(value.extractedComponents, `${path}.extractedComponents`);
-  }
 }
 
 function readZodDefinition(

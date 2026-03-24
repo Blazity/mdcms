@@ -120,6 +120,7 @@ components: [
   {
     name: 'Chart',
     importPath: '@/components/mdx/Chart',
+    load: () => import('@/components/mdx/Chart').then((m) => m.Chart),
     description: 'Renders a data chart with configurable options',
     // Optional: UI hints to override auto-detected form controls
     propHints: {
@@ -134,16 +135,56 @@ components: [
   {
     name: 'PricingTable',
     importPath: '@/components/mdx/PricingTable',
+    load: () => import('@/components/mdx/PricingTable').then((m) => m.PricingTable),
     description: 'Configurable pricing table with tiers',
     // For complex props: developer provides a custom editor component
     propsEditor: '@/components/mdx/PricingTable.editor',
+    loadPropsEditor: () =>
+      import('@/components/mdx/PricingTable.editor').then((m) => m.default),
   },
 ],
 ```
 
+`importPath` and `propsEditor` remain config-owned authoring metadata for local
+extraction workflows. `load` and `loadPropsEditor` are host-local executable
+loader callbacks used by the embedded Studio shell/runtime path. They are not
+serialized into the shared normalized config shape or sent to the backend.
+
+The local MDX component catalog is derived from `config.components` and carried into the embedded Studio runtime by the host app:
+
+```typescript
+export type MdxComponentCatalogEntry = {
+  name: string;
+  importPath: string;
+  description?: string;
+  propHints?: Record<string, unknown>;
+  propsEditor?: string;
+  extractedProps?: Record<string, unknown>;
+};
+
+export type MdxComponentCatalog = {
+  components: MdxComponentCatalogEntry[];
+};
+
+export type MdxComponentHostCapabilities = {
+  resolvePropsEditor: (name: string) => unknown | null;
+};
+```
+
+The host app owns the executable capabilities. The embedded Studio runtime consumes:
+
+- `catalog.components[*].extractedProps` for auto-generated form controls and fallback editing behavior
+- `catalog.components[*].propHints` for widget overrides
+- `resolvePropsEditor(...)` for custom editor resolution when `propsEditor` is configured
+
+Executable editor values remain opaque at the shared contract layer (`unknown | null`).
+In practice these are host-local React components resolved inside the embedding app bundle.
+
+`importPath` and `propsEditor` remain config-owned authoring metadata. They identify the source modules used by the local extraction/runtime pipeline, but runtime resolution is keyed by component `name` rather than by path strings carried over the Studio boundary.
+
 ### Auto Prop Extraction
 
-The CLI (during `cms init` or schema sync) parses the TypeScript source files at the specified `importPath` and automatically extracts prop type definitions. These prop types are sent to the server and displayed in the Studio UI when inserting components.
+The CLI (during `cms init` or schema sync) parses the TypeScript source files at the specified `importPath` and automatically extracts prop type definitions. These prop types are stored in `catalog.components[*].extractedProps`, consumed by the embedded Studio runtime, and displayed in the Studio UI when inserting components.
 
 Example: Given a component file:
 
@@ -288,13 +329,13 @@ All registered MDX components share this single node type, differentiated by the
 **Insertion:**
 
 1. User opens the component insertion panel (toolbar button or `/` slash command).
-2. Panel lists all registered components with names, descriptions, and icons.
+2. Panel lists all registered components from the local catalog with names and descriptions.
 3. User selects a component.
 4. The component is inserted into the document as a node view block.
 5. Props form appears (auto-generated or custom editor) for initial configuration.
 
 **Inline preview:**
-Since the Studio is embedded in the user's app, the **actual React component** is rendered inside the node view using the current prop values. This provides a true WYSIWYG experience — content editors see exactly what the component will look like on the live site.
+Since the Studio is embedded in the user's app, the **actual React component** is rendered inside the node view using the current prop values. This resolution happens locally in the host app context, so content editors see exactly what the component will look like on the live site.
 
 **Editing props:**
 
@@ -304,6 +345,8 @@ Since the Studio is embedded in the user's app, the **actual React component** i
 
 **Serialization:**
 When the document is saved, the `MdxComponent` extension's `markdown.render` handler (§10.1.1) serializes each component node back to MDX syntax. Props are serialized as JSX attributes. Children (the content hole) are recursively serialized as markdown within the opening/closing tags. This MDX string is what gets stored in the `body` column of the database.
+
+If a component specifies `propsEditor`, the embedded Studio runtime resolves that custom editor locally from the host bundle through `resolvePropsEditor(componentName)`. If no executable resolver exists for a registered component, the runtime falls back to the auto-generated form controls derived from `catalog.components[*].extractedProps`.
 
 ---
 

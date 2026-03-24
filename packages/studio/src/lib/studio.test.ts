@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
+import { rmSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
+import ts from "typescript";
 
 import { RuntimeError, type ActionCatalogItem } from "@mdcms/shared";
 
@@ -42,6 +47,43 @@ function readFetchHeader(
   return null;
 }
 
+function typecheckSource(source: string) {
+  const tempDir = dirname(fileURLToPath(import.meta.url));
+  const tempFile = join(
+    tempDir,
+    `.__studio-config-contract-${randomUUID()}.ts`,
+  );
+
+  writeFileSync(tempFile, source, "utf8");
+
+  try {
+    const program = ts.createProgram([tempFile], {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.NodeNext,
+      moduleResolution: ts.ModuleResolutionKind.NodeNext,
+      jsx: ts.JsxEmit.ReactJSX,
+      customConditions: ["@mdcms/source"],
+      strict: true,
+      noEmit: true,
+      skipLibCheck: true,
+      allowImportingTsExtensions: true,
+      esModuleInterop: true,
+      types: ["node"],
+    });
+
+    const diagnostics = ts.getPreEmitDiagnostics(program);
+
+    assert.deepEqual(
+      diagnostics.map((diagnostic) =>
+        ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"),
+      ),
+      [],
+    );
+  } finally {
+    rmSync(tempFile, { force: true });
+  }
+}
+
 test("resolveStudioEnv parses core env and applies Studio defaults", () => {
   const env = resolveStudioEnv({
     NODE_ENV: "production",
@@ -67,11 +109,56 @@ test("createStudioRuntimeContext wires env and logger", () => {
   assert.ok(context.logger);
 });
 
-test("createStudioEmbedConfig returns a plain serializable studio shell config", () => {
+test("Studio accepts the authored shared config shape for mdx-aware embedding", () => {
+  typecheckSource(`
+    import type { StudioProps } from "../index.ts";
+
+    const props: StudioProps = {
+      config: {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+        contentDirectories: ["content"],
+        locales: {
+          default: "en",
+          supported: ["en"],
+        },
+        environments: {
+          production: {},
+          staging: {
+            extends: "production",
+          },
+        },
+        types: [],
+        components: [
+          {
+            name: "Chart",
+            importPath: "@/components/mdx/Chart",
+            load: async () => ({}),
+            loadPropsEditor: async () => ({}),
+          },
+        ],
+      },
+      basePath: "/admin",
+    };
+
+    void props;
+  `);
+});
+
+test("createStudioEmbedConfig strips client-only mdx loader fields", () => {
   const config = createStudioEmbedConfig({
     project: "marketing-site",
     environment: "staging",
     serverUrl: "http://localhost:4000",
+    components: [
+      {
+        name: "Chart",
+        importPath: "@/components/mdx/Chart",
+        load: async () => ({}),
+        loadPropsEditor: async () => ({}),
+      },
+    ],
     types: [
       {
         name: "post",

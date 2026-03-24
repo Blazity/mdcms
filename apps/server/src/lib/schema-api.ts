@@ -710,7 +710,6 @@ export function createDatabaseSchemaStore(
             environmentId: scopeIds.environmentId,
             schemaHash: payload.schemaHash,
             rawConfigSnapshot: payload.rawConfigSnapshot,
-            extractedComponents: payload.extractedComponents ?? null,
             syncedAt,
           })
           .onConflictDoUpdate({
@@ -718,7 +717,6 @@ export function createDatabaseSchemaStore(
             set: {
               schemaHash: payload.schemaHash,
               rawConfigSnapshot: payload.rawConfigSnapshot,
-              extractedComponents: payload.extractedComponents ?? null,
               syncedAt,
             },
           });

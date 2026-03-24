@@ -118,6 +118,27 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
       resolveComponent: () => null,
       renderMdxPreview: () => () => {},
     },
+    mdx: {
+      catalog: {
+        components: [
+          {
+            name: "Chart",
+            importPath: "@/components/mdx/Chart",
+            description: "Render a chart",
+            extractedProps: {
+              title: { type: "string", required: false },
+            },
+          },
+          {
+            name: "PricingTable",
+            importPath: "@/components/mdx/PricingTable",
+            propsEditor: "@/components/mdx/PricingTable.editor",
+          },
+        ],
+      },
+      resolvePropsEditor: (name) =>
+        name === "PricingTable" ? () => null : null,
+    },
   };
   const initialActions: ActionCatalogItem[] = [
     {
@@ -158,4 +179,8 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
   assert.match(markup, />Archive entry</);
   assert.doesNotMatch(markup, /content\.hidden/);
   assert.match(markup, /data-mdcms-preview-surface="content.document"/);
+  assert.match(markup, /data-mdcms-mdx-component="Chart"/);
+  assert.match(markup, /data-mdcms-mdx-component="PricingTable"/);
+  assert.match(markup, /data-mdcms-mdx-auto-form="Chart"/);
+  assert.match(markup, /data-mdcms-mdx-props-editor="PricingTable"/);
 });

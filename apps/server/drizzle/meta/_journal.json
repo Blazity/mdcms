@@ -64,6 +64,13 @@
       "when": 1773390600000,
       "tag": "0008_mellow_starlord",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1774395811363,
+      "tag": "0009_peaceful_living_tribunal",
+      "breakpoints": true
     }
   ]
 }

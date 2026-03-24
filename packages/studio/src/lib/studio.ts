@@ -24,6 +24,10 @@ export type StudioEmbedConfig = {
   serverUrl: string;
 };
 
+export type MdcmsConfig = SharedMdcmsConfig & {
+  environment: string;
+};
+
 export function createStudioEmbedConfig(
   config: SharedMdcmsConfig,
 ): StudioEmbedConfig {

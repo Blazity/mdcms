@@ -66,6 +66,10 @@ export type StudioMountContext = {
   basePath: string;
   auth: { mode: "cookie" | "token"; token?: string };
   hostBridge: HostBridgeV1;
+  mdx?: {
+    catalog: MdxComponentCatalog; // Contract owned by SPEC-007
+    resolvePropsEditor: (name: string) => unknown | null;
+  };
 };
 ```
 
@@ -79,7 +83,7 @@ Host bridge (minimum):
 ```typescript
 export type HostBridgeV1 = {
   version: "1";
-  resolveComponent: (name: string) => React.ComponentType<any> | null;
+  resolveComponent: (name: string) => unknown | null;
   renderMdxPreview: (input: {
     container: HTMLElement;
     componentName: string;
@@ -88,6 +92,10 @@ export type HostBridgeV1 = {
   }) => () => void;
 };
 ```
+
+The shared shell/runtime boundary keeps executable component values opaque at the
+type level (`unknown | null`). In the host app these are normally React
+components, but the shared contract does not depend on React type imports.
 
 ## Studio UI
 
@@ -104,6 +112,8 @@ export default function AdminPage() {
   return <Studio config={config} basePath="/admin" />;
 }
 ```
+
+When the host app supplies MDX loader callbacks, Studio takes a client-side embedding path for MDX-aware features. The shell consumes the local component catalog metadata from `mdcms.config.ts` and a local `resolvePropsEditor(...)` capability from the host bundle, then passes them to the embedded runtime. Preview rendering remains host-bridge-driven through `resolveComponent(...)` and `renderMdxPreview(...)`. The backend bootstrap/runtime publication model stays unchanged; it still serves the signed runtime bundle and does not publish the component catalog.
 
 The backend may live on a different origin from the host app. Cross-origin Studio embedding is a first-class path; a same-origin reverse proxy is optional, not required. Browser access to the backend follows the Studio origin allowlist and CORS contract defined in `SPEC-005`.
 

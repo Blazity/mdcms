@@ -94,6 +94,19 @@ test("assertSchemaRegistrySyncPayload rejects malformed resolved schema maps wit
   );
 });
 
+test("assertSchemaRegistrySyncPayload rejects obsolete extractedComponents input", () => {
+  expectInvalidInput(
+    () =>
+      assertSchemaRegistrySyncPayload({
+        rawConfigSnapshot: {},
+        resolvedSchema: {},
+        schemaHash: "hash",
+        extractedComponents: [],
+      } as never),
+    "payload.extractedComponents",
+  );
+});
+
 test("assertSchemaRegistrySyncPayload rejects impossible field snapshot shapes", () => {
   expectInvalidInput(
     () =>

@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
+import { rmSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
+import ts from "typescript";
 import { z } from "zod";
 
 import { RuntimeError } from "../runtime/error.js";
@@ -11,6 +16,41 @@ import {
   parseMdcmsConfig,
   reference,
 } from "./config.js";
+
+function typecheckSource(source: string) {
+  const tempDir = dirname(fileURLToPath(import.meta.url));
+  const tempFile = join(
+    tempDir,
+    `.__component-loader-contract-${randomUUID()}.ts`,
+  );
+
+  writeFileSync(tempFile, source, "utf8");
+
+  try {
+    const program = ts.createProgram([tempFile], {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.NodeNext,
+      moduleResolution: ts.ModuleResolutionKind.NodeNext,
+      strict: true,
+      noEmit: true,
+      skipLibCheck: true,
+      allowImportingTsExtensions: true,
+      esModuleInterop: true,
+      types: ["node"],
+    });
+
+    const diagnostics = ts.getPreEmitDiagnostics(program);
+
+    assert.deepEqual(
+      diagnostics.map((diagnostic) =>
+        ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"),
+      ),
+      [],
+    );
+  } finally {
+    rmSync(tempFile, { force: true });
+  }
+}
 
 const standardStringSchema = {
   "~standard": {
@@ -27,6 +67,28 @@ const standardStringSchema = {
     },
   },
 };
+
+test("defineConfig accepts runtime-only component loader callbacks", () => {
+  typecheckSource(`
+    import type { MdcmsConfig } from "./config.ts";
+    import { defineConfig } from "./config.ts";
+
+    const config: MdcmsConfig = {
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+      components: [
+        {
+          name: "Chart",
+          importPath: "@/components/mdx/Chart",
+          load: async () => ({}),
+          loadPropsEditor: async () => ({}),
+        },
+      ],
+    };
+
+    defineConfig(config);
+  `);
+});
 
 test("defineConfig/defineType/reference produce a normalized shared config", () => {
   const author = defineType("Author", {
@@ -64,6 +126,12 @@ test("defineConfig/defineType/reference produce a normalized shared config", () 
         name: "Chart",
         importPath: "@/components/mdx/Chart",
         description: "Render a chart",
+        propHints: {
+          color: { widget: "color-picker" },
+        },
+        propsEditor: "@/components/mdx/Chart.editor",
+        load: async () => ({ component: "Chart" }),
+        loadPropsEditor: async () => ({ editor: "ChartPropsEditor" }),
       },
     ],
   });
@@ -97,6 +165,10 @@ test("defineConfig/defineType/reference produce a normalized shared config", () 
       name: "Chart",
       importPath: "@/components/mdx/Chart",
       description: "Render a chart",
+      propHints: {
+        color: { widget: "color-picker" },
+      },
+      propsEditor: "@/components/mdx/Chart.editor",
     },
   ]);
 });

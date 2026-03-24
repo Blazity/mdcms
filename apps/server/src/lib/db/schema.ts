@@ -261,7 +261,6 @@ export const schemaSyncs = pgTable(
       .references(() => environments.id),
     schemaHash: text().notNull(),
     rawConfigSnapshot: jsonb().notNull(),
-    extractedComponents: jsonb(),
     syncedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

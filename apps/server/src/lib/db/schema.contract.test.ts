@@ -236,7 +236,6 @@ test("schema snapshot includes CMS-11/CMS-12 core tables and columns", () => {
       "environment_id",
       "schema_hash",
       "raw_config_snapshot",
-      "extracted_components",
       "synced_at",
     ],
     "public.schema_registry_entries": [

@@ -544,7 +544,6 @@ export async function seedSchemaRegistryScope(
       environmentId: resolvedScope.environment.id,
       schemaHash,
       rawConfigSnapshot,
-      extractedComponents: null,
       syncedAt,
     })
     .onConflictDoUpdate({
@@ -552,7 +551,6 @@ export async function seedSchemaRegistryScope(
       set: {
         schemaHash,
         rawConfigSnapshot,
-        extractedComponents: null,
         syncedAt,
       },
     });

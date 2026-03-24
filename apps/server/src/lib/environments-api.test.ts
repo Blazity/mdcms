@@ -571,7 +571,6 @@ testWithDatabase(
         rawConfigSnapshot: {
           project,
         },
-        extractedComponents: null,
       });
 
       const deleteProductionResponse = await handler(

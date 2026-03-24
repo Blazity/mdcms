@@ -281,11 +281,6 @@ function createSyncPayload(input: {
     },
     resolvedSchema: input.resolvedSchema,
     schemaHash: input.schemaHash,
-    extractedComponents: [
-      {
-        name: "Hero",
-      },
-    ],
   };
 }
 
@@ -606,9 +601,9 @@ testWithDatabase(
         syncRows[0]?.rawConfigSnapshot,
         payload.rawConfigSnapshot,
       );
-      assert.deepEqual(
-        syncRows[0]?.extractedComponents,
-        payload.extractedComponents,
+      assert.equal(
+        Reflect.has(syncRows[0] ?? {}, "extractedComponents"),
+        false,
       );
 
       const entryRows = await dbConnection.db

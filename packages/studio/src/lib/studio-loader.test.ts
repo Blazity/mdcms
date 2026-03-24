@@ -12,7 +12,7 @@ import {
 } from "@mdcms/shared";
 
 import { buildStudioRuntimeArtifacts } from "./build-runtime.js";
-import { loadStudioRuntime } from "./studio-loader.js";
+import { loadStudioRuntime, type MdcmsConfig } from "./studio-loader.js";
 
 const validHostBridge: HostBridgeV1 = {
   version: "1",
@@ -203,6 +203,259 @@ test("loadStudioRuntime fetches bootstrap, verifies runtime, and mounts the remo
       },
       "unmounted",
     ]);
+  });
+});
+
+test("loadStudioRuntime derives a local mdx catalog and editor resolver from config components", async () => {
+  await withTempDir("studio-loader-mdx-", async (directory) => {
+    const fixture = await createRuntimeFixture(directory);
+    const contexts: unknown[] = [];
+    const Chart = () => null;
+    const ChartEditor = () => null;
+    const config: MdcmsConfig = {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+      components: [
+        {
+          name: "Chart",
+          importPath: "@/components/mdx/Chart",
+          description: "Render a chart",
+          propsEditor: "@/components/mdx/Chart.editor",
+          load: async () => Chart,
+          loadPropsEditor: async () => ChartEditor,
+          extractedProps: {
+            title: { type: "string", required: false },
+          },
+        } as unknown as NonNullable<MdcmsConfig["components"]>[number],
+      ],
+    };
+
+    await loadStudioRuntime({
+      config,
+      basePath: "/admin",
+      container: {},
+      fetcher: async (input) => {
+        const url = String(input);
+
+        if (url === "http://localhost:4000/api/v1/studio/bootstrap") {
+          return new Response(
+            JSON.stringify(
+              createReadyBootstrapPayload({
+                manifest: fixture.manifest,
+              }),
+            ),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        if (url === "http://localhost:4000" + fixture.manifest.entryUrl) {
+          return new Response(new Uint8Array(fixture.runtimeBytes), {
+            status: 200,
+            headers: {
+              "content-type": "text/javascript; charset=utf-8",
+            },
+          });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+      },
+      loadRemoteModule: async () => ({
+        mount: (_target: unknown, context: unknown) => {
+          contexts.push(context);
+          return () => {};
+        },
+      }),
+    });
+
+    const context = contexts[0] as {
+      hostBridge: HostBridgeV1;
+      mdx?: {
+        catalog: {
+          components: Array<{
+            name: string;
+            importPath: string;
+            description?: string;
+            propsEditor?: string;
+            extractedProps?: Record<string, unknown>;
+          }>;
+        };
+        resolvePropsEditor: (name: string) => unknown | null;
+      };
+    };
+
+    assert.deepEqual(context.mdx?.catalog.components, [
+      {
+        name: "Chart",
+        importPath: "@/components/mdx/Chart",
+        description: "Render a chart",
+        propsEditor: "@/components/mdx/Chart.editor",
+        extractedProps: {
+          title: { type: "string", required: false },
+        },
+      },
+    ]);
+    assert.equal(context.hostBridge.resolveComponent("Chart"), Chart);
+    assert.equal(context.mdx?.resolvePropsEditor("Chart"), ChartEditor);
+  });
+});
+
+test("loadStudioRuntime composes a caller hostBridge with config-derived component resolution", async () => {
+  await withTempDir("studio-loader-compose-", async (directory) => {
+    const fixture = await createRuntimeFixture(directory);
+    const contexts: unknown[] = [];
+    const Chart = () => null;
+    const Custom = () => null;
+    const customHostBridge: HostBridgeV1 = {
+      version: "1",
+      resolveComponent: (name) => (name === "Custom" ? Custom : null),
+      renderMdxPreview: () => () => {},
+    };
+
+    await loadStudioRuntime({
+      config: {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+        components: [
+          {
+            name: "Chart",
+            importPath: "@/components/mdx/Chart",
+            load: async () => Chart,
+          },
+        ],
+      },
+      basePath: "/admin",
+      container: {},
+      hostBridge: customHostBridge,
+      fetcher: async (input) => {
+        const url = String(input);
+
+        if (url === "http://localhost:4000/api/v1/studio/bootstrap") {
+          return new Response(
+            JSON.stringify(
+              createReadyBootstrapPayload({
+                manifest: fixture.manifest,
+              }),
+            ),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        if (url === "http://localhost:4000" + fixture.manifest.entryUrl) {
+          return new Response(new Uint8Array(fixture.runtimeBytes), {
+            status: 200,
+            headers: {
+              "content-type": "text/javascript; charset=utf-8",
+            },
+          });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+      },
+      loadRemoteModule: async () => ({
+        mount: (_target: unknown, context: unknown) => {
+          contexts.push(context);
+          return () => {};
+        },
+      }),
+    });
+
+    const bridge = (contexts[0] as { hostBridge: HostBridgeV1 }).hostBridge;
+
+    assert.equal(bridge.resolveComponent("Custom"), Custom);
+    assert.equal(bridge.resolveComponent("Chart"), Chart);
+  });
+});
+
+test("loadStudioRuntime fetches the remote runtime while local mdx loaders are still pending", async () => {
+  await withTempDir("studio-loader-parallel-", async (directory) => {
+    const fixture = await createRuntimeFixture(directory);
+    const events: string[] = [];
+    let resolveComponentLoad: ((value: unknown) => void) | undefined;
+    let resolveRuntimeFetchStarted: (() => void) | undefined;
+    const runtimeFetchStarted = new Promise<void>((resolve) => {
+      resolveRuntimeFetchStarted = resolve;
+    });
+
+    const runtimeLoad = loadStudioRuntime({
+      config: {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+        components: [
+          {
+            name: "Chart",
+            importPath: "@/components/mdx/Chart",
+            load: async () => {
+              events.push("component-load-start");
+
+              return await new Promise<unknown>((resolve) => {
+                resolveComponentLoad = resolve;
+              });
+            },
+          },
+        ],
+      },
+      basePath: "/admin",
+      container: {},
+      fetcher: async (input) => {
+        const url = String(input);
+
+        if (url === "http://localhost:4000/api/v1/studio/bootstrap") {
+          events.push("bootstrap-fetch");
+
+          return new Response(
+            JSON.stringify(
+              createReadyBootstrapPayload({
+                manifest: fixture.manifest,
+              }),
+            ),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        if (url === "http://localhost:4000" + fixture.manifest.entryUrl) {
+          events.push("runtime-fetch");
+          resolveRuntimeFetchStarted?.();
+
+          return new Response(new Uint8Array(fixture.runtimeBytes), {
+            status: 200,
+            headers: {
+              "content-type": "text/javascript; charset=utf-8",
+            },
+          });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+      },
+      loadRemoteModule: async () => ({
+        mount: () => () => {},
+      }),
+    });
+
+    await runtimeFetchStarted;
+    assert.ok(events.includes("bootstrap-fetch"));
+    assert.ok(events.includes("component-load-start"));
+    assert.ok(events.includes("runtime-fetch"));
+
+    resolveComponentLoad?.(() => null);
+    await runtimeLoad;
   });
 });
 

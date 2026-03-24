@@ -126,7 +126,7 @@ Schema updates are persisted to the backend schema registry only through explici
 - The schema registry stores the latest synced state per `(project, environment)`.
 - The read surface is type-centric: `GET /schema` returns one entry per content type for the target environment.
 - The server persists:
-  - one environment-level sync record containing `schemaHash`, `rawConfigSnapshot`, optional `extractedComponents`, and `syncedAt`
+  - one environment-level sync record containing `schemaHash`, `rawConfigSnapshot`, and `syncedAt`
   - derived per-type registry entries for the target environment
 
 **Snapshot fidelity limitation:**
@@ -279,11 +279,11 @@ Notes:
 - `rawConfigSnapshot` is stored with the environment-level sync record and is not returned by `GET` endpoints.
 - `resolvedSchema` is a descriptive JSON snapshot for the type, not an executable validator.
 
-| Method | Path                   | Auth Mode          | Required Scope | Target Routing                  | Request                                                                         | Success                                                   | Deterministic Errors                                                                                                                                                     |
-| ------ | ---------------------- | ------------------ | -------------- | ------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| GET    | `/api/v1/schema`       | session_or_api_key | `schema:read`  | required: `project_environment` | explicit routing only                                                           | `200` `{ data: SchemaRegistryEntry[] }`                   | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`)                                                         |
-| GET    | `/api/v1/schema/:type` | session_or_api_key | `schema:read`  | required: `project_environment` | path `type`                                                                     | `200` `{ data: SchemaRegistryEntry }`                     | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                    |
-| PUT    | `/api/v1/schema`       | session_or_api_key | `schema:write` | required: `project_environment` | JSON: `{ rawConfigSnapshot, resolvedSchema, schemaHash, extractedComponents? }` | `200` `{ data: { schemaHash, syncedAt, affectedTypes } }` | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `SCHEMA_INCOMPATIBLE` (`409`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`) |
+| Method | Path                   | Auth Mode          | Required Scope | Target Routing                  | Request                                                   | Success                                                   | Deterministic Errors                                                                                                                                                     |
+| ------ | ---------------------- | ------------------ | -------------- | ------------------------------- | --------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/api/v1/schema`       | session_or_api_key | `schema:read`  | required: `project_environment` | explicit routing only                                     | `200` `{ data: SchemaRegistryEntry[] }`                   | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`)                                                         |
+| GET    | `/api/v1/schema/:type` | session_or_api_key | `schema:read`  | required: `project_environment` | path `type`                                               | `200` `{ data: SchemaRegistryEntry }`                     | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                    |
+| PUT    | `/api/v1/schema`       | session_or_api_key | `schema:write` | required: `project_environment` | JSON: `{ rawConfigSnapshot, resolvedSchema, schemaHash }` | `200` `{ data: { schemaHash, syncedAt, affectedTypes } }` | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `SCHEMA_INCOMPATIBLE` (`409`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`) |
 
 Error split:
 
