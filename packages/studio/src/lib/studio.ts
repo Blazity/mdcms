@@ -1,12 +1,18 @@
+import { statSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
+
 import {
   createNamedRuntimeContext,
   formatRuntimeErrorEnvelope,
   resolveNamedRuntimeEnv,
   type MdcmsConfig as SharedMdcmsConfig,
+  type MdcmsComponentRegistration,
   type CoreEnv,
   type ErrorEnvelope,
+  type MdxExtractedProps,
   type RuntimeContext,
 } from "@mdcms/shared";
+import { extractMdxComponentProps } from "@mdcms/shared/mdx";
 
 /**
  * Studio runtime helpers align env resolution, logger setup, and error
@@ -24,24 +30,130 @@ export type StudioEmbedConfig = {
   serverUrl: string;
 };
 
-export type MdcmsConfig = SharedMdcmsConfig & {
+export type StudioComponentRegistration = MdcmsComponentRegistration & {
+  extractedProps?: MdxExtractedProps;
+};
+
+export type MdcmsConfig = Omit<SharedMdcmsConfig, "components"> & {
   environment: string;
+  components?: StudioComponentRegistration[];
+};
+
+export type PrepareStudioConfigOptions = {
+  cwd: string;
+  resolveImportPath?: (
+    value: string,
+    component: MdcmsComponentRegistration,
+  ) => string | Promise<string>;
+  tsconfigPath?: string;
 };
 
 export function createStudioEmbedConfig(
   config: SharedMdcmsConfig,
 ): StudioEmbedConfig {
+  const environment = readStudioEnvironment(config);
+
+  return {
+    project: config.project,
+    environment,
+    serverUrl: config.serverUrl,
+  };
+}
+
+export async function prepareStudioConfig(
+  config: SharedMdcmsConfig,
+  options: PrepareStudioConfigOptions,
+): Promise<MdcmsConfig> {
+  const environment = readStudioEnvironment(config);
+  const components = config.components
+    ? await Promise.all(
+        config.components.map(async (component) => {
+          const filePath = await resolveComponentSourceFile(component, options);
+          const extractedProps = extractMdxComponentProps({
+            filePath,
+            componentName: component.name,
+            propHints: component.propHints,
+            ...(options.tsconfigPath !== undefined
+              ? { tsconfigPath: options.tsconfigPath }
+              : {}),
+          });
+
+          return {
+            ...component,
+            ...(Object.keys(extractedProps).length > 0
+              ? { extractedProps }
+              : {}),
+          };
+        }),
+      )
+    : undefined;
+
+  return {
+    ...config,
+    environment,
+    ...(components !== undefined ? { components } : {}),
+  };
+}
+
+function readStudioEnvironment(config: SharedMdcmsConfig): string {
   if (!config.environment || config.environment.trim().length === 0) {
     throw new Error(
       "Studio embed config requires a non-empty environment string.",
     );
   }
 
-  return {
-    project: config.project,
-    environment: config.environment,
-    serverUrl: config.serverUrl,
-  };
+  return config.environment.trim();
+}
+
+async function resolveComponentSourceFile(
+  component: MdcmsComponentRegistration,
+  options: PrepareStudioConfigOptions,
+): Promise<string> {
+  const resolvedImportPath = options.resolveImportPath
+    ? await options.resolveImportPath(component.importPath, component)
+    : component.importPath;
+  const normalizedImportPath = normalizeImportPath(
+    resolvedImportPath,
+    options.cwd,
+  );
+  const candidates = [
+    normalizedImportPath,
+    `${normalizedImportPath}.tsx`,
+    `${normalizedImportPath}.ts`,
+    `${normalizedImportPath}.jsx`,
+    `${normalizedImportPath}.js`,
+    resolve(normalizedImportPath, "index.tsx"),
+    resolve(normalizedImportPath, "index.ts"),
+    resolve(normalizedImportPath, "index.jsx"),
+    resolve(normalizedImportPath, "index.js"),
+  ];
+
+  for (const candidate of candidates) {
+    if (isFilePath(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    [
+      `Could not resolve MDX component source for "${component.name}".`,
+      `importPath: ${component.importPath}`,
+      `cwd: ${options.cwd}`,
+      "Pass prepareStudioConfig(..., { resolveImportPath }) when the authored importPath uses workspace aliases.",
+    ].join("\n"),
+  );
+}
+
+function normalizeImportPath(importPath: string, cwd: string): string {
+  return isAbsolute(importPath) ? importPath : resolve(cwd, importPath);
+}
+
+function isFilePath(candidate: string): boolean {
+  try {
+    return statSync(candidate).isFile();
+  } catch {
+    return false;
+  }
 }
 
 export function resolveStudioEnv(rawEnv: NodeJS.ProcessEnv): StudioEnv {

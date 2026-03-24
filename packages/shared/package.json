@@ -8,6 +8,13 @@
   "types": "./dist/index.d.ts",
   "exports": {
     "./package.json": "./package.json",
+    "./mdx": {
+      "@mdcms/source": "./src/lib/mdx/index.ts",
+      "bun": "./src/lib/mdx/index.ts",
+      "types": "./dist/lib/mdx/index.d.ts",
+      "import": "./dist/lib/mdx/index.js",
+      "default": "./dist/lib/mdx/index.js"
+    },
     "./action-catalog-contract": {
       "@mdcms/source": "./src/lib/contracts/action-catalog-contract.ts",
       "bun": "./src/lib/contracts/action-catalog-contract.ts",
@@ -31,6 +38,7 @@
   },
   "dependencies": {
     "elysia": "^1.4.25",
+    "typescript": "~5.9.2",
     "tslib": "^2.3.0",
     "zod": "^4.3.6"
   },

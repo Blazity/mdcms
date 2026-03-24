@@ -6,6 +6,7 @@ import { test } from "node:test";
 
 import {
   RuntimeError,
+  type MdxExtractedProps,
   type HostBridgeV1,
   type StudioBootstrapManifest,
   type StudioBootstrapReadyResponse,
@@ -227,7 +228,7 @@ test("loadStudioRuntime derives a local mdx catalog and editor resolver from con
           extractedProps: {
             title: { type: "string", required: false },
           },
-        } as unknown as NonNullable<MdcmsConfig["components"]>[number],
+        },
       ],
     };
 
@@ -282,7 +283,7 @@ test("loadStudioRuntime derives a local mdx catalog and editor resolver from con
             importPath: string;
             description?: string;
             propsEditor?: string;
-            extractedProps?: Record<string, unknown>;
+            extractedProps?: MdxExtractedProps;
           }>;
         };
         resolvePropsEditor: (name: string) => unknown | null;

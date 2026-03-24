@@ -96,12 +96,24 @@ export type MdxComponentCatalogEntry = Pick<
   MdcmsComponentRegistration,
   "name" | "importPath" | "description" | "propHints" | "propsEditor"
 > & {
-  extractedProps?: Record<string, unknown>;
+  extractedProps?: MdxExtractedProps;
 };
 
 export type MdxComponentCatalog = {
   components: MdxComponentCatalogEntry[];
 };
+
+export type MdxExtractedProp =
+  | { type: "string"; required: boolean }
+  | { type: "number"; required: boolean }
+  | { type: "boolean"; required: boolean }
+  | { type: "date"; required: boolean }
+  | { type: "enum"; required: boolean; values: string[] }
+  | { type: "array"; required: boolean; items: "string" | "number" }
+  | { type: "json"; required: boolean }
+  | { type: "rich-text"; required: boolean };
+
+export type MdxExtractedProps = Record<string, MdxExtractedProp>;
 
 export type MdxComponentHostCapabilities = {
   resolvePropsEditor: (name: string) => unknown | null;
@@ -344,6 +356,43 @@ const hostBridgeV1Schema = z
   })
   .strict();
 
+const mdxExtractedPropRequiredSchema = z
+  .object({
+    required: z.boolean(),
+  })
+  .strict();
+
+const mdxExtractedPropSchema = z.discriminatedUnion("type", [
+  mdxExtractedPropRequiredSchema.extend({
+    type: z.literal("string"),
+  }),
+  mdxExtractedPropRequiredSchema.extend({
+    type: z.literal("number"),
+  }),
+  mdxExtractedPropRequiredSchema.extend({
+    type: z.literal("boolean"),
+  }),
+  mdxExtractedPropRequiredSchema.extend({
+    type: z.literal("date"),
+  }),
+  mdxExtractedPropRequiredSchema.extend({
+    type: z.literal("enum"),
+    values: z.array(nonEmptyStringSchema).min(1, {
+      message: "must contain at least one value.",
+    }),
+  }),
+  mdxExtractedPropRequiredSchema.extend({
+    type: z.literal("array"),
+    items: z.enum(["string", "number"]),
+  }),
+  mdxExtractedPropRequiredSchema.extend({
+    type: z.literal("json"),
+  }),
+  mdxExtractedPropRequiredSchema.extend({
+    type: z.literal("rich-text"),
+  }),
+]);
+
 const mdxComponentCatalogEntrySchema = z
   .object({
     name: nonEmptyStringSchema,
@@ -351,7 +400,7 @@ const mdxComponentCatalogEntrySchema = z
     description: nonEmptyStringSchema.optional(),
     propHints: z.record(z.string(), z.unknown()).optional(),
     propsEditor: nonEmptyStringSchema.optional(),
-    extractedProps: z.record(z.string(), z.unknown()).optional(),
+    extractedProps: z.record(z.string(), mdxExtractedPropSchema).optional(),
   })
   .strict();
 

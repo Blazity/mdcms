@@ -113,7 +113,18 @@ export default function AdminPage() {
 }
 ```
 
-When the host app supplies MDX loader callbacks, Studio takes a client-side embedding path for MDX-aware features. The shell consumes the local component catalog metadata from `mdcms.config.ts` and a local `resolvePropsEditor(...)` capability from the host bundle, then passes them to the embedded runtime. Preview rendering remains host-bridge-driven through `resolveComponent(...)` and `renderMdxPreview(...)`. The backend bootstrap/runtime publication model stays unchanged; it still serves the signed runtime bundle and does not publish the component catalog.
+When the host app supplies MDX loader callbacks, Studio takes a client-side
+embedding path for MDX-aware features. The shell consumes the local component
+catalog metadata from `mdcms.config.ts` and a local
+`resolvePropsEditor(...)` capability from the host bundle, then passes them to
+the embedded runtime. For MDX prop editing features, the host may prepare that
+catalog on a Node-side integration path before the client shell renders so the
+runtime receives serializable `extractedProps` metadata as defined in
+`SPEC-007`; the runtime does not inspect TypeScript source in the browser.
+Preview rendering remains host-bridge-driven through `resolveComponent(...)`
+and `renderMdxPreview(...)`. The backend bootstrap/runtime publication model
+stays unchanged; it still serves the signed runtime bundle and does not publish
+the component catalog.
 
 The backend may live on a different origin from the host app. Cross-origin Studio embedding is a first-class path; a same-origin reverse proxy is optional, not required. Browser access to the backend follows the Studio origin allowlist and CORS contract defined in `SPEC-005`.
 

@@ -36,12 +36,28 @@ Host-embedded Studio package boundary for MDCMS.
 Usage:
 
 ```tsx
-"use client";
+// app/admin/[[...path]]/page.tsx
+import { prepareStudioConfig } from "@mdcms/studio/runtime";
 
 import config from "../../apps/studio-example/mdcms.config";
-import { Studio } from "@mdcms/studio";
+import { AdminStudioClient } from "./admin-studio-client";
 
-export default function AdminPage() {
+export default async function AdminPage() {
+  const preparedConfig = await prepareStudioConfig(config, {
+    cwd: process.cwd(),
+  });
+
+  return <AdminStudioClient config={preparedConfig} />;
+}
+```
+
+```tsx
+// app/admin/admin-studio-client.tsx
+"use client";
+
+import { Studio, type MdcmsConfig } from "@mdcms/studio";
+
+export function AdminStudioClient({ config }: { config: MdcmsConfig }) {
   return <Studio config={config} basePath="/admin" />;
 }
 ```
@@ -53,8 +69,13 @@ export default function AdminPage() {
 - The authored `mdcms.config.ts` object is the source of truth for local MDX
   component metadata and runtime loaders. No backend component sync is
   required.
-- `Studio` accepts the authored config directly as long as `environment` is
-  present.
+- `prepareStudioConfig(...)` is the node-side helper for enriching component
+  registrations with serializable `extractedProps` metadata before render.
+- `prepareStudioConfig(...)` accepts `{ cwd, resolveImportPath?, tsconfigPath? }`.
+  Use `resolveImportPath` when authored `importPath` values rely on workspace
+  aliases that are not resolvable from plain filesystem paths alone.
+- `Studio` still accepts the authored config directly as long as `environment`
+  is present; that path simply skips node-side MDX prop extraction.
 - `createStudioEmbedConfig(...)` remains available from `@mdcms/studio/runtime`
   for server-safe routes that need only the plain
   `{ project, environment, serverUrl }` shell config. It intentionally strips
@@ -152,6 +173,8 @@ export default function AdminPage() {
 ## Runtime Helpers
 
 - Import path: `@mdcms/studio/runtime`
+- `prepareStudioConfig(...)` runs node-side TypeScript prop extraction for
+  local MDX component registrations and returns the Studio-aware config shape.
 - `createStudioEmbedConfig(...)`, `resolveStudioEnv(...)`,
   `createStudioRuntimeContext(...)`, and `formatStudioErrorEnvelope(...)`
   remain available as explicit runtime helpers without widening the client root

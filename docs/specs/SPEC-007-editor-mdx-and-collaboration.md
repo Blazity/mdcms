@@ -159,12 +159,24 @@ export type MdxComponentCatalogEntry = {
   description?: string;
   propHints?: Record<string, unknown>;
   propsEditor?: string;
-  extractedProps?: Record<string, unknown>;
+  extractedProps?: MdxExtractedProps;
 };
 
 export type MdxComponentCatalog = {
   components: MdxComponentCatalogEntry[];
 };
+
+export type MdxExtractedProps = Record<string, MdxExtractedProp>;
+
+export type MdxExtractedProp =
+  | { type: "string"; required: boolean }
+  | { type: "number"; required: boolean }
+  | { type: "boolean"; required: boolean }
+  | { type: "date"; required: boolean }
+  | { type: "enum"; required: boolean; values: string[] }
+  | { type: "array"; required: boolean; items: "string" | "number" }
+  | { type: "json"; required: boolean }
+  | { type: "rich-text"; required: boolean };
 
 export type MdxComponentHostCapabilities = {
   resolvePropsEditor: (name: string) => unknown | null;
@@ -182,9 +194,24 @@ In practice these are host-local React components resolved inside the embedding 
 
 `importPath` and `propsEditor` remain config-owned authoring metadata. They identify the source modules used by the local extraction/runtime pipeline, but runtime resolution is keyed by component `name` rather than by path strings carried over the Studio boundary.
 
+The embedded Studio runtime never performs TypeScript analysis in the browser.
+When auto-generated props editing is needed, the host app prepares the local MDX
+catalog on a Node-side integration path (for example a framework server
+component, build hook, dev-server hook, or explicit local script) and then
+passes the prepared serializable metadata into the client shell. Whether the
+host caches or code-generates that prepared catalog is an integration detail;
+the product contract is only that Studio receives `catalog.components[*].extractedProps`
+as serializable local metadata and that the backend never owns this catalog.
+
 ### Auto Prop Extraction
 
-The CLI (during `cms init` or schema sync) parses the TypeScript source files at the specified `importPath` and automatically extracts prop type definitions. These prop types are stored in `catalog.components[*].extractedProps`, consumed by the embedded Studio runtime, and displayed in the Studio UI when inserting components.
+A local Node-side preparation pipeline parses the TypeScript source files at the
+specified `importPath` and automatically extracts supported prop type
+definitions. MDCMS may expose this pipeline through CLI helpers and host-app
+preparation helpers, but the extraction contract is the same across local
+consumers. These prop types are stored in `catalog.components[*].extractedProps`,
+consumed by the embedded Studio runtime, and displayed in the Studio UI when
+inserting components.
 
 Example: Given a component file:
 
@@ -199,7 +226,7 @@ interface ChartProps {
 export function Chart({ data, type, title, color }: ChartProps) { ... }
 ```
 
-The CLI extracts:
+The preparation pipeline extracts:
 
 ```json
 {
@@ -217,7 +244,40 @@ The CLI extracts:
 }
 ```
 
-**Props that cannot be CMS-edited** (function types like `onHover: () => void`, refs, etc.) are automatically excluded from the extracted schema and hidden from the CMS form. These props can only be set in code.
+Extraction is deterministic and fail-closed:
+
+- A prop is included only when its declared TypeScript shape normalizes to one
+  of the supported `MdxExtractedProp` variants above.
+- `required` is derived from the declared prop type only:
+  - `false` for `prop?: T` and `prop: T | undefined`
+  - `true` otherwise
+- The extractor does not evaluate runtime default expressions in component
+  implementations.
+- String-literal unions normalize to `type: 'enum'` with declaration-order
+  `values`.
+- Arrays normalize only when the item type is exactly `string` or `number`.
+- A prop may normalize to `type: 'json'` only when the developer explicitly
+  opts that prop into the `json` widget hint and the declared TypeScript shape
+  is JSON-serializable.
+- `children` and props typed as `ReactNode` normalize to `type: 'rich-text'`.
+- A prop is omitted from `extractedProps` when it cannot be normalized
+  deterministically. Omitted props are hidden from the auto-generated CMS form
+  unless a custom props editor handles them.
+
+The following prop shapes are unsupported by default and are omitted from the
+extracted schema:
+
+- function and callback types
+- refs and ref-like handles
+- React elements/components other than `children` / `ReactNode`
+- object, record, map, set, tuple, and class-instance shapes without an
+  explicit `json` hint
+- mixed or non-literal unions, intersections, unresolved generics, and arrays
+  of unsupported item types
+- any shape that is not JSON-serializable or cannot be normalized
+
+These props can only be set in code unless a later override path explicitly
+re-enables them.
 
 ### Prop Type → Form Control Mapping
 
@@ -241,17 +301,21 @@ Auto-detected prop types map to form controls as follows:
 
 Developers can override the auto-detected form control by providing `propHints` in the component config. Available widgets:
 
-| Widget         | Use Case                                                            |
-| -------------- | ------------------------------------------------------------------- |
-| `color-picker` | Color selection with visual picker                                  |
-| `textarea`     | Multi-line text (instead of single-line input)                      |
-| `slider`       | Number within a range: `{ widget: 'slider', min: 0, max: 100 }`     |
-| `image`        | Image upload/selection (integrates with media system)               |
-| `select`       | Force dropdown for any type: `{ widget: 'select', options: [...] }` |
-| `hidden`       | Explicitly hide a prop from the CMS form                            |
-| `json`         | Raw JSON editor for any prop                                        |
+| Widget         | Use Case                                                                                  |
+| -------------- | ----------------------------------------------------------------------------------------- |
+| `color-picker` | Color selection with visual picker                                                        |
+| `textarea`     | Multi-line text (instead of single-line input)                                            |
+| `slider`       | Number within a range: `{ widget: 'slider', min: 0, max: 100 }`                           |
+| `image`        | Image upload/selection (integrates with media system)                                     |
+| `select`       | Force dropdown for any type: `{ widget: 'select', options: [...] }`                       |
+| `hidden`       | Explicitly hide a prop from the CMS form                                                  |
+| `json`         | Raw JSON editor for a JSON-serializable prop shape explicitly opted into by the developer |
 
-Auto-detection is the default. Hints override auto-detection. If a prop type is too complex for auto-detection and no hint or custom editor is provided, the prop is **hidden** from the CMS form (it can only be set in code).
+Auto-detection is the default. Hints override auto-detection. If a prop type is
+too complex for auto-detection and no hint or custom editor is provided, the
+prop is **hidden** from the CMS form (it can only be set in code). The `json`
+hint does not make function, ref, or other non-serializable prop shapes
+editable.
 
 ### Custom Props Editors
 

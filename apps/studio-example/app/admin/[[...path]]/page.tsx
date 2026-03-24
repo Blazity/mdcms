@@ -1,8 +1,12 @@
-import { Studio } from "@mdcms/studio";
-import { createStudioEmbedConfig } from "@mdcms/studio/runtime";
+import { prepareStudioConfig } from "@mdcms/studio/runtime";
 
 import config from "../../../mdcms.config";
+import { AdminStudioClient } from "../admin-studio-client";
 
-export default function AdminCatchAllPage() {
-  return <Studio config={createStudioEmbedConfig(config)} basePath="/admin" />;
+export default async function AdminCatchAllPage() {
+  const preparedConfig = await prepareStudioConfig(config, {
+    cwd: process.cwd(),
+  });
+
+  return <AdminStudioClient config={preparedConfig} />;
 }

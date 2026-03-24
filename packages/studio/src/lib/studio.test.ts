@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -13,6 +13,7 @@ import {
   createStudioEmbedConfig,
   createStudioRuntimeContext,
   formatStudioErrorEnvelope,
+  prepareStudioConfig,
   resolveStudioEnv,
 } from "./studio.js";
 import { createStudioActionCatalogAdapter } from "./action-catalog-adapter.js";
@@ -144,6 +145,111 @@ test("Studio accepts the authored shared config shape for mdx-aware embedding", 
 
     void props;
   `);
+});
+
+test("prepareStudioConfig enriches mdx component metadata from source files", async () => {
+  const tempDir = join(
+    dirname(fileURLToPath(import.meta.url)),
+    `.__studio-prepare-config-${randomUUID()}`,
+  );
+  const componentFile = join(tempDir, "Chart.tsx");
+  const Chart = () => null;
+  const loadChart = async () => Chart;
+
+  mkdirSync(tempDir, { recursive: true });
+  writeFileSync(
+    componentFile,
+    `
+      export interface ChartProps {
+        title?: string;
+        kind: "bar" | "line";
+      }
+
+      export function Chart(_props: ChartProps) {
+        return null;
+      }
+    `,
+    "utf8",
+  );
+
+  try {
+    const preparedConfig = await prepareStudioConfig(
+      {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+        components: [
+          {
+            name: "Chart",
+            importPath: "@/components/mdx/Chart",
+            load: loadChart,
+          },
+        ],
+      },
+      {
+        cwd: tempDir,
+        resolveImportPath: (value) =>
+          value === "@/components/mdx/Chart" ? componentFile : value,
+      },
+    );
+
+    assert.equal(preparedConfig.components?.[0]?.load, loadChart);
+    assert.deepEqual(preparedConfig.components?.[0]?.extractedProps, {
+      title: { type: "string", required: false },
+      kind: { type: "enum", required: true, values: ["bar", "line"] },
+    });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("prepareStudioConfig resolves directory imports through index files", async () => {
+  const tempDir = join(
+    dirname(fileURLToPath(import.meta.url)),
+    `.__studio-prepare-config-index-${randomUUID()}`,
+  );
+  const componentDir = join(tempDir, "Chart");
+  const componentFile = join(componentDir, "index.tsx");
+
+  mkdirSync(componentDir, { recursive: true });
+  writeFileSync(
+    componentFile,
+    `
+      export interface ChartProps {
+        title: string;
+      }
+
+      export function Chart(_props: ChartProps) {
+        return null;
+      }
+    `,
+    "utf8",
+  );
+
+  try {
+    const preparedConfig = await prepareStudioConfig(
+      {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+        components: [
+          {
+            name: "Chart",
+            importPath: "./Chart",
+          },
+        ],
+      },
+      {
+        cwd: tempDir,
+      },
+    );
+
+    assert.deepEqual(preparedConfig.components?.[0]?.extractedProps, {
+      title: { type: "string", required: true },
+    });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("createStudioEmbedConfig strips client-only mdx loader fields", () => {

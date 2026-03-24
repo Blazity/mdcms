@@ -444,6 +444,182 @@ test("runtime contract validators cover positive and negative shapes", () => {
   );
 });
 
+test("assertStudioMountContext accepts supported extracted mdx prop shapes", () => {
+  assert.doesNotThrow(() =>
+    assertStudioMountContext({
+      apiBaseUrl: "http://localhost:4000",
+      basePath: "/admin",
+      auth: { mode: "cookie" },
+      hostBridge: validHostBridge,
+      mdx: {
+        catalog: {
+          components: [
+            {
+              name: "Chart",
+              importPath: "@/components/mdx/Chart",
+              extractedProps: {
+                title: {
+                  type: "string",
+                  required: false,
+                },
+                count: {
+                  type: "number",
+                  required: true,
+                },
+                published: {
+                  type: "boolean",
+                  required: false,
+                },
+                kind: {
+                  type: "enum",
+                  required: true,
+                  values: ["bar", "line"],
+                },
+                data: {
+                  type: "array",
+                  required: true,
+                  items: "number",
+                },
+                tags: {
+                  type: "array",
+                  required: false,
+                  items: "string",
+                },
+                options: {
+                  type: "json",
+                  required: false,
+                },
+                children: {
+                  type: "rich-text",
+                  required: false,
+                },
+              },
+            },
+          ],
+        },
+        resolvePropsEditor: () => null,
+      },
+    }),
+  );
+});
+
+test("assertStudioMountContext rejects invalid extracted mdx prop shapes", () => {
+  assert.throws(
+    () =>
+      assertStudioMountContext({
+        apiBaseUrl: "http://localhost:4000",
+        basePath: "/admin",
+        auth: { mode: "cookie" },
+        hostBridge: validHostBridge,
+        mdx: {
+          catalog: {
+            components: [
+              {
+                name: "Chart",
+                importPath: "@/components/mdx/Chart",
+                extractedProps: {
+                  title: {
+                    type: "object",
+                    required: false,
+                  },
+                },
+              },
+            ],
+          },
+          resolvePropsEditor: () => null,
+        },
+      }),
+    /extractedProps/,
+  );
+
+  assert.throws(
+    () =>
+      assertStudioMountContext({
+        apiBaseUrl: "http://localhost:4000",
+        basePath: "/admin",
+        auth: { mode: "cookie" },
+        hostBridge: validHostBridge,
+        mdx: {
+          catalog: {
+            components: [
+              {
+                name: "Chart",
+                importPath: "@/components/mdx/Chart",
+                extractedProps: {
+                  data: {
+                    type: "array",
+                    required: true,
+                    items: "boolean",
+                  },
+                },
+              },
+            ],
+          },
+          resolvePropsEditor: () => null,
+        },
+      }),
+    /items/,
+  );
+
+  assert.throws(
+    () =>
+      assertStudioMountContext({
+        apiBaseUrl: "http://localhost:4000",
+        basePath: "/admin",
+        auth: { mode: "cookie" },
+        hostBridge: validHostBridge,
+        mdx: {
+          catalog: {
+            components: [
+              {
+                name: "Chart",
+                importPath: "@/components/mdx/Chart",
+                extractedProps: {
+                  kind: {
+                    type: "enum",
+                    required: true,
+                    values: [],
+                  },
+                },
+              },
+            ],
+          },
+          resolvePropsEditor: () => null,
+        },
+      }),
+    /values/,
+  );
+
+  assert.throws(
+    () =>
+      assertStudioMountContext({
+        apiBaseUrl: "http://localhost:4000",
+        basePath: "/admin",
+        auth: { mode: "cookie" },
+        hostBridge: validHostBridge,
+        mdx: {
+          catalog: {
+            components: [
+              {
+                name: "Chart",
+                importPath: "@/components/mdx/Chart",
+                extractedProps: {
+                  title: {
+                    type: "string",
+                    required: false,
+                    extra: true,
+                  },
+                },
+              },
+            ],
+          },
+          resolvePropsEditor: () => null,
+        },
+      }),
+    /unknown field\(s\): extra/,
+  );
+});
+
 test("isModuleManifest and isStudioBootstrapManifest return booleans without throwing", () => {
   assert.equal(isModuleManifest(validModuleManifest), true);
   assert.equal(isModuleManifest({}), false);

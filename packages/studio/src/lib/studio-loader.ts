@@ -46,22 +46,6 @@ type LoadedLocalMdxRuntime = {
 type LocalMdxPreviewMap = Map<string, unknown>;
 type LocalMdxPropsEditorMap = Map<string, unknown>;
 
-function readExtractedProps(
-  component: NonNullable<MdcmsConfig["components"]>[number],
-): Record<string, unknown> | undefined {
-  const candidate = (component as { extractedProps?: unknown }).extractedProps;
-
-  if (
-    typeof candidate === "object" &&
-    candidate !== null &&
-    !Array.isArray(candidate)
-  ) {
-    return candidate as Record<string, unknown>;
-  }
-
-  return undefined;
-}
-
 function normalizeBaseUrl(serverUrl: string): string {
   return serverUrl.endsWith("/") ? serverUrl.slice(0, -1) : serverUrl;
 }
@@ -184,8 +168,6 @@ async function createLoadedLocalMdxRuntime(
 
   const catalog: MdxComponentCatalog = {
     components: components.map((component) => {
-      const extractedProps = readExtractedProps(component);
-
       return {
         name: component.name,
         importPath: component.importPath,
@@ -198,7 +180,9 @@ async function createLoadedLocalMdxRuntime(
         ...(component.propsEditor !== undefined
           ? { propsEditor: component.propsEditor }
           : {}),
-        ...(extractedProps !== undefined ? { extractedProps } : {}),
+        ...(component.extractedProps !== undefined
+          ? { extractedProps: component.extractedProps }
+          : {}),
       };
     }),
   };

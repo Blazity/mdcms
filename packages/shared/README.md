@@ -144,6 +144,17 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
     - `data.manifest = StudioBootstrapManifest`
     - optional `data.recovery` with `rejectedBuildId` and `rejectionReason` only when `data.source = "lastKnownGood"`
   - `StudioMountContext` includes `basePath` so deep links can resolve under an embed subtree without framework-specific router adapters.
+  - `StudioMountContext.mdx.catalog.components[*].extractedProps` is a strict
+    serializable contract for auto-generated MDX props editing metadata.
+  - Supported extracted prop variants are:
+    - `string`
+    - `number`
+    - `boolean`
+    - `date`
+    - `enum` with non-empty `values`
+    - `array` with `items: "string" | "number"`
+    - `json`
+    - `rich-text`
   - The shell owns startup validation/loading failures plus startup-disabled outcomes such as `STUDIO_RUNTIME_DISABLED` and `STUDIO_RUNTIME_UNAVAILABLE`; after `mount(...)` succeeds, the remote runtime owns Studio UI states and routing.
 - Runtime validators:
   - Implemented with strict `zod` schemas (`.strict()` + custom refinements) and normalized `RuntimeError` output.
@@ -157,6 +168,12 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
 - Compatibility check helpers:
   - `assertModuleManifestCompatibility(manifest, { coreVersion, supportedApiVersion? })`
   - `assertStudioBootstrapCompatibility(manifest, { studioPackageVersion, hostBridgeVersion, supportedApiVersion? })`
+- Node-side MDX extraction helper:
+  - import path: `@mdcms/shared/mdx`
+  - `extractMdxComponentProps(...)` reads a local component source file and
+    normalizes supported prop shapes into the shared `extractedProps` contract
+  - intended for local tooling/runtime preparation only; never for browser-time
+    use
 - Strict compatibility version policy:
   - `minCoreVersion`, `maxCoreVersion`, `minStudioPackageVersion`, `minHostBridgeVersion`
     must use strict `x.y.z` format.
