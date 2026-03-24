@@ -1,14 +1,16 @@
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import tailwindcss from "@tailwindcss/postcss";
 import {
   EXTENSIBILITY_API_VERSION,
   assertStudioBootstrapManifest,
   type StudioBootstrapManifest,
   type StudioExecutionMode,
 } from "@mdcms/shared";
+import postcss from "postcss";
 
 import {
   createDeterministicPlaceholderKeyId,
@@ -45,6 +47,7 @@ export const STUDIO_RUNTIME_ASSETS_DIRNAME = "assets";
 export const STUDIO_RUNTIME_BOOTSTRAP_DIRNAME = "bootstrap";
 export const STUDIO_RUNTIME_ENTRY_BASENAME = "studio-runtime";
 export const STUDIO_RUNTIME_ENTRY_EXTENSION = ".mjs";
+export const STUDIO_RUNTIME_STYLESHEET_EXTENSION = ".css";
 export const STUDIO_RUNTIME_DEFAULT_ASSETS_BASE_PATH = "/api/v1/studio/assets";
 export const STUDIO_RUNTIME_DEFAULT_EXPIRES_AT = "2099-01-01T00:00:00.000Z";
 
@@ -64,6 +67,8 @@ export type StudioRuntimeBuildResult = {
   buildId: string;
   entryFile: string;
   entryPath: string;
+  cssFile: string;
+  cssPath: string;
   entryUrl: string;
   integritySha256: string;
   manifest: StudioBootstrapManifest;
@@ -99,6 +104,10 @@ export function createStudioRuntimeEntryUrl(input: {
 
 function createRuntimeEntryFileName(buildId: string): string {
   return `${STUDIO_RUNTIME_ENTRY_BASENAME}.${buildId}${STUDIO_RUNTIME_ENTRY_EXTENSION}`;
+}
+
+function createRuntimeStylesheetFileName(buildId: string): string {
+  return `${STUDIO_RUNTIME_ENTRY_BASENAME}.${buildId}${STUDIO_RUNTIME_STYLESHEET_EXTENSION}`;
 }
 
 function resolveDefaultStudioProjectRoot(): string {
@@ -164,6 +173,21 @@ async function bundleRuntimeEntry(input: {
   return await entryOutput.text();
 }
 
+async function compileRuntimeStylesheet(input: {
+  projectRoot: string;
+}): Promise<string> {
+  const stylesheetSourcePath = join(
+    input.projectRoot,
+    "src/lib/runtime-ui/styles.css",
+  );
+  const stylesheetSource = await readFile(stylesheetSourcePath, "utf8");
+  const result = await postcss([tailwindcss()]).process(stylesheetSource, {
+    from: stylesheetSourcePath,
+  });
+
+  return result.css;
+}
+
 export async function buildStudioRuntimeArtifacts(
   options: BuildStudioRuntimeArtifactsOptions = {},
 ): Promise<StudioRuntimeBuildResult> {
@@ -195,6 +219,13 @@ export async function buildStudioRuntimeArtifacts(
   );
   await mkdir(dirname(entryPath), { recursive: true });
   await writeFile(entryPath, bundledEntry, "utf8");
+
+  const cssFile = createRuntimeStylesheetFileName(buildId);
+  const cssPath = join(outDir, STUDIO_RUNTIME_ASSETS_DIRNAME, buildId, cssFile);
+  const compiledStylesheet = await compileRuntimeStylesheet({
+    projectRoot,
+  });
+  await writeFile(cssPath, compiledStylesheet, "utf8");
 
   const entryUrl = createStudioRuntimeEntryUrl({
     assetsBasePath,
@@ -234,6 +265,8 @@ export async function buildStudioRuntimeArtifacts(
     buildId,
     entryFile,
     entryPath,
+    cssFile,
+    cssPath,
     entryUrl,
     integritySha256,
     manifest,

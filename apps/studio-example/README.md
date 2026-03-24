@@ -15,14 +15,18 @@ This sample app exists for CMS-47 verification.
 - `/demo/content` - raw content API demo list (draft scope)
 - `/demo/content/:documentId` - raw content API demo detail
 - Internal surfaces are mapped by first segment after `/admin`:
-  - `/admin/dashboard`
 - `/admin/content`
 - `/admin/content/by-path/*` (folder-path navigation mode)
+- `/admin/content/:type`
 - `/admin/content/:type/:documentId` (document shell with scoped API load)
+- `/admin/environments`
+- `/admin/media` (shell/mock surface)
+- `/admin/schema` (shell/mock surface)
+- `/admin/users` (admin/owner only)
+- `/admin/settings` (admin/owner only)
+- `/admin/workflows` (shell/mock surface)
+- `/admin/api` (shell/mock surface)
 - `/admin/trash`
-  - `/admin/environments`
-  - `/admin/users` (admin/owner only)
-  - `/admin/settings` (admin/owner only)
 
 ## Local Run
 

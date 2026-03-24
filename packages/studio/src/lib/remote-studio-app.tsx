@@ -3,213 +3,96 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ActionCatalogItem, StudioMountContext } from "@mdcms/shared";
 
 import {
-  buildStudioRuntimeRegistry,
-  type StudioRouteDefinition,
-} from "./runtime-registry.js";
-import {
   createStudioActionCatalogAdapter,
   type StudioActionCatalogAdapter,
 } from "./action-catalog-adapter.js";
+import AdminLayout from "./runtime-ui/app/admin/layout.js";
+import ApiPlaygroundPage from "./runtime-ui/app/admin/api-page.js";
+import DashboardPage from "./runtime-ui/app/admin/page.js";
+import EnvironmentsPage from "./runtime-ui/app/admin/environments-page.js";
+import MediaPage from "./runtime-ui/app/admin/media-page.js";
+import ContentDocumentPage from "./runtime-ui/pages/content-document-page.js";
+import ContentPage from "./runtime-ui/pages/content-page.js";
+import ContentTypePage from "./runtime-ui/pages/content-type-page.js";
+import SchemaBuilderPage from "./runtime-ui/app/admin/schema-page.js";
+import SettingsPage from "./runtime-ui/app/admin/settings-page.js";
+import TrashPage from "./runtime-ui/app/admin/trash-page.js";
+import UsersPage from "./runtime-ui/app/admin/users-page.js";
+import WorkflowsPage from "./runtime-ui/app/admin/workflows-page.js";
+import { ThemeProvider } from "./runtime-ui/adapters/next-themes.js";
+import { StudioNavigationProvider } from "./runtime-ui/navigation.js";
 
 type MatchableRoute = {
   id: string;
   path: string;
 };
 
-const DEFAULT_RUNTIME_REGISTRY = buildStudioRuntimeRegistry({
-  routes: [
-    {
-      id: "dashboard",
-      path: "/",
-      render: () => (
-        <div className="space-y-3">
-          <h2 className="text-xl font-semibold text-slate-900">Dashboard</h2>
-          <p className="text-sm text-slate-600">
-            Remote Studio runtime is mounted and owns the application shell.
-          </p>
-        </div>
-      ),
-    },
-    {
-      id: "content.index",
-      path: "/content",
-      render: () => (
-        <div className="space-y-3">
-          <h2 className="text-xl font-semibold text-slate-900">Content</h2>
-          <p className="text-sm text-slate-600">
-            Schema-first content navigation lives inside the remote runtime.
-          </p>
-        </div>
-      ),
-    },
-    {
-      id: "content.type",
-      path: "/content/:type",
-      render: () => (
-        <div className="space-y-3">
-          <h2 className="text-xl font-semibold text-slate-900">Content Type</h2>
-          <p className="text-sm text-slate-600">
-            Type-specific list views are resolved by the remote runtime router.
-          </p>
-        </div>
-      ),
-    },
-    {
-      id: "content.document",
-      path: "/content/:type/:documentId",
-      render: () => (
-        <div className="space-y-3">
-          <h2 className="text-xl font-semibold text-slate-900">
-            Document Editor
-          </h2>
-          <p className="text-sm text-slate-600">
-            Editor flows and field kind handling run inside the remote app.
-          </p>
-        </div>
-      ),
-    },
-    {
-      id: "environments",
-      path: "/environments",
-      render: () => (
-        <div className="space-y-3">
-          <h2 className="text-xl font-semibold text-slate-900">Environments</h2>
-          <p className="text-sm text-slate-600">
-            Environment management is rendered by the remote runtime.
-          </p>
-        </div>
-      ),
-    },
-    {
-      id: "users",
-      path: "/users",
-      render: () => (
-        <div className="space-y-3">
-          <h2 className="text-xl font-semibold text-slate-900">Users</h2>
-          <p className="text-sm text-slate-600">
-            User management is a remote-runtime route.
-          </p>
-        </div>
-      ),
-    },
-    {
-      id: "settings",
-      path: "/settings",
-      render: () => (
-        <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <p className="text-sm font-medium text-slate-900">Settings</p>
-            <div className="mt-3 space-y-2">
-              {renderSlot("settings.sidebar")}
-            </div>
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-white p-4">
-            <h2 className="text-xl font-semibold text-slate-900">General</h2>
-            <div className="mt-3 space-y-3">
-              {renderSettingsPanel("general")}
-            </div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      id: "trash",
-      path: "/trash",
-      render: () => (
-        <div className="space-y-3">
-          <h2 className="text-xl font-semibold text-slate-900">Trash</h2>
-          <p className="text-sm text-slate-600">
-            Deleted content recovery is remote-owned.
-          </p>
-        </div>
-      ),
-    },
-  ],
-  navItems: [
-    { id: "dashboard", label: "Dashboard", to: "/", order: 10 },
-    { id: "content", label: "Content", to: "/content", order: 20 },
-    {
-      id: "environments",
-      label: "Environments",
-      to: "/environments",
-      order: 30,
-    },
-    { id: "users", label: "Users", to: "/users", order: 40 },
-    { id: "settings", label: "Settings", to: "/settings", order: 50 },
-    { id: "trash", label: "Trash", to: "/trash", order: 60 },
-  ],
-  slotWidgets: [
-    {
-      id: "dashboard.summary",
-      slotId: "dashboard.main",
-      priority: 20,
-      render: () => (
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-          Runtime widgets are rendered from the remote composition registry.
-        </div>
-      ),
-    },
-    {
-      id: "content.toolbar.search",
-      slotId: "content.list.toolbar",
-      priority: 20,
-      render: () => (
-        <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
-          Search
-        </div>
-      ),
-    },
-    {
-      id: "settings.general-link",
-      slotId: "settings.sidebar",
-      priority: 10,
-      render: () => (
-        <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-          General
-        </div>
-      ),
-    },
-  ],
-  fieldKinds: [
-    {
-      kind: "json",
-      render: () => (
-        <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-          JSON field editor fallback
-        </div>
-      ),
-    },
-  ],
-  editorNodes: [
-    {
-      id: "mdx.component",
-      render: () => (
-        <div className="text-sm text-slate-600">MDX component preview node</div>
-      ),
-    },
-  ],
-  actionOverrides: [
-    {
-      actionId: "content.publish",
-      render: () => (
-        <button className="rounded-md bg-slate-900 px-3 py-2 text-sm text-white">
-          Publish
-        </button>
-      ),
-    },
-  ],
-  settingsPanels: [
-    {
-      id: "general",
-      title: "General",
-      render: () => (
-        <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-          General settings panel rendered by the remote runtime.
-        </div>
-      ),
-    },
-  ],
-});
+type StudioRuntimeRouteDefinition = MatchableRoute & {
+  render: () => ReactNode;
+};
+
+const RUNTIME_ROUTES: readonly StudioRuntimeRouteDefinition[] = [
+  {
+    id: "dashboard",
+    path: "/",
+    render: () => <DashboardPage />,
+  },
+  {
+    id: "content.index",
+    path: "/content",
+    render: () => <ContentPage />,
+  },
+  {
+    id: "content.type",
+    path: "/content/:type",
+    render: () => <ContentTypePage />,
+  },
+  {
+    id: "content.document",
+    path: "/content/:type/:documentId",
+    render: () => <ContentDocumentPage />,
+  },
+  {
+    id: "environments",
+    path: "/environments",
+    render: () => <EnvironmentsPage />,
+  },
+  {
+    id: "media",
+    path: "/media",
+    render: () => <MediaPage />,
+  },
+  {
+    id: "schema",
+    path: "/schema",
+    render: () => <SchemaBuilderPage />,
+  },
+  {
+    id: "users",
+    path: "/users",
+    render: () => <UsersPage />,
+  },
+  {
+    id: "settings",
+    path: "/settings",
+    render: () => <SettingsPage />,
+  },
+  {
+    id: "workflows",
+    path: "/workflows",
+    render: () => <WorkflowsPage />,
+  },
+  {
+    id: "api",
+    path: "/api",
+    render: () => <ApiPlaygroundPage />,
+  },
+  {
+    id: "trash",
+    path: "/trash",
+    render: () => <TrashPage />,
+  },
+];
 
 function normalizeBasePath(path: string): string {
   const trimmed = path.trim();
@@ -284,43 +167,31 @@ export function matchStudioRoute<T extends MatchableRoute>(
   });
 }
 
-function joinStudioPath(basePath: string, targetPath: string): string {
-  const normalizedBasePath = normalizeBasePath(basePath);
-  const normalizedTargetPath = normalizeInternalPath(targetPath);
-
-  if (normalizedBasePath.length === 0) {
-    return normalizedTargetPath;
+function extractStudioRouteParams(
+  pathname: string,
+  route: MatchableRoute | undefined,
+): Record<string, string> {
+  if (!route) {
+    return {};
   }
 
-  if (normalizedTargetPath === "/") {
-    return normalizedBasePath;
-  }
+  const targetSegments = getRouteSegments(normalizeInternalPath(pathname));
+  const routeSegments = getRouteSegments(route.path);
+  const params: Record<string, string> = {};
 
-  return `${normalizedBasePath}${normalizedTargetPath}`;
-}
+  routeSegments.forEach((segment, index) => {
+    if (!segment.startsWith(":")) {
+      return;
+    }
 
-function renderSlot(slotId: string): ReactNode {
-  const widgets = DEFAULT_RUNTIME_REGISTRY.slotWidgetsBySlot.get(slotId) ?? [];
+    const value = targetSegments[index];
 
-  return widgets.map((widget) => (
-    <div key={widget.id} data-mdcms-slot-widget={widget.id}>
-      {widget.render() as ReactNode}
-    </div>
-  ));
-}
+    if (value !== undefined) {
+      params[segment.slice(1)] = decodeURIComponent(value);
+    }
+  });
 
-function renderSettingsPanel(panelId: string): ReactNode {
-  const panel = DEFAULT_RUNTIME_REGISTRY.settingsPanels.get(panelId);
-
-  if (!panel) {
-    return null;
-  }
-
-  return (
-    <div data-mdcms-settings-panel={panel.id}>
-      {panel.render() as ReactNode}
-    </div>
-  );
+  return params;
 }
 
 type StudioActionStripState =
@@ -382,45 +253,18 @@ export function startDocumentPreview(input: {
 }
 
 function renderActionButton(action: ActionCatalogItem): ReactNode {
-  const override = DEFAULT_RUNTIME_REGISTRY.actionOverrides.get(action.id);
-
-  if (override) {
-    return (
-      <div key={action.id} data-mdcms-action-id={action.id}>
-        {override.render() as ReactNode}
-      </div>
-    );
-  }
-
-  const label = action.studio?.label?.trim().length
-    ? action.studio.label.trim()
-    : action.id;
+  const label =
+    action.id === "content.publish"
+      ? "Publish"
+      : action.studio?.label?.trim().length
+        ? action.studio.label.trim()
+        : action.id;
 
   return (
-    <button
-      key={action.id}
-      type="button"
-      data-mdcms-action-id={action.id}
-      className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-    >
+    <button key={action.id} type="button" data-mdcms-action-id={action.id}>
       {label}
     </button>
   );
-}
-
-function renderRouteContent(
-  route: StudioRouteDefinition | undefined,
-  internalPath: string,
-): ReactNode {
-  if (!route) {
-    return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-        Unknown Studio route: {internalPath}
-      </div>
-    );
-  }
-
-  return route.render() as ReactNode;
 }
 
 function getRegisteredMdxComponents(
@@ -444,6 +288,78 @@ function hasGeneratedPropsEditor(
   return (
     component.extractedProps !== undefined &&
     Object.keys(component.extractedProps).length > 0
+  );
+}
+
+function renderRouteContent(
+  route: StudioRuntimeRouteDefinition | undefined,
+): ReactNode {
+  if (!route) {
+    return (
+      <div className="p-6 text-sm text-amber-900">Unknown Studio route.</div>
+    );
+  }
+
+  return route.render();
+}
+
+const visuallyHiddenStyles = {
+  position: "absolute",
+  width: "1px",
+  height: "1px",
+  padding: 0,
+  margin: "-1px",
+  overflow: "hidden",
+  clip: "rect(0, 0, 0, 0)",
+  whiteSpace: "nowrap",
+  border: 0,
+} as const;
+
+function RuntimeDocumentDiagnostics(props: {
+  context: StudioMountContext;
+  previewContainerRef: React.RefObject<HTMLDivElement | null>;
+  actionStripState: StudioActionStripState;
+}) {
+  const registeredMdxComponents = getRegisteredMdxComponents(props.context);
+
+  return (
+    <div style={visuallyHiddenStyles} aria-hidden="true">
+      <div
+        data-mdcms-preview-surface="content.document"
+        ref={props.previewContainerRef}
+      />
+      {registeredMdxComponents.length === 0 ? (
+        <p data-mdcms-mdx-component-state="empty">
+          No local MDX components registered.
+        </p>
+      ) : (
+        registeredMdxComponents.map((component) => (
+          <div key={component.name} data-mdcms-mdx-component={component.name}>
+            <span>{component.name}</span>
+            {hasRegisteredPropsEditor(props.context, component.name) ? (
+              <span data-mdcms-mdx-props-editor={component.name}>
+                Custom editor
+              </span>
+            ) : hasGeneratedPropsEditor(component) ? (
+              <span data-mdcms-mdx-auto-form={component.name}>Auto form</span>
+            ) : null}
+          </div>
+        ))
+      )}
+      {props.actionStripState.status === "loading" ? (
+        <p data-mdcms-action-state="loading">Loading actions...</p>
+      ) : null}
+      {props.actionStripState.status === "error" ? (
+        <p data-mdcms-action-state="error">
+          Actions are temporarily unavailable.
+        </p>
+      ) : null}
+      {props.actionStripState.status === "ready"
+        ? props.actionStripState.actions.map((action) =>
+            renderActionButton(action),
+          )
+        : null}
+    </div>
   );
 }
 
@@ -535,9 +451,8 @@ export function RemoteStudioApp({
 
   const internalPath = stripStudioBasePath(pathname, context.basePath);
   const activeRoute =
-    matchStudioRoute(internalPath, DEFAULT_RUNTIME_REGISTRY.routes) ??
-    DEFAULT_RUNTIME_REGISTRY.routes[0];
-  const registeredMdxComponents = getRegisteredMdxComponents(context);
+    matchStudioRoute(internalPath, RUNTIME_ROUTES) ?? RUNTIME_ROUTES[0];
+  const routeParams = extractStudioRouteParams(internalPath, activeRoute);
 
   useEffect(() => {
     return startDocumentPreview({
@@ -547,153 +462,55 @@ export function RemoteStudioApp({
     });
   }, [activeRoute?.id, context.hostBridge]);
 
+  const updatePathname = (href: string, mode: "push" | "replace") => {
+    if (typeof window === "undefined") {
+      setPathname(href);
+      return;
+    }
+
+    if (mode === "replace") {
+      window.history.replaceState(null, "", href);
+    } else {
+      window.history.pushState(null, "", href);
+    }
+
+    setPathname(window.location.pathname);
+  };
+
   return (
-    <section
-      data-testid="mdcms-remote-studio-root"
-      data-mdcms-base-path={context.basePath}
-      data-mdcms-internal-path={internalPath}
-      data-mdcms-active-route={activeRoute?.id ?? "unknown"}
-      className="min-h-[20rem] space-y-6"
-    >
-      <header className="space-y-4">
-        <div className="space-y-1">
-          <p className="text-xs uppercase tracking-wide text-slate-500">
-            MDCMS Remote Runtime
-          </p>
-          <h1 className="text-3xl font-semibold text-slate-950">Studio</h1>
-          <p className="text-sm text-slate-600">
-            Routing and UI state are now remote-owned under {context.basePath}.
-          </p>
-        </div>
-
-        <nav className="flex flex-wrap gap-2" aria-label="Studio navigation">
-          {DEFAULT_RUNTIME_REGISTRY.navItems.map((item) => {
-            const href = joinStudioPath(context.basePath, item.to);
-            const isActive = item.id === activeRoute?.id;
-
-            return (
-              <button
-                key={item.id}
-                type="button"
-                data-mdcms-nav-item={item.id}
-                data-mdcms-nav-active={isActive ? "true" : "false"}
-                className={
-                  isActive
-                    ? "rounded-full bg-slate-900 px-4 py-2 text-sm text-white"
-                    : "rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700"
-                }
-                onClick={() => {
-                  if (typeof window === "undefined") {
-                    return;
-                  }
-
-                  window.history.pushState(null, "", href);
-                  setPathname(window.location.pathname);
-                }}
-              >
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
-      </header>
-
-      {activeRoute?.id === "dashboard" ? (
-        <div className="space-y-4">{renderSlot("dashboard.main")}</div>
-      ) : null}
-
-      {activeRoute?.id === "content.index" ? (
-        <div className="flex flex-wrap gap-3">
-          {renderSlot("content.list.toolbar")}
-        </div>
-      ) : null}
-
-      {activeRoute?.id === "content.document" ? (
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-wide text-slate-500">
-                MDX components
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {registeredMdxComponents.length === 0 ? (
-                  <p
-                    data-mdcms-mdx-component-state="empty"
-                    className="text-sm text-slate-500"
-                  >
-                    No local MDX components registered.
-                  </p>
-                ) : (
-                  registeredMdxComponents.map((component) => (
-                    <div
-                      key={component.name}
-                      data-mdcms-mdx-component={component.name}
-                      className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-                    >
-                      <span>{component.name}</span>
-                      {hasRegisteredPropsEditor(context, component.name) ? (
-                        <span
-                          data-mdcms-mdx-props-editor={component.name}
-                          className="ml-2 text-xs uppercase tracking-wide text-slate-500"
-                        >
-                          Custom editor
-                        </span>
-                      ) : hasGeneratedPropsEditor(component) ? (
-                        <span
-                          data-mdcms-mdx-auto-form={component.name}
-                          className="ml-2 text-xs uppercase tracking-wide text-slate-500"
-                        >
-                          Auto form
-                        </span>
-                      ) : null}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-wide text-slate-500">
-                Document actions
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {actionStripState.status === "loading" ? (
-                  <p
-                    data-mdcms-action-state="loading"
-                    className="text-sm text-slate-500"
-                  >
-                    Loading actions...
-                  </p>
-                ) : null}
-                {actionStripState.status === "error" ? (
-                  <p
-                    data-mdcms-action-state="error"
-                    className="text-sm text-amber-700"
-                  >
-                    Actions are temporarily unavailable.
-                  </p>
-                ) : null}
-                {actionStripState.status === "ready"
-                  ? actionStripState.actions.map((action) =>
-                      renderActionButton(action),
-                    )
-                  : null}
-              </div>
-            </div>
-          </div>
-          <aside className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <p className="text-xs uppercase tracking-wide text-slate-500">
-              MDX preview
-            </p>
-            <div
-              ref={previewContainerRef}
-              data-mdcms-preview-surface="content.document"
-              className="min-h-32 rounded-md border border-dashed border-slate-300 bg-white"
-            />
-          </aside>
+    <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+      <StudioNavigationProvider
+        value={{
+          pathname,
+          params: routeParams,
+          push: (href) => updatePathname(href, "push"),
+          replace: (href) => updatePathname(href, "replace"),
+          back: () => {
+            if (typeof window !== "undefined") {
+              window.history.back();
+            }
+          },
+        }}
+      >
+        <section
+          data-testid="mdcms-remote-studio-root"
+          data-mdcms-base-path={context.basePath}
+          data-mdcms-internal-path={internalPath}
+          data-mdcms-active-route={activeRoute?.id ?? "unknown"}
+          className="mdcms-studio-runtime"
+        >
+          <AdminLayout>
+            {renderRouteContent(activeRoute)}
+            {activeRoute?.id === "content.document" ? (
+              <RuntimeDocumentDiagnostics
+                context={context}
+                previewContainerRef={previewContainerRef}
+                actionStripState={actionStripState}
+              />
+            ) : null}
+          </AdminLayout>
         </section>
-      ) : null}
-
-      <main>{renderRouteContent(activeRoute, internalPath)}</main>
-    </section>
+      </StudioNavigationProvider>
+    </ThemeProvider>
   );
 }

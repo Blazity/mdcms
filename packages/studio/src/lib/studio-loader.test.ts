@@ -498,7 +498,7 @@ test("loadStudioRuntime rejects malformed bootstrap payloads", async () => {
   );
 });
 
-test("loadStudioRuntime turns cross-origin bootstrap fetch failures into actionable errors", async () => {
+test("loadStudioRuntime keeps generic cross-origin bootstrap fetch failures neutral", async () => {
   await withLocationOrigin("http://localhost:4173", async () => {
     await assert.rejects(
       () =>
@@ -521,13 +521,114 @@ test("loadStudioRuntime turns cross-origin bootstrap fetch failures into actiona
       (error) => {
         assert.ok(error instanceof RuntimeError);
         assert.equal(error.code, "STUDIO_BOOTSTRAP_FETCH_FAILED");
+        assert.match(error.message, /Load failed/);
+        assert.doesNotMatch(error.message, /cross-origin request/i);
+        assert.doesNotMatch(error.message, /Check CORS or proxy/i);
+        assert.equal(error.details?.isCrossOrigin, true);
+        assert.equal(error.details?.isOriginPolicyFailure, false);
+        return true;
+      },
+    );
+  });
+});
+
+test("loadStudioRuntime classifies explicit origin-policy bootstrap fetch failures as CORS guidance", async () => {
+  await withLocationOrigin("http://localhost:4173", async () => {
+    await assert.rejects(
+      () =>
+        loadStudioRuntime({
+          config: {
+            project: "marketing-site",
+            environment: "staging",
+            serverUrl: "http://localhost:4000",
+          },
+          basePath: "/admin",
+          container: {},
+          hostBridge: validHostBridge,
+          fetcher: async () => {
+            throw new TypeError("Blocked by CORS policy");
+          },
+          loadRemoteModule: async () => {
+            throw new Error("should not import remote module");
+          },
+        }),
+      (error) => {
+        assert.ok(error instanceof RuntimeError);
+        assert.equal(error.code, "STUDIO_BOOTSTRAP_FETCH_FAILED");
         assert.match(error.message, /cross-origin request/i);
         assert.match(error.message, /localhost:4173/);
         assert.match(error.message, /localhost:4000/);
         assert.match(error.message, /Check CORS or proxy/i);
+        assert.equal(error.details?.isCrossOrigin, true);
+        assert.equal(error.details?.isOriginPolicyFailure, true);
         return true;
       },
     );
+  });
+});
+
+test("loadStudioRuntime retries transient bootstrap fetch failures before succeeding", async () => {
+  await withTempDir("studio-loader-", async (directory) => {
+    const fixture = await createRuntimeFixture(directory);
+    const fetchLog: string[] = [];
+    let bootstrapAttempts = 0;
+
+    const unmount = await loadStudioRuntime({
+      config: {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+      },
+      basePath: "/admin",
+      container: {},
+      hostBridge: validHostBridge,
+      fetcher: async (input) => {
+        const url = String(input);
+        fetchLog.push(url);
+
+        if (url === "http://localhost:4000/api/v1/studio/bootstrap") {
+          bootstrapAttempts += 1;
+
+          if (bootstrapAttempts < 3) {
+            throw new TypeError("Load failed");
+          }
+
+          return new Response(
+            JSON.stringify(
+              createReadyBootstrapPayload({
+                manifest: fixture.manifest,
+              }),
+            ),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        return new Response(new Uint8Array(fixture.runtimeBytes), {
+          status: 200,
+          headers: {
+            "content-type": "text/javascript; charset=utf-8",
+          },
+        });
+      },
+      loadRemoteModule: async () => ({
+        mount: () => () => {},
+      }),
+    });
+
+    assert.equal(bootstrapAttempts, 3);
+    assert.deepEqual(fetchLog, [
+      "http://localhost:4000/api/v1/studio/bootstrap",
+      "http://localhost:4000/api/v1/studio/bootstrap",
+      "http://localhost:4000/api/v1/studio/bootstrap",
+      "http://localhost:4000" + fixture.manifest.entryUrl,
+    ]);
+
+    unmount();
   });
 });
 

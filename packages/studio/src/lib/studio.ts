@@ -34,10 +34,17 @@ export type StudioComponentRegistration = MdcmsComponentRegistration & {
   extractedProps?: MdxExtractedProps;
 };
 
-export type MdcmsConfig = Omit<SharedMdcmsConfig, "components"> & {
-  environment: string;
-  components?: StudioComponentRegistration[];
-};
+type OptionalStudioClientConfig = Partial<
+  Omit<
+    SharedMdcmsConfig,
+    "project" | "environment" | "serverUrl" | "components"
+  >
+>;
+
+export type MdcmsConfig = StudioEmbedConfig &
+  OptionalStudioClientConfig & {
+    components?: StudioComponentRegistration[];
+  };
 
 export type PrepareStudioConfigOptions = {
   cwd: string;

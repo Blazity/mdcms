@@ -486,14 +486,22 @@ export function describeStudioStartupError(
   }
 
   if (LOAD_ERROR_CODES.has(error.code)) {
+    const isCrossOrigin = readDetailBoolean(error.details, "isCrossOrigin");
+    const isOriginPolicyFailure = readDetailBoolean(
+      error.details,
+      "isOriginPolicyFailure",
+    );
+
     return {
       categoryLabel: "Bundle load",
       title: "Studio bundle could not be loaded",
       summary:
         "The shell could not retrieve the Studio runtime from the configured backend.",
-      note: readDetailBoolean(error.details, "isCrossOrigin")
+      note: isOriginPolicyFailure
         ? "The browser blocked the request before Studio could start."
-        : undefined,
+        : isCrossOrigin
+          ? "Studio could not reach the configured backend before startup completed."
+          : undefined,
       technicalDetails: error.message,
       metadata,
     };

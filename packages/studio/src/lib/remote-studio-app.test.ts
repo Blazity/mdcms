@@ -51,8 +51,34 @@ test("matchStudioRoute resolves static and parameterized routes", () => {
       { id: "content.index", path: "/content" },
       { id: "content.type", path: "/content/:type" },
       { id: "content.document", path: "/content/:type/:documentId" },
+      { id: "media", path: "/media" },
+      { id: "schema", path: "/schema" },
+      { id: "workflows", path: "/workflows" },
+      { id: "api", path: "/api" },
     ])?.id,
     "content.document",
+  );
+
+  assert.equal(
+    matchStudioRoute("/media", [
+      { id: "dashboard", path: "/" },
+      { id: "media", path: "/media" },
+      { id: "schema", path: "/schema" },
+      { id: "workflows", path: "/workflows" },
+      { id: "api", path: "/api" },
+    ])?.id,
+    "media",
+  );
+
+  assert.equal(
+    matchStudioRoute("/api", [
+      { id: "dashboard", path: "/" },
+      { id: "media", path: "/media" },
+      { id: "schema", path: "/schema" },
+      { id: "workflows", path: "/workflows" },
+      { id: "api", path: "/api" },
+    ])?.id,
+    "api",
   );
 });
 
@@ -183,4 +209,51 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
   assert.match(markup, /data-mdcms-mdx-component="PricingTable"/);
   assert.match(markup, /data-mdcms-mdx-auto-form="Chart"/);
   assert.match(markup, /data-mdcms-mdx-props-editor="PricingTable"/);
+});
+
+test("RemoteStudioApp renders the expanded admin route surfaces", () => {
+  const context: StudioMountContext = {
+    apiBaseUrl: "http://localhost:4000",
+    basePath: "/admin",
+    auth: { mode: "cookie" },
+    hostBridge: {
+      version: "1",
+      resolveComponent: () => null,
+      renderMdxPreview: () => () => {},
+    },
+  };
+
+  const apiMarkup = renderToStaticMarkup(
+    createElement(RemoteStudioApp, {
+      context,
+      initialPathname: "/admin/api",
+      initialActions: [],
+    }),
+  );
+  const mediaMarkup = renderToStaticMarkup(
+    createElement(RemoteStudioApp, {
+      context,
+      initialPathname: "/admin/media",
+      initialActions: [],
+    }),
+  );
+  const schemaMarkup = renderToStaticMarkup(
+    createElement(RemoteStudioApp, {
+      context,
+      initialPathname: "/admin/schema",
+      initialActions: [],
+    }),
+  );
+  const workflowsMarkup = renderToStaticMarkup(
+    createElement(RemoteStudioApp, {
+      context,
+      initialPathname: "/admin/workflows",
+      initialActions: [],
+    }),
+  );
+
+  assert.match(apiMarkup, /API Playground/);
+  assert.match(mediaMarkup, /Media Library/);
+  assert.match(schemaMarkup, /Schema Builder/);
+  assert.match(workflowsMarkup, /Workflows/);
 });

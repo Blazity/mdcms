@@ -2,6 +2,12 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/lib/runtime-ui/*"],
+      "next/link": ["src/lib/runtime-ui/adapters/next-link.tsx"],
+      "next/navigation": ["src/lib/runtime-ui/adapters/next-navigation.ts"],
+      "next-themes": ["src/lib/runtime-ui/adapters/next-themes.tsx"]
+    },
     "rootDir": "src",
     "outDir": "dist",
     "tsBuildInfoFile": "dist/tsconfig.lib.tsbuildinfo",

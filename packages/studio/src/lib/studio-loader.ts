@@ -45,6 +45,7 @@ type LoadedLocalMdxRuntime = {
 
 type LocalMdxPreviewMap = Map<string, unknown>;
 type LocalMdxPropsEditorMap = Map<string, unknown>;
+const BOOTSTRAP_FETCH_RETRY_DELAYS_MS = [50, 150] as const;
 
 function normalizeBaseUrl(serverUrl: string): string {
   return serverUrl.endsWith("/") ? serverUrl.slice(0, -1) : serverUrl;
@@ -204,6 +205,28 @@ function readBrowserOrigin(): string | undefined {
     : undefined;
 }
 
+function isLikelyOriginPolicyFailure(causeMessage: string): boolean {
+  const normalized = causeMessage.trim().toLowerCase();
+
+  if (normalized.length === 0) {
+    return false;
+  }
+
+  return (
+    normalized.includes("cors") ||
+    normalized.includes("cross-origin") ||
+    normalized.includes("cross origin") ||
+    normalized.includes("same-origin") ||
+    normalized.includes("origin policy")
+  );
+}
+
+function waitForRetryDelay(delayMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+}
+
 function createStudioLoadFailure(input: {
   code: string;
   phase: "bootstrap fetch" | "runtime asset fetch" | "runtime module import";
@@ -216,7 +239,9 @@ function createStudioLoadFailure(input: {
     input.error instanceof Error ? input.error.message : String(input.error);
   const isCrossOrigin =
     browserOrigin !== undefined && browserOrigin !== requestedOrigin;
-  const message = isCrossOrigin
+  const isOriginPolicyFailure =
+    isCrossOrigin && isLikelyOriginPolicyFailure(causeMessage);
+  const message = isOriginPolicyFailure
     ? [
         `Failed to load Studio ${input.phase} from ${input.url}.`,
         `The browser blocked a cross-origin request from ${browserOrigin} to ${requestedOrigin}.`,
@@ -237,6 +262,7 @@ function createStudioLoadFailure(input: {
       requestedOrigin,
       causeMessage,
       isCrossOrigin,
+      isOriginPolicyFailure,
     },
   });
 }
@@ -268,15 +294,22 @@ async function fetchStudioBootstrapReadyResponse(input: {
   const bootstrapUrl = resolveBootstrapUrl(input.apiBaseUrl, input.retry);
   let bootstrapResponse: Response;
 
-  try {
-    bootstrapResponse = await input.fetcher(bootstrapUrl);
-  } catch (error) {
-    throw createStudioLoadFailure({
-      code: "STUDIO_BOOTSTRAP_FETCH_FAILED",
-      phase: "bootstrap fetch",
-      url: bootstrapUrl,
-      error,
-    });
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      bootstrapResponse = await input.fetcher(bootstrapUrl);
+      break;
+    } catch (error) {
+      if (attempt >= BOOTSTRAP_FETCH_RETRY_DELAYS_MS.length) {
+        throw createStudioLoadFailure({
+          code: "STUDIO_BOOTSTRAP_FETCH_FAILED",
+          phase: "bootstrap fetch",
+          url: bootstrapUrl,
+          error,
+        });
+      }
+
+      await waitForRetryDelay(BOOTSTRAP_FETCH_RETRY_DELAYS_MS[attempt]);
+    }
   }
 
   if (!bootstrapResponse.ok) {

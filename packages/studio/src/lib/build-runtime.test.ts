@@ -205,3 +205,34 @@ test("buildStudioRuntimeArtifacts forces the bootstrap manifest to module mode",
     assert.equal(build.manifest.mode, "module");
   });
 });
+
+test("buildStudioRuntimeArtifacts emits a stylesheet asset beside the runtime entry", async () => {
+  await withTempDir("studio-runtime-", async (directory) => {
+    const sourceFile = join(directory, "app.ts");
+    const outDir = join(directory, "dist");
+
+    await writeFile(
+      sourceFile,
+      "export const mount = () => () => {};\n",
+      "utf8",
+    );
+
+    const build = await buildStudioRuntimeArtifacts({
+      sourceFile,
+      outDir,
+      studioVersion: "1.2.3",
+      mode: "module",
+    });
+
+    assert.match(build.cssFile, /^studio-runtime\.[a-f0-9]{16}\.css$/);
+    assert.equal(
+      build.cssPath,
+      join(outDir, STUDIO_RUNTIME_ASSETS_DIRNAME, build.buildId, build.cssFile),
+    );
+    const emittedStylesheet = await readFile(build.cssPath, "utf8");
+
+    assert.equal(emittedStylesheet.length > 0, true);
+    assert.equal(emittedStylesheet.includes("@import 'tailwindcss'"), false);
+    assert.equal(emittedStylesheet.includes(".bg-background"), true);
+  });
+});

@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-23
+last_updated: 2026-03-25
 ---
 
 # SPEC-006 Studio Runtime and UI
@@ -147,6 +147,14 @@ The shell owns only fatal startup failures and startup-disabled outcomes:
 - runtime asset load failed
 - remote `mount(...)` failed
 
+Bootstrap fetch failure handling:
+
+- A bootstrap fetch failure means the shell could not obtain a usable bootstrap HTTP response from `GET /api/v1/studio/bootstrap`.
+- When the failure is transport-level and no HTTP response was received, the shell retries the same bootstrap URL up to two additional times with short client-side backoff before surfacing a fatal startup error.
+- This bounded transport retry is separate from the manifest-rejection retry below. It does not change query parameters and does not apply to HTTP error responses, invalid bootstrap payloads, disabled/unavailable responses, or runtime asset failures.
+- User-facing startup copy may mention cross-origin or CORS guidance only when the shell has concrete evidence that browser origin policy caused the failure.
+- When the shell only knows that a cross-origin bootstrap request failed without a usable response, it must use neutral startup copy and expose the underlying fetch error cause in technical details.
+
 If runtime validation fails because of integrity, signature, or compatibility rejection, the shell retries `GET /api/v1/studio/bootstrap` exactly once with:
 
 - `rejectedBuildId=<buildId>`
@@ -171,9 +179,18 @@ Internal Studio routes (examples):
 - `/admin/content/:type` — List documents of a specific type
 - `/admin/content/:type/:documentId` — Document editor
 - `/admin/environments` — Environment management
+- `/admin/media` — Media library shell surface
+- `/admin/schema` — Schema explorer shell surface
 - `/admin/users` — User management (admin only)
 - `/admin/settings` — CMS settings (admin only)
+- `/admin/workflows` — Workflow shell surface
+- `/admin/api` — API playground shell surface
 - `/admin/trash` — Deleted content recovery
+
+For `/admin/media`, `/admin/schema`, `/admin/workflows`, and `/admin/api`, the
+current phase permits Studio-runtime-owned shell rendering backed by local mock
+state or placeholder content while their future live data and mutation
+contracts remain deferred to the owning work for those domains.
 
 ### Content Navigation
 

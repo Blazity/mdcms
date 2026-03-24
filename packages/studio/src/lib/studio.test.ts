@@ -147,6 +147,23 @@ test("Studio accepts the authored shared config shape for mdx-aware embedding", 
   `);
 });
 
+test("Studio accepts the minimal server-safe embed config shape", () => {
+  typecheckSource(`
+    import type { StudioProps } from "../index.ts";
+
+    const props: StudioProps = {
+      config: {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+      },
+      basePath: "/admin",
+    };
+
+    void props;
+  `);
+});
+
 test("prepareStudioConfig enriches mdx component metadata from source files", async () => {
   const tempDir = join(
     dirname(fileURLToPath(import.meta.url)),
@@ -456,18 +473,19 @@ test("StudioShellFrame renders loading startup message", () => {
   assert.match(markup, /overflow-x:\s*hidden/);
 });
 
-test("describeStudioStartupError classifies load failures with metadata", () => {
+test("describeStudioStartupError keeps generic cross-origin load failures neutral", () => {
   const viewModel = describeStudioStartupError(
     new RuntimeError({
       code: "STUDIO_BOOTSTRAP_FETCH_FAILED",
       message:
-        "Failed to load Studio bootstrap fetch from http://localhost:4000/api/v1/studio/bootstrap.",
+        "Failed to load Studio bootstrap fetch from http://localhost:4000/api/v1/studio/bootstrap.\nLoad failed",
       statusCode: 500,
       details: {
         url: "http://localhost:4000/api/v1/studio/bootstrap",
         browserOrigin: "http://localhost:4173",
         requestedOrigin: "http://localhost:4000",
         isCrossOrigin: true,
+        isOriginPolicyFailure: false,
       },
     }),
   );
@@ -479,7 +497,7 @@ test("describeStudioStartupError classifies load failures with metadata", () => 
   );
   assert.equal(
     viewModel.note,
-    "The browser blocked the request before Studio could start.",
+    "Studio could not reach the configured backend before startup completed.",
   );
   assert.deepEqual(viewModel.metadata, [
     { label: "Error code", value: "STUDIO_BOOTSTRAP_FETCH_FAILED" },
@@ -490,6 +508,29 @@ test("describeStudioStartupError classifies load failures with metadata", () => 
       value: "http://localhost:4000/api/v1/studio/bootstrap",
     },
   ]);
+});
+
+test("describeStudioStartupError keeps explicit origin-policy failures classified as CORS guidance", () => {
+  const viewModel = describeStudioStartupError(
+    new RuntimeError({
+      code: "STUDIO_BOOTSTRAP_FETCH_FAILED",
+      message:
+        "Failed to load Studio bootstrap fetch from http://localhost:4000/api/v1/studio/bootstrap.\nThe browser blocked a cross-origin request from http://localhost:4173 to http://localhost:4000.\nCheck CORS or proxy the Studio backend through the host app.",
+      statusCode: 500,
+      details: {
+        url: "http://localhost:4000/api/v1/studio/bootstrap",
+        browserOrigin: "http://localhost:4173",
+        requestedOrigin: "http://localhost:4000",
+        isCrossOrigin: true,
+        isOriginPolicyFailure: true,
+      },
+    }),
+  );
+
+  assert.equal(
+    viewModel.note,
+    "The browser blocked the request before Studio could start.",
+  );
 });
 
 test("describeStudioStartupError classifies rejected and crashed failures", () => {

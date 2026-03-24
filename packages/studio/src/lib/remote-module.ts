@@ -8,6 +8,10 @@ import {
 } from "@mdcms/shared";
 
 import { RemoteStudioApp } from "./remote-studio-app.js";
+import {
+  installStudioRuntimeStyles,
+  resolveStudioRuntimeStylesheetUrl,
+} from "./runtime-ui/style-installer.js";
 
 function resolveMountTarget(container: unknown): HTMLElement {
   if (container instanceof HTMLElement) {
@@ -29,11 +33,15 @@ export const mount: RemoteStudioModule["mount"] = (
   assertStudioMountContext(context);
 
   const target = resolveMountTarget(container);
+  const removeStyles = installStudioRuntimeStyles(
+    resolveStudioRuntimeStylesheetUrl(import.meta.url),
+  );
   const root = createRoot(target);
 
   root.render(createElement(RemoteStudioApp, { context }));
 
   return () => {
     root.unmount();
+    removeStyles();
   };
 };

@@ -32,22 +32,34 @@ Host-embedded Studio package boundary for MDCMS.
 - After `mount(...)` succeeds, the remote runtime owns routing, navigation,
   loading/empty/forbidden/error states, and all normal Studio rendering.
 - MVP runtime execution is `module` only.
+- The current remote runtime route set includes:
+  - `/admin`
+  - `/admin/content`
+  - `/admin/content/:type`
+  - `/admin/content/:type/:documentId`
+  - `/admin/environments`
+  - `/admin/media`
+  - `/admin/schema`
+  - `/admin/users`
+  - `/admin/settings`
+  - `/admin/workflows`
+  - `/admin/api`
+  - `/admin/trash`
+- `/admin/media`, `/admin/schema`, `/admin/workflows`, and `/admin/api` are
+  present as runtime-owned UI surfaces in the current phase and may render
+  shell-only/mock content until their backend wiring is implemented.
 
 Usage:
 
 ```tsx
 // app/admin/[[...path]]/page.tsx
-import { prepareStudioConfig } from "@mdcms/studio/runtime";
+import { createStudioEmbedConfig } from "@mdcms/studio/runtime";
 
 import config from "../../apps/studio-example/mdcms.config";
 import { AdminStudioClient } from "./admin-studio-client";
 
 export default async function AdminPage() {
-  const preparedConfig = await prepareStudioConfig(config, {
-    cwd: process.cwd(),
-  });
-
-  return <AdminStudioClient config={preparedConfig} />;
+  return <AdminStudioClient config={createStudioEmbedConfig(config)} />;
 }
 ```
 
@@ -70,7 +82,8 @@ export function AdminStudioClient({ config }: { config: MdcmsConfig }) {
   component metadata and runtime loaders. No backend component sync is
   required.
 - `prepareStudioConfig(...)` is the node-side helper for enriching component
-  registrations with serializable `extractedProps` metadata before render.
+  registrations with `extractedProps` metadata before render, but the result
+  must still respect the server-to-client serialization boundary.
 - `prepareStudioConfig(...)` accepts `{ cwd, resolveImportPath?, tsconfigPath? }`.
   Use `resolveImportPath` when authored `importPath` values rely on workspace
   aliases that are not resolvable from plain filesystem paths alone.
