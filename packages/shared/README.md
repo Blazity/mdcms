@@ -174,6 +174,19 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
   - import path: `@mdcms/shared/mdx`
   - `extractMdxComponentProps(...)` reads a local component source file and
     normalizes supported prop shapes into the shared `extractedProps` contract
+  - `createMdxAutoFormFields(...)` converts extracted props into default
+    auto-form field metadata:
+    - `string` -> `text`
+    - `string` with `format: "url"` -> `url`
+    - `number` -> `number`
+    - `boolean` -> `boolean`
+    - `enum` -> `select`
+    - `array:string` -> `string-list`
+    - `array:number` -> `number-list`
+    - `date` -> `date`
+    - `rich-text` -> `rich-text`
+  - `json` extracted props are intentionally omitted from default mapping; the
+    widget override path owns those controls downstream
   - intended for local tooling/runtime preparation only; never for browser-time
     use
 - Strict compatibility version policy:
