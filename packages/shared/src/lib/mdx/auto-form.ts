@@ -40,7 +40,7 @@ export function createMdxAutoFormFields(
           name,
           control: "select",
           required: prop.required,
-          options: prop.values,
+          options: [...prop.values],
         });
         break;
       case "array":

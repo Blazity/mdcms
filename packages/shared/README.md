@@ -170,12 +170,14 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
 - Compatibility check helpers:
   - `assertModuleManifestCompatibility(manifest, { coreVersion, supportedApiVersion? })`
   - `assertStudioBootstrapCompatibility(manifest, { studioPackageVersion, hostBridgeVersion, supportedApiVersion? })`
-- Node-side MDX extraction helper:
+- Shared MDX helpers:
   - import path: `@mdcms/shared/mdx`
   - `extractMdxComponentProps(...)` reads a local component source file and
     normalizes supported prop shapes into the shared `extractedProps` contract
+  - `extractMdxComponentProps(...)` is intended for local tooling/runtime
+    preparation only; never for browser-time use
   - `createMdxAutoFormFields(...)` converts extracted props into default
-    auto-form field metadata:
+    auto-form field metadata and is safe to use in browser/runtime code:
     - `string` -> `text`
     - `string` with `format: "url"` -> `url`
     - `number` -> `number`
@@ -187,8 +189,6 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
     - `rich-text` -> `rich-text`
   - `json` extracted props are intentionally omitted from default mapping; the
     widget override path owns those controls downstream
-  - intended for local tooling/runtime preparation only; never for browser-time
-    use
 - Strict compatibility version policy:
   - `minCoreVersion`, `maxCoreVersion`, `minStudioPackageVersion`, `minHostBridgeVersion`
     must use strict `x.y.z` format.

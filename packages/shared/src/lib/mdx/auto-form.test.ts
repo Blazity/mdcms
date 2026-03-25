@@ -4,19 +4,22 @@ import { test } from "node:test";
 import { createMdxAutoFormFields } from "./auto-form.js";
 
 test("createMdxAutoFormFields maps extracted props to default controls in order", () => {
+  const kindOptions = ["bar", "line"];
+  const fields = createMdxAutoFormFields({
+    title: { type: "string", required: true },
+    website: { type: "string", required: false, format: "url" },
+    count: { type: "number", required: true },
+    published: { type: "boolean", required: false },
+    kind: { type: "enum", required: true, values: kindOptions },
+    tags: { type: "array", required: false, items: "string" },
+    data: { type: "array", required: true, items: "number" },
+    publishedAt: { type: "date", required: false },
+    children: { type: "rich-text", required: true },
+    options: { type: "json", required: false },
+  });
+
   assert.deepEqual(
-    createMdxAutoFormFields({
-      title: { type: "string", required: true },
-      website: { type: "string", required: false, format: "url" },
-      count: { type: "number", required: true },
-      published: { type: "boolean", required: false },
-      kind: { type: "enum", required: true, values: ["bar", "line"] },
-      tags: { type: "array", required: false, items: "string" },
-      data: { type: "array", required: true, items: "number" },
-      publishedAt: { type: "date", required: false },
-      children: { type: "rich-text", required: true },
-      options: { type: "json", required: false },
-    }),
+    fields,
     [
       { name: "title", control: "text", required: true },
       { name: "website", control: "url", required: false },
@@ -34,6 +37,11 @@ test("createMdxAutoFormFields maps extracted props to default controls in order"
       { name: "children", control: "rich-text", required: true },
     ],
   );
+
+  const selectField = fields.find((field) => field.name === "kind");
+  assert.notEqual(selectField, undefined);
+  assert.equal(selectField?.control, "select");
+  assert.notStrictEqual(selectField?.options, kindOptions);
 });
 
 test("createMdxAutoFormFields returns an empty list for missing or json-only props", () => {
