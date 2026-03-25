@@ -122,8 +122,10 @@ components: [
     importPath: '@/components/mdx/Chart',
     load: () => import('@/components/mdx/Chart').then((m) => m.Chart),
     description: 'Renders a data chart with configurable options',
-    // Optional: UI hints to override auto-detected form controls
+    // Optional: UI hints to override auto-detected form controls or mark string
+    // props as URL-formatted for validation.
     propHints: {
+      website: { format: 'url' },
       color: { widget: 'color-picker' },
     },
   },
@@ -169,7 +171,7 @@ export type MdxComponentCatalog = {
 export type MdxExtractedProps = Record<string, MdxExtractedProp>;
 
 export type MdxExtractedProp =
-  | { type: "string"; required: boolean }
+  | { type: "string"; required: boolean; format?: "url" }
   | { type: "number"; required: boolean }
   | { type: "boolean"; required: boolean }
   | { type: "date"; required: boolean }
@@ -193,6 +195,10 @@ Executable editor values remain opaque at the shared contract layer (`unknown | 
 In practice these are host-local React components resolved inside the embedding app bundle.
 
 `importPath` and `propsEditor` remain config-owned authoring metadata. They identify the source modules used by the local extraction/runtime pipeline, but runtime resolution is keyed by component `name` rather than by path strings carried over the Studio boundary.
+
+URL intent is not a widget override. It is carried on extracted string props as
+`format: "url"` and maps to a URL input with validation in the auto-generated
+form contract.
 
 The embedded Studio runtime never performs TypeScript analysis in the browser.
 When auto-generated props editing is needed, the host app prepares the local MDX
@@ -259,6 +265,7 @@ Extraction is deterministic and fail-closed:
 - A prop may normalize to `type: 'json'` only when the developer explicitly
   opts that prop into the `json` widget hint and the declared TypeScript shape
   is JSON-serializable.
+- A string prop may additionally carry `format: 'url'` when `propHints.<propName>.format = 'url'`; this maps to a URL input with validation and is not a widget.
 - `children` and props typed as `ReactNode` normalize to `type: 'rich-text'`.
 - A prop is omitted from `extractedProps` when it cannot be normalized
   deterministically. Omitted props are hidden from the auto-generated CMS form
@@ -292,7 +299,7 @@ Auto-detected prop types map to form controls as follows:
 | `string[]`                                 | Tag input                 | Add/remove string values |
 | `number[]`                                 | Repeatable number input   | Add/remove number values |
 | `Date`                                     | Date picker               |                          |
-| `string` with `.url()` hint                | URL input with validation |                          |
+| `string` with `format: "url"`              | URL input with validation | Not a widget             |
 | `ReactNode` / `children`                   | Nested rich text editor   | See §18.5                |
 | Function types                             | **Hidden**                | Not CMS-editable         |
 | Ref types                                  | **Hidden**                | Not CMS-editable         |
@@ -316,6 +323,10 @@ too complex for auto-detection and no hint or custom editor is provided, the
 prop is **hidden** from the CMS form (it can only be set in code). The `json`
 hint does not make function, ref, or other non-serializable prop shapes
 editable.
+
+`propHints.<propName>.format = 'url'` is a string-format signal, not a widget
+override. It is preserved in extracted props and used by the auto-control
+mapping to render a URL input with validation.
 
 ### Custom Props Editors
 
