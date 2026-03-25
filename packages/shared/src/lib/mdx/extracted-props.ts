@@ -321,7 +321,11 @@ function normalizePropType(input: {
   }
 
   if (isStringType(propertyType)) {
-    return { type: "string", required };
+    const format = getStringFormat(propHint);
+
+    return format
+      ? { type: "string", required, format }
+      : { type: "string", required };
   }
 
   if (isNumberType(propertyType)) {
@@ -510,6 +514,20 @@ function isJsonHint(propHint: unknown): boolean {
     "widget" in propHint &&
     (propHint as { widget?: unknown }).widget === "json"
   );
+}
+
+function getStringFormat(propHint: unknown): "url" | undefined {
+  if (
+    typeof propHint !== "object" ||
+    propHint === null ||
+    Array.isArray(propHint)
+  ) {
+    return undefined;
+  }
+
+  return (propHint as { format?: unknown }).format === "url"
+    ? "url"
+    : undefined;
 }
 
 function isJsonSerializableType(

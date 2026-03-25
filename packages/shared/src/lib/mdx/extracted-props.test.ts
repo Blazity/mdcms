@@ -139,6 +139,55 @@ test("extractMdxComponentProps allows json hinted serializable object props", as
   });
 });
 
+test("extractMdxComponentProps preserves url format hints on string props only", async () => {
+  await withTempDir("mdcms-extracted-props-", async (directory) => {
+    const filePath = await writeComponentFile(
+      directory,
+      "LinkCard.tsx",
+      `
+        export interface LinkCardProps {
+          title: string;
+          website?: string;
+          count: number;
+          publishedAt: Date;
+          kind: "bar" | "line";
+          tags: string[];
+          children: string;
+        }
+
+        export function LinkCard(_props: LinkCardProps) {
+          return null;
+        }
+      `,
+    );
+
+    assert.deepEqual(
+      extractMdxComponentProps({
+        filePath,
+        componentName: "LinkCard",
+        propHints: {
+          website: { format: "url" },
+          count: { format: "url" },
+          publishedAt: { format: "url" },
+          kind: { format: "url" },
+          tags: { format: "url" },
+          children: { format: "url" },
+          title: { format: "email" },
+        },
+      }),
+      {
+        title: { type: "string", required: true },
+        website: { type: "string", required: false, format: "url" },
+        count: { type: "number", required: true },
+        publishedAt: { type: "date", required: true },
+        kind: { type: "enum", required: true, values: ["bar", "line"] },
+        tags: { type: "array", required: true, items: "string" },
+        children: { type: "rich-text", required: true },
+      },
+    );
+  });
+});
+
 test("extractMdxComponentProps keeps non-serializable json hinted props hidden", async () => {
   await withTempDir("mdcms-extracted-props-", async (directory) => {
     const filePath = await writeComponentFile(
