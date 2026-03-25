@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { ActionCatalogItem, StudioMountContext } from "@mdcms/shared";
+import { createMdxAutoFormFields } from "@mdcms/shared/mdx";
 
 import {
   createStudioActionCatalogAdapter,
@@ -280,15 +281,12 @@ function hasRegisteredPropsEditor(
   return context.mdx?.resolvePropsEditor(componentName) != null;
 }
 
-function hasGeneratedPropsEditor(
+function getGeneratedAutoFormFields(
   component: NonNullable<
     StudioMountContext["mdx"]
   >["catalog"]["components"][number],
-): boolean {
-  return (
-    component.extractedProps !== undefined &&
-    Object.keys(component.extractedProps).length > 0
-  );
+){
+  return createMdxAutoFormFields(component.extractedProps);
 }
 
 function renderRouteContent(
@@ -340,9 +338,23 @@ function RuntimeDocumentDiagnostics(props: {
               <span data-mdcms-mdx-props-editor={component.name}>
                 Custom editor
               </span>
-            ) : hasGeneratedPropsEditor(component) ? (
-              <span data-mdcms-mdx-auto-form={component.name}>Auto form</span>
-            ) : null}
+            ) : (() => {
+                const autoFormFields = getGeneratedAutoFormFields(component);
+
+                return autoFormFields.length > 0 ? (
+                  <>
+                    <span data-mdcms-mdx-auto-form={component.name}>
+                      Auto form
+                    </span>
+                    {autoFormFields.map((field) => (
+                      <span
+                        key={`${component.name}:${field.name}:${field.control}`}
+                        data-mdcms-mdx-auto-control={`${component.name}:${field.name}:${field.control}`}
+                      />
+                    ))}
+                  </>
+                ) : null;
+              })()}
           </div>
         ))
       )}

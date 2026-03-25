@@ -153,6 +153,14 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
             description: "Render a chart",
             extractedProps: {
               title: { type: "string", required: false },
+              website: { type: "string", required: false, format: "url" },
+            },
+          },
+          {
+            name: "JsonOnly",
+            importPath: "@/components/mdx/JsonOnly",
+            extractedProps: {
+              options: { type: "json", required: false },
             },
           },
           {
@@ -206,8 +214,12 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
   assert.doesNotMatch(markup, /content\.hidden/);
   assert.match(markup, /data-mdcms-preview-surface="content.document"/);
   assert.match(markup, /data-mdcms-mdx-component="Chart"/);
+  assert.match(markup, /data-mdcms-mdx-component="JsonOnly"/);
   assert.match(markup, /data-mdcms-mdx-component="PricingTable"/);
   assert.match(markup, /data-mdcms-mdx-auto-form="Chart"/);
+  assert.match(markup, /data-mdcms-mdx-auto-control="Chart:title:text"/);
+  assert.match(markup, /data-mdcms-mdx-auto-control="Chart:website:url"/);
+  assert.doesNotMatch(markup, /data-mdcms-mdx-auto-form="JsonOnly"/);
   assert.match(markup, /data-mdcms-mdx-props-editor="PricingTable"/);
 });
 
