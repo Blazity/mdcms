@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-23
+last_updated: 2026-03-25
 ---
 
 # SPEC-002 System Architecture and Extensibility
@@ -350,7 +350,7 @@ Monorepo managed by Nx with the following packages/workspace groups:
 | Workspace Path       | Description                                                                             |
 | -------------------- | --------------------------------------------------------------------------------------- |
 | `apps/server`        | Source location for `@mdcms/server` backend API server. Dockerized.                     |
-| `apps/studio`        | Source location for `@mdcms/studio` host component and Studio runtime artifact builder. |
+| `packages/studio`    | Source location for `@mdcms/studio` host component and Studio runtime artifact builder. |
 | `packages/sdk`       | Source location for `@mdcms/sdk` client API package. Published to npm.                  |
 | `apps/cli`           | Source location for `@mdcms/cli` operator CLI package. Published to npm.                |
 | `packages/shared`    | Source location for `@mdcms/shared` cross-cutting contracts and runtime helpers.        |
@@ -381,7 +381,7 @@ apps/server/src/lib/
   module-loader.ts              # imports modules[] and mounts server surfaces
   runtime-with-modules.ts       # composes server runtime with module load report
 
-apps/studio/src/lib/
+packages/studio/src/lib/
   remote-module.ts              # Studio runtime entry (remote bundle source contract)
   build-runtime.ts              # immutable Studio artifact + bootstrap metadata generator
 
