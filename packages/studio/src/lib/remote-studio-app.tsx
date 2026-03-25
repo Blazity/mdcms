@@ -285,7 +285,7 @@ function getGeneratedAutoFormFields(
   component: NonNullable<
     StudioMountContext["mdx"]
   >["catalog"]["components"][number],
-){
+) {
   return createMdxAutoFormFields(component.extractedProps);
 }
 
@@ -338,7 +338,8 @@ function RuntimeDocumentDiagnostics(props: {
               <span data-mdcms-mdx-props-editor={component.name}>
                 Custom editor
               </span>
-            ) : (() => {
+            ) : (
+              (() => {
                 const autoFormFields = getGeneratedAutoFormFields(component);
 
                 return autoFormFields.length > 0 ? (
@@ -354,7 +355,8 @@ function RuntimeDocumentDiagnostics(props: {
                     ))}
                   </>
                 ) : null;
-              })()}
+              })()
+            )}
           </div>
         ))
       )}

@@ -18,25 +18,22 @@ test("createMdxAutoFormFields maps extracted props to default controls in order"
     options: { type: "json", required: false },
   });
 
-  assert.deepEqual(
-    fields,
-    [
-      { name: "title", control: "text", required: true },
-      { name: "website", control: "url", required: false },
-      { name: "count", control: "number", required: true },
-      { name: "published", control: "boolean", required: false },
-      {
-        name: "kind",
-        control: "select",
-        required: true,
-        options: ["bar", "line"],
-      },
-      { name: "tags", control: "string-list", required: false },
-      { name: "data", control: "number-list", required: true },
-      { name: "publishedAt", control: "date", required: false },
-      { name: "children", control: "rich-text", required: true },
-    ],
-  );
+  assert.deepEqual(fields, [
+    { name: "title", control: "text", required: true },
+    { name: "website", control: "url", required: false },
+    { name: "count", control: "number", required: true },
+    { name: "published", control: "boolean", required: false },
+    {
+      name: "kind",
+      control: "select",
+      required: true,
+      options: ["bar", "line"],
+    },
+    { name: "tags", control: "string-list", required: false },
+    { name: "data", control: "number-list", required: true },
+    { name: "publishedAt", control: "date", required: false },
+    { name: "children", control: "rich-text", required: true },
+  ]);
 
   const selectField = fields.find((field) => field.name === "kind");
   assert.notEqual(selectField, undefined);
