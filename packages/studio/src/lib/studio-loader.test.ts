@@ -61,6 +61,32 @@ async function withLocationOrigin<T>(
   }
 }
 
+async function withGlobalFetch<T>(
+  fetchImpl: typeof fetch,
+  run: () => Promise<T>,
+): Promise<T> {
+  const originalDescriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "fetch",
+  );
+
+  Object.defineProperty(globalThis, "fetch", {
+    configurable: true,
+    writable: true,
+    value: fetchImpl,
+  });
+
+  try {
+    return await run();
+  } finally {
+    if (originalDescriptor) {
+      Object.defineProperty(globalThis, "fetch", originalDescriptor);
+    } else {
+      Reflect.deleteProperty(globalThis, "fetch");
+    }
+  }
+}
+
 async function createRuntimeFixture(directory: string) {
   const sourceFile = join(directory, "remote.ts");
   const outDir = join(directory, "dist");
@@ -496,6 +522,78 @@ test("loadStudioRuntime rejects malformed bootstrap payloads", async () => {
       },
     }),
   );
+});
+
+test("loadStudioRuntime preserves the global fetch binding when no custom fetcher is provided", async () => {
+  await withTempDir("studio-loader-global-fetch-", async (directory) => {
+    const fixture = await createRuntimeFixture(directory);
+    const fetchLog: string[] = [];
+
+    await withGlobalFetch(
+      async function brandedFetch(
+        this: unknown,
+        input: string | URL | Request,
+      ): Promise<Response> {
+        if (this !== globalThis) {
+          throw new TypeError(
+            "Can only call Window.fetch on instances of Window",
+          );
+        }
+
+        const url = String(input);
+        fetchLog.push(url);
+
+        if (url === "http://localhost:4000/api/v1/studio/bootstrap") {
+          return new Response(
+            JSON.stringify(
+              createReadyBootstrapPayload({
+                manifest: fixture.manifest,
+              }),
+            ),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        if (url === "http://localhost:4000" + fixture.manifest.entryUrl) {
+          return new Response(new Uint8Array(fixture.runtimeBytes), {
+            status: 200,
+            headers: {
+              "content-type": "text/javascript; charset=utf-8",
+            },
+          });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+      } as typeof fetch,
+      async () => {
+        const unmount = await loadStudioRuntime({
+          config: {
+            project: "marketing-site",
+            environment: "staging",
+            serverUrl: "http://localhost:4000",
+          },
+          basePath: "/admin",
+          container: {},
+          hostBridge: validHostBridge,
+          loadRemoteModule: async () => ({
+            mount: () => () => {},
+          }),
+        });
+
+        assert.deepEqual(fetchLog, [
+          "http://localhost:4000/api/v1/studio/bootstrap",
+          "http://localhost:4000" + fixture.manifest.entryUrl,
+        ]);
+
+        unmount();
+      },
+    );
+  });
 });
 
 test("loadStudioRuntime keeps generic cross-origin bootstrap fetch failures neutral", async () => {

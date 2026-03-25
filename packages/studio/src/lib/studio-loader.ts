@@ -481,7 +481,9 @@ export async function loadStudioRuntime(
   options: StudioLoaderOptions,
 ): Promise<() => void> {
   const apiBaseUrl = normalizeBaseUrl(options.config.serverUrl);
-  const fetcher = options.fetcher ?? fetch;
+  // Preserve the browser Window binding for the default global fetch path.
+  const fetcher =
+    options.fetcher ?? ((input, init) => globalThis.fetch(input, init));
   const localMdxRuntimePromise = createLoadedLocalMdxRuntime(options.config);
   const bootstrapResponse = await fetchStudioBootstrapReadyResponse({
     apiBaseUrl,
