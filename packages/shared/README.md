@@ -147,7 +147,7 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
   - `StudioMountContext.mdx.catalog.components[*].extractedProps` is a strict
     serializable contract for auto-generated MDX props editing metadata.
   - Supported extracted prop variants are:
-    - `string`
+    - `string` (optionally `format: "url"` for URL-validated default inputs)
     - `number`
     - `boolean`
     - `date`
@@ -155,6 +155,8 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
     - `array` with `items: "string" | "number"`
     - `json`
     - `rich-text`
+  - `format: "url"` is string-format metadata for default auto-form mapping,
+    not a widget override.
   - The shell owns startup validation/loading failures plus startup-disabled outcomes such as `STUDIO_RUNTIME_DISABLED` and `STUDIO_RUNTIME_UNAVAILABLE`; after `mount(...)` succeeds, the remote runtime owns Studio UI states and routing.
 - Runtime validators:
   - Implemented with strict `zod` schemas (`.strict()` + custom refinements) and normalized `RuntimeError` output.

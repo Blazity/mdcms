@@ -104,7 +104,7 @@ export type MdxComponentCatalog = {
 };
 
 export type MdxExtractedProp =
-  | { type: "string"; required: boolean }
+  | { type: "string"; required: boolean; format?: "url" }
   | { type: "number"; required: boolean }
   | { type: "boolean"; required: boolean }
   | { type: "date"; required: boolean }
@@ -365,6 +365,7 @@ const mdxExtractedPropRequiredSchema = z
 const mdxExtractedPropSchema = z.discriminatedUnion("type", [
   mdxExtractedPropRequiredSchema.extend({
     type: z.literal("string"),
+    format: z.literal("url").optional(),
   }),
   mdxExtractedPropRequiredSchema.extend({
     type: z.literal("number"),

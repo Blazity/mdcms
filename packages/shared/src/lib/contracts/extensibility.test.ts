@@ -462,6 +462,11 @@ test("assertStudioMountContext accepts supported extracted mdx prop shapes", () 
                   type: "string",
                   required: false,
                 },
+                website: {
+                  type: "string",
+                  required: false,
+                  format: "url",
+                },
                 count: {
                   type: "number",
                   required: true,
@@ -588,6 +593,64 @@ test("assertStudioMountContext rejects invalid extracted mdx prop shapes", () =>
         },
       }),
     /values/,
+  );
+
+  assert.throws(
+    () =>
+      assertStudioMountContext({
+        apiBaseUrl: "http://localhost:4000",
+        basePath: "/admin",
+        auth: { mode: "cookie" },
+        hostBridge: validHostBridge,
+        mdx: {
+          catalog: {
+            components: [
+              {
+                name: "Chart",
+                importPath: "@/components/mdx/Chart",
+                extractedProps: {
+                  publishedAt: {
+                    type: "date",
+                    required: false,
+                    format: "url",
+                  },
+                },
+              },
+            ],
+          },
+          resolvePropsEditor: () => null,
+        },
+      }),
+    /format/,
+  );
+
+  assert.throws(
+    () =>
+      assertStudioMountContext({
+        apiBaseUrl: "http://localhost:4000",
+        basePath: "/admin",
+        auth: { mode: "cookie" },
+        hostBridge: validHostBridge,
+        mdx: {
+          catalog: {
+            components: [
+              {
+                name: "Chart",
+                importPath: "@/components/mdx/Chart",
+                extractedProps: {
+                  title: {
+                    type: "string",
+                    required: false,
+                    format: "email",
+                  },
+                },
+              },
+            ],
+          },
+          resolvePropsEditor: () => null,
+        },
+      }),
+    /format/,
   );
 
   assert.throws(
