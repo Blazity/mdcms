@@ -40,7 +40,7 @@ const post = await cms.get("BlogPost", { slug: "hello-world", locale: "en" });
 // List documents
 const posts = await cms.list("BlogPost", {
   locale: "en",
-  status: "published",
+  published: true,
   limit: 10,
   sort: "createdAt",
   order: "desc",

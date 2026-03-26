@@ -19,6 +19,9 @@
       "path": "./apps/cli"
     },
     {
+      "path": "./apps/studio-example"
+    },
+    {
       "path": "./packages/shared"
     }
   ]
