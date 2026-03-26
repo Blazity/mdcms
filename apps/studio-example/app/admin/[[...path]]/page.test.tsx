@@ -24,9 +24,9 @@ test("admin catch-all page prepares studio config with local MDX metadata", asyn
   const element = await AdminCatchAllPage();
 
   assert.equal(element.type, AdminStudioClient);
-  assert.ok(Array.isArray(element.props.config.components));
+  assert.ok(Array.isArray(element.props.preparedComponents));
 
-  const components = element.props.config.components as Array<{
+  const components = element.props.preparedComponents as Array<{
     name: string;
     extractedProps?: Record<
       string,

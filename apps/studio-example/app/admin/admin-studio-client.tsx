@@ -1,7 +1,16 @@
 "use client";
 
-import { Studio, type MdcmsConfig } from "@mdcms/studio";
+import { Studio } from "@mdcms/studio";
 
-export function AdminStudioClient({ config }: { config: MdcmsConfig }) {
+import {
+  createClientStudioConfig,
+  type PreparedStudioComponentMetadata,
+} from "./studio-config";
+
+export function AdminStudioClient(props: {
+  preparedComponents: PreparedStudioComponentMetadata[];
+}) {
+  const config = createClientStudioConfig(props.preparedComponents);
+
   return <Studio config={config} basePath="/admin" />;
 }
