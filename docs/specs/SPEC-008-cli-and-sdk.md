@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-11
+last_updated: 2026-03-26
 ---
 
 # SPEC-008 CLI and SDK
@@ -13,11 +13,11 @@ This is the live canonical document under `docs/`.
 
 ### Design Goals
 
-- Type-safe via runtime inference from schema (no codegen step required)
 - Thin wrapper around the REST API
 - Framework-agnostic (works in any React-based setup)
 - Explicit project/environment routing on every request
-- Handles pagination, error handling, and response parsing
+- Handles pagination, error handling, and response parsing deterministically
+- No codegen step required for SDK read operations
 
 ### Usage
 
@@ -36,7 +36,6 @@ const postById = await cms.get("BlogPost", { id: "uuid", locale: "en" });
 
 // Fetch by slug (legacy-compatible)
 const post = await cms.get("BlogPost", { slug: "hello-world", locale: "en" });
-// post.frontmatter.title — type-safe based on schema at runtime
 
 // List documents
 const posts = await cms.list("BlogPost", {
@@ -56,13 +55,22 @@ const postWithAuthor = await cms.get("BlogPost", {
 
 The SDK follows the same reference-resolution contract documented in SPEC-003. Resolution is shallow-only, unresolved references become `null`, and the response may include a top-level `resolveErrors` map keyed by the full field path (for example `frontmatter.author`) so callers can inspect why a referenced document could not be materialized. The `resolve` query values express field paths relative to `frontmatter` (e.g., `resolve=author` or `resolve=hero.author`), so callers should not prefix them with `frontmatter.`.
 
-### Runtime Type Inference
+### SDK Contract
 
-The SDK infers types at runtime by fetching the schema from the server on initialization. This means:
+- `createClient` stores the server URL, API key, and default target routing (`project`, `environment`) for subsequent requests.
+- The SDK is read-focused in v1 and exposes `get` and `list`. Reference expansion is configured through the `resolve` option on those methods; it is not a separate SDK method.
+- `get(type, input)` accepts either `id` or `slug`. `id` is preferred; `slug` remains available for legacy-compatible lookups.
+- `get` and `list` both accept an explicit `locale` parameter, plus optional `project` and `environment` overrides that take precedence over the client defaults for that call only.
+- The SDK sends explicit target routing with `X-MDCMS-Project` and `X-MDCMS-Environment` on every request rather than relying on ambient runtime state.
+- `list(type, input)` maps to the content list query contract owned by SPEC-003, including pagination (`limit`, `offset`), sorting (`sort`, `order`), draft reads, and the supported filter fields.
+- The SDK parses the shared API envelopes directly: single-document reads unwrap `{ data }`, list reads unwrap `{ data, pagination }`, and document payloads preserve any `resolveErrors` map returned by the API.
+- API error responses are surfaced through a deterministic SDK error type parsed from the shared error envelope. Transport failures, malformed success payloads, and client misconfiguration use a separate client-side error type so callers can distinguish backend errors from local failures.
 
-- No codegen step in the developer workflow
-- IDE autocomplete relies on runtime values (less reliable than codegen but zero-friction)
-- Schema is cached locally after first fetch and invalidated on schema changes
+### Type Safety and Schema Metadata
+
+- A schema fetched at runtime can support introspection or future runtime validation, but it does not provide compile-time TypeScript inference on its own.
+- The read client defined here does not fetch schema during initialization or before content reads.
+- Schema-aware write helpers, schema hash pinning, and any automatic schema refresh behavior are deferred until they are specified as a separate contract.
 
 ---
 
