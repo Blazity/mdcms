@@ -152,11 +152,17 @@ export default async function DemoContentPage() {
         <strong>{config.environment}</strong> (draft mode)
       </p>
       <p>
+        Data source: <strong>Direct API fetch</strong>
+      </p>
+      <p>
         API source: <code>{config.serverUrl}/api/v1/content</code>
       </p>
       <p>
         Auth: set <code>MDCMS_DEMO_API_KEY</code> in your environment for
         non-session requests.
+      </p>
+      <p>
+        Compare with: <Link href="/demo/sdk-content">SDK content demo</Link>
       </p>
 
       {!result.ok ? (
@@ -193,6 +199,14 @@ export default async function DemoContentPage() {
                   draftRevision=<code>{document.draftRevision}</code>{" "}
                   publishedVersion=
                   <code>{document.publishedVersion ?? "-"}</code>
+                </p>
+                <p>
+                  Also inspect the SDK view:{" "}
+                  <Link
+                    href={`/demo/sdk-content/${document.documentId}?type=${encodeURIComponent(document.type)}`}
+                  >
+                    /demo/sdk-content/{document.documentId}
+                  </Link>
                 </p>
                 <p>frontmatter (raw JSON):</p>
                 <pre>{JSON.stringify(document.frontmatter, null, 2)}</pre>

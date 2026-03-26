@@ -26,6 +26,9 @@
       "path": "../cli"
     },
     {
+      "path": "../../packages/sdk"
+    },
+    {
       "path": "../../packages/studio"
     }
   ]

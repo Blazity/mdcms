@@ -7,8 +7,11 @@ export default function HomePage() {
       <p>Open /admin to load the MDCMS Studio embed shell.</p>
       <p>
         Demo routes: <Link href="/admin">/admin</Link>
+      </p>
+      <p>
+        <Link href="/demo/content">Raw Content API</Link>
         {" | "}
-        <Link href="/demo/content">/demo/content</Link>
+        <Link href="/demo/sdk-content">SDK Client</Link>
       </p>
     </main>
   );

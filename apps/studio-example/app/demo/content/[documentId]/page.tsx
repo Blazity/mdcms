@@ -140,9 +140,14 @@ export default async function DemoContentDocumentPage({
 
   return (
     <main>
-      <h1>Raw Content Document</h1>
+      <h1>Raw Content API Document</h1>
+      <p>
+        Data source: <strong>Direct API fetch</strong>
+      </p>
       <p>
         <Link href="/demo/content">Back to /demo/content</Link>
+        {" | "}
+        <Link href={`/demo/sdk-content/${documentId}`}>Open SDK detail</Link>
       </p>
 
       {!result.ok ? (

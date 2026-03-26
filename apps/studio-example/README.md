@@ -15,6 +15,8 @@ This sample app exists for CMS-47 verification.
 - `/admin/<any>` - Studio embed shell via catch-all route
 - `/demo/content` - raw content API demo list (draft scope)
 - `/demo/content/:documentId` - raw content API demo detail
+- `/demo/sdk-content` - SDK-backed content demo list (`@mdcms/sdk`, draft scope)
+- `/demo/sdk-content/:documentId` - SDK-backed content demo detail
 - Internal surfaces are mapped by first segment after `/admin`:
 - `/admin/content`
 - `/admin/content/by-path/*` (folder-path navigation mode)
@@ -54,8 +56,9 @@ Environment overrides:
 - `MDCMS_STUDIO_EXAMPLE_HOST` (default `127.0.0.1`)
 - `MDCMS_STUDIO_EXAMPLE_PORT` (default `4173`)
 - `DATABASE_URL` for `server:dev` (default `postgresql://mdcms:mdcms@localhost:5432/mdcms`)
-- `MDCMS_DEMO_API_KEY` for `/demo/content*` routes when no session cookie is
-  present (in `compose:dev` it defaults to a seeded demo key)
+- `MDCMS_DEMO_API_KEY` for `/demo/content*` and `/demo/sdk-content*` routes
+  when no session cookie is present (in `compose:dev` it defaults to a seeded
+  demo key)
 
 Document shell locale can be provided via query parameter (forwarded as
 `X-MDCMS-Locale`), for example:
@@ -87,12 +90,15 @@ bundle without restarting the stack.
    - `bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts push --force`
 6. Open:
    - `http://127.0.0.1:4173/demo/content`
-7. Confirm the updated raw `frontmatter` and `body` are visible.
+   - `http://127.0.0.1:4173/demo/sdk-content`
+7. Confirm the updated content is visible in both views:
+   - `/demo/content*` shows the raw API fetch surface
+   - `/demo/sdk-content*` shows the `@mdcms/sdk` surface
 
 Notes:
 
-- In `compose:dev`, `/demo/content*` uses a seeded default key, so no manual
-  API-key copy is required for demo page reads.
+- In `compose:dev`, `/demo/content*` and `/demo/sdk-content*` use a seeded
+  default key, so no manual API-key copy is required for demo page reads.
 - Seeded demo key is read-only for content reads (`content:read` +
   `content:read:draft`) and does not allow draft mutations.
 - `compose:dev` also seeds demo browser-login user defaults:
@@ -111,6 +117,9 @@ Notes:
   so first `mdcms pull` returns real files immediately.
 - `/demo/content*` remains a raw-content inspection surface and does not render
   those MDX components.
+- `/demo/sdk-content*` demonstrates the same seeded scope through
+  `@mdcms/sdk`; the list view intentionally uses `client.list("post", ...)`
+  to show the typed SDK read path.
 
 Current demo-track limitation:
 
