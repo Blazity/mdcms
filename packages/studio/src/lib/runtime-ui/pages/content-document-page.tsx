@@ -12,8 +12,7 @@ import {
   type MdxPropsPanelSelection,
 } from "../components/editor/mdx-props-panel";
 import { TipTapEditor } from "../components/editor/tiptap-editor";
-import { PageHeader } from "../components/layout/page-header";
-import { Avatar, AvatarFallback } from "../components/ui/avatar";
+import { BreadcrumbTrail } from "../components/layout/page-header";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import {
@@ -39,12 +38,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "../components/ui/tooltip";
-import {
-  currentUser,
-  mockContentTypes,
-  mockDocuments,
-  mockUsers,
-} from "../lib/mock-data";
+import { currentUser, mockContentTypes, mockDocuments } from "../lib/mock-data";
 import { cn } from "../lib/utils";
 import {
   AlertCircle,
@@ -103,8 +97,6 @@ export default function ContentDocumentPage({
   const isDocumentReadOnly = currentUser.role === "viewer";
   const isDocumentForbidden = currentUser.role === "viewer";
 
-  const presenceUsers = mockUsers.filter((user) => user.isOnline).slice(0, 3);
-
   if (!contentType || !document) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -132,10 +124,14 @@ export default function ContentDocumentPage({
 
   return (
     <TooltipProvider>
-      <div className="flex h-screen flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-background px-4">
-          <div className="flex items-center gap-4">
-            <PageHeader
+      <div
+        data-mdcms-editor-layout="document"
+        className="flex h-screen min-w-0 flex-col overflow-x-hidden"
+      >
+        <header className="sticky top-0 z-30 flex min-w-0 flex-wrap items-center gap-3 border-b border-border bg-background px-4 py-3">
+          <div className="flex min-w-0 flex-1 items-center gap-4">
+            <BreadcrumbTrail
+              className="flex-1"
               breadcrumbs={[
                 { label: "Content", href: "/admin/content" },
                 { label: contentType.name, href: `/admin/content/${typeId}` },
@@ -143,7 +139,7 @@ export default function ContentDocumentPage({
               ]}
             />
 
-            <div className="flex items-center gap-1.5 text-sm">
+            <div className="flex shrink-0 items-center gap-1.5 text-sm">
               {saveStatus === "saved" ? (
                 <>
                   <Check className="h-4 w-4 text-success" />
@@ -165,7 +161,11 @@ export default function ContentDocumentPage({
           </div>
 
           {contentType.localized && contentType.locales ? (
-            <Tabs value={selectedLocale} onValueChange={setSelectedLocale}>
+            <Tabs
+              value={selectedLocale}
+              onValueChange={setSelectedLocale}
+              className="shrink-0"
+            >
               <TabsList className="bg-transparent">
                 {contentType.locales.map((locale) => (
                   <TabsTrigger
@@ -183,30 +183,7 @@ export default function ContentDocumentPage({
             </Tabs>
           ) : null}
 
-          <div className="flex items-center gap-3">
-            <div className="flex -space-x-2">
-              {presenceUsers.map((user, index) => (
-                <Tooltip key={user.id}>
-                  <TooltipTrigger asChild>
-                    <Avatar
-                      className="h-7 w-7 border-2 border-background"
-                      style={{
-                        borderColor: ["#FD6127", "#22C55E", "#3B82F6"][index],
-                      }}
-                    >
-                      <AvatarFallback className="text-xs">
-                        {user.name
-                          .split(" ")
-                          .map((name) => name[0])
-                          .join("")}
-                      </AvatarFallback>
-                    </Avatar>
-                  </TooltipTrigger>
-                  <TooltipContent>{user.name} - viewing</TooltipContent>
-                </Tooltip>
-              ))}
-            </div>
-
+          <div className="ml-auto flex shrink-0 items-center gap-3">
             {document.status === "published" ? (
               <Button variant="ghost" size="sm">
                 Unpublish
@@ -280,8 +257,11 @@ export default function ContentDocumentPage({
           </div>
         </header>
 
-        <div className="flex flex-1 overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+          <div
+            data-mdcms-editor-pane="canvas"
+            className="min-w-0 flex-1 overflow-y-auto p-6"
+          >
             <div className="mx-auto max-w-4xl">
               <TipTapEditor
                 content={draftBody}
@@ -295,7 +275,7 @@ export default function ContentDocumentPage({
           </div>
 
           {sidebarOpen ? (
-            <div className="w-80 shrink-0">
+            <div data-mdcms-editor-pane="sidebar" className="w-80 shrink-0">
               <EditorSidebar
                 document={document}
                 mdxPropsPanel={

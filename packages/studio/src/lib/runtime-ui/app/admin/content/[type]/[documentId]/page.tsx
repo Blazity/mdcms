@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import { Button } from "../../../../../components/ui/button";
 import { Badge } from "../../../../../components/ui/badge";
-import { Avatar, AvatarFallback } from "../../../../../components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,12 +43,8 @@ import {
 } from "../../../../../components/ui/tooltip";
 import { TipTapEditor } from "../../../../../components/editor/tiptap-editor";
 import { EditorSidebar } from "../../../../../components/editor/editor-sidebar";
-import { PageHeader } from "../../../../../components/layout/page-header";
-import {
-  mockDocuments,
-  mockContentTypes,
-  mockUsers,
-} from "../../../../../lib/mock-data";
+import { BreadcrumbTrail } from "../../../../../components/layout/page-header";
+import { mockDocuments, mockContentTypes } from "../../../../../lib/mock-data";
 import { cn } from "../../../../../lib/utils";
 
 const statusConfig = {
@@ -86,9 +81,6 @@ export default function DocumentEditorPage() {
     document?.locale || "en-US",
   );
 
-  // Simulate presence - other users viewing/editing
-  const presenceUsers = mockUsers.filter((u) => u.isOnline).slice(0, 3);
-
   if (!contentType || !document) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -116,12 +108,16 @@ export default function DocumentEditorPage() {
 
   return (
     <TooltipProvider>
-      <div className="flex h-screen flex-col">
+      <div
+        data-mdcms-editor-layout="document"
+        className="flex h-screen min-w-0 flex-col overflow-x-hidden"
+      >
         {/* Editor Header */}
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-background px-4">
+        <header className="sticky top-0 z-30 flex min-w-0 flex-wrap items-center gap-3 border-b border-border bg-background px-4 py-3">
           {/* Left side - Breadcrumb + Save status */}
-          <div className="flex items-center gap-4">
-            <PageHeader
+          <div className="flex min-w-0 flex-1 items-center gap-4">
+            <BreadcrumbTrail
+              className="flex-1"
               breadcrumbs={[
                 { label: "Content", href: "/admin/content" },
                 { label: contentType.name, href: `/admin/content/${typeId}` },
@@ -130,7 +126,7 @@ export default function DocumentEditorPage() {
             />
 
             {/* Auto-save indicator */}
-            <div className="flex items-center gap-1.5 text-sm">
+            <div className="flex shrink-0 items-center gap-1.5 text-sm">
               {saveStatus === "saved" && (
                 <>
                   <Check className="h-4 w-4 text-success" />
@@ -153,7 +149,11 @@ export default function DocumentEditorPage() {
 
           {/* Center - Locale switcher */}
           {contentType.localized && contentType.locales && (
-            <Tabs value={selectedLocale} onValueChange={setSelectedLocale}>
+            <Tabs
+              value={selectedLocale}
+              onValueChange={setSelectedLocale}
+              className="shrink-0"
+            >
               <TabsList className="bg-transparent">
                 {contentType.locales.map((locale) => (
                   <TabsTrigger
@@ -172,31 +172,7 @@ export default function DocumentEditorPage() {
           )}
 
           {/* Right side - Actions */}
-          <div className="flex items-center gap-3">
-            {/* Presence avatars */}
-            <div className="flex -space-x-2">
-              {presenceUsers.map((user, index) => (
-                <Tooltip key={user.id}>
-                  <TooltipTrigger asChild>
-                    <Avatar
-                      className="h-7 w-7 border-2 border-background"
-                      style={{
-                        borderColor: ["#FD6127", "#22C55E", "#3B82F6"][index],
-                      }}
-                    >
-                      <AvatarFallback className="text-xs">
-                        {user.name
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")}
-                      </AvatarFallback>
-                    </Avatar>
-                  </TooltipTrigger>
-                  <TooltipContent>{user.name} - viewing</TooltipContent>
-                </Tooltip>
-              ))}
-            </div>
-
+          <div className="ml-auto flex shrink-0 items-center gap-3">
             {/* Unpublish button (only if published) */}
             {document.status === "published" && (
               <Button variant="ghost" size="sm">
@@ -276,9 +252,12 @@ export default function DocumentEditorPage() {
         </header>
 
         {/* Main content area */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
           {/* Editor area */}
-          <div className="flex-1 overflow-y-auto p-6">
+          <div
+            data-mdcms-editor-pane="canvas"
+            className="min-w-0 flex-1 overflow-y-auto p-6"
+          >
             <div className="mx-auto max-w-4xl">
               <TipTapEditor onChange={handleContentChange} />
             </div>
@@ -286,7 +265,7 @@ export default function DocumentEditorPage() {
 
           {/* Sidebar */}
           {sidebarOpen && (
-            <div className="w-80 shrink-0">
+            <div data-mdcms-editor-pane="sidebar" className="w-80 shrink-0">
               <EditorSidebar document={document} />
             </div>
           )}

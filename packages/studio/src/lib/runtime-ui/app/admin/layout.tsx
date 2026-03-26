@@ -27,11 +27,11 @@ export default function AdminLayout({
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen overflow-x-hidden bg-background">
       <AppSidebar collapsed={sidebarCollapsed} onToggle={handleToggle} />
       <main
         className={cn(
-          "min-h-screen transition-all duration-300",
+          "min-h-screen min-w-0 overflow-x-hidden transition-all duration-300",
           sidebarCollapsed ? "ml-16" : "ml-60",
         )}
       >

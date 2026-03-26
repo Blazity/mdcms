@@ -230,6 +230,34 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
   assert.match(markup, /data-mdcms-mdx-auto-control="JsonOnly:options:json"/);
 });
 
+test("RemoteStudioApp keeps the editor route chrome truthful and width-constrained", () => {
+  const context: StudioMountContext = {
+    apiBaseUrl: "http://localhost:4000",
+    basePath: "/admin",
+    auth: { mode: "cookie" },
+    hostBridge: {
+      version: "1",
+      resolveComponent: () => null,
+      renderMdxPreview: () => () => {},
+    },
+  };
+
+  const markup = renderToStaticMarkup(
+    createElement(RemoteStudioApp, {
+      context,
+      initialPathname: "/admin/content/blogpost/1",
+      initialActions: [],
+    }),
+  );
+
+  assert.match(markup, /data-mdcms-editor-layout="document"/);
+  assert.match(markup, /data-mdcms-editor-pane="canvas"/);
+  assert.match(markup, /overflow-x-hidden/);
+  assert.doesNotMatch(markup, /Search \(Cmd\+K\)/);
+  assert.doesNotMatch(markup, /Notifications/);
+  assert.doesNotMatch(markup, /- viewing/);
+});
+
 test("RemoteStudioApp renders the expanded admin route surfaces", () => {
   const context: StudioMountContext = {
     apiBaseUrl: "http://localhost:4000",

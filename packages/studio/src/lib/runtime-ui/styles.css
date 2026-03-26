@@ -148,6 +148,8 @@
 
   .mdcms-studio-runtime {
     min-height: 100vh;
+    min-width: 0;
+    overflow-x: hidden;
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
     background:

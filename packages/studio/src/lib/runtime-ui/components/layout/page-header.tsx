@@ -46,10 +46,12 @@ import {
 } from "../../lib/mock-data";
 import { useState } from "react";
 
+export type BreadcrumbItem = { label: string; href?: string };
+
 // Page Title Section Components
 interface PageTitleSectionProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
-  breadcrumbs?: { label: string; href?: string }[];
+  breadcrumbs?: BreadcrumbItem[];
 }
 
 export function PageHeader({
@@ -113,7 +115,40 @@ export function PageHeaderActions({
 
 // App Header (breadcrumb navigation bar)
 interface AppHeaderProps {
-  breadcrumbs?: { label: string; href?: string }[];
+  breadcrumbs?: BreadcrumbItem[];
+}
+
+export function BreadcrumbTrail({
+  breadcrumbs = [],
+  className,
+}: {
+  breadcrumbs?: BreadcrumbItem[];
+  className?: string;
+}) {
+  return (
+    <nav className={cn("flex min-w-0 items-center gap-1.5", className)}>
+      {breadcrumbs.map((crumb, index) => (
+        <div
+          key={`${crumb.label}-${index}`}
+          className="flex min-w-0 items-center gap-1.5"
+        >
+          {index > 0 && (
+            <ChevronRight className="h-4 w-4 shrink-0 text-foreground-muted" />
+          )}
+          {crumb.href && index < breadcrumbs.length - 1 ? (
+            <Link
+              href={crumb.href}
+              className="truncate text-sm text-foreground-muted transition-colors hover:text-foreground"
+            >
+              {crumb.label}
+            </Link>
+          ) : (
+            <span className="truncate text-sm font-medium">{crumb.label}</span>
+          )}
+        </div>
+      ))}
+    </nav>
+  );
 }
 
 export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
@@ -135,25 +170,7 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
     <TooltipProvider>
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-background px-6">
         {/* Left side - Breadcrumbs */}
-        <nav className="flex items-center gap-1.5">
-          {breadcrumbs.map((crumb, index) => (
-            <div key={index} className="flex items-center gap-1.5">
-              {index > 0 && (
-                <ChevronRight className="h-4 w-4 text-foreground-muted" />
-              )}
-              {crumb.href && index < breadcrumbs.length - 1 ? (
-                <Link
-                  href={crumb.href}
-                  className="text-sm text-foreground-muted hover:text-foreground transition-colors"
-                >
-                  {crumb.label}
-                </Link>
-              ) : (
-                <span className="text-sm font-medium">{crumb.label}</span>
-              )}
-            </div>
-          ))}
-        </nav>
+        <BreadcrumbTrail breadcrumbs={breadcrumbs} />
 
         {/* Right side - Controls */}
         <div className="flex items-center gap-3">
