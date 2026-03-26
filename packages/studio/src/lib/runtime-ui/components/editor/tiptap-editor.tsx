@@ -1,7 +1,13 @@
 // @ts-nocheck
 "use client";
 
-import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import type { StudioMountContext } from "@mdcms/shared";
 import { EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
@@ -37,6 +43,11 @@ import {
 } from "./mdx-component-catalog.js";
 import { MdxComponentPicker } from "./mdx-component-picker.js";
 import { type MdxPropsPanelSelection } from "./mdx-props-panel.js";
+import {
+  createPublishedMdxComponentSelectionSnapshot,
+  hasPublishedMdxComponentSelectionChanged,
+  type PublishedMdxComponentSelectionSnapshot,
+} from "./mdx-component-panel-selection.js";
 import {
   getSelectedMdxComponent,
   selectAdjacentMdxComponent,
@@ -145,6 +156,8 @@ export function TipTapEditor({
   );
   const [slashTrigger, setSlashTrigger] =
     useState<MdxComponentSlashTrigger | null>(null);
+  const lastPublishedSelectionRef =
+    useRef<PublishedMdxComponentSelectionSnapshot | null>(null);
   const handleEditorUpdate = useEffectEvent((nextEditor) => {
     onChange?.(extractMarkdownFromEditor(nextEditor));
   });
@@ -166,15 +179,38 @@ export function TipTapEditor({
   });
   const publishSelectedMdxComponent = useEffectEvent((nextEditor) => {
     if (!onActiveMdxComponentChange) {
+      lastPublishedSelectionRef.current = null;
       return;
     }
 
     const selected = getSelectedMdxComponent(nextEditor, catalogComponents);
 
     if (!selected) {
+      if (lastPublishedSelectionRef.current === null) {
+        return;
+      }
+
+      lastPublishedSelectionRef.current = null;
       onActiveMdxComponentChange(null);
       return;
     }
+
+    const nextSnapshot = createPublishedMdxComponentSelectionSnapshot({
+      selected,
+      readOnly,
+      forbidden,
+    });
+
+    if (
+      !hasPublishedMdxComponentSelectionChanged(
+        lastPublishedSelectionRef.current,
+        nextSnapshot,
+      )
+    ) {
+      return;
+    }
+
+    lastPublishedSelectionRef.current = nextSnapshot;
 
     onActiveMdxComponentChange({
       ...selected,
