@@ -89,7 +89,10 @@ export function AdminStudioClient({ config }: { config: MdcmsConfig }) {
     mapped into generated controls
   - `empty` when the component has no editable props
   - `error` when editor resolution fails
-  - `forbidden` when the current session is read-only
+  - `forbidden` when editing is unavailable for the current session
+- `PropsEditorComponent<T>` receives `value: Partial<T>` because component
+  props may still be incomplete during initial insertion. `readOnly` keeps the
+  editor mounted for inspection and blocks mutation through `onChange(...)`.
 - The authored `mdcms.config.ts` object is the source of truth for local MDX
   component metadata and runtime loaders. No backend component sync is
   required.

@@ -34,9 +34,10 @@ import { mockUsers, type Document } from "../../lib/mock-data";
 
 interface EditorSidebarProps {
   document: Document;
+  mdxPropsPanel?: React.ReactNode;
 }
 
-export function EditorSidebar({ document }: EditorSidebarProps) {
+export function EditorSidebar({ document, mdxPropsPanel }: EditorSidebarProps) {
   const [publishDate, setPublishDate] = useState<Date | undefined>(new Date());
   const [formData, setFormData] = useState({
     title: document.title,
@@ -458,6 +459,12 @@ export function EditorSidebar({ document }: EditorSidebarProps) {
             </div>
           </TabsContent>
         </Tabs>
+
+        {mdxPropsPanel ? (
+          <div className="border-t border-border bg-background px-4 py-3">
+            {mdxPropsPanel}
+          </div>
+        ) : null}
       </div>
     </TooltipProvider>
   );

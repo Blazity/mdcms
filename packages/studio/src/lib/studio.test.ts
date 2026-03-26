@@ -177,7 +177,9 @@ test("Studio exports generic custom props editor authoring types", () => {
       onChange,
       readOnly,
     }) => {
-      const tierName: string = value.tiers[0]!.name;
+      // @ts-expect-error value may be partial during initial insertion
+      const unsafeTierName: string = value.tiers[0]!.name;
+      const tierName: string = value.tiers?.[0]?.name ?? "Starter";
       onChange({
         tiers: [{ name: tierName, price: 10 }],
       });
@@ -186,6 +188,7 @@ test("Studio exports generic custom props editor authoring types", () => {
         return null;
       }
 
+      void unsafeTierName;
       return null;
     };
 

@@ -208,7 +208,7 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
   const markup = renderToStaticMarkup(
     createElement(RemoteStudioApp, {
       context,
-      initialPathname: "/admin/content/posts/entry-1",
+      initialPathname: "/admin/content/blogpost/1",
       initialActions,
     }),
   );
@@ -222,13 +222,16 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
   assert.match(markup, /data-mdcms-mdx-component="Chart"/);
   assert.match(markup, /data-mdcms-mdx-component="JsonOnly"/);
   assert.match(markup, /data-mdcms-mdx-component="PricingTable"/);
+  assert.match(markup, /data-mdcms-mdx-props-panel="PricingTable"/);
+  assert.match(
+    markup,
+    /data-mdcms-mdx-props-editor-state="PricingTable:loading"/,
+  );
   assert.match(markup, /data-mdcms-mdx-auto-form="Chart"/);
   assert.match(markup, /data-mdcms-mdx-auto-control="Chart:title:textarea"/);
   assert.match(markup, /data-mdcms-mdx-auto-control="Chart:website:url"/);
   assert.match(markup, /data-mdcms-mdx-auto-form="JsonOnly"/);
   assert.match(markup, /data-mdcms-mdx-auto-control="JsonOnly:options:json"/);
-  assert.match(markup, /data-mdcms-mdx-props-editor="PricingTable"/);
-  assert.doesNotMatch(markup, /PricingTable:loading/);
 });
 
 test("RemoteStudioApp renders the expanded admin route surfaces", () => {

@@ -29,7 +29,7 @@ type MatchableRoute = {
 };
 
 type StudioRuntimeRouteDefinition = MatchableRoute & {
-  render: () => ReactNode;
+  render: (context: StudioMountContext) => ReactNode;
 };
 
 const RUNTIME_ROUTES: readonly StudioRuntimeRouteDefinition[] = [
@@ -51,7 +51,7 @@ const RUNTIME_ROUTES: readonly StudioRuntimeRouteDefinition[] = [
   {
     id: "content.document",
     path: "/content/:type/:documentId",
-    render: () => <ContentDocumentPage />,
+    render: (context) => <ContentDocumentPage context={context} />,
   },
   {
     id: "environments",
@@ -284,6 +284,7 @@ function getGeneratedAutoFormFields(
 
 function renderRouteContent(
   route: StudioRuntimeRouteDefinition | undefined,
+  context: StudioMountContext,
 ): ReactNode {
   if (!route) {
     return (
@@ -291,7 +292,7 @@ function renderRouteContent(
     );
   }
 
-  return route.render();
+  return route.render(context);
 }
 
 const visuallyHiddenStyles = {
@@ -328,8 +329,8 @@ function RuntimeDocumentDiagnostics(props: {
           <div key={component.name} data-mdcms-mdx-component={component.name}>
             <span>{component.name}</span>
             {component.propsEditor ? (
-              <span data-mdcms-mdx-props-editor={component.name}>
-                Custom editor
+              <span data-mdcms-mdx-props-editor-configured={component.name}>
+                Custom editor configured
               </span>
             ) : (
               (() => {
@@ -507,7 +508,7 @@ export function RemoteStudioApp({
           className="mdcms-studio-runtime"
         >
           <AdminLayout>
-            {renderRouteContent(activeRoute)}
+            {renderRouteContent(activeRoute, context)}
             {activeRoute?.id === "content.document" ? (
               <RuntimeDocumentDiagnostics
                 context={context}

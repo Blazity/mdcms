@@ -19,11 +19,11 @@ type MdxCatalogComponent = NonNullable<
 
 export type PropsEditorValue = Record<string, unknown>;
 export type PropsEditorChangeHandler<TValue extends object = PropsEditorValue> =
-  (nextValue: TValue) => void;
+  (nextValue: Partial<TValue>) => void;
 export type PropsEditorComponentProps<
   TValue extends object = PropsEditorValue,
 > = {
-  value: TValue;
+  value: Partial<TValue>;
   onChange: PropsEditorChangeHandler<TValue>;
   readOnly: boolean;
 };
@@ -97,6 +97,8 @@ export type MdxPropsEditorHostProps = {
   component: MdxCatalogComponent;
   context: StudioMountContext;
   initialValue?: PropsEditorValue;
+  value?: PropsEditorValue;
+  onChange?: PropsEditorChangeHandler;
   readOnly?: boolean;
   forbidden?: boolean;
 };
@@ -174,6 +176,8 @@ export function MdxPropsEditorHost({
   component,
   context,
   initialValue,
+  value: controlledValue,
+  onChange,
   readOnly = false,
   forbidden = false,
 }: MdxPropsEditorHostProps) {
@@ -185,13 +189,19 @@ export function MdxPropsEditorHost({
       forbidden,
     }),
   );
-  const [value, setValue] = useState<PropsEditorValue>(
+  const [uncontrolledValue, setUncontrolledValue] = useState<PropsEditorValue>(
     () => initialValue ?? {},
   );
+  const value = controlledValue ?? uncontrolledValue;
+  const handleChange = onChange ?? setUncontrolledValue;
 
   useEffect(() => {
-    setValue(initialValue ?? {});
-  }, [component.name, initialValue]);
+    if (controlledValue !== undefined) {
+      return;
+    }
+
+    setUncontrolledValue(initialValue ?? {});
+  }, [component.name, controlledValue, initialValue]);
 
   useEffect(() => {
     let cancelled = false;
@@ -230,7 +240,7 @@ export function MdxPropsEditorHost({
     case "ready": {
       const bindings = createMdxPropsEditorBindings({
         value,
-        onChange: setValue,
+        onChange: handleChange,
         readOnly,
       });
 

@@ -3,8 +3,11 @@
 
 import { useState } from "react";
 
+import type { StudioMountContext } from "@mdcms/shared";
+
 import { useParams, useRouter } from "../adapters/next-navigation";
 import { EditorSidebar } from "../components/editor/editor-sidebar";
+import { MdxPropsPanel } from "../components/editor/mdx-props-panel";
 import { TipTapEditor } from "../components/editor/tiptap-editor";
 import { PageHeader } from "../components/layout/page-header";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
@@ -64,7 +67,11 @@ const statusConfig = {
   },
 };
 
-export default function ContentDocumentPage() {
+export default function ContentDocumentPage({
+  context,
+}: {
+  context?: StudioMountContext;
+}) {
   const params = useParams();
   const router = useRouter();
   const typeId = params.type as string;
@@ -268,7 +275,12 @@ export default function ContentDocumentPage() {
 
           {sidebarOpen ? (
             <div className="w-80 shrink-0">
-              <EditorSidebar document={document} />
+              <EditorSidebar
+                document={document}
+                mdxPropsPanel={
+                  context?.mdx ? <MdxPropsPanel context={context} /> : undefined
+                }
+              />
             </div>
           ) : null}
         </div>
