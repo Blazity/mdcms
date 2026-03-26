@@ -6,6 +6,7 @@ This sample app exists for CMS-47 verification.
 
 - Demonstrate host app embedding of `@mdcms/studio` at a catch-all route.
 - Provide a deterministic smoke target for CI (`/admin/*` route boot).
+- Provide a local MDX component registration surface for Studio editor testing.
 
 ## Routes
 
@@ -95,8 +96,16 @@ Notes:
 - `apps/studio-example/mdcms.config.ts` includes ready `types` mappings for
   `post`, `author`, and `page`, and uses the shared `defineConfig(...)`
   contract from `@mdcms/cli`, so `pull/push` path mapping works out of the box.
+- `apps/studio-example/mdcms.config.ts` also registers example local MDX
+  components (`Chart`, `Callout`, `PricingTable`) for Studio insertion,
+  preview, and props-panel testing.
+- `/admin/*` prepares the full Studio config through
+  `prepareStudioConfig(...)`, so the embedded Studio runtime receives local MDX
+  component metadata, extracted props, and custom props editor loaders.
 - `compose:dev` seeds example content in `marketing-site/staging` (posts/pages),
   so first `mdcms pull` returns real files immediately.
+- `/demo/content*` remains a raw-content inspection surface and does not render
+  those MDX components.
 
 Current demo-track limitation:
 
