@@ -1,7 +1,14 @@
 "use client";
 
-import type { ReactNode } from "react";
+import {
+  createElement,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
+import type { StudioMountContext } from "@mdcms/shared";
 import type { ReactNodeViewProps } from "@tiptap/react";
 import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
 
@@ -38,6 +45,10 @@ export function MdxComponentNodeFrame(props: {
   componentName: string;
   isVoid: boolean;
   propsSummary: string;
+  previewState?: "ready" | "empty" | "error";
+  previewSurface?: ReactNode;
+  readOnly?: boolean;
+  forbidden?: boolean;
   children?: ReactNode;
 }) {
   return (
@@ -60,7 +71,24 @@ export function MdxComponentNodeFrame(props: {
         </Badge>
       </div>
 
-      <div className="px-3 py-3">
+      <div className="space-y-3 px-3 py-3">
+        <div
+          data-mdcms-mdx-preview-state={props.previewState ?? "empty"}
+          className="relative min-h-[4.5rem] rounded-md border border-border bg-background px-3 py-3"
+        >
+          {props.previewSurface}
+          {props.previewState === "empty" ? (
+            <p className="text-xs text-foreground-muted">
+              Local preview unavailable.
+            </p>
+          ) : null}
+          {props.previewState === "error" ? (
+            <p className="text-xs text-destructive">
+              Preview failed to render.
+            </p>
+          ) : null}
+        </div>
+
         {props.isVoid ? (
           <p className="text-xs text-foreground-muted">
             Self-closing component
@@ -68,20 +96,126 @@ export function MdxComponentNodeFrame(props: {
         ) : (
           props.children
         )}
+
+        {props.forbidden ? (
+          <p className="text-xs text-foreground-muted">
+            Editing is unavailable.
+          </p>
+        ) : props.readOnly ? (
+          <p className="text-xs text-foreground-muted">Read-only preview.</p>
+        ) : null}
       </div>
     </div>
   );
 }
 
-export function MdxComponentNodeView(props: ReactNodeViewProps) {
+export function createMdxComponentPreviewProps(input: {
+  props: Record<string, unknown>;
+  isVoid: boolean;
+  childrenHtml?: string;
+}): Record<string, unknown> {
+  if (input.isVoid) {
+    return input.props;
+  }
+
+  const childrenHtml = input.childrenHtml?.trim() ?? "";
+
+  if (childrenHtml.length === 0) {
+    return input.props;
+  }
+
+  return {
+    ...input.props,
+    children: createElement("div", {
+      dangerouslySetInnerHTML: {
+        __html: childrenHtml,
+      },
+    }),
+  };
+}
+
+function getMdxComponentPreviewChildrenHtml(
+  container: HTMLDivElement | null,
+): string | undefined {
+  if (!container) {
+    return undefined;
+  }
+
+  if (container.firstElementChild instanceof HTMLElement) {
+    return container.firstElementChild.innerHTML;
+  }
+
+  return container.innerHTML;
+}
+
+export function MdxComponentNodeView(
+  props: ReactNodeViewProps & {
+    context?: StudioMountContext;
+    readOnly?: boolean;
+    forbidden?: boolean;
+  },
+) {
   const componentName =
     typeof props.node.attrs.componentName === "string"
       ? props.node.attrs.componentName
       : "Component";
   const isVoid = props.node.attrs.isVoid === true;
-  const propsSummary = formatPropsSummary(
-    props.node.attrs.props as Record<string, unknown> | undefined,
+  const previewContainerRef = useRef<HTMLDivElement | null>(null);
+  const contentContainerRef = useRef<HTMLDivElement | null>(null);
+  const [previewState, setPreviewState] = useState<"ready" | "empty" | "error">(
+    "empty",
   );
+  const mdxProps =
+    (props.node.attrs.props as Record<string, unknown> | undefined) ?? {};
+  const serializedPreviewProps = JSON.stringify(mdxProps);
+  const serializedChildren = JSON.stringify(props.node.content.toJSON());
+  const propsSummary = formatPropsSummary(mdxProps);
+
+  useEffect(() => {
+    const container = previewContainerRef.current;
+
+    if (!container || !props.context) {
+      setPreviewState("empty");
+      return;
+    }
+
+    if (props.context.hostBridge.resolveComponent(componentName) == null) {
+      setPreviewState("empty");
+      return;
+    }
+
+    try {
+      const previewProps = createMdxComponentPreviewProps({
+        props: mdxProps,
+        isVoid,
+        childrenHtml: getMdxComponentPreviewChildrenHtml(
+          contentContainerRef.current,
+        ),
+      });
+      const cleanup = props.context.hostBridge.renderMdxPreview({
+        container,
+        componentName,
+        props: previewProps,
+        key: `mdx-component:${componentName}:${serializedPreviewProps}:${serializedChildren}`,
+      });
+
+      setPreviewState("ready");
+
+      return () => {
+        cleanup();
+      };
+    } catch {
+      setPreviewState("error");
+      return;
+    }
+  }, [
+    componentName,
+    isVoid,
+    mdxProps,
+    props.context,
+    serializedChildren,
+    serializedPreviewProps,
+  ]);
 
   return (
     <NodeViewWrapper as="div">
@@ -89,11 +223,23 @@ export function MdxComponentNodeView(props: ReactNodeViewProps) {
         componentName={componentName}
         isVoid={isVoid}
         propsSummary={propsSummary}
+        previewState={previewState}
+        previewSurface={
+          <div
+            ref={previewContainerRef}
+            data-mdcms-mdx-preview-surface={componentName}
+            className={previewState === "ready" ? "min-h-[3rem]" : "hidden"}
+          />
+        }
+        readOnly={props.readOnly}
+        forbidden={props.forbidden}
       >
-        <NodeViewContent
-          as="div"
-          className="prose prose-sm max-w-none min-h-[3rem] rounded-md border border-border bg-background px-3 py-3 text-sm"
-        />
+        <div ref={contentContainerRef}>
+          <NodeViewContent
+            as="div"
+            className="prose prose-sm max-w-none min-h-[3rem] rounded-md border border-border bg-background px-3 py-3 text-sm"
+          />
+        </div>
       </MdxComponentNodeFrame>
     </NodeViewWrapper>
   );

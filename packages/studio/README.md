@@ -174,6 +174,34 @@ export function AdminStudioClient({ config }: { config: MdcmsConfig }) {
   pipeline as the surrounding markdown, which keeps autosave and future
   collaboration wiring on one draft body string.
 
+## MDX Component Node Views (CMS-74)
+
+- The editor now supports two insertion entrypoints for local MDX components:
+  - the `Insert Component` toolbar action
+  - `/` slash-triggered insertion inside markdown text blocks
+- Both entrypoints use the same local MDX catalog derived from the host config.
+- Inserted components continue to use one generic `mdxComponent` node in the
+  TipTap schema; the runtime distinguishes:
+  - `Void` components rendered as self-closing tags
+  - `Wrapper` components rendered with opening/closing tags and nested rich
+    text content
+- Wrapper insertions seed an editable nested block, but empty wrapper bodies now
+  serialize back to clean MDX without placeholder `&nbsp;` output.
+- The sidebar MDX props panel is selection-bound:
+  - no component selected -> idle state
+  - selected component missing from local catalog -> unresolved state
+  - selected component with custom editor -> existing async custom-editor
+    lifecycle applies
+  - selected component without custom editor -> auto-form fallback applies
+- Auto-form generation for wrapper components excludes the `children` rich-text
+  prop from the props panel because nested content is edited directly inside the
+  node view.
+- Inline preview now renders through the host bridge inside each node view using
+  `hostBridge.renderMdxPreview(...)`, with deterministic fallback copy when the
+  local host app cannot resolve that component.
+- Read-only / forbidden editor states keep preview visible while blocking
+  insertion and prop mutation.
+
 ## Action Catalog Adapter (CMS-5)
 
 - Import path: `@mdcms/studio/action-catalog-adapter`

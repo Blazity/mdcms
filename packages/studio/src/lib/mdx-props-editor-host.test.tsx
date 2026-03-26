@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import type { StudioMountContext } from "@mdcms/shared";
 
 import {
   createInitialMdxPropsEditorHostState,
   createMdxPropsEditorBindings,
+  MdxPropsEditorHost,
   resolveMdxPropsEditorHostState,
   type PropsEditorComponentProps,
 } from "./mdx-props-editor-host.js";
@@ -109,6 +112,33 @@ test("resolveMdxPropsEditorHostState falls back to auto-form fields when no cust
   });
 });
 
+test("resolveMdxPropsEditorHostState omits nested rich-text children from auto-form fallback fields", async () => {
+  const state = await resolveMdxPropsEditorHostState({
+    component: createComponent({
+      name: "Callout",
+      propsEditor: "@/components/mdx/Callout.editor",
+      extractedProps: {
+        tone: { type: "enum", required: false, values: ["info", "warning"] },
+        children: { type: "rich-text", required: false },
+      },
+    }),
+    context: createContext(async () => null),
+    readOnly: false,
+  });
+
+  assert.deepEqual(state, {
+    status: "auto-form",
+    fields: [
+      {
+        name: "tone",
+        control: "select",
+        required: false,
+        options: ["info", "warning"],
+      },
+    ],
+  });
+});
+
 test("resolveMdxPropsEditorHostState returns empty when no editor or auto-form controls exist", async () => {
   const state = await resolveMdxPropsEditorHostState({
     component: createComponent({
@@ -186,4 +216,39 @@ test("createMdxPropsEditorBindings suppresses mutation in read-only mode", () =>
 
   assert.deepEqual(changes, []);
   assert.equal(bindings.readOnly, true);
+});
+
+test("MdxPropsEditorHost renders interactive auto-form controls for fallback props editing", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MdxPropsEditorHost, {
+      component: createComponent({
+        propHints: {
+          title: { widget: "textarea" },
+        },
+        extractedProps: {
+          title: { type: "string", required: false },
+          published: { type: "boolean", required: false },
+          variant: {
+            type: "enum",
+            required: false,
+            values: ["info", "warning"],
+          },
+        },
+      }),
+      context: createContext(async () => null),
+      value: {
+        title: "Launch copy",
+        published: true,
+        variant: "warning",
+      },
+      onChange: () => {},
+    }),
+  );
+
+  assert.match(markup, /data-mdcms-mdx-auto-form="Chart"/);
+  assert.match(markup, /textarea/);
+  assert.match(markup, /data-mdcms-mdx-auto-control="Chart:published:boolean"/);
+  assert.match(markup, /type="checkbox"/);
+  assert.match(markup, /data-mdcms-mdx-auto-control="Chart:variant:select"/);
+  assert.match(markup, /<select/);
 });

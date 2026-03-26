@@ -593,7 +593,17 @@ function renderMdxComponentMarkdown(
   const attrSegment = serializedProps.length > 0 ? ` ${serializedProps}` : "";
 
   if (isVoid) {
+    if (hasMeaningfulMdxComponentChildren(node.content)) {
+      throw new Error(
+        `Void MDX component "${componentName}" cannot serialize with child content.`,
+      );
+    }
+
     return `<${componentName}${attrSegment} />`;
+  }
+
+  if (hasOnlyEmptyParagraphChild(node.content)) {
+    return `<${componentName}${attrSegment}></${componentName}>`;
   }
 
   if (childrenMarkdown.trim().length === 0) {
@@ -601,6 +611,28 @@ function renderMdxComponentMarkdown(
   }
 
   return `<${componentName}${attrSegment}>\n${childrenMarkdown}\n</${componentName}>`;
+}
+
+function hasOnlyEmptyParagraphChild(
+  content: JSONContent[] | undefined,
+): boolean {
+  if (content?.length !== 1) {
+    return false;
+  }
+
+  const [child] = content;
+
+  return child?.type === "paragraph" && (child.content?.length ?? 0) === 0;
+}
+
+function hasMeaningfulMdxComponentChildren(
+  content: JSONContent[] | undefined,
+): boolean {
+  return (
+    Array.isArray(content) &&
+    content.length > 0 &&
+    !hasOnlyEmptyParagraphChild(content)
+  );
 }
 
 export const MdxComponentExtension = Node.create({
@@ -636,16 +668,14 @@ export const MdxComponentExtension = Node.create({
       typeof HTMLAttributes.componentName === "string"
         ? HTMLAttributes.componentName
         : "";
+    const attributes = mergeAttributes(HTMLAttributes, {
+      "data-mdcms-mdx-component": componentName,
+      "data-mdcms-mdx-void": HTMLAttributes.isVoid === true ? "true" : "false",
+    });
 
-    return [
-      "mdx-component",
-      mergeAttributes(HTMLAttributes, {
-        "data-mdcms-mdx-component": componentName,
-        "data-mdcms-mdx-void":
-          HTMLAttributes.isVoid === true ? "true" : "false",
-      }),
-      0,
-    ];
+    return HTMLAttributes.isVoid === true
+      ? ["mdx-component", attributes]
+      : ["mdx-component", attributes, 0];
   },
 
   markdownTokenName: "mdxComponent",

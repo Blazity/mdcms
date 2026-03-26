@@ -101,7 +101,7 @@ export function createEditorToolbarLayout(): EditorToolbarLayout {
       {
         id: "insertComponent",
         label: "Insert Component",
-        availability: "visual-only",
+        availability: "enabled",
       },
     ],
   };

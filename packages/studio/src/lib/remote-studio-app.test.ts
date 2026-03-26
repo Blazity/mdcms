@@ -222,11 +222,7 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
   assert.match(markup, /data-mdcms-mdx-component="Chart"/);
   assert.match(markup, /data-mdcms-mdx-component="JsonOnly"/);
   assert.match(markup, /data-mdcms-mdx-component="PricingTable"/);
-  assert.match(markup, /data-mdcms-mdx-props-panel="PricingTable"/);
-  assert.match(
-    markup,
-    /data-mdcms-mdx-props-editor-state="PricingTable:loading"/,
-  );
+  assert.match(markup, /data-mdcms-mdx-props-panel="idle"/);
   assert.match(markup, /data-mdcms-mdx-auto-form="Chart"/);
   assert.match(markup, /data-mdcms-mdx-auto-control="Chart:title:textarea"/);
   assert.match(markup, /data-mdcms-mdx-auto-control="Chart:website:url"/);

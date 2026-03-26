@@ -1,6 +1,5 @@
 import {
   Component,
-  Fragment,
   createElement,
   useEffect,
   useState,
@@ -30,6 +29,8 @@ export type PropsEditorComponentProps<
 export type PropsEditorComponent<TValue extends object = PropsEditorValue> = (
   props: PropsEditorComponentProps<TValue>,
 ) => ReactNode;
+
+const MDX_CHILDREN_PROP_NAME = "children";
 
 export type MdxPropsEditorHostState =
   | { status: "loading" }
@@ -264,7 +265,13 @@ export function MdxPropsEditorHost({
       );
     }
     case "auto-form":
-      return renderAutoFormFields(component.name, state.fields);
+      return renderAutoFormFields(
+        component.name,
+        state.fields,
+        value,
+        handleChange,
+        readOnly,
+      );
     case "empty":
       return (
         <span data-mdcms-mdx-props-editor-state={`${component.name}:empty`}>
@@ -292,7 +299,11 @@ function createFallbackState(
   const fields = createMdxAutoFormFields(
     component.extractedProps,
     component.propHints,
-  );
+  ).filter((field) => {
+    return !(
+      field.name === MDX_CHILDREN_PROP_NAME && field.control === "rich-text"
+    );
+  });
 
   return fields.length > 0
     ? { status: "auto-form", fields }
@@ -302,18 +313,392 @@ function createFallbackState(
 function renderAutoFormFields(
   componentName: string,
   fields: MdxAutoFormField[],
+  value: PropsEditorValue,
+  onChange: PropsEditorChangeHandler,
+  readOnly: boolean,
 ): ReactNode {
   return (
-    <Fragment>
-      <span data-mdcms-mdx-auto-form={componentName}>Auto form</span>
+    <div data-mdcms-mdx-auto-form={componentName} className="space-y-3">
       {fields.map((field) => (
-        <span
+        <div
           key={`${componentName}:${field.name}:${field.control}`}
-          data-mdcms-mdx-auto-control={`${componentName}:${field.name}:${field.control}`}
-        />
+          className="space-y-2"
+        >
+          <label
+            htmlFor={getAutoFormFieldId(componentName, field.name)}
+            className="block text-xs font-medium text-foreground"
+          >
+            {field.name}
+            {field.required ? (
+              <span className="ml-1 text-destructive">*</span>
+            ) : null}
+          </label>
+          {renderAutoFormFieldControl({
+            componentName,
+            field,
+            value: value[field.name],
+            onChange,
+            readOnly,
+          })}
+        </div>
       ))}
-    </Fragment>
+    </div>
   );
+}
+
+function renderAutoFormFieldControl(input: {
+  componentName: string;
+  field: MdxAutoFormField;
+  value: unknown;
+  onChange: PropsEditorChangeHandler;
+  readOnly: boolean;
+}): ReactNode {
+  const id = getAutoFormFieldId(input.componentName, input.field.name);
+  const controlId = `${input.componentName}:${input.field.name}:${input.field.control}`;
+  const commonProps = {
+    id,
+    disabled: input.readOnly,
+    "data-mdcms-mdx-auto-control": controlId,
+    className:
+      "w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-xs disabled:cursor-not-allowed disabled:opacity-60",
+  } as const;
+
+  switch (input.field.control) {
+    case "text":
+    case "url":
+    case "color-picker":
+    case "date":
+    case "image":
+      return (
+        <input
+          {...commonProps}
+          key={`${controlId}:${String(input.value ?? "")}`}
+          type={getAutoFormInputType(input.field.control)}
+          defaultValue={
+            typeof input.value === "string"
+              ? input.value
+              : String(input.value ?? "")
+          }
+          onChange={(event) => {
+            input.onChange({
+              [input.field.name]:
+                event.currentTarget.value.length > 0
+                  ? event.currentTarget.value
+                  : undefined,
+            });
+          }}
+        />
+      );
+    case "textarea":
+      return (
+        <textarea
+          {...commonProps}
+          key={`${controlId}:${String(input.value ?? "")}`}
+          rows={4}
+          defaultValue={
+            typeof input.value === "string"
+              ? input.value
+              : String(input.value ?? "")
+          }
+          onChange={(event) => {
+            input.onChange({
+              [input.field.name]:
+                event.currentTarget.value.length > 0
+                  ? event.currentTarget.value
+                  : undefined,
+            });
+          }}
+        />
+      );
+    case "number":
+      return (
+        <input
+          {...commonProps}
+          key={`${controlId}:${String(input.value ?? "")}`}
+          type="number"
+          defaultValue={
+            typeof input.value === "number" ? String(input.value) : ""
+          }
+          onChange={(event) => {
+            const nextValue = event.currentTarget.value.trim();
+
+            if (nextValue.length === 0) {
+              input.onChange({ [input.field.name]: undefined });
+              return;
+            }
+
+            const parsedValue = Number(nextValue);
+
+            if (Number.isFinite(parsedValue)) {
+              input.onChange({ [input.field.name]: parsedValue });
+            }
+          }}
+        />
+      );
+    case "slider":
+      return (
+        <div className="space-y-1">
+          <input
+            {...commonProps}
+            key={`${controlId}:${String(input.value ?? input.field.min)}`}
+            type="range"
+            min={input.field.min}
+            max={input.field.max}
+            step={input.field.step}
+            defaultValue={String(
+              typeof input.value === "number" ? input.value : input.field.min,
+            )}
+            onChange={(event) => {
+              input.onChange({
+                [input.field.name]: Number(event.currentTarget.value),
+              });
+            }}
+          />
+          <p className="text-xs text-foreground-muted">
+            Current value:{" "}
+            {typeof input.value === "number" ? input.value : input.field.min}
+          </p>
+        </div>
+      );
+    case "boolean":
+      return (
+        <label className="flex items-center gap-2 text-sm text-foreground">
+          <input
+            id={id}
+            key={`${controlId}:${String(Boolean(input.value))}`}
+            type="checkbox"
+            disabled={input.readOnly}
+            defaultChecked={Boolean(input.value)}
+            data-mdcms-mdx-auto-control={controlId}
+            onChange={(event) => {
+              input.onChange({
+                [input.field.name]: event.currentTarget.checked,
+              });
+            }}
+          />
+          <span>Enabled</span>
+        </label>
+      );
+    case "select": {
+      const selectField = input.field as Extract<
+        MdxAutoFormField,
+        { control: "select" }
+      >;
+
+      return (
+        <select
+          {...commonProps}
+          key={`${controlId}:${serializeAutoFormSelectValue(input.value)}`}
+          defaultValue={serializeAutoFormSelectValue(input.value)}
+          onChange={(event) => {
+            const nextValue = event.currentTarget.value;
+
+            input.onChange({
+              [selectField.name]:
+                nextValue.length > 0
+                  ? parseAutoFormSelectValue(selectField, nextValue)
+                  : undefined,
+            });
+          }}
+        >
+          <option value="">Select…</option>
+          {selectField.options.map((option) => {
+            const value = getAutoFormSelectOptionValue(option);
+
+            return (
+              <option
+                key={`${controlId}:${serializeAutoFormSelectValue(value)}`}
+                value={serializeAutoFormSelectValue(value)}
+              >
+                {getAutoFormSelectOptionLabel(option)}
+              </option>
+            );
+          })}
+        </select>
+      );
+    }
+    case "string-list":
+      return (
+        <textarea
+          {...commonProps}
+          key={`${controlId}:${formatAutoFormListValue(input.value)}`}
+          rows={4}
+          defaultValue={formatAutoFormListValue(input.value)}
+          onChange={(event) => {
+            input.onChange({
+              [input.field.name]: parseAutoFormStringListValue(
+                event.currentTarget.value,
+              ),
+            });
+          }}
+        />
+      );
+    case "number-list":
+      return (
+        <textarea
+          {...commonProps}
+          key={`${controlId}:${formatAutoFormListValue(input.value)}`}
+          rows={4}
+          defaultValue={formatAutoFormListValue(input.value)}
+          onChange={(event) => {
+            const nextValue = event.currentTarget.value.trim();
+
+            if (nextValue.length === 0) {
+              input.onChange({
+                [input.field.name]: undefined,
+              });
+              return;
+            }
+
+            const parsed = parseAutoFormNumberListValue(
+              event.currentTarget.value,
+            );
+
+            if (parsed) {
+              input.onChange({
+                [input.field.name]: parsed,
+              });
+            }
+          }}
+        />
+      );
+    case "json":
+      return (
+        <textarea
+          {...commonProps}
+          key={`${controlId}:${formatAutoFormJsonValue(input.value)}`}
+          rows={6}
+          defaultValue={formatAutoFormJsonValue(input.value)}
+          onChange={(event) => {
+            const nextValue = event.currentTarget.value.trim();
+
+            if (nextValue.length === 0) {
+              input.onChange({ [input.field.name]: undefined });
+              return;
+            }
+
+            try {
+              input.onChange({
+                [input.field.name]: JSON.parse(nextValue),
+              });
+            } catch {
+              return;
+            }
+          }}
+        />
+      );
+    case "rich-text":
+      return (
+        <p
+          data-mdcms-mdx-auto-control={controlId}
+          className="text-xs text-foreground-muted"
+        >
+          Rich-text content is edited inline inside the component block.
+        </p>
+      );
+  }
+}
+
+function getAutoFormFieldId(componentName: string, fieldName: string): string {
+  return `${componentName}-${fieldName}`.replace(/[^A-Za-z0-9_-]/g, "-");
+}
+
+function getAutoFormInputType(
+  control: "text" | "url" | "color-picker" | "date" | "image",
+): string {
+  switch (control) {
+    case "url":
+      return "url";
+    case "color-picker":
+      return "color";
+    case "date":
+      return "date";
+    default:
+      return "text";
+  }
+}
+
+function formatAutoFormListValue(value: unknown): string {
+  return Array.isArray(value)
+    ? value.map((entry) => String(entry)).join("\n")
+    : "";
+}
+
+function parseAutoFormStringListValue(value: string): string[] | undefined {
+  const items = value
+    .split("\n")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  return items.length > 0 ? items : undefined;
+}
+
+function parseAutoFormNumberListValue(value: string): number[] | undefined {
+  const items = value
+    .split("\n")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  if (items.length === 0) {
+    return undefined;
+  }
+
+  const numbers = items.map((entry) => Number(entry));
+
+  return numbers.every((entry) => Number.isFinite(entry)) ? numbers : undefined;
+}
+
+function formatAutoFormJsonValue(value: unknown): string {
+  if (value === undefined) {
+    return "";
+  }
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return "";
+  }
+}
+
+function serializeAutoFormSelectValue(value: unknown): string {
+  switch (typeof value) {
+    case "string":
+      return `string:${value}`;
+    case "number":
+      return `number:${value}`;
+    case "boolean":
+      return `boolean:${value ? "true" : "false"}`;
+    default:
+      return "";
+  }
+}
+
+function parseAutoFormSelectValue(
+  field: Extract<MdxAutoFormField, { control: "select" }>,
+  value: string,
+): string | number | boolean | undefined {
+  const matchedOption = field.options.find((option) => {
+    return (
+      serializeAutoFormSelectValue(getAutoFormSelectOptionValue(option)) ===
+      value
+    );
+  });
+
+  return matchedOption
+    ? getAutoFormSelectOptionValue(matchedOption)
+    : undefined;
+}
+
+function getAutoFormSelectOptionValue(
+  option: Extract<MdxAutoFormField, { control: "select" }>["options"][number],
+): string | number | boolean {
+  return typeof option === "object" ? option.value : option;
+}
+
+function getAutoFormSelectOptionLabel(
+  option: Extract<MdxAutoFormField, { control: "select" }>["options"][number],
+): string {
+  return typeof option === "object" ? option.label : String(option);
 }
 
 function formatPropsEditorError(error: unknown): string {

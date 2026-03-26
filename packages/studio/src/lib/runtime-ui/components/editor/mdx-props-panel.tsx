@@ -1,147 +1,106 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-
 import type { StudioMountContext } from "@mdcms/shared";
 
 import {
   MdxPropsEditorHost,
+  type PropsEditorChangeHandler,
   type PropsEditorValue,
 } from "../../../mdx-props-editor-host.js";
 import { Badge } from "../ui/badge.js";
-import { Label } from "../ui/label.js";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../ui/select.js";
+import { getMdxComponentKind } from "./mdx-component-catalog.js";
 
 type MdxCatalogComponent = NonNullable<
   StudioMountContext["mdx"]
 >["catalog"]["components"][number];
 
-function getDefaultComponentName(components: MdxCatalogComponent[]): string {
-  if (components.length === 0) {
-    return "";
-  }
+export type MdxPropsPanelSelection = {
+  component: MdxCatalogComponent | undefined;
+  componentName: string;
+  isVoid: boolean;
+  props: PropsEditorValue;
+  onPropsChange: PropsEditorChangeHandler;
+  readOnly: boolean;
+  forbidden: boolean;
+};
 
-  return (
-    components.find((component) => component.propsEditor)?.name ??
-    components[0]!.name
-  );
-}
-
-export function MdxPropsPanel({ context }: { context: StudioMountContext }) {
-  const components = context.mdx?.catalog.components ?? [];
-  const [selectedComponentName, setSelectedComponentName] = useState(() =>
-    getDefaultComponentName(components),
-  );
-  const [valuesByComponent, setValuesByComponent] = useState<
-    Record<string, PropsEditorValue>
-  >({});
-
-  useEffect(() => {
-    const nextDefault = getDefaultComponentName(components);
-
-    setSelectedComponentName((currentValue) => {
-      if (
-        currentValue.length > 0 &&
-        components.some((component) => component.name === currentValue)
-      ) {
-        return currentValue;
-      }
-
-      return nextDefault;
-    });
-  }, [components]);
-
-  const selectedComponent = useMemo(
-    () =>
-      components.find(
-        (component) => component.name === selectedComponentName,
-      ) ?? components[0],
-    [components, selectedComponentName],
-  );
-
-  if (!selectedComponent) {
+export function MdxPropsPanel({
+  context,
+  selection,
+}: {
+  context: StudioMountContext;
+  selection: MdxPropsPanelSelection | null;
+}) {
+  if (!selection) {
     return (
-      <section data-mdcms-mdx-props-panel="empty" className="space-y-2">
+      <section data-mdcms-mdx-props-panel="idle" className="space-y-2">
         <div className="space-y-1">
           <p className="text-sm font-medium text-foreground">
             MDX component props
           </p>
           <p className="text-xs text-foreground-muted">
-            No local MDX components registered.
+            Select an MDX component block to inspect or edit its props.
           </p>
         </div>
       </section>
     );
   }
 
-  const selectedValue = valuesByComponent[selectedComponent.name] ?? {};
-
-  return (
-    <section
-      data-mdcms-mdx-props-panel={selectedComponent.name}
-      className="space-y-3"
-    >
-      <div className="flex items-start justify-between gap-3">
+  if (!selection.component) {
+    return (
+      <section data-mdcms-mdx-props-panel="unregistered" className="space-y-2">
         <div className="space-y-1">
           <p className="text-sm font-medium text-foreground">
             MDX component props
           </p>
           <p className="text-xs text-foreground-muted">
-            Runtime proof surface for custom editors and auto-form fallback.
+            {selection.componentName} is not registered in the local MDX
+            component catalog.
           </p>
         </div>
-        <Badge variant="outline" className="text-[10px]">
-          {selectedComponent.propsEditor ? "Custom" : "Auto"}
-        </Badge>
+      </section>
+    );
+  }
+
+  const component = selection.component;
+  const kind = selection.isVoid ? "void" : getMdxComponentKind(component);
+
+  return (
+    <section data-mdcms-mdx-props-panel={component.name} className="space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-foreground">
+            MDX component props
+          </p>
+          <p className="text-xs text-foreground-muted">Selected component</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-[10px]">
+            {kind === "wrapper" ? "Wrapper" : "Void"}
+          </Badge>
+          <Badge variant="outline" className="text-[10px]">
+            {component.propsEditor ? "Custom" : "Auto"}
+          </Badge>
+        </div>
       </div>
 
-      {components.length > 1 ? (
-        <div className="space-y-2">
-          <Label htmlFor="mdx-component-props-panel-select">Component</Label>
-          <Select
-            value={selectedComponent.name}
-            onValueChange={setSelectedComponentName}
-          >
-            <SelectTrigger id="mdx-component-props-panel-select">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {components.map((component) => (
-                <SelectItem key={component.name} value={component.name}>
-                  {component.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      ) : null}
-
-      {selectedComponent.description ? (
-        <p className="text-xs text-foreground-muted">
-          {selectedComponent.description}
-        </p>
-      ) : null}
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-foreground">{component.name}</p>
+        {component.description ? (
+          <p className="text-xs text-foreground-muted">
+            {component.description}
+          </p>
+        ) : null}
+      </div>
 
       <div className="rounded-md border border-border bg-background-subtle p-3">
         <MdxPropsEditorHost
-          component={selectedComponent}
+          component={component}
           context={context}
-          value={selectedValue}
-          onChange={(nextValue) => {
-            setValuesByComponent((currentValues) => ({
-              ...currentValues,
-              [selectedComponent.name]: {
-                ...(currentValues[selectedComponent.name] ?? {}),
-                ...nextValue,
-              },
-            }));
-          }}
+          value={selection.props}
+          onChange={selection.onPropsChange}
+          readOnly={selection.readOnly}
+          forbidden={selection.forbidden}
         />
       </div>
     </section>

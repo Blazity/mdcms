@@ -20,6 +20,7 @@ export type Document = {
   path: string;
   type: string;
   locale: string;
+  body: string;
   status: "published" | "draft" | "changed";
   updatedAt: Date;
   createdAt: Date;
@@ -109,6 +110,18 @@ export const mockUsers: User[] = [
 
 export const currentUser = mockUsers[0];
 
+function createMockDocumentBody(title: string): string {
+  return [
+    `# ${title}`,
+    "",
+    '<HeroBanner title="Launch" />',
+    "",
+    '<Callout type="warning">',
+    "Review this section before publishing.",
+    "</Callout>",
+  ].join("\n");
+}
+
 // Mock Content Types
 export const mockContentTypes: ContentType[] = [
   {
@@ -180,6 +193,7 @@ export const mockDocuments: Document[] = [
     path: "blog/hello-world",
     type: "BlogPost",
     locale: "en-US",
+    body: createMockDocumentBody("Hello World"),
     status: "published",
     updatedAt: new Date(Date.now() - 120000),
     createdAt: new Date(Date.now() - 86400000 * 7),
@@ -192,6 +206,7 @@ export const mockDocuments: Document[] = [
     path: "blog/getting-started",
     type: "BlogPost",
     locale: "en-US",
+    body: createMockDocumentBody("Getting Started Guide"),
     status: "changed",
     updatedAt: new Date(Date.now() - 900000),
     createdAt: new Date(Date.now() - 86400000 * 14),
@@ -206,6 +221,7 @@ export const mockDocuments: Document[] = [
     path: "blog/advanced-techniques",
     type: "BlogPost",
     locale: "en-US",
+    body: createMockDocumentBody("Advanced Techniques"),
     status: "draft",
     updatedAt: new Date(Date.now() - 3600000),
     createdAt: new Date(Date.now() - 86400000 * 2),
@@ -218,6 +234,7 @@ export const mockDocuments: Document[] = [
     path: "pages/about",
     type: "Page",
     locale: "en-US",
+    body: createMockDocumentBody("About Us"),
     status: "published",
     updatedAt: new Date(Date.now() - 86400000),
     createdAt: new Date(Date.now() - 86400000 * 30),
@@ -230,6 +247,7 @@ export const mockDocuments: Document[] = [
     path: "pages/contact",
     type: "Page",
     locale: "en-US",
+    body: createMockDocumentBody("Contact"),
     status: "published",
     updatedAt: new Date(Date.now() - 86400000 * 5),
     createdAt: new Date(Date.now() - 86400000 * 60),
@@ -242,6 +260,7 @@ export const mockDocuments: Document[] = [
     path: "blog/new-feature",
     type: "BlogPost",
     locale: "en-US",
+    body: createMockDocumentBody("New Feature Announcement"),
     status: "draft",
     updatedAt: new Date(Date.now() - 1800000),
     createdAt: new Date(Date.now() - 7200000),
@@ -253,6 +272,7 @@ export const mockDocuments: Document[] = [
     path: "blog/product-launch-2024",
     type: "BlogPost",
     locale: "en-US",
+    body: createMockDocumentBody("Product Launch 2024"),
     status: "changed",
     updatedAt: new Date(Date.now() - 7200000),
     createdAt: new Date(Date.now() - 86400000 * 3),
@@ -265,6 +285,7 @@ export const mockDocuments: Document[] = [
     path: "pages/privacy",
     type: "Page",
     locale: "en-US",
+    body: createMockDocumentBody("Privacy Policy"),
     status: "published",
     updatedAt: new Date(Date.now() - 86400000 * 10),
     createdAt: new Date(Date.now() - 86400000 * 90),

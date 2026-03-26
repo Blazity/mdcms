@@ -21,7 +21,7 @@ test("createEditorToolbarLayout restores the missing toolbar controls in grouped
   assert.equal(layout.secondaryItems[0]?.id, "insertComponent");
 });
 
-test("createEditorToolbarLayout marks not-yet-implemented controls as visual-only", () => {
+test("createEditorToolbarLayout marks only unfinished controls as visual-only", () => {
   const layout = createEditorToolbarLayout();
   const itemById = new Map(
     [
@@ -33,5 +33,5 @@ test("createEditorToolbarLayout marks not-yet-implemented controls as visual-onl
   assert.equal(itemById.get("taskList")?.availability, "enabled");
   assert.equal(itemById.get("horizontalRule")?.availability, "enabled");
   assert.equal(itemById.get("table")?.availability, "visual-only");
-  assert.equal(itemById.get("insertComponent")?.availability, "visual-only");
+  assert.equal(itemById.get("insertComponent")?.availability, "enabled");
 });

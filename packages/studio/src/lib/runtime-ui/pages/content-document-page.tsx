@@ -7,7 +7,10 @@ import type { StudioMountContext } from "@mdcms/shared";
 
 import { useParams, useRouter } from "../adapters/next-navigation";
 import { EditorSidebar } from "../components/editor/editor-sidebar";
-import { MdxPropsPanel } from "../components/editor/mdx-props-panel";
+import {
+  MdxPropsPanel,
+  type MdxPropsPanelSelection,
+} from "../components/editor/mdx-props-panel";
 import { TipTapEditor } from "../components/editor/tiptap-editor";
 import { PageHeader } from "../components/layout/page-header";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
@@ -36,7 +39,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "../components/ui/tooltip";
-import { mockContentTypes, mockDocuments, mockUsers } from "../lib/mock-data";
+import {
+  currentUser,
+  mockContentTypes,
+  mockDocuments,
+  mockUsers,
+} from "../lib/mock-data";
 import { cn } from "../lib/utils";
 import {
   AlertCircle,
@@ -89,6 +97,11 @@ export default function ContentDocumentPage({
   const [selectedLocale, setSelectedLocale] = useState(
     document?.locale || "en-US",
   );
+  const [draftBody, setDraftBody] = useState(document?.body ?? "");
+  const [activeMdxComponent, setActiveMdxComponent] =
+    useState<MdxPropsPanelSelection | null>(null);
+  const isDocumentReadOnly = currentUser.role === "viewer";
+  const isDocumentForbidden = currentUser.role === "viewer";
 
   const presenceUsers = mockUsers.filter((user) => user.isOnline).slice(0, 3);
 
@@ -103,7 +116,8 @@ export default function ContentDocumentPage({
     );
   }
 
-  const handleContentChange = () => {
+  const handleContentChange = (nextBody: string) => {
+    setDraftBody(nextBody);
     setSaveStatus("saving");
 
     setTimeout(() => {
@@ -269,7 +283,14 @@ export default function ContentDocumentPage({
         <div className="flex flex-1 overflow-hidden">
           <div className="flex-1 overflow-y-auto p-6">
             <div className="mx-auto max-w-4xl">
-              <TipTapEditor onChange={handleContentChange} />
+              <TipTapEditor
+                content={draftBody}
+                context={context}
+                onChange={handleContentChange}
+                onActiveMdxComponentChange={setActiveMdxComponent}
+                readOnly={isDocumentReadOnly}
+                forbidden={isDocumentForbidden}
+              />
             </div>
           </div>
 
@@ -278,7 +299,12 @@ export default function ContentDocumentPage({
               <EditorSidebar
                 document={document}
                 mdxPropsPanel={
-                  context?.mdx ? <MdxPropsPanel context={context} /> : undefined
+                  context?.mdx ? (
+                    <MdxPropsPanel
+                      context={context}
+                      selection={activeMdxComponent}
+                    />
+                  ) : undefined
                 }
               />
             </div>
