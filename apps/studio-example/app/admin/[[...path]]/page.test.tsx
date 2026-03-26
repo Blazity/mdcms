@@ -1,8 +1,24 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { resolve } from "node:path";
 
 import { AdminStudioClient } from "../admin-studio-client";
+import { resolveStudioExampleAppRoot } from "../resolve-studio-example-app-root";
 import AdminCatchAllPage from "./page";
+
+test("resolveStudioExampleAppRoot is stable from the workspace root", () => {
+  assert.equal(
+    resolveStudioExampleAppRoot("/workspace"),
+    resolve("/workspace", "apps/studio-example"),
+  );
+});
+
+test("resolveStudioExampleAppRoot does not duplicate the app path", () => {
+  assert.equal(
+    resolveStudioExampleAppRoot("/workspace/apps/studio-example"),
+    "/workspace/apps/studio-example",
+  );
+});
 
 test("admin catch-all page prepares studio config with local MDX metadata", async () => {
   const element = await AdminCatchAllPage();
