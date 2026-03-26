@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { RuntimeError } from "../runtime/error.js";
 import { extractMdxComponentProps } from "./extracted-props.js";
 
 async function withTempDir<T>(
@@ -103,20 +104,27 @@ test("extractMdxComponentProps omits unsupported prop shapes", async () => {
   });
 });
 
-test("extractMdxComponentProps allows json hinted serializable object props", async () => {
+test("extractMdxComponentProps accepts compatible prop hints and preserves extraction output", async () => {
   await withTempDir("mdcms-extracted-props-", async (directory) => {
     const filePath = await writeComponentFile(
       directory,
-      "Panel.tsx",
+      "Hero.tsx",
       `
-        export interface PanelProps {
+        export interface HeroProps {
+          title: string;
+          website?: string;
+          body: string;
+          rating: number;
+          imageRef: string;
+          variant: "primary" | "secondary";
           options: {
             theme: string;
             compact: boolean;
           };
+          hiddenProp: boolean;
         }
 
-        export function Panel(_props: PanelProps) {
+        export function Hero(_props: HeroProps) {
           return null;
         }
       `,
@@ -125,21 +133,46 @@ test("extractMdxComponentProps allows json hinted serializable object props", as
     assert.deepEqual(
       extractMdxComponentProps({
         filePath,
-        componentName: "Panel",
+        componentName: "Hero",
         propHints: {
-          options: {
-            widget: "json",
+          title: { widget: "color-picker" },
+          website: { format: "url" },
+          body: { widget: "textarea" },
+          rating: { widget: "slider", min: 0, max: 10, step: 2 },
+          imageRef: { widget: "image" },
+          variant: {
+            widget: "select",
+            options: [
+              "primary",
+              {
+                label: "Secondary",
+                value: "secondary",
+              },
+            ],
           },
+          options: { widget: "json" },
+          hiddenProp: { widget: "hidden" },
         },
       }),
       {
+        title: { type: "string", required: true },
+        website: { type: "string", required: false, format: "url" },
+        body: { type: "string", required: true },
+        rating: { type: "number", required: true },
+        imageRef: { type: "string", required: true },
+        variant: {
+          type: "enum",
+          required: true,
+          values: ["primary", "secondary"],
+        },
         options: { type: "json", required: true },
+        hiddenProp: { type: "boolean", required: true },
       },
     );
   });
 });
 
-test("extractMdxComponentProps preserves url format hints on string props only", async () => {
+test("extractMdxComponentProps rejects incompatible prop hints deterministically", async () => {
   await withTempDir("mdcms-extracted-props-", async (directory) => {
     const filePath = await writeComponentFile(
       directory,
@@ -153,6 +186,7 @@ test("extractMdxComponentProps preserves url format hints on string props only",
           kind: "bar" | "line";
           tags: string[];
           children: string;
+          handlerMap: Record<string, () => void>;
         }
 
         export function LinkCard(_props: LinkCardProps) {
@@ -161,60 +195,82 @@ test("extractMdxComponentProps preserves url format hints on string props only",
       `,
     );
 
-    assert.deepEqual(
-      extractMdxComponentProps({
-        filePath,
-        componentName: "LinkCard",
-        propHints: {
-          website: { format: "url" },
-          count: { format: "url" },
-          publishedAt: { format: "url" },
-          kind: { format: "url" },
-          tags: { format: "url" },
-          children: { format: "url" },
-          title: { format: "email" },
-        },
-      }),
-      {
-        title: { type: "string", required: true },
-        website: { type: "string", required: false, format: "url" },
-        count: { type: "number", required: true },
-        publishedAt: { type: "date", required: true },
-        kind: { type: "enum", required: true, values: ["bar", "line"] },
-        tags: { type: "array", required: true, items: "string" },
-        children: { type: "rich-text", required: true },
-      },
-    );
-  });
-});
-
-test("extractMdxComponentProps keeps non-serializable json hinted props hidden", async () => {
-  await withTempDir("mdcms-extracted-props-", async (directory) => {
-    const filePath = await writeComponentFile(
-      directory,
-      "UnsafePanel.tsx",
-      `
-        export interface UnsafePanelProps {
-          handlerMap: Record<string, () => void>;
-        }
-
-        export function UnsafePanel(_props: UnsafePanelProps) {
-          return null;
-        }
-      `,
-    );
-
-    assert.deepEqual(
-      extractMdxComponentProps({
-        filePath,
-        componentName: "UnsafePanel",
-        propHints: {
-          handlerMap: {
-            widget: "json",
+    assert.throws(
+      () =>
+        extractMdxComponentProps({
+          filePath,
+          componentName: "LinkCard",
+          propHints: {
+            missing: { widget: "hidden" },
           },
-        },
-      }),
-      {},
+        }),
+      (error: unknown) =>
+        error instanceof RuntimeError &&
+        error.code === "INVALID_CONFIG" &&
+        error.message.includes("missing"),
+    );
+
+    assert.throws(
+      () =>
+        extractMdxComponentProps({
+          filePath,
+          componentName: "LinkCard",
+          propHints: {
+            count: { format: "url" },
+          },
+        }),
+      (error: unknown) =>
+        error instanceof RuntimeError &&
+        error.code === "INVALID_CONFIG" &&
+        error.message.includes("count"),
+    );
+
+    assert.throws(
+      () =>
+        extractMdxComponentProps({
+          filePath,
+          componentName: "LinkCard",
+          propHints: {
+            publishedAt: { widget: "json" },
+          },
+        }),
+      (error: unknown) =>
+        error instanceof RuntimeError &&
+        error.code === "INVALID_CONFIG" &&
+        error.message.includes("publishedAt"),
+    );
+
+    assert.throws(
+      () =>
+        extractMdxComponentProps({
+          filePath,
+          componentName: "LinkCard",
+          propHints: {
+            kind: {
+              widget: "select",
+              options: ["bar", 1],
+            },
+          },
+        }),
+      (error: unknown) =>
+        error instanceof RuntimeError &&
+        error.code === "INVALID_CONFIG" &&
+        error.message.includes("kind"),
+    );
+
+    assert.throws(
+      () =>
+        extractMdxComponentProps({
+          filePath,
+          componentName: "LinkCard",
+          propHints: {
+            handlerMap: { widget: "json" },
+          },
+        }),
+      (error: unknown) =>
+        error instanceof RuntimeError &&
+        error.code === "INVALID_CONFIG" &&
+        error.message.includes("handlerMap"),
     );
   });
 });

@@ -5,6 +5,9 @@ Host-embedded Studio package boundary for MDCMS.
 ## Studio Embed Shell
 
 - `Studio` is exported from `@mdcms/studio` as the host app entrypoint.
+- `PropsEditorComponent` and `PropsEditorComponentProps` are exported from
+  `@mdcms/studio` for authoring custom MDX props editors that run inside the
+  embedded Studio runtime.
 - The package root is intentionally client-only so host-app imports do not pull
   remote runtime internals into server-component graphs.
 - The shell is intentionally thin:
@@ -78,12 +81,24 @@ export function AdminStudioClient({ config }: { config: MdcmsConfig }) {
   (`components[*].load`, `components[*].loadPropsEditor`), the embedding
   component must be client-side because those callbacks are not
   server-to-client serializable.
+- `components[*].loadPropsEditor` should resolve a `PropsEditorComponent`. The
+  runtime resolves that editor lazily and moves through these states:
+  - `loading` while the async resolver is pending
+  - `ready` when the custom editor resolves
+  - `auto-form` when no custom editor resolves but extracted props can still be
+    mapped into generated controls
+  - `empty` when the component has no editable props
+  - `error` when editor resolution fails
+  - `forbidden` when the current session is read-only
 - The authored `mdcms.config.ts` object is the source of truth for local MDX
   component metadata and runtime loaders. No backend component sync is
   required.
 - `prepareStudioConfig(...)` is the node-side helper for enriching component
   registrations with `extractedProps` metadata before render, but the result
   must still respect the server-to-client serialization boundary.
+- `prepareStudioConfig(...)` also validates authored `propHints` against the
+  extracted component prop shapes, so invalid widget overrides fail before the
+  browser runtime mounts.
 - `prepareStudioConfig(...)` accepts `{ cwd, resolveImportPath?, tsconfigPath? }`.
   Use `resolveImportPath` when authored `importPath` values rely on workspace
   aliases that are not resolvable from plain filesystem paths alone.

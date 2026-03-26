@@ -151,6 +151,9 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
             name: "Chart",
             importPath: "@/components/mdx/Chart",
             description: "Render a chart",
+            propHints: {
+              title: { widget: "textarea" },
+            },
             extractedProps: {
               title: { type: "string", required: false },
               website: { type: "string", required: false, format: "url" },
@@ -159,6 +162,9 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
           {
             name: "JsonOnly",
             importPath: "@/components/mdx/JsonOnly",
+            propHints: {
+              options: { widget: "json" },
+            },
             extractedProps: {
               options: { type: "json", required: false },
             },
@@ -170,7 +176,7 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
           },
         ],
       },
-      resolvePropsEditor: (name) =>
+      resolvePropsEditor: async (name) =>
         name === "PricingTable" ? () => null : null,
     },
   };
@@ -217,10 +223,14 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
   assert.match(markup, /data-mdcms-mdx-component="JsonOnly"/);
   assert.match(markup, /data-mdcms-mdx-component="PricingTable"/);
   assert.match(markup, /data-mdcms-mdx-auto-form="Chart"/);
-  assert.match(markup, /data-mdcms-mdx-auto-control="Chart:title:text"/);
+  assert.match(markup, /data-mdcms-mdx-auto-control="Chart:title:textarea"/);
   assert.match(markup, /data-mdcms-mdx-auto-control="Chart:website:url"/);
-  assert.doesNotMatch(markup, /data-mdcms-mdx-auto-form="JsonOnly"/);
-  assert.match(markup, /data-mdcms-mdx-props-editor="PricingTable"/);
+  assert.match(markup, /data-mdcms-mdx-auto-form="JsonOnly"/);
+  assert.match(markup, /data-mdcms-mdx-auto-control="JsonOnly:options:json"/);
+  assert.match(
+    markup,
+    /data-mdcms-mdx-props-editor-state="PricingTable:loading"/,
+  );
 });
 
 test("RemoteStudioApp renders the expanded admin route surfaces", () => {

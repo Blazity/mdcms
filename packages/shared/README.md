@@ -50,6 +50,12 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
   - authored `components` entries may include runtime-only loader callbacks:
     - `load?: () => Promise<unknown>`
     - `loadPropsEditor?: () => Promise<unknown>`
+  - authored `components[*].propHints` is a typed widget-hint map for extracted
+    MDX props. Supported entries are:
+    - `{ format: "url" }`
+    - `{ widget: "color-picker" | "textarea" | "image" | "hidden" | "json" }`
+    - `{ widget: "slider", min, max, step? }`
+    - `{ widget: "select", options }`
   - `parseMdcmsConfig(...)` keeps only serializable metadata (`name`,
     `importPath`, `description`, `propHints`, `propsEditor`) and strips the
     loader callbacks before the normalized config is consumed elsewhere.
@@ -146,6 +152,13 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
   - `StudioMountContext` includes `basePath` so deep links can resolve under an embed subtree without framework-specific router adapters.
   - `StudioMountContext.mdx.catalog.components[*].extractedProps` is a strict
     serializable contract for auto-generated MDX props editing metadata.
+  - `StudioMountContext.mdx.resolvePropsEditor(name)` is asynchronous and
+    resolves to a custom props editor component or `null`.
+  - MDX props editing precedence is deterministic:
+    - a successfully resolved `propsEditor` replaces per-prop auto-generated
+      controls for that component
+    - otherwise `propHints` overrides win over the default prop-type mapping
+    - otherwise the default mapping applies
   - Supported extracted prop variants are:
     - `string` (optionally `format: "url"` for URL-validated default inputs)
     - `number`
@@ -170,25 +183,33 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
 - Compatibility check helpers:
   - `assertModuleManifestCompatibility(manifest, { coreVersion, supportedApiVersion? })`
   - `assertStudioBootstrapCompatibility(manifest, { studioPackageVersion, hostBridgeVersion, supportedApiVersion? })`
-- Shared MDX helpers:
+  - Shared MDX helpers:
   - import path: `@mdcms/shared/mdx`
   - `extractMdxComponentProps(...)` reads a local component source file and
     normalizes supported prop shapes into the shared `extractedProps` contract
+    while validating any authored `propHints` against the actual extracted prop
+    kinds.
   - `extractMdxComponentProps(...)` is intended for local tooling/runtime
     preparation only; never for browser-time use
-  - `createMdxAutoFormFields(...)` converts extracted props into default
-    auto-form field metadata and is safe to use in browser/runtime code:
+  - `createMdxAutoFormFields(extractedProps, propHints?)` converts extracted
+    props into deterministic auto-form field metadata and is safe to use in
+    browser/runtime code:
     - `string` -> `text`
     - `string` with `format: "url"` -> `url`
+    - `string` with widget overrides -> `color-picker` | `textarea` | `image`
     - `number` -> `number`
+    - `number` with widget override -> `slider`
     - `boolean` -> `boolean`
     - `enum` -> `select`
+    - scalar or enum widget override -> `select`
     - `array:string` -> `string-list`
     - `array:number` -> `number-list`
     - `date` -> `date`
+    - `json` with widget override -> `json`
     - `rich-text` -> `rich-text`
-  - `json` extracted props are intentionally omitted from default mapping; the
-    widget override path owns those controls downstream
+  - `hidden` omits a prop from the generated control list.
+  - `json` extracted props are intentionally omitted from the default mapping;
+    the widget override path owns those controls downstream.
 - Strict compatibility version policy:
   - `minCoreVersion`, `maxCoreVersion`, `minStudioPackageVersion`, `minHostBridgeVersion`
     must use strict `x.y.z` format.

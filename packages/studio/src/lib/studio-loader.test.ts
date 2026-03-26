@@ -248,6 +248,9 @@ test("loadStudioRuntime derives a local mdx catalog and editor resolver from con
           name: "Chart",
           importPath: "@/components/mdx/Chart",
           description: "Render a chart",
+          propHints: {
+            title: { widget: "textarea" },
+          },
           propsEditor: "@/components/mdx/Chart.editor",
           load: async () => Chart,
           loadPropsEditor: async () => ChartEditor,
@@ -308,11 +311,12 @@ test("loadStudioRuntime derives a local mdx catalog and editor resolver from con
             name: string;
             importPath: string;
             description?: string;
+            propHints?: Record<string, unknown>;
             propsEditor?: string;
             extractedProps?: MdxExtractedProps;
           }>;
         };
-        resolvePropsEditor: (name: string) => unknown | null;
+        resolvePropsEditor: (name: string) => Promise<unknown | null>;
       };
     };
 
@@ -321,6 +325,9 @@ test("loadStudioRuntime derives a local mdx catalog and editor resolver from con
         name: "Chart",
         importPath: "@/components/mdx/Chart",
         description: "Render a chart",
+        propHints: {
+          title: { widget: "textarea" },
+        },
         propsEditor: "@/components/mdx/Chart.editor",
         extractedProps: {
           title: { type: "string", required: false },
@@ -328,7 +335,10 @@ test("loadStudioRuntime derives a local mdx catalog and editor resolver from con
       },
     ]);
     assert.equal(context.hostBridge.resolveComponent("Chart"), Chart);
-    assert.equal(context.mdx?.resolvePropsEditor("Chart"), ChartEditor);
+    const chartEditorResult = context.mdx?.resolvePropsEditor("Chart");
+    assert.ok(chartEditorResult instanceof Promise);
+    assert.equal(await chartEditorResult, ChartEditor);
+    assert.equal(await context.mdx?.resolvePropsEditor("Missing"), null);
   });
 });
 

@@ -2,15 +2,23 @@ import { dirname } from "node:path";
 
 import ts from "typescript";
 
+import { RuntimeError } from "../runtime/error.js";
 import type {
   MdxExtractedProp,
   MdxExtractedProps,
 } from "../contracts/extensibility.js";
+import {
+  getMdxPropHintFormat,
+  getMdxPropHintWidget,
+  parseMdxPropHints,
+  type MdxPropHint,
+  type MdxSelectOption,
+} from "./prop-hints.js";
 
 export function extractMdxComponentProps(input: {
   filePath: string;
   componentName: string;
-  propHints?: Record<string, unknown>;
+  propHints?: Record<string, MdxPropHint>;
   tsconfigPath?: string;
 }): MdxExtractedProps {
   const program = createProgram(input.filePath, input.tsconfigPath);
@@ -41,11 +49,13 @@ export function extractMdxComponentProps(input: {
     return {};
   }
 
-  const propHints = input.propHints ?? {};
+  const propHints = parseMdxPropHints(input.propHints, "propHints") ?? {};
   const extractedProps: MdxExtractedProps = {};
+  const knownPropertyNames = new Set<string>();
 
   for (const property of checker.getPropertiesOfType(propsType)) {
     const propertyName = property.getName();
+    knownPropertyNames.add(propertyName);
     const propertyDeclaration =
       property.valueDeclaration ?? property.getDeclarations()?.[0];
 
@@ -66,9 +76,23 @@ export function extractMdxComponentProps(input: {
       propHint: propHints[propertyName],
       seenTypes: new Set(),
     });
+    assertCompatiblePropHint({
+      propertyName,
+      normalizedProperty,
+      propHint: propHints[propertyName],
+    });
 
     if (normalizedProperty) {
       extractedProps[propertyName] = normalizedProperty;
+    }
+  }
+
+  for (const propertyName of Object.keys(propHints)) {
+    if (!knownPropertyNames.has(propertyName)) {
+      throw invalidConfig(
+        `propHints.${propertyName}`,
+        "references an unknown component prop.",
+      );
     }
   }
 
@@ -352,6 +376,137 @@ function normalizePropType(input: {
   return undefined;
 }
 
+function assertCompatiblePropHint(input: {
+  propertyName: string;
+  normalizedProperty: MdxExtractedProp | undefined;
+  propHint: MdxPropHint | undefined;
+}): void {
+  const { propertyName, normalizedProperty, propHint } = input;
+
+  if (!propHint) {
+    return;
+  }
+
+  const format = getMdxPropHintFormat(propHint);
+
+  if (format === "url") {
+    if (normalizedProperty?.type !== "string") {
+      throw invalidConfig(
+        `propHints.${propertyName}`,
+        'format "url" is only valid for extracted string props.',
+      );
+    }
+
+    return;
+  }
+
+  const widget = getMdxPropHintWidget(propHint);
+
+  if (!normalizedProperty) {
+    if (widget === "hidden") {
+      return;
+    }
+
+    throw invalidConfig(
+      `propHints.${propertyName}`,
+      `widget "${widget}" is incompatible with the declared prop type.`,
+    );
+  }
+
+  switch (widget) {
+    case "color-picker":
+    case "textarea":
+    case "image":
+      if (normalizedProperty.type !== "string") {
+        throw invalidConfig(
+          `propHints.${propertyName}`,
+          `widget "${widget}" is only valid for extracted string props.`,
+        );
+      }
+      return;
+    case "slider":
+      if (normalizedProperty.type !== "number") {
+        throw invalidConfig(
+          `propHints.${propertyName}`,
+          'widget "slider" is only valid for extracted number props.',
+        );
+      }
+      return;
+    case "select": {
+      const selectPropHint = propHint as Extract<
+        MdxPropHint,
+        { widget: "select" }
+      >;
+      assertCompatibleSelectHint(
+        propertyName,
+        normalizedProperty,
+        selectPropHint.options,
+      );
+      return;
+    }
+    case "json":
+      if (normalizedProperty.type !== "json") {
+        throw invalidConfig(
+          `propHints.${propertyName}`,
+          'widget "json" is only valid for JSON-serializable props.',
+        );
+      }
+      return;
+    case "hidden":
+    case undefined:
+      return;
+  }
+}
+
+function assertCompatibleSelectHint(
+  propertyName: string,
+  normalizedProperty: MdxExtractedProp,
+  options: MdxSelectOption[],
+): void {
+  switch (normalizedProperty.type) {
+    case "string":
+    case "number":
+    case "boolean":
+      if (
+        !options.every(
+          (option) =>
+            typeof getSelectOptionValue(option) === normalizedProperty.type,
+        )
+      ) {
+        throw invalidConfig(
+          `propHints.${propertyName}`,
+          'widget "select" option values must match the target prop scalar kind.',
+        );
+      }
+      return;
+    case "enum":
+      if (
+        !options.every((option) => {
+          const value = getSelectOptionValue(option);
+          return (
+            typeof value === "string" &&
+            normalizedProperty.values.includes(value)
+          );
+        })
+      ) {
+        throw invalidConfig(
+          `propHints.${propertyName}`,
+          'widget "select" option values must be strings within the extracted enum values.',
+        );
+      }
+      return;
+    default:
+      throw invalidConfig(
+        `propHints.${propertyName}`,
+        'widget "select" is only valid for extracted string, number, boolean, or enum props.',
+      );
+  }
+}
+
+function getSelectOptionValue(option: MdxSelectOption) {
+  return typeof option === "object" ? option.value : option;
+}
+
 function isOptionalProperty(
   property: ts.Symbol,
   propertyType: ts.Type,
@@ -615,5 +770,14 @@ function isJsonSerializableType(
       checker,
       seenTypes,
     );
+  });
+}
+
+function invalidConfig(field: string, message: string): RuntimeError {
+  return new RuntimeError({
+    code: "INVALID_CONFIG",
+    message: `Config field "${field}" ${message}`,
+    statusCode: 400,
+    details: { field },
   });
 }

@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type * as zodCore from "zod/v4/core";
 
+import type { MdxPropHint } from "../mdx/prop-hints.js";
+import { parseMdxPropHints } from "../mdx/prop-hints.js";
 import { RuntimeError } from "../runtime/error.js";
 
 export const IMPLICIT_DEFAULT_LOCALE = "__mdcms_default__" as const;
@@ -86,7 +88,7 @@ export type MdcmsComponentRegistration = {
   name: string;
   importPath: string;
   description?: string;
-  propHints?: Record<string, unknown>;
+  propHints?: Record<string, MdxPropHint>;
   propsEditor?: string;
   load?: () => Promise<unknown>;
   loadPropsEditor?: () => Promise<unknown>;
@@ -142,7 +144,7 @@ export type ParsedMdcmsComponentRegistration = {
   name: string;
   importPath: string;
   description?: string;
-  propHints?: Record<string, unknown>;
+  propHints?: Record<string, MdxPropHint>;
   propsEditor?: string;
 };
 
@@ -651,17 +653,10 @@ function parseComponents(value: unknown): ParsedMdcmsComponentRegistration[] {
 
   return value.map((entry, index) => {
     const component = expectRecord(entry, `components[${index}]`);
-    const propHints = component.propHints;
-
-    if (
-      propHints !== undefined &&
-      (!isPlainObject(propHints) || Array.isArray(propHints))
-    ) {
-      throw invalidConfig(
-        `components[${index}].propHints`,
-        "must be an object map when provided.",
-      );
-    }
+    const propHints = parseMdxPropHints(
+      component.propHints,
+      `components[${index}].propHints`,
+    );
 
     // Runtime loader callbacks are host-local Studio concerns, so the shared parser
     // intentionally strips them and keeps only serializable component metadata.
@@ -687,7 +682,7 @@ function parseComponents(value: unknown): ParsedMdcmsComponentRegistration[] {
     }
 
     if (propHints !== undefined) {
-      parsedComponent.propHints = propHints as Record<string, unknown>;
+      parsedComponent.propHints = propHints;
     }
 
     if (propsEditor !== undefined) {

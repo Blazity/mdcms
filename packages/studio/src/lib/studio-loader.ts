@@ -192,7 +192,7 @@ async function createLoadedLocalMdxRuntime(
     hostBridge: createLoadedHostBridge(previewComponents),
     mdx: {
       catalog,
-      resolvePropsEditor: (name) => propsEditors.get(name) ?? null,
+      resolvePropsEditor: async (name) => propsEditors.get(name) ?? null,
     },
   };
 }

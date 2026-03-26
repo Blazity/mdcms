@@ -116,7 +116,7 @@ export type MdxExtractedProp =
 export type MdxExtractedProps = Record<string, MdxExtractedProp>;
 
 export type MdxComponentHostCapabilities = {
-  resolvePropsEditor: (name: string) => unknown | null;
+  resolvePropsEditor: (name: string) => Promise<unknown | null>;
 };
 
 export type HostBridgeV1 = {
@@ -394,12 +394,86 @@ const mdxExtractedPropSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
+const mdxSelectOptionValueSchema = z.union([
+  nonEmptyStringSchema,
+  z.number(),
+  z.boolean(),
+]);
+
+const mdxSelectOptionSchema = z.union([
+  mdxSelectOptionValueSchema,
+  z
+    .object({
+      label: nonEmptyStringSchema,
+      value: mdxSelectOptionValueSchema,
+    })
+    .strict(),
+]);
+
+const mdxPropHintSchema = z.union([
+  z
+    .object({
+      format: z.literal("url"),
+    })
+    .strict(),
+  z
+    .object({
+      widget: z.literal("color-picker"),
+    })
+    .strict(),
+  z
+    .object({
+      widget: z.literal("textarea"),
+    })
+    .strict(),
+  z
+    .object({
+      widget: z.literal("image"),
+    })
+    .strict(),
+  z
+    .object({
+      widget: z.literal("hidden"),
+    })
+    .strict(),
+  z
+    .object({
+      widget: z.literal("json"),
+    })
+    .strict(),
+  z
+    .object({
+      widget: z.literal("slider"),
+      min: z.number().finite(),
+      max: z.number().finite(),
+      step: z.number().finite().positive().optional(),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      if (value.min >= value.max) {
+        context.addIssue({
+          code: "custom",
+          path: ["min"],
+          message: 'must satisfy "min < max" for the slider widget.',
+        });
+      }
+    }),
+  z
+    .object({
+      widget: z.literal("select"),
+      options: z.array(mdxSelectOptionSchema).min(1, {
+        message: 'must include a non-empty "options" array.',
+      }),
+    })
+    .strict(),
+]);
+
 const mdxComponentCatalogEntrySchema = z
   .object({
     name: nonEmptyStringSchema,
     importPath: nonEmptyStringSchema,
     description: nonEmptyStringSchema.optional(),
-    propHints: z.record(z.string(), z.unknown()).optional(),
+    propHints: z.record(z.string(), mdxPropHintSchema).optional(),
     propsEditor: nonEmptyStringSchema.optional(),
     extractedProps: z.record(z.string(), mdxExtractedPropSchema).optional(),
   })

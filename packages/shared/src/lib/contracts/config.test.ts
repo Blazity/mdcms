@@ -90,6 +90,110 @@ test("defineConfig accepts runtime-only component loader callbacks", () => {
   `);
 });
 
+test("parseMdcmsConfig accepts typed propHints and preserves them", () => {
+  const parsed = parseMdcmsConfig(
+    defineConfig({
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+      components: [
+        {
+          name: "Hero",
+          importPath: "@/components/mdx/Hero",
+          propHints: {
+            website: { format: "url" },
+            accent: { widget: "color-picker" },
+            body: { widget: "textarea" },
+            rating: { widget: "slider", min: 0, max: 10, step: 2 },
+            image: { widget: "image" },
+            variant: {
+              widget: "select",
+              options: ["primary", { label: "Secondary", value: "secondary" }],
+            },
+            hiddenProp: { widget: "hidden" },
+            data: { widget: "json" },
+          },
+        },
+      ],
+    }),
+  );
+
+  assert.deepEqual(parsed.components[0]?.propHints, {
+    website: { format: "url" },
+    accent: { widget: "color-picker" },
+    body: { widget: "textarea" },
+    rating: { widget: "slider", min: 0, max: 10, step: 2 },
+    image: { widget: "image" },
+    variant: {
+      widget: "select",
+      options: ["primary", { label: "Secondary", value: "secondary" }],
+    },
+    hiddenProp: { widget: "hidden" },
+    data: { widget: "json" },
+  });
+});
+
+test("parseMdcmsConfig rejects malformed propHint shapes", () => {
+  assert.throws(
+    () =>
+      parseMdcmsConfig(
+        defineConfig({
+          project: "marketing-site",
+          serverUrl: "http://localhost:4000",
+          components: [
+            {
+              name: "Hero",
+              importPath: "@/components/mdx/Hero",
+              propHints: {
+                website: { format: "url", widget: "textarea" },
+              },
+            },
+          ],
+        }),
+      ),
+    /components\[0\]\.propHints/,
+  );
+
+  assert.throws(
+    () =>
+      parseMdcmsConfig(
+        defineConfig({
+          project: "marketing-site",
+          serverUrl: "http://localhost:4000",
+          components: [
+            {
+              name: "Hero",
+              importPath: "@/components/mdx/Hero",
+              propHints: {
+                rating: { widget: "slider", min: 10, max: 10 },
+              },
+            },
+          ],
+        }),
+      ),
+    /components\[0\]\.propHints/,
+  );
+
+  assert.throws(
+    () =>
+      parseMdcmsConfig(
+        defineConfig({
+          project: "marketing-site",
+          serverUrl: "http://localhost:4000",
+          components: [
+            {
+              name: "Hero",
+              importPath: "@/components/mdx/Hero",
+              propHints: {
+                variant: { widget: "select", options: [] },
+              },
+            },
+          ],
+        }),
+      ),
+    /components\[0\]\.propHints/,
+  );
+});
+
 test("defineConfig/defineType/reference produce a normalized shared config", () => {
   const author = defineType("Author", {
     directory: "content/authors",

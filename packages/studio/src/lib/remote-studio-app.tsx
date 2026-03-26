@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { ActionCatalogItem, StudioMountContext } from "@mdcms/shared";
-import { createMdxAutoFormFields } from "@mdcms/shared/mdx";
 
 import {
   createStudioActionCatalogAdapter,
   type StudioActionCatalogAdapter,
 } from "./action-catalog-adapter.js";
+import { MdxPropsEditorHost } from "./mdx-props-editor-host.js";
 import AdminLayout from "./runtime-ui/app/admin/layout.js";
 import ApiPlaygroundPage from "./runtime-ui/app/admin/api-page.js";
 import DashboardPage from "./runtime-ui/app/admin/page.js";
@@ -274,21 +274,6 @@ function getRegisteredMdxComponents(
   return context.mdx?.catalog.components ?? [];
 }
 
-function hasRegisteredPropsEditor(
-  context: StudioMountContext,
-  componentName: string,
-): boolean {
-  return context.mdx?.resolvePropsEditor(componentName) != null;
-}
-
-function getGeneratedAutoFormFields(
-  component: NonNullable<
-    StudioMountContext["mdx"]
-  >["catalog"]["components"][number],
-) {
-  return createMdxAutoFormFields(component.extractedProps);
-}
-
 function renderRouteContent(
   route: StudioRuntimeRouteDefinition | undefined,
 ): ReactNode {
@@ -334,29 +319,7 @@ function RuntimeDocumentDiagnostics(props: {
         registeredMdxComponents.map((component) => (
           <div key={component.name} data-mdcms-mdx-component={component.name}>
             <span>{component.name}</span>
-            {hasRegisteredPropsEditor(props.context, component.name) ? (
-              <span data-mdcms-mdx-props-editor={component.name}>
-                Custom editor
-              </span>
-            ) : (
-              (() => {
-                const autoFormFields = getGeneratedAutoFormFields(component);
-
-                return autoFormFields.length > 0 ? (
-                  <>
-                    <span data-mdcms-mdx-auto-form={component.name}>
-                      Auto form
-                    </span>
-                    {autoFormFields.map((field) => (
-                      <span
-                        key={`${component.name}:${field.name}:${field.control}`}
-                        data-mdcms-mdx-auto-control={`${component.name}:${field.name}:${field.control}`}
-                      />
-                    ))}
-                  </>
-                ) : null;
-              })()
-            )}
+            <MdxPropsEditorHost component={component} context={props.context} />
           </div>
         ))
       )}

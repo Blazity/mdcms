@@ -378,10 +378,26 @@ test("runtime contract validators cover positive and negative shapes", () => {
             {
               name: "Chart",
               importPath: "@/components/mdx/Chart",
+              propHints: {
+                website: { format: "url" },
+                accent: { widget: "color-picker" },
+                body: { widget: "textarea" },
+                rating: { widget: "slider", min: 0, max: 10, step: 2 },
+                image: { widget: "image" },
+                variant: {
+                  widget: "select",
+                  options: [
+                    "primary",
+                    { label: "Secondary", value: "secondary" },
+                  ],
+                },
+                hiddenProp: { widget: "hidden" },
+                data: { widget: "json" },
+              },
             },
           ],
         },
-        resolvePropsEditor: () => null,
+        resolvePropsEditor: async () => null,
       },
     }),
   );
@@ -502,7 +518,7 @@ test("assertStudioMountContext accepts supported extracted mdx prop shapes", () 
             },
           ],
         },
-        resolvePropsEditor: () => null,
+        resolvePropsEditor: async () => null,
       },
     }),
   );
@@ -531,7 +547,7 @@ test("assertStudioMountContext rejects invalid extracted mdx prop shapes", () =>
               },
             ],
           },
-          resolvePropsEditor: () => null,
+          resolvePropsEditor: async () => null,
         },
       }),
     /extractedProps/,
@@ -560,7 +576,7 @@ test("assertStudioMountContext rejects invalid extracted mdx prop shapes", () =>
               },
             ],
           },
-          resolvePropsEditor: () => null,
+          resolvePropsEditor: async () => null,
         },
       }),
     /items/,
@@ -589,7 +605,7 @@ test("assertStudioMountContext rejects invalid extracted mdx prop shapes", () =>
               },
             ],
           },
-          resolvePropsEditor: () => null,
+          resolvePropsEditor: async () => null,
         },
       }),
     /values/,
@@ -618,7 +634,7 @@ test("assertStudioMountContext rejects invalid extracted mdx prop shapes", () =>
               },
             ],
           },
-          resolvePropsEditor: () => null,
+          resolvePropsEditor: async () => null,
         },
       }),
     /format/,
@@ -647,7 +663,7 @@ test("assertStudioMountContext rejects invalid extracted mdx prop shapes", () =>
               },
             ],
           },
-          resolvePropsEditor: () => null,
+          resolvePropsEditor: async () => null,
         },
       }),
     /format/,
@@ -676,10 +692,35 @@ test("assertStudioMountContext rejects invalid extracted mdx prop shapes", () =>
               },
             ],
           },
-          resolvePropsEditor: () => null,
+          resolvePropsEditor: async () => null,
         },
       }),
     /unknown field\(s\): extra/,
+  );
+
+  assert.throws(
+    () =>
+      assertStudioMountContext({
+        apiBaseUrl: "http://localhost:4000",
+        basePath: "/admin",
+        auth: { mode: "cookie" },
+        hostBridge: validHostBridge,
+        mdx: {
+          catalog: {
+            components: [
+              {
+                name: "Chart",
+                importPath: "@/components/mdx/Chart",
+                propHints: {
+                  rating: { widget: "slider", min: 10, max: 10 },
+                },
+              },
+            ],
+          },
+          resolvePropsEditor: async () => null,
+        },
+      }),
+    /propHints/,
   );
 });
 

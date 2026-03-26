@@ -220,6 +220,124 @@ test("prepareStudioConfig enriches mdx component metadata from source files", as
   }
 });
 
+test("prepareStudioConfig preserves valid propHints alongside extracted props", async () => {
+  const tempDir = join(
+    dirname(fileURLToPath(import.meta.url)),
+    `.__studio-prepare-config-hints-${randomUUID()}`,
+  );
+  const componentFile = join(tempDir, "Chart.tsx");
+
+  mkdirSync(tempDir, { recursive: true });
+  writeFileSync(
+    componentFile,
+    `
+      export interface ChartProps {
+        title?: string;
+        website?: string;
+        kind: "bar" | "line";
+      }
+
+      export function Chart(_props: ChartProps) {
+        return null;
+      }
+    `,
+    "utf8",
+  );
+
+  try {
+    const preparedConfig = await prepareStudioConfig(
+      {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+        components: [
+          {
+            name: "Chart",
+            importPath: "@/components/mdx/Chart",
+            propHints: {
+              title: { widget: "textarea" },
+              website: { format: "url" },
+            },
+          },
+        ],
+      },
+      {
+        cwd: tempDir,
+        resolveImportPath: (value) =>
+          value === "@/components/mdx/Chart" ? componentFile : value,
+      },
+    );
+
+    assert.deepEqual(preparedConfig.components?.[0]?.propHints, {
+      title: { widget: "textarea" },
+      website: { format: "url" },
+    });
+    assert.deepEqual(preparedConfig.components?.[0]?.extractedProps, {
+      title: { type: "string", required: false },
+      website: { type: "string", required: false, format: "url" },
+      kind: { type: "enum", required: true, values: ["bar", "line"] },
+    });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("prepareStudioConfig rejects invalid propHints during local mdx preparation", async () => {
+  const tempDir = join(
+    dirname(fileURLToPath(import.meta.url)),
+    `.__studio-prepare-config-invalid-hints-${randomUUID()}`,
+  );
+  const componentFile = join(tempDir, "Chart.tsx");
+
+  mkdirSync(tempDir, { recursive: true });
+  writeFileSync(
+    componentFile,
+    `
+      export interface ChartProps {
+        title?: string;
+      }
+
+      export function Chart(_props: ChartProps) {
+        return null;
+      }
+    `,
+    "utf8",
+  );
+
+  try {
+    await assert.rejects(
+      () =>
+        prepareStudioConfig(
+          {
+            project: "marketing-site",
+            environment: "staging",
+            serverUrl: "http://localhost:4000",
+            components: [
+              {
+                name: "Chart",
+                importPath: "@/components/mdx/Chart",
+                propHints: {
+                  title: { widget: "slider", min: 0, max: 10 },
+                },
+              },
+            ],
+          },
+          {
+            cwd: tempDir,
+            resolveImportPath: (value) =>
+              value === "@/components/mdx/Chart" ? componentFile : value,
+          },
+        ),
+      (error) =>
+        error instanceof RuntimeError &&
+        error.code === "INVALID_CONFIG" &&
+        /propHints\.title/.test(error.message),
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("prepareStudioConfig resolves directory imports through index files", async () => {
   const tempDir = join(
     dirname(fileURLToPath(import.meta.url)),

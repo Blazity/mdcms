@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-11
+last_updated: 2026-03-26
 ---
 
 # SPEC-007 Editor, MDX, and Collaboration
@@ -159,10 +159,26 @@ export type MdxComponentCatalogEntry = {
   name: string;
   importPath: string;
   description?: string;
-  propHints?: Record<string, unknown>;
+  propHints?: Record<string, MdxPropHint>;
   propsEditor?: string;
   extractedProps?: MdxExtractedProps;
 };
+
+export type MdxSelectOptionValue = string | number | boolean;
+
+export type MdxSelectOption =
+  | MdxSelectOptionValue
+  | { label: string; value: MdxSelectOptionValue };
+
+export type MdxPropHint =
+  | { format: "url" }
+  | { widget: "color-picker" }
+  | { widget: "textarea" }
+  | { widget: "slider"; min: number; max: number; step?: number }
+  | { widget: "image" }
+  | { widget: "select"; options: MdxSelectOption[] }
+  | { widget: "hidden" }
+  | { widget: "json" };
 
 export type MdxComponentCatalog = {
   components: MdxComponentCatalogEntry[];
@@ -181,7 +197,7 @@ export type MdxExtractedProp =
   | { type: "rich-text"; required: boolean };
 
 export type MdxComponentHostCapabilities = {
-  resolvePropsEditor: (name: string) => unknown | null;
+  resolvePropsEditor: (name: string) => Promise<unknown | null>;
 };
 ```
 
@@ -191,7 +207,8 @@ The host app owns the executable capabilities. The embedded Studio runtime consu
 - `catalog.components[*].propHints` for widget overrides
 - `resolvePropsEditor(...)` for custom editor resolution when `propsEditor` is configured
 
-Executable editor values remain opaque at the shared contract layer (`unknown | null`).
+Executable editor values remain opaque at the shared contract layer
+(`Promise<unknown | null>` at the resolver boundary).
 In practice these are host-local React components resolved inside the embedding app bundle.
 
 `importPath` and `propsEditor` remain config-owned authoring metadata. They identify the source modules used by the local extraction/runtime pipeline, but runtime resolution is keyed by component `name` rather than by path strings carried over the Studio boundary.
@@ -328,6 +345,40 @@ editable.
 override. It is preserved in extracted props and used by the auto-control
 mapping to render a URL input with validation.
 
+Widget-hint precedence is deterministic:
+
+1. If a component-level `propsEditor` resolves successfully, Studio renders
+   that custom editor instead of per-prop auto-generated controls for that
+   component.
+2. Otherwise, for each extracted prop, a valid
+   `propHints.<propName>.widget` override wins over the default prop-type
+   mapping.
+3. Otherwise, the default mapping in §18.4 applies.
+4. If a prop cannot be normalized and no valid widget hint or custom editor
+   covers it, that prop remains hidden.
+
+Hint validation happens during local MDX catalog preparation. Invalid hint
+shapes, malformed widget config, and incompatible widget/prop-type combinations
+fail preparation instead of being silently ignored in the browser.
+
+Widget validation rules:
+
+- `format: 'url'` is a string-format signal, not a widget, and cannot be
+  combined with `widget`.
+- `color-picker`, `textarea`, and `image` are valid only for extracted
+  `string` props.
+- The `image` widget edits a string-valued image reference in the MDX props
+  object.
+- `slider` is valid only for extracted `number` props and requires finite
+  `min` and `max` values with `min < max`; if `step` is provided it must be
+  finite and greater than `0`.
+- `select` requires a non-empty `options` list. Option values must be
+  `string`, `number`, or `boolean`, and all option values must match the target
+  prop's scalar kind.
+- `hidden` is valid for any prop and suppresses that prop from the CMS form.
+- `json` is valid only for JSON-serializable props and does not make function,
+  ref, or other non-serializable shapes editable.
+
 ### Custom Props Editors
 
 For components with complex prop structures that can't be represented by auto-generated forms (e.g., a pricing table with nested tier objects, a data grid with column definitions), developers provide a **custom editor component**:
@@ -362,9 +413,41 @@ const PricingTableEditor: PropsEditorComponent<PricingTableProps> = ({
 export default PricingTableEditor;
 ```
 
-When `propsEditor` is specified in the component config, the Studio renders this custom editor instead of the auto-generated form. The custom editor receives the current props and an `onChange` callback — it has full control over the editing UX.
+When `propsEditor` is specified in the component config, the embedded Studio
+runtime resolves that editor lazily through `resolvePropsEditor(componentName)`
+when the props panel is opened or first needed. If resolution returns `null`,
+the runtime falls back to the auto-generated form controls derived from
+`catalog.components[*].extractedProps`.
+
+The custom editor receives:
+
+- `value`: the current JSON-serializable props object for the component node;
+  this value may be partial during initial insertion
+- `onChange(nextValue)`: replaces the current props object in local document
+  state and participates in the same autosave/persistence flow as other draft
+  edits
+- `readOnly`: `true` when the current session may inspect props but may not
+  modify them
 
 If a component has **no** `propsEditor` and some of its props are too complex for auto-generation, those specific props are hidden. Simple props are still auto-generated.
+
+### Custom Props Editor Lifecycle
+
+The custom props editor host supports these states:
+
+- `loading`: `resolvePropsEditor(componentName)` is pending; the props panel
+  shows a non-interactive loading state.
+- `ready`: resolution succeeds with an executable editor component; the runtime
+  mounts it and passes `value`, `onChange`, and `readOnly`.
+- `empty`: resolution returns `null` and no fallback auto-generated controls
+  are available; the props panel shows that the component has no editable
+  props.
+- `error`: resolution rejects, or the resolved editor fails during initial
+  render; the props panel shows an error state and does not silently switch to
+  a different editor mode.
+- `forbidden`: the current session cannot edit component props; the props panel
+  shows editing is unavailable, and `onChange` must not mutate document state
+  while `readOnly` is `true`.
 
 ### Children / Nested Content
 
@@ -417,11 +500,19 @@ Since the Studio is embedded in the user's app, the **actual React component** i
 - Clicking/selecting a component node view reveals the props editing panel (displayed below the component preview or as a slide-out drawer).
 - Changing any prop value immediately re-renders the live preview.
 - The underlying MDX syntax (`<Chart data={[1,2,3]} type="bar" />`) is updated automatically — content editors never see or edit raw MDX syntax.
+- When a component node is selected, the props panel resolves either the custom
+  editor lifecycle above or the auto-generated/widget-override controls for
+  that node; any accepted prop change updates node attrs immediately and
+  re-renders the inline preview from the same local document state.
 
 **Serialization:**
 When the document is saved, the `MdxComponent` extension's `markdown.render` handler (§10.1.1) serializes each component node back to MDX syntax. Props are serialized as JSX attributes. Children (the content hole) are recursively serialized as markdown within the opening/closing tags. This MDX string is what gets stored in the `body` column of the database.
 
-If a component specifies `propsEditor`, the embedded Studio runtime resolves that custom editor locally from the host bundle through `resolvePropsEditor(componentName)`. If no executable resolver exists for a registered component, the runtime falls back to the auto-generated form controls derived from `catalog.components[*].extractedProps`.
+If a component specifies `propsEditor`, the embedded Studio runtime resolves
+that custom editor locally from the host bundle through
+`resolvePropsEditor(componentName)`. If no executable resolver exists for a
+registered component, the runtime falls back to the auto-generated form
+controls derived from `catalog.components[*].extractedProps`.
 
 ---
 
