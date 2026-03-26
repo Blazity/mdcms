@@ -30,8 +30,61 @@ type ClosingTagMatch = {
   endIndex: number;
 };
 
+const MDX_EXPRESSION_VALUE_KEY = "__mdxExpression";
+
+export type MdxExpressionValue = {
+  [MDX_EXPRESSION_VALUE_KEY]: string;
+};
+
 function isUppercaseComponentName(value: string): boolean {
   return /^[A-Z][A-Za-z0-9._-]*$/.test(value);
+}
+
+function createMdxExpressionValue(expression: string): MdxExpressionValue {
+  return {
+    [MDX_EXPRESSION_VALUE_KEY]: expression,
+  };
+}
+
+export function isMdxExpressionValue(
+  value: unknown,
+): value is MdxExpressionValue {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  return (
+    typeof (value as Record<string, unknown>)[MDX_EXPRESSION_VALUE_KEY] ===
+    "string"
+  );
+}
+
+function decodeEscapedQuotedValue(
+  input: string,
+  index: number,
+): [string, number] {
+  const current = input[index + 1];
+
+  if (current === undefined) {
+    return ["\\", index + 1];
+  }
+
+  switch (current) {
+    case '"':
+      return ['"', index + 2];
+    case "'":
+      return ["'", index + 2];
+    case "\\":
+      return ["\\", index + 2];
+    case "n":
+      return ["\n", index + 2];
+    case "r":
+      return ["\r", index + 2];
+    case "t":
+      return ["\t", index + 2];
+    default:
+      return [`\\${current}`, index + 2];
+  }
 }
 
 function readQuotedValue(input: string, index: number): [string, number] {
@@ -43,8 +96,12 @@ function readQuotedValue(input: string, index: number): [string, number] {
     const current = input[cursor];
 
     if (current === "\\" && cursor + 1 < input.length) {
-      value += input.slice(cursor, cursor + 2);
-      cursor += 2;
+      const [decodedValue, nextCursor] = decodeEscapedQuotedValue(
+        input,
+        cursor,
+      );
+      value += decodedValue;
+      cursor = nextCursor;
       continue;
     }
 
@@ -107,7 +164,7 @@ function parseMdxExpressionValue(input: string): unknown {
   const trimmed = input.trim();
 
   if (trimmed.length === 0) {
-    return true;
+    return createMdxExpressionValue(trimmed);
   }
 
   if (trimmed === "true") {
@@ -131,14 +188,18 @@ function parseMdxExpressionValue(input: string): unknown {
     (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
     (trimmed.startsWith('"') && trimmed.endsWith('"'))
   ) {
-    return JSON.parse(trimmed);
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return createMdxExpressionValue(trimmed);
+    }
   }
 
   if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
     return trimmed.slice(1, -1);
   }
 
-  return trimmed;
+  return createMdxExpressionValue(trimmed);
 }
 
 export function parseMdxJsxAttributes(input: string): Record<string, unknown> {
@@ -208,6 +269,10 @@ export function parseMdxJsxAttributes(input: string): Record<string, unknown> {
 }
 
 function formatAttributeValue(value: unknown): string {
+  if (isMdxExpressionValue(value)) {
+    return `{${value[MDX_EXPRESSION_VALUE_KEY]}}`;
+  }
+
   if (typeof value === "string") {
     return `${JSON.stringify(value)}`;
   }
@@ -232,6 +297,52 @@ export function serializeMdxJsxAttributes(
     .filter(([, value]) => value !== undefined)
     .map(([name, value]) => `${name}=${formatAttributeValue(value)}`)
     .join(" ");
+}
+
+type FenceState = {
+  marker: "`" | "~";
+  length: number;
+};
+
+function readFenceState(line: string): FenceState | null {
+  const match = line.match(/^ {0,3}([`~]{3,})/);
+
+  if (!match) {
+    return null;
+  }
+
+  const marker = match[1][0];
+
+  if (marker !== "`" && marker !== "~") {
+    return null;
+  }
+
+  return {
+    marker,
+    length: match[1].length,
+  };
+}
+
+function getLineEnd(input: string, index: number): number {
+  const lineEnd = input.indexOf("\n", index);
+  return lineEnd === -1 ? input.length : lineEnd;
+}
+
+function getBlockTagOffset(input: string, index: number): number | null {
+  const lineEnd = getLineEnd(input, index);
+  let cursor = index;
+  let spaces = 0;
+
+  while (cursor < lineEnd && input[cursor] === " " && spaces < 4) {
+    cursor += 1;
+    spaces += 1;
+  }
+
+  if (spaces > 3 || input[cursor] === "\t") {
+    return null;
+  }
+
+  return cursor;
 }
 
 function readOpeningTag(input: string, offset = 0): OpeningTagMatch | null {
@@ -353,32 +464,64 @@ function findMatchingClosingTag(
 ): ClosingTagMatch | null {
   let depth = 0;
   let cursor = searchStart;
+  let activeFence: FenceState | null = null;
 
   while (cursor < input.length) {
-    const nextOpen = input.indexOf(`<${componentName}`, cursor);
-    const nextClose = input.indexOf(`</${componentName}`, cursor);
+    const lineEnd = getLineEnd(input, cursor);
+    const nextCursor = lineEnd === input.length ? input.length : lineEnd + 1;
+    const blockTagOffset = getBlockTagOffset(input, cursor);
 
-    if (nextClose === -1) {
-      return null;
+    if (blockTagOffset === null) {
+      cursor = nextCursor;
+      continue;
     }
 
-    if (nextOpen !== -1 && nextOpen < nextClose) {
-      const nestedOpening = readOpeningTag(input, nextOpen);
+    const line = input.slice(blockTagOffset, lineEnd);
 
-      if (nestedOpening) {
-        if (!nestedOpening.isVoid) {
-          depth += 1;
-        }
+    if (activeFence) {
+      const maybeFenceEnd = readFenceState(line);
 
-        cursor = nestedOpening.endIndex;
-        continue;
+      if (
+        maybeFenceEnd &&
+        maybeFenceEnd.marker === activeFence.marker &&
+        maybeFenceEnd.length >= activeFence.length
+      ) {
+        activeFence = null;
       }
+
+      cursor = nextCursor;
+      continue;
     }
 
-    const closingTag = readClosingTag(input, nextClose);
+    const fenceStart = readFenceState(line);
+
+    if (fenceStart) {
+      activeFence = fenceStart;
+      cursor = nextCursor;
+      continue;
+    }
+
+    const openingTag = readOpeningTag(input, blockTagOffset);
+
+    if (
+      openingTag &&
+      openingTag.componentName === componentName &&
+      !openingTag.isVoid
+    ) {
+      depth += 1;
+      cursor = nextCursor;
+      continue;
+    }
+
+    const closingTag = readClosingTag(input, blockTagOffset);
 
     if (!closingTag) {
-      cursor = nextClose + 2;
+      cursor = nextCursor;
+      continue;
+    }
+
+    if (closingTag.componentName !== componentName) {
+      cursor = nextCursor;
       continue;
     }
 
@@ -387,7 +530,7 @@ function findMatchingClosingTag(
     }
 
     depth -= 1;
-    cursor = closingTag.endIndex;
+    cursor = nextCursor;
   }
 
   return null;

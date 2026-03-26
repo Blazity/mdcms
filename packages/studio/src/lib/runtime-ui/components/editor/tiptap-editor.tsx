@@ -1,7 +1,7 @@
 // @ts-nocheck
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useEffectEvent, type ReactNode } from "react";
 
 import { EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
 
@@ -92,12 +92,22 @@ function ToolbarButton({
   );
 }
 
+export function createTipTapEditorDependencies(placeholder: string) {
+  // The editor must survive parent rerenders so nested MDX child editing stays
+  // in one TipTap document/autosave session. Callback identity is intentionally
+  // excluded from the recreation key.
+  return [placeholder];
+}
+
 export function TipTapEditor({
   content = defaultContent,
   onChange,
   placeholder = "Start writing, or press / for commands...",
 }: TipTapEditorProps) {
   const toolbar = createEditorToolbarLayout();
+  const handleEditorUpdate = useEffectEvent((nextEditor) => {
+    onChange?.(extractMarkdownFromEditor(nextEditor));
+  });
   const editor = useEditor(
     {
       content,
@@ -118,10 +128,10 @@ export function TipTapEditor({
         },
       },
       onUpdate({ editor }) {
-        onChange?.(extractMarkdownFromEditor(editor));
+        handleEditorUpdate(editor);
       },
     },
-    [onChange, placeholder],
+    createTipTapEditorDependencies(placeholder),
   );
 
   useEffect(() => {

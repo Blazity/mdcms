@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import type { ReactNodeViewProps } from "@tiptap/react";
 import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
 
+import { isMdxExpressionValue } from "../../../mdx-component-extension.js";
 import { Badge } from "../ui/badge.js";
 
 function formatPropsSummary(
@@ -20,6 +21,10 @@ function formatPropsSummary(
 
   return entries
     .map(([name, value]) => {
+      if (isMdxExpressionValue(value)) {
+        return `${name}={${value.__mdxExpression}}`;
+      }
+
       if (typeof value === "string") {
         return `${name}="${value}"`;
       }

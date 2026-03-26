@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  isMdxExpressionValue,
   parseMdxJsxAttributes,
   serializeMdxJsxAttributes,
   tokenizeMdxComponentBlock,
@@ -63,4 +64,23 @@ test("serializeMdxJsxAttributes writes JSX-friendly attribute syntax", () => {
   assert.match(serialized, /count=\{3\}/);
   assert.match(serialized, /featured=\{true\}/);
   assert.match(serialized, /tags=\{\["cms","mdx"\]\}/);
+});
+
+test("parseMdxJsxAttributes preserves raw JSX expressions that are not JSON", () => {
+  const parsed = parseMdxJsxAttributes(
+    'config={{foo: "bar"}} icon={icons.warning}',
+  );
+
+  assert.equal(isMdxExpressionValue(parsed.config), true);
+  assert.equal(isMdxExpressionValue(parsed.icon), true);
+  assert.equal(
+    serializeMdxJsxAttributes(parsed),
+    'config={{foo: "bar"}} icon={icons.warning}',
+  );
+});
+
+test("parseMdxJsxAttributes decodes escaped quotes in quoted string props", () => {
+  assert.deepEqual(parseMdxJsxAttributes('title="He said \\"hi\\""'), {
+    title: 'He said "hi"',
+  });
 });

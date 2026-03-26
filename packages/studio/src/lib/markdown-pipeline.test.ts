@@ -122,6 +122,30 @@ test("markdown pipeline keeps wrapper MDX serialization stable after first pass"
   assert.equal(second, first);
 });
 
+test("markdown pipeline preserves wrapper content when fenced code contains a literal closing tag", () => {
+  const source = [
+    "<Callout>",
+    "```html",
+    "</Callout>",
+    "```",
+    "</Callout>",
+  ].join("\n");
+
+  assert.equal(roundTripMarkdown(source).markdown, source);
+});
+
+test("markdown pipeline preserves raw JSX prop expressions instead of throwing", () => {
+  const source = '<Callout config={{foo: "bar"}} />';
+
+  assert.equal(roundTripMarkdown(source).markdown, source);
+});
+
+test("markdown pipeline keeps escaped quotes in string props stable", () => {
+  const source = '<Callout title="He said \\"hi\\"" />';
+
+  assert.equal(roundTripMarkdown(source).markdown, source);
+});
+
 test("markdown pipeline throws explicit error when serializer is unavailable", () => {
   assert.throws(
     () => extractMarkdownFromEditor({} as never),
