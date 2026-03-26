@@ -1,8 +1,6 @@
 import { Editor } from "@tiptap/core";
-import { Markdown } from "@tiptap/markdown";
-import StarterKit from "@tiptap/starter-kit";
 
-import { MdxComponentExtension } from "./mdx-component-extension.js";
+import { createEditorExtensions } from "./editor-extensions.js";
 import { extractMarkdownFromEditor } from "./markdown-pipeline.js";
 
 export type CreateDocumentEditorInput = {
@@ -14,7 +12,7 @@ export function createDocumentEditor(input: CreateDocumentEditorInput): Editor {
   return new Editor({
     content: input.content,
     contentType: "markdown",
-    extensions: [StarterKit, MdxComponentExtension, Markdown],
+    extensions: createEditorExtensions(),
     onUpdate({ editor }) {
       // Nested MDX wrapper content lives in the same ProseMirror tree as the
       // rest of the document, so every update still serializes one draft body.

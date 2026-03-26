@@ -43,3 +43,39 @@ test("createDocumentEditor serializes wrapper MDX edits through onChange", () =>
     editor.destroy();
   }
 });
+
+test("createDocumentEditor supports task list commands and serializes checklist markdown", () => {
+  const changes: string[] = [];
+  const editor = createDocumentEditor({
+    content: "Todo item",
+    onChange(markdown) {
+      changes.push(markdown);
+    },
+  });
+
+  try {
+    editor.commands.selectAll();
+
+    assert.equal(editor.commands.toggleTaskList(), true);
+    assert.match(changes.at(-1) ?? "", /- \[ \] Todo item/);
+  } finally {
+    editor.destroy();
+  }
+});
+
+test("createDocumentEditor supports horizontal rule commands", () => {
+  const changes: string[] = [];
+  const editor = createDocumentEditor({
+    content: "Paragraph",
+    onChange(markdown) {
+      changes.push(markdown);
+    },
+  });
+
+  try {
+    assert.equal(editor.commands.setHorizontalRule(), true);
+    assert.match(changes.at(-1) ?? "", /---/);
+  } finally {
+    editor.destroy();
+  }
+});
