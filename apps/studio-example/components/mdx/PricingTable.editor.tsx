@@ -34,10 +34,14 @@ const buttonStyles = {
   fontWeight: 600,
 } as const;
 
-function getNextTiers(value: Partial<PricingTableProps>): PricingTier[] {
-  return value.tiers?.length
-    ? [...value.tiers]
-    : [{ name: "", price: "", description: "" }];
+export function getPricingTableEditorTiers(
+  value: Partial<PricingTableProps>,
+): PricingTier[] {
+  if (value.tiers === undefined) {
+    return [{ name: "", price: "", description: "" }];
+  }
+
+  return [...value.tiers];
 }
 
 const PricingTableEditor: PropsEditorComponent<PricingTableProps> = ({
@@ -45,7 +49,7 @@ const PricingTableEditor: PropsEditorComponent<PricingTableProps> = ({
   onChange,
   readOnly,
 }) => {
-  const tiers = getNextTiers(value);
+  const tiers = getPricingTableEditorTiers(value);
 
   function handleTitleChange(event: ChangeEvent<HTMLInputElement>) {
     onChange({
@@ -88,7 +92,7 @@ const PricingTableEditor: PropsEditorComponent<PricingTableProps> = ({
 
     onChange({
       ...value,
-      tiers: nextTiers.length > 0 ? nextTiers : undefined,
+      tiers: nextTiers,
     });
   }
 

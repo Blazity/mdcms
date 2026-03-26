@@ -23,7 +23,7 @@ const DEFAULT_TIERS: PricingTier[] = [
 ];
 
 export function PricingTable({ title, tiers }: PricingTableProps) {
-  const normalizedTiers = tiers?.length ? tiers : DEFAULT_TIERS;
+  const normalizedTiers = tiers === undefined ? DEFAULT_TIERS : tiers;
 
   return (
     <section
@@ -54,47 +54,62 @@ export function PricingTable({ title, tiers }: PricingTableProps) {
         </h3>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gap: "14px",
-          gridTemplateColumns: `repeat(${normalizedTiers.length}, minmax(0, 1fr))`,
-        }}
-      >
-        {normalizedTiers.map((tier, index) => (
-          <article
-            key={`${tier.name}-${index}`}
-            style={{
-              borderRadius: "18px",
-              border: "1px solid rgba(148, 163, 184, 0.22)",
-              background: "rgba(15, 23, 42, 0.52)",
-              padding: "16px",
-            }}
-          >
-            <h4 style={{ margin: 0, fontSize: "16px" }}>{tier.name}</h4>
-            <p
+      {normalizedTiers.length === 0 ? (
+        <div
+          style={{
+            borderRadius: "18px",
+            border: "1px dashed rgba(148, 163, 184, 0.32)",
+            padding: "22px 16px",
+            textAlign: "center",
+            color: "#cbd5e1",
+            fontSize: "14px",
+          }}
+        >
+          No tiers configured yet.
+        </div>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gap: "14px",
+            gridTemplateColumns: `repeat(${normalizedTiers.length}, minmax(0, 1fr))`,
+          }}
+        >
+          {normalizedTiers.map((tier, index) => (
+            <article
+              key={`${tier.name}-${index}`}
               style={{
-                margin: "10px 0 8px",
-                fontSize: "28px",
-                fontWeight: 700,
-                letterSpacing: "-0.04em",
+                borderRadius: "18px",
+                border: "1px solid rgba(148, 163, 184, 0.22)",
+                background: "rgba(15, 23, 42, 0.52)",
+                padding: "16px",
               }}
             >
-              {tier.price}
-            </p>
-            <p
-              style={{
-                margin: 0,
-                fontSize: "13px",
-                lineHeight: 1.6,
-                color: "#cbd5e1",
-              }}
-            >
-              {tier.description?.trim() || "Customizable demo tier."}
-            </p>
-          </article>
-        ))}
-      </div>
+              <h4 style={{ margin: 0, fontSize: "16px" }}>{tier.name}</h4>
+              <p
+                style={{
+                  margin: "10px 0 8px",
+                  fontSize: "28px",
+                  fontWeight: 700,
+                  letterSpacing: "-0.04em",
+                }}
+              >
+                {tier.price}
+              </p>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "13px",
+                  lineHeight: 1.6,
+                  color: "#cbd5e1",
+                }}
+              >
+                {tier.description?.trim() || "Customizable demo tier."}
+              </p>
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

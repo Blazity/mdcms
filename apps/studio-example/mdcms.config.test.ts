@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { Callout } from "./components/mdx/Callout";
 import { Chart } from "./components/mdx/Chart";
+import { PricingTable } from "./components/mdx/PricingTable";
 import config from "./mdcms.config";
 
 test("studio-example registers the expected demo MDX components", async () => {
@@ -43,8 +44,14 @@ test("demo MDX components tolerate empty preview props during insertion", () => 
   const calloutMarkup = renderToStaticMarkup(
     createElement(Callout, {} as never),
   );
+  const pricingMarkup = renderToStaticMarkup(
+    createElement(PricingTable, {
+      tiers: [],
+    }),
+  );
 
   assert.match(chartMarkup, /Quarterly momentum/);
   assert.match(calloutMarkup, /Important update/);
   assert.match(calloutMarkup, /info/);
+  assert.match(pricingMarkup, /No tiers configured yet/);
 });
