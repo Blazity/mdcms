@@ -260,7 +260,7 @@ export function AdminStudioClient({ config }: { config: MdcmsConfig }) {
 ## Build
 
 - `bun nx build studio`
-- `bun nx run studio:dev`
+- `bun nx run studio:dev` (watches TypeScript output and rebuilds the runtime artifact)
 - `bun nx typecheck studio`
 - `bun nx test studio`
 

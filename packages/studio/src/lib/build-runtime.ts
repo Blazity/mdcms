@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -45,6 +45,7 @@ declare const Bun: BunBuildRuntime;
 
 export const STUDIO_RUNTIME_ASSETS_DIRNAME = "assets";
 export const STUDIO_RUNTIME_BOOTSTRAP_DIRNAME = "bootstrap";
+export const STUDIO_RUNTIME_LATEST_BOOTSTRAP_FILE = "latest.json";
 export const STUDIO_RUNTIME_ENTRY_BASENAME = "studio-runtime";
 export const STUDIO_RUNTIME_ENTRY_EXTENSION = ".mjs";
 export const STUDIO_RUNTIME_STYLESHEET_EXTENSION = ".css";
@@ -91,6 +92,15 @@ function normalizeAssetsBasePath(value: string): string {
 
 function sha256Hex(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+async function writeAtomicUtf8File(
+  path: string,
+  content: string,
+): Promise<void> {
+  const temporaryPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(temporaryPath, content, "utf8");
+  await rename(temporaryPath, path);
 }
 
 export function createStudioRuntimeEntryUrl(input: {
@@ -254,12 +264,15 @@ export async function buildStudioRuntimeArtifacts(
     STUDIO_RUNTIME_BOOTSTRAP_DIRNAME,
     `${buildId}.json`,
   );
-  await mkdir(dirname(bootstrapPath), { recursive: true });
-  await writeFile(
-    bootstrapPath,
-    `${JSON.stringify(manifest, null, 2)}\n`,
-    "utf8",
+  const latestBootstrapPath = join(
+    outDir,
+    STUDIO_RUNTIME_BOOTSTRAP_DIRNAME,
+    STUDIO_RUNTIME_LATEST_BOOTSTRAP_FILE,
   );
+  await mkdir(dirname(bootstrapPath), { recursive: true });
+  const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
+  await writeFile(bootstrapPath, manifestJson, "utf8");
+  await writeAtomicUtf8File(latestBootstrapPath, manifestJson);
 
   return {
     buildId,

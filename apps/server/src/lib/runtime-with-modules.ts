@@ -30,6 +30,7 @@ import {
 import { loadServerConfig } from "./config.js";
 import type { ParsedMdcmsConfig } from "@mdcms/shared";
 import {
+  createRefreshingStudioRuntimePublicationSelection,
   createStudioRuntimePublication,
   type CreateStudioRuntimePublicationOptions,
 } from "./studio-bootstrap.js";
@@ -236,14 +237,21 @@ export async function prepareServerRequestHandlerWithModules(
     });
   const studioRuntimePublication =
     options.serverOptions?.studioRuntimePublication ??
-    ({
-      active: await createStudioRuntimePublication({
-        ...options.studioRuntimeOptions,
-        studioVersion:
-          options.studioRuntimeOptions?.studioVersion ??
-          (rawEnv.APP_VERSION?.trim() || "0.0.0"),
-      }),
-    } as const);
+    (env.NODE_ENV === "development"
+      ? await createRefreshingStudioRuntimePublicationSelection({
+          ...options.studioRuntimeOptions,
+          studioVersion:
+            options.studioRuntimeOptions?.studioVersion ??
+            (rawEnv.APP_VERSION?.trim() || "0.0.0"),
+        })
+      : ({
+          active: await createStudioRuntimePublication({
+            ...options.studioRuntimeOptions,
+            studioVersion:
+              options.studioRuntimeOptions?.studioVersion ??
+              (rawEnv.APP_VERSION?.trim() || "0.0.0"),
+          }),
+        } as const));
 
   return createServerRequestHandlerWithModules({
     ...options,

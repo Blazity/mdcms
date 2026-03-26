@@ -66,6 +66,11 @@ For a fully containerized dev loop (infra + migrations + app/server/studio watch
 
 ```bash
 bun run compose:dev
+
+`compose:dev` keeps the server, Next.js host app, and backend-served Studio
+runtime artifact in watch mode. Changes under `packages/studio/src/**` rebuild
+the runtime bundle automatically; a browser refresh should pick up the new
+bundle without restarting the stack.
 ```
 
 ## Demo Runbook (Pull -> Edit -> Push -> Verify)

@@ -135,6 +135,13 @@ For the local demo compose profile (`docker-compose.dev.yml`), startup includes 
   - `MDCMS_DEMO_SEED_USER_EMAIL=demo@mdcms.local`
   - `MDCMS_DEMO_SEED_USER_PASSWORD=Demo12345!`
 
+`docker-compose.dev.yml` is the long-running containerized development loop. In
+addition to infrastructure services and demo seeding, it keeps the server,
+embedded Studio host app, and Studio runtime artifact in watch mode. Changes
+under `packages/studio/src/**` must rebuild the backend-served Studio runtime
+bundle automatically and make the new bundle available without restarting the
+compose stack or the long-running `dev` service.
+
 This seed key is intended for local demo UX only and does not replace normal CLI login/logout flows.
 
 ---

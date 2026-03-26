@@ -1,5 +1,14 @@
+import { readFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
-import { dirname, extname, isAbsolute, relative, resolve } from "node:path";
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+} from "node:path";
 
 import {
   assertStudioBootstrapManifest,
@@ -8,6 +17,9 @@ import {
   type StudioBootstrapManifest,
 } from "@mdcms/shared";
 import {
+  STUDIO_RUNTIME_ASSETS_DIRNAME,
+  STUDIO_RUNTIME_BOOTSTRAP_DIRNAME,
+  STUDIO_RUNTIME_LATEST_BOOTSTRAP_FILE,
   buildStudioRuntimeArtifacts,
   type BuildStudioRuntimeArtifactsOptions,
 } from "@mdcms/studio/build-runtime";
@@ -111,28 +123,25 @@ function resolveContentType(assetPath: string): string {
   return "application/octet-stream";
 }
 
-export async function createStudioRuntimePublication(
-  options: CreateStudioRuntimePublicationOptions = {},
-): Promise<StudioRuntimePublication> {
-  const buildResult = await buildStudioRuntimeArtifacts({
-    ...options,
-    mode: STUDIO_RUNTIME_MVP_MODE,
-  });
-
-  const manifest: StudioBootstrapManifest = {
-    ...buildResult.manifest,
-    mode: STUDIO_RUNTIME_MVP_MODE,
-  };
-  assertStudioBootstrapManifest(manifest, "studioRuntimePublication.manifest");
-
-  const activeBuildRoot = dirname(buildResult.entryPath);
+function createFileBackedStudioRuntimePublication(input: {
+  manifest: StudioBootstrapManifest;
+  outDir: string;
+}): StudioRuntimePublication {
+  const buildRoot = join(
+    input.outDir,
+    STUDIO_RUNTIME_ASSETS_DIRNAME,
+    input.manifest.buildId,
+  );
+  const entryFile = basename(
+    new URL(input.manifest.entryUrl, "http://localhost").pathname,
+  );
 
   return {
-    buildId: buildResult.buildId,
-    entryFile: buildResult.entryFile,
-    manifest,
+    buildId: input.manifest.buildId,
+    entryFile,
+    manifest: input.manifest,
     getAsset: async ({ buildId, assetPath }) => {
-      if (buildId !== buildResult.buildId) {
+      if (buildId !== input.manifest.buildId) {
         return undefined;
       }
 
@@ -142,9 +151,9 @@ export async function createStudioRuntimePublication(
         return undefined;
       }
 
-      const absolutePath = resolve(activeBuildRoot, normalizedAssetPath);
+      const absolutePath = resolve(buildRoot, normalizedAssetPath);
 
-      if (!isPathInsideRoot(activeBuildRoot, absolutePath)) {
+      if (!isPathInsideRoot(buildRoot, absolutePath)) {
         return undefined;
       }
 
@@ -165,6 +174,94 @@ export async function createStudioRuntimePublication(
       } catch {
         return undefined;
       }
+    },
+  };
+}
+
+function readLatestStudioRuntimeManifest(
+  outDir: string,
+): StudioBootstrapManifest | undefined {
+  const manifestPath = join(
+    outDir,
+    STUDIO_RUNTIME_BOOTSTRAP_DIRNAME,
+    STUDIO_RUNTIME_LATEST_BOOTSTRAP_FILE,
+  );
+
+  try {
+    const raw = readFileSync(manifestPath, "utf8");
+    const manifest = JSON.parse(raw) as StudioBootstrapManifest;
+    assertStudioBootstrapManifest(manifest, "studioRuntimePublication.latest");
+    return manifest;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function createStudioRuntimePublication(
+  options: CreateStudioRuntimePublicationOptions = {},
+): Promise<StudioRuntimePublication> {
+  const buildResult = await buildStudioRuntimeArtifacts({
+    ...options,
+    mode: STUDIO_RUNTIME_MVP_MODE,
+  });
+
+  const manifest: StudioBootstrapManifest = {
+    ...buildResult.manifest,
+    mode: STUDIO_RUNTIME_MVP_MODE,
+  };
+  assertStudioBootstrapManifest(manifest, "studioRuntimePublication.manifest");
+  const outDir = resolve(dirname(buildResult.bootstrapPath), "..");
+
+  return createFileBackedStudioRuntimePublication({
+    manifest,
+    outDir,
+  });
+}
+
+export async function createRefreshingStudioRuntimePublicationSelection(
+  options: CreateStudioRuntimePublicationOptions = {},
+): Promise<StudioRuntimePublicationSelection> {
+  const initialBuild = await buildStudioRuntimeArtifacts({
+    ...options,
+    mode: STUDIO_RUNTIME_MVP_MODE,
+  });
+  const initialManifest: StudioBootstrapManifest = {
+    ...initialBuild.manifest,
+    mode: STUDIO_RUNTIME_MVP_MODE,
+  };
+  assertStudioBootstrapManifest(
+    initialManifest,
+    "studioRuntimePublication.manifest",
+  );
+  const outDir = resolve(dirname(initialBuild.bootstrapPath), "..");
+  let active = createFileBackedStudioRuntimePublication({
+    manifest: initialManifest,
+    outDir,
+  });
+  let lastKnownGood: StudioRuntimePublication | undefined;
+
+  const refresh = () => {
+    const latestManifest = readLatestStudioRuntimeManifest(outDir);
+
+    if (!latestManifest || latestManifest.buildId === active.buildId) {
+      return;
+    }
+
+    lastKnownGood = active;
+    active = createFileBackedStudioRuntimePublication({
+      manifest: latestManifest,
+      outDir,
+    });
+  };
+
+  return {
+    get active() {
+      refresh();
+      return active;
+    },
+    get lastKnownGood() {
+      refresh();
+      return lastKnownGood;
     },
   };
 }

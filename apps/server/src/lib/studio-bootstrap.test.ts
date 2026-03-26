@@ -8,8 +8,12 @@ import {
   assertStudioBootstrapManifest,
   type StudioBootstrapManifest,
 } from "@mdcms/shared";
+import { buildStudioRuntimeArtifacts } from "@mdcms/studio/build-runtime";
 
-import { createStudioRuntimePublication } from "./studio-bootstrap.js";
+import {
+  createRefreshingStudioRuntimePublicationSelection,
+  createStudioRuntimePublication,
+} from "./studio-bootstrap.js";
 
 async function withTempDir<T>(
   prefix: string,
@@ -162,5 +166,40 @@ test("getAsset returns undefined for unknown build ids, missing files, and trave
       assetPath: "../../../etc/passwd",
     });
     assert.equal(escapedAsset, undefined);
+  });
+});
+
+test("createRefreshingStudioRuntimePublicationSelection promotes the latest built manifest without restarting", async () => {
+  await withTempDir("studio-publication-", async (directory) => {
+    const sourceFile = join(directory, "remote.ts");
+    const outDir = join(directory, "dist");
+    await writeFile(
+      sourceFile,
+      "export const mount = (_container: unknown, _ctx: unknown) => () => {};\n",
+      "utf8",
+    );
+
+    const selection = await createRefreshingStudioRuntimePublicationSelection({
+      sourceFile,
+      outDir,
+      studioVersion: "1.2.3",
+    });
+    const initialBuildId = selection.active.buildId;
+
+    await writeFile(
+      sourceFile,
+      "export const mount = (_container: unknown, _ctx: unknown) => () => console.info('updated');\n",
+      "utf8",
+    );
+
+    const rebuild = await buildStudioRuntimeArtifacts({
+      sourceFile,
+      outDir,
+      studioVersion: "1.2.3",
+    });
+
+    assert.notEqual(rebuild.buildId, initialBuildId);
+    assert.equal(selection.active.buildId, rebuild.buildId);
+    assert.equal(selection.lastKnownGood?.buildId, initialBuildId);
   });
 });
