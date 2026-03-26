@@ -164,6 +164,35 @@ test("Studio accepts the minimal server-safe embed config shape", () => {
   `);
 });
 
+test("Studio exports generic custom props editor authoring types", () => {
+  typecheckSource(`
+    import type { PropsEditorComponent } from "../index.ts";
+
+    type PricingTableProps = {
+      tiers: Array<{ name: string; price: number }>;
+    };
+
+    const PricingTableEditor: PropsEditorComponent<PricingTableProps> = ({
+      value,
+      onChange,
+      readOnly,
+    }) => {
+      const tierName: string = value.tiers[0]!.name;
+      onChange({
+        tiers: [{ name: tierName, price: 10 }],
+      });
+
+      if (readOnly) {
+        return null;
+      }
+
+      return null;
+    };
+
+    void PricingTableEditor;
+  `);
+});
+
 test("prepareStudioConfig enriches mdx component metadata from source files", async () => {
   const tempDir = join(
     dirname(fileURLToPath(import.meta.url)),

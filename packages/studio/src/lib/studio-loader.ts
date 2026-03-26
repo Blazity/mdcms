@@ -44,7 +44,8 @@ type LoadedLocalMdxRuntime = {
 };
 
 type LocalMdxPreviewMap = Map<string, unknown>;
-type LocalMdxPropsEditorMap = Map<string, unknown>;
+type LocalMdxPropsEditorLoaderMap = Map<string, () => Promise<unknown>>;
+type LocalMdxPropsEditorResultCache = Map<string, Promise<unknown | null>>;
 const BOOTSTRAP_FETCH_RETRY_DELAYS_MS = [50, 150] as const;
 
 function normalizeBaseUrl(serverUrl: string): string {
@@ -145,24 +146,19 @@ async function createLoadedLocalMdxRuntime(
   }
 
   const previewComponents: LocalMdxPreviewMap = new Map();
-  const propsEditors: LocalMdxPropsEditorMap = new Map();
+  const propsEditorLoaders: LocalMdxPropsEditorLoaderMap = new Map();
+  const propsEditorResults: LocalMdxPropsEditorResultCache = new Map();
 
   await Promise.all(
     components.map(async (component) => {
-      const [previewResult, propsEditorResult] = await Promise.allSettled([
-        component.load?.(),
-        component.loadPropsEditor?.(),
-      ]);
+      const previewResult = await Promise.allSettled([component.load?.()]);
 
-      if (previewResult?.status === "fulfilled" && previewResult.value) {
-        previewComponents.set(component.name, previewResult.value);
+      if (previewResult[0]?.status === "fulfilled" && previewResult[0].value) {
+        previewComponents.set(component.name, previewResult[0].value);
       }
 
-      if (
-        propsEditorResult?.status === "fulfilled" &&
-        propsEditorResult.value
-      ) {
-        propsEditors.set(component.name, propsEditorResult.value);
+      if (component.loadPropsEditor) {
+        propsEditorLoaders.set(component.name, component.loadPropsEditor);
       }
     }),
   );
@@ -192,7 +188,29 @@ async function createLoadedLocalMdxRuntime(
     hostBridge: createLoadedHostBridge(previewComponents),
     mdx: {
       catalog,
-      resolvePropsEditor: async (name) => propsEditors.get(name) ?? null,
+      resolvePropsEditor: async (name) => {
+        const existingResult = propsEditorResults.get(name);
+
+        if (existingResult) {
+          return existingResult;
+        }
+
+        const loadPropsEditor = propsEditorLoaders.get(name);
+
+        if (!loadPropsEditor) {
+          return null;
+        }
+
+        const loadResult = (async () => {
+          const resolvedEditor = await loadPropsEditor();
+
+          return resolvedEditor ?? null;
+        })();
+
+        propsEditorResults.set(name, loadResult);
+
+        return loadResult;
+      },
     },
   };
 }

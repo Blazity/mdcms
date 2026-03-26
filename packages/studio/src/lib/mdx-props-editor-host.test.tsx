@@ -139,7 +139,23 @@ test("resolveMdxPropsEditorHostState returns error when the custom editor resolv
   assert.match(state.message, /boom/);
 });
 
-test("resolveMdxPropsEditorHostState returns forbidden in read-only mode", async () => {
+test("resolveMdxPropsEditorHostState keeps custom editors on the ready path in read-only mode", async () => {
+  const Editor = (_props: PropsEditorComponentProps) => null;
+  const state = await resolveMdxPropsEditorHostState({
+    component: createComponent({
+      propsEditor: "@/components/mdx/Chart.editor",
+    }),
+    context: createContext(async () => Editor),
+    readOnly: true,
+  });
+
+  assert.deepEqual(state, {
+    status: "ready",
+    editor: Editor,
+  });
+});
+
+test("resolveMdxPropsEditorHostState returns forbidden when access is explicitly unavailable", async () => {
   const state = await resolveMdxPropsEditorHostState({
     component: createComponent({
       propsEditor: "@/components/mdx/Chart.editor",
@@ -148,6 +164,7 @@ test("resolveMdxPropsEditorHostState returns forbidden in read-only mode", async
       throw new Error("should not resolve");
     }),
     readOnly: true,
+    forbidden: true,
   });
 
   assert.deepEqual(state, {

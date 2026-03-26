@@ -227,10 +227,8 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
   assert.match(markup, /data-mdcms-mdx-auto-control="Chart:website:url"/);
   assert.match(markup, /data-mdcms-mdx-auto-form="JsonOnly"/);
   assert.match(markup, /data-mdcms-mdx-auto-control="JsonOnly:options:json"/);
-  assert.match(
-    markup,
-    /data-mdcms-mdx-props-editor-state="PricingTable:loading"/,
-  );
+  assert.match(markup, /data-mdcms-mdx-props-editor="PricingTable"/);
+  assert.doesNotMatch(markup, /PricingTable:loading/);
 });
 
 test("RemoteStudioApp renders the expanded admin route surfaces", () => {

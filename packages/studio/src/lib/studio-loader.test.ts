@@ -342,6 +342,90 @@ test("loadStudioRuntime derives a local mdx catalog and editor resolver from con
   });
 });
 
+test("loadStudioRuntime resolves props editors lazily and preserves loader rejections", async () => {
+  await withTempDir("studio-loader-mdx-lazy-", async (directory) => {
+    const fixture = await createRuntimeFixture(directory);
+    const contexts: unknown[] = [];
+    let propsEditorLoadCount = 0;
+    const config: MdcmsConfig = {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+      components: [
+        {
+          name: "Chart",
+          importPath: "@/components/mdx/Chart",
+          propsEditor: "@/components/mdx/Chart.editor",
+          loadPropsEditor: async () => {
+            propsEditorLoadCount += 1;
+            throw new Error("props editor import failed");
+          },
+        },
+      ],
+    };
+
+    await loadStudioRuntime({
+      config,
+      basePath: "/admin",
+      container: {},
+      fetcher: async (input) => {
+        const url = String(input);
+
+        if (url === "http://localhost:4000/api/v1/studio/bootstrap") {
+          return new Response(
+            JSON.stringify(
+              createReadyBootstrapPayload({
+                manifest: fixture.manifest,
+              }),
+            ),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        if (url === "http://localhost:4000" + fixture.manifest.entryUrl) {
+          return new Response(new Uint8Array(fixture.runtimeBytes), {
+            status: 200,
+            headers: {
+              "content-type": "text/javascript; charset=utf-8",
+            },
+          });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+      },
+      loadRemoteModule: async () => ({
+        mount: (_target: unknown, context: unknown) => {
+          contexts.push(context);
+          return () => {};
+        },
+      }),
+    });
+
+    const context = contexts[0] as {
+      mdx?: {
+        resolvePropsEditor: (name: string) => Promise<unknown | null>;
+      };
+    };
+
+    assert.equal(propsEditorLoadCount, 0);
+    await assert.rejects(
+      () => context.mdx?.resolvePropsEditor("Chart") ?? Promise.resolve(null),
+      /props editor import failed/,
+    );
+    assert.equal(propsEditorLoadCount, 1);
+    await assert.rejects(
+      () => context.mdx?.resolvePropsEditor("Chart") ?? Promise.resolve(null),
+      /props editor import failed/,
+    );
+    assert.equal(propsEditorLoadCount, 1);
+  });
+});
+
 test("loadStudioRuntime composes a caller hostBridge with config-derived component resolution", async () => {
   await withTempDir("studio-loader-compose-", async (directory) => {
     const fixture = await createRuntimeFixture(directory);

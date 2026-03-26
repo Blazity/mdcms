@@ -18,14 +18,17 @@ type MdxCatalogComponent = NonNullable<
 >["catalog"]["components"][number];
 
 export type PropsEditorValue = Record<string, unknown>;
-export type PropsEditorChangeHandler = (nextValue: PropsEditorValue) => void;
-export type PropsEditorComponentProps = {
-  value: PropsEditorValue;
-  onChange: PropsEditorChangeHandler;
+export type PropsEditorChangeHandler<TValue extends object = PropsEditorValue> =
+  (nextValue: TValue) => void;
+export type PropsEditorComponentProps<
+  TValue extends object = PropsEditorValue,
+> = {
+  value: TValue;
+  onChange: PropsEditorChangeHandler<TValue>;
   readOnly: boolean;
 };
-export type PropsEditorComponent = (
-  props: PropsEditorComponentProps,
+export type PropsEditorComponent<TValue extends object = PropsEditorValue> = (
+  props: PropsEditorComponentProps<TValue>,
 ) => ReactNode;
 
 export type MdxPropsEditorHostState =
@@ -40,6 +43,7 @@ type MdxPropsEditorHostStateInput = {
   component: MdxCatalogComponent;
   context: StudioMountContext;
   readOnly: boolean;
+  forbidden?: boolean;
 };
 
 type PropsEditorRenderBoundaryProps = {
@@ -94,6 +98,7 @@ export type MdxPropsEditorHostProps = {
   context: StudioMountContext;
   initialValue?: PropsEditorValue;
   readOnly?: boolean;
+  forbidden?: boolean;
 };
 
 export function createMdxPropsEditorBindings(input: {
@@ -117,7 +122,7 @@ export function createMdxPropsEditorBindings(input: {
 export function createInitialMdxPropsEditorHostState(
   input: MdxPropsEditorHostStateInput,
 ): MdxPropsEditorHostState {
-  if (input.readOnly) {
+  if (input.forbidden) {
     return { status: "forbidden" };
   }
 
@@ -170,12 +175,14 @@ export function MdxPropsEditorHost({
   context,
   initialValue,
   readOnly = false,
+  forbidden = false,
 }: MdxPropsEditorHostProps) {
   const [state, setState] = useState<MdxPropsEditorHostState>(() =>
     createInitialMdxPropsEditorHostState({
       component,
       context,
       readOnly,
+      forbidden,
     }),
   );
   const [value, setValue] = useState<PropsEditorValue>(
@@ -192,6 +199,7 @@ export function MdxPropsEditorHost({
       component,
       context,
       readOnly,
+      forbidden,
     };
     const initialState = createInitialMdxPropsEditorHostState(input);
 
@@ -210,7 +218,7 @@ export function MdxPropsEditorHost({
     return () => {
       cancelled = true;
     };
-  }, [component, context, readOnly]);
+  }, [component, context, forbidden, readOnly]);
 
   switch (state.status) {
     case "loading":
@@ -227,19 +235,22 @@ export function MdxPropsEditorHost({
       });
 
       return (
-        <Fragment>
-          <span data-mdcms-mdx-props-editor-state={`${component.name}:ready`}>
-            Custom editor ready.
-          </span>
-          <span data-mdcms-mdx-props-editor={component.name}>
-            Custom editor
-          </span>
-          <PropsEditorRenderBoundary componentName={component.name}>
+        <PropsEditorRenderBoundary componentName={component.name}>
+          <>
+            <span data-mdcms-mdx-props-editor-state={`${component.name}:ready`}>
+              Custom editor ready.
+            </span>
+            <span data-mdcms-mdx-props-editor={component.name}>
+              Custom editor
+            </span>
             <div data-mdcms-mdx-props-editor-surface={component.name}>
-              {createElement(state.editor, bindings)}
+              {createElement(
+                state.editor as PropsEditorComponent<PropsEditorValue>,
+                bindings,
+              )}
             </div>
-          </PropsEditorRenderBoundary>
-        </Fragment>
+          </>
+        </PropsEditorRenderBoundary>
       );
     }
     case "auto-form":
