@@ -1,7 +1,11 @@
 // @ts-nocheck
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+
+import { EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
+import { Markdown } from "@tiptap/markdown";
+import StarterKit from "@tiptap/starter-kit";
 
 import {
   Bold,
@@ -21,10 +25,12 @@ import {
   Underline as UnderlineIcon,
   Undo,
 } from "lucide-react";
+import { MdxComponentExtension } from "../../../mdx-component-extension.js";
+import { extractMarkdownFromEditor } from "../../../markdown-pipeline.js";
+import { MdxComponentNodeView } from "./mdx-component-node-view.js";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Separator } from "../ui/separator";
-import { Textarea } from "../ui/textarea";
 import { cn } from "../../lib/utils";
 
 interface TipTapEditorProps {
@@ -34,23 +40,20 @@ interface TipTapEditorProps {
 }
 
 const defaultContent = `
-<h1>Hello World</h1>
-<p>This is a sample blog post created in MDCMS Studio. You can edit this content using the rich text editor.</p>
-<h2>Getting Started</h2>
-<p>The editor supports various formatting options including <strong>bold</strong>, <em>italic</em>, <u>underline</u>, and <code>inline code</code>.</p>
-<h3>Lists</h3>
-<ul>
-  <li>First item</li>
-  <li>Second item</li>
-  <li>Third item</li>
-</ul>
-<h3>Code Blocks</h3>
-<pre><code>const greeting = "Hello, World!";
-console.log(greeting);</code></pre>
-<blockquote>
-  <p>This is a blockquote. You can use it to highlight important information.</p>
-</blockquote>
-<p>Continue writing your content here...</p>
+# Hello World
+
+This is a sample markdown document created in MDCMS Studio.
+
+<Callout type="warning">
+This is **important** nested markdown content inside an MDX wrapper component.
+
+- First point
+- Second point
+</Callout>
+
+## Getting Started
+
+Continue writing your content here...
 `;
 
 type ToolbarButtonProps = {
@@ -79,63 +82,208 @@ export function TipTapEditor({
   onChange,
   placeholder = "Start writing, or press / for commands...",
 }: TipTapEditorProps) {
-  const [draftContent, setDraftContent] = useState(content);
+  const editor = useEditor(
+    {
+      content,
+      contentType: "markdown",
+      immediatelyRender: false,
+      extensions: [
+        StarterKit,
+        MdxComponentExtension.extend({
+          addNodeView() {
+            return ReactNodeViewRenderer(MdxComponentNodeView);
+          },
+        }),
+        Markdown,
+      ],
+      editorProps: {
+        attributes: {
+          class:
+            "prose prose-sm max-w-none min-h-[480px] px-4 py-4 focus:outline-none",
+          "data-placeholder": placeholder,
+        },
+      },
+      onUpdate({ editor }) {
+        onChange?.(extractMarkdownFromEditor(editor));
+      },
+    },
+    [onChange, placeholder],
+  );
 
   useEffect(() => {
-    setDraftContent(content);
-  }, [content]);
+    if (!editor) {
+      return;
+    }
+
+    const currentMarkdown = extractMarkdownFromEditor(editor);
+
+    if (currentMarkdown === content) {
+      return;
+    }
+
+    editor.commands.setContent(content, {
+      contentType: "markdown",
+    });
+  }, [content, editor]);
+
+  const isActive = (name: string, attributes?: Record<string, unknown>) =>
+    editor?.isActive(name, attributes) ?? false;
+
+  const run = (command: () => boolean) => {
+    command();
+  };
 
   return (
     <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-background">
       <div className="flex flex-wrap items-center gap-0.5 border-b border-border bg-background-subtle p-1">
-        <ToolbarButton icon={<Undo className="h-4 w-4" />} label="Undo" />
-        <ToolbarButton icon={<Redo className="h-4 w-4" />} label="Redo" />
+        <div
+          onClick={() =>
+            run(() => editor?.chain().focus().undo().run() ?? false)
+          }
+        >
+          <ToolbarButton icon={<Undo className="h-4 w-4" />} label="Undo" />
+        </div>
+        <div
+          onClick={() =>
+            run(() => editor?.chain().focus().redo().run() ?? false)
+          }
+        >
+          <ToolbarButton icon={<Redo className="h-4 w-4" />} label="Redo" />
+        </div>
 
         <Separator orientation="vertical" className="mx-1 h-6" />
 
-        <ToolbarButton icon={<Bold className="h-4 w-4" />} label="Bold" />
-        <ToolbarButton icon={<Italic className="h-4 w-4" />} label="Italic" />
+        <div
+          onClick={() =>
+            run(() => editor?.chain().focus().toggleBold().run() ?? false)
+          }
+        >
+          <ToolbarButton
+            icon={<Bold className="h-4 w-4" />}
+            label="Bold"
+            active={isActive("bold")}
+          />
+        </div>
+        <div
+          onClick={() =>
+            run(() => editor?.chain().focus().toggleItalic().run() ?? false)
+          }
+        >
+          <ToolbarButton
+            icon={<Italic className="h-4 w-4" />}
+            label="Italic"
+            active={isActive("italic")}
+          />
+        </div>
         <ToolbarButton
           icon={<UnderlineIcon className="h-4 w-4" />}
           label="Underline"
         />
-        <ToolbarButton
-          icon={<Strikethrough className="h-4 w-4" />}
-          label="Strikethrough"
-        />
-        <ToolbarButton
-          icon={<Code className="h-4 w-4" />}
-          label="Inline code"
-        />
+        <div
+          onClick={() =>
+            run(() => editor?.chain().focus().toggleStrike().run() ?? false)
+          }
+        >
+          <ToolbarButton
+            icon={<Strikethrough className="h-4 w-4" />}
+            label="Strikethrough"
+            active={isActive("strike")}
+          />
+        </div>
+        <div
+          onClick={() =>
+            run(() => editor?.chain().focus().toggleCode().run() ?? false)
+          }
+        >
+          <ToolbarButton
+            icon={<Code className="h-4 w-4" />}
+            label="Inline code"
+            active={isActive("code")}
+          />
+        </div>
         <ToolbarButton
           icon={<Highlighter className="h-4 w-4" />}
           label="Highlight"
-          active
         />
 
         <Separator orientation="vertical" className="mx-1 h-6" />
 
-        <ToolbarButton
-          icon={<Heading1 className="h-4 w-4" />}
-          label="Heading 1"
-        />
-        <ToolbarButton
-          icon={<Heading2 className="h-4 w-4" />}
-          label="Heading 2"
-        />
-        <ToolbarButton
-          icon={<List className="h-4 w-4" />}
-          label="Bulleted list"
-        />
-        <ToolbarButton
-          icon={<ListOrdered className="h-4 w-4" />}
-          label="Numbered list"
-        />
-        <ToolbarButton icon={<Quote className="h-4 w-4" />} label="Quote" />
-        <ToolbarButton
-          icon={<FileCode className="h-4 w-4" />}
-          label="Code block"
-        />
+        <div
+          onClick={() =>
+            run(
+              () =>
+                editor?.chain().focus().toggleHeading({ level: 1 }).run() ??
+                false,
+            )
+          }
+        >
+          <ToolbarButton
+            icon={<Heading1 className="h-4 w-4" />}
+            label="Heading 1"
+            active={isActive("heading", { level: 1 })}
+          />
+        </div>
+        <div
+          onClick={() =>
+            run(
+              () =>
+                editor?.chain().focus().toggleHeading({ level: 2 }).run() ??
+                false,
+            )
+          }
+        >
+          <ToolbarButton
+            icon={<Heading2 className="h-4 w-4" />}
+            label="Heading 2"
+            active={isActive("heading", { level: 2 })}
+          />
+        </div>
+        <div
+          onClick={() =>
+            run(() => editor?.chain().focus().toggleBulletList().run() ?? false)
+          }
+        >
+          <ToolbarButton
+            icon={<List className="h-4 w-4" />}
+            label="Bulleted list"
+            active={isActive("bulletList")}
+          />
+        </div>
+        <div
+          onClick={() =>
+            run(
+              () => editor?.chain().focus().toggleOrderedList().run() ?? false,
+            )
+          }
+        >
+          <ToolbarButton
+            icon={<ListOrdered className="h-4 w-4" />}
+            label="Numbered list"
+            active={isActive("orderedList")}
+          />
+        </div>
+        <div
+          onClick={() =>
+            run(() => editor?.chain().focus().toggleBlockquote().run() ?? false)
+          }
+        >
+          <ToolbarButton
+            icon={<Quote className="h-4 w-4" />}
+            label="Quote"
+            active={isActive("blockquote")}
+          />
+        </div>
+        <div
+          onClick={() =>
+            run(() => editor?.chain().focus().toggleCodeBlock().run() ?? false)
+          }
+        >
+          <ToolbarButton
+            icon={<FileCode className="h-4 w-4" />}
+            label="Code block"
+            active={isActive("codeBlock")}
+          />
+        </div>
         <ToolbarButton
           icon={<ImageIcon className="h-4 w-4" />}
           label="Insert image"
@@ -147,27 +295,19 @@ export function TipTapEditor({
 
         <div className="ml-auto">
           <Badge variant="outline" className="bg-background">
-            Mock editor
+            TipTap
           </Badge>
         </div>
       </div>
 
       <div className="border-b border-border bg-background px-4 py-2 text-xs text-foreground-muted">
-        Rich text actions are stubbed in this runtime port. The surface is here
-        so the admin route set matches the mock before backend and editor
-        wiring.
+        Real TipTap markdown editing is active. Wrapper MDX components expose a
+        nested rich-text region inside the document flow.
       </div>
 
-      <Textarea
-        value={draftContent}
-        onChange={(event) => {
-          const nextContent = event.target.value;
-          setDraftContent(nextContent);
-          onChange?.(nextContent);
-        }}
-        placeholder={placeholder}
-        className="min-h-[480px] resize-none rounded-none border-0 bg-transparent px-4 py-4 font-mono text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-      />
+      <div className="min-h-[480px] bg-transparent">
+        <EditorContent editor={editor} />
+      </div>
     </div>
   );
 }

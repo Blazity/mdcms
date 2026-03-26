@@ -46,6 +46,82 @@ test("markdown pipeline can serialize parsed document back to markdown", () => {
   assert.equal(serialized.length > 0, true);
 });
 
+test("markdown pipeline preserves wrapper MDX blocks with nested markdown children", () => {
+  const source = [
+    '<Callout type="warning">',
+    "This is **important** content.",
+    "",
+    "- One",
+    "- Two",
+    "</Callout>",
+  ].join("\n");
+
+  const parsed = parseMarkdownToDocument(source);
+
+  assert.equal(parsed.type, "doc");
+  assert.ok(Array.isArray(parsed.content));
+  assert.deepEqual(parsed.content?.[0], {
+    type: "mdxComponent",
+    attrs: {
+      componentName: "Callout",
+      isVoid: false,
+      props: {
+        type: "warning",
+      },
+    },
+    content: [
+      {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "This is " },
+          { type: "text", marks: [{ type: "bold" }], text: "important" },
+          { type: "text", text: " content." },
+        ],
+      },
+      {
+        type: "bulletList",
+        content: [
+          {
+            type: "listItem",
+            content: [
+              { type: "paragraph", content: [{ type: "text", text: "One" }] },
+            ],
+          },
+          {
+            type: "listItem",
+            content: [
+              { type: "paragraph", content: [{ type: "text", text: "Two" }] },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  const serialized = serializeDocumentToMarkdown(parsed);
+
+  assert.match(serialized, /<Callout type="warning">/);
+  assert.match(serialized, /\*\*important\*\*/);
+  assert.match(serialized, /- One/);
+  assert.match(serialized, /<\/Callout>/);
+});
+
+test("markdown pipeline keeps wrapper MDX serialization stable after first pass", () => {
+  const source = [
+    '<Callout type="warning">',
+    "Paragraph",
+    "",
+    "1. First",
+    "2. Second",
+    "</Callout>",
+  ].join("\n");
+
+  const first = roundTripMarkdown(source).markdown;
+  const second = roundTripMarkdown(first).markdown;
+
+  assert.equal(second, first);
+});
+
 test("markdown pipeline throws explicit error when serializer is unavailable", () => {
   assert.throws(
     () => extractMarkdownFromEditor({} as never),

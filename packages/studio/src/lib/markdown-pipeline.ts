@@ -3,47 +3,16 @@ import { Editor, type JSONContent } from "@tiptap/core";
 import { Markdown } from "@tiptap/markdown";
 import StarterKit from "@tiptap/starter-kit";
 
-const FALLBACK_MARKDOWN_ATTR = "mdcmsMarkdownSource";
+import { MdxComponentExtension } from "./mdx-component-extension.js";
 
 function createMarkdownEditor(content: string | JSONContent): Editor {
+  // TipTap's core editor can parse/serialize markdown in the Bun test runtime,
+  // so the markdown pipeline now exercises the same engine in tests and UI code.
   return new Editor({
     content,
-    extensions: [StarterKit, Markdown],
+    contentType: typeof content === "string" ? "markdown" : "json",
+    extensions: [StarterKit, MdxComponentExtension, Markdown],
   });
-}
-
-function canUseTiptapRuntime(): boolean {
-  return typeof window !== "undefined" && typeof document !== "undefined";
-}
-
-function createFallbackDocument(markdown: string): JSONContent {
-  return {
-    type: "doc",
-    attrs: {
-      [FALLBACK_MARKDOWN_ATTR]: markdown,
-    },
-    content: markdown.length
-      ? [
-          {
-            type: "paragraph",
-            content: [{ type: "text", text: markdown }],
-          },
-        ]
-      : [],
-  };
-}
-
-function extractTextContent(node: JSONContent | undefined): string {
-  if (!node) {
-    return "";
-  }
-
-  const fromText = typeof node.text === "string" ? node.text : "";
-  const fromChildren = Array.isArray(node.content)
-    ? node.content.map((child) => extractTextContent(child)).join("")
-    : "";
-
-  return `${fromText}${fromChildren}`;
 }
 
 function assertMarkdownString(markdown: unknown, source: string): string {
@@ -90,10 +59,6 @@ export function extractMarkdownFromEditor(editor: Editor): string {
 }
 
 export function parseMarkdownToDocument(markdown: string): JSONContent {
-  if (!canUseTiptapRuntime()) {
-    return createFallbackDocument(markdown);
-  }
-
   const editor = createMarkdownEditor(markdown);
 
   try {
@@ -104,15 +69,6 @@ export function parseMarkdownToDocument(markdown: string): JSONContent {
 }
 
 export function serializeDocumentToMarkdown(document: JSONContent): string {
-  if (!canUseTiptapRuntime()) {
-    const fromAttr = document.attrs?.[FALLBACK_MARKDOWN_ATTR];
-    if (typeof fromAttr === "string") {
-      return fromAttr;
-    }
-
-    return extractTextContent(document);
-  }
-
   const editor = createMarkdownEditor(document);
 
   try {

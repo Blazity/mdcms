@@ -151,10 +151,28 @@ export function AdminStudioClient({ config }: { config: MdcmsConfig }) {
   - `parseMarkdownToDocument(markdown)`
   - `serializeDocumentToMarkdown(jsonDoc)`
   - `roundTripMarkdown(markdown)`
+- The markdown pipeline now runs through real TipTap parsing/serialization in
+  the Bun test runtime as well as the browser-facing editor surface, so
+  round-trip tests exercise the same engine used by the document route.
 - Serialization now fails with explicit runtime errors when TipTap markdown
   serializer hooks are unavailable or return invalid data.
 - Round-trip stability is covered in unit tests to reduce phantom diff risk in
   downstream collaboration and autosave work.
+
+## Nested MDX Wrapper Content (CMS-73)
+
+- The document route now uses a real `@tiptap/react` editor surface instead of
+  the previous textarea mock while keeping the current page shell and sidebar
+  layout intact.
+- MDX wrapper and self-closing components are represented by one generic
+  `mdxComponent` node inside `@mdcms/studio`.
+- Wrapper components serialize as:
+  - `<Component ...> ...markdown children... </Component>`
+- Self-closing components serialize as:
+  - `<Component ... />`
+- Wrapper child content stays in the same editor document and `onChange`
+  pipeline as the surrounding markdown, which keeps autosave and future
+  collaboration wiring on one draft body string.
 
 ## Action Catalog Adapter (CMS-5)
 
