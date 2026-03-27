@@ -57,7 +57,10 @@ const STUDIO_DOCUMENT_SHELL_ERROR_CODES: ReadonlySet<StudioDocumentShellErrorCod
 function normalizeDocumentShellErrorCode(
   code: unknown,
 ): StudioDocumentShellErrorCode {
-  if (code === "DOCUMENT_ROUTE_RESPONSE_INVALID") {
+  if (
+    code === "DOCUMENT_ROUTE_RESPONSE_INVALID" ||
+    code === "DOCUMENT_ROUTE_REQUEST_FAILED"
+  ) {
     return "DOCUMENT_LOAD_FAILED";
   }
 
@@ -76,6 +79,16 @@ function toDocumentShellError(error: unknown): {
   message: string;
 } {
   if (error instanceof RuntimeError) {
+    if (
+      error.code === "DOCUMENT_ROUTE_RESPONSE_INVALID" ||
+      error.code === "DOCUMENT_ROUTE_REQUEST_FAILED"
+    ) {
+      return {
+        code: "DOCUMENT_LOAD_FAILED",
+        message: "Failed to load document draft.",
+      };
+    }
+
     return {
       code: normalizeDocumentShellErrorCode(error.code),
       message: error.message,

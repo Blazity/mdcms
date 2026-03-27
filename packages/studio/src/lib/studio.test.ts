@@ -938,6 +938,31 @@ test("loadStudioDocumentShell maps malformed draft payloads to document load fai
   assert.equal(result.errorMessage, "Failed to load document draft.");
 });
 
+test("loadStudioDocumentShell maps code-less draft failures to document load failure", async () => {
+  const result = await loadStudioDocumentShell(
+    {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+    },
+    {
+      type: "BlogPost",
+      documentId: "11111111-1111-4111-8111-111111111111",
+      locale: "en",
+    },
+    {
+      fetcher: async () =>
+        new Response(undefined, {
+          status: 500,
+        }),
+    },
+  );
+
+  assert.equal(result.state, "error");
+  assert.equal(result.errorCode, "DOCUMENT_LOAD_FAILED");
+  assert.equal(result.errorMessage, "Failed to load document draft.");
+});
+
 test("loadStudioDocumentShell uses credentials for cookie auth", async () => {
   await loadStudioDocumentShell(
     {
