@@ -126,6 +126,25 @@ function resolveDefaultStudioProjectRoot(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 }
 
+async function withCurrentWorkingDirectory<T>(
+  cwd: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  const originalCwd = process.cwd();
+
+  if (originalCwd === cwd) {
+    return await run();
+  }
+
+  process.chdir(cwd);
+
+  try {
+    return await run();
+  } finally {
+    process.chdir(originalCwd);
+  }
+}
+
 function formatBuildErrorDetails(logs: readonly unknown[] | undefined): string {
   if (!logs || logs.length === 0) {
     return "Unknown build error.";
@@ -153,16 +172,21 @@ function formatBuildErrorDetails(logs: readonly unknown[] | undefined): string {
 
 async function bundleRuntimeEntry(input: {
   sourceFile: string;
+  projectRoot: string;
 }): Promise<string> {
-  const buildResult = await Bun.build({
-    entrypoints: [input.sourceFile],
-    format: "esm",
-    target: "browser",
-    splitting: false,
-    sourcemap: "none",
-    minify: false,
-    write: false,
-  });
+  const buildResult = await withCurrentWorkingDirectory(
+    input.projectRoot,
+    async () =>
+      await Bun.build({
+        entrypoints: [input.sourceFile],
+        format: "esm",
+        target: "browser",
+        splitting: false,
+        sourcemap: "none",
+        minify: false,
+        write: false,
+      }),
+  );
 
   if (!buildResult.success) {
     throw new Error(
@@ -214,6 +238,7 @@ export async function buildStudioRuntimeArtifacts(
     options.studioVersion ?? (process.env.APP_VERSION?.trim() || "0.0.0");
 
   const bundledEntry = await bundleRuntimeEntry({
+    projectRoot,
     sourceFile,
   });
   const entryBytes = new TextEncoder().encode(bundledEntry);

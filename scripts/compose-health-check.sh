@@ -79,6 +79,9 @@ assert_services_healthy() {
 
 trap cleanup EXIT
 
+echo "Resetting any existing compose stack"
+cleanup
+
 echo "Bringing stack up"
 docker compose up -d --build
 assert_services_healthy

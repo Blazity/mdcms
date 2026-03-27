@@ -11,6 +11,8 @@
     "integration:content": "bash scripts/content-api-integration-check.sh",
     "ci:required": "bun run quality && bun run unit && bun run integration",
     "check": "bun nx run-many -t build typecheck",
+    "hooks:install": "bash scripts/setup-git-hooks.sh",
+    "prepare": "sh -c 'if [ -f scripts/setup-git-hooks.sh ]; then bash scripts/setup-git-hooks.sh; fi'",
     "dev": "bun nx run-many -t dev --projects studio,server,studio-example",
     "compose:dev": "docker compose -f docker-compose.dev.yml up",
     "compose:dev:down": "docker compose -f docker-compose.dev.yml down",

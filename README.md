@@ -17,6 +17,7 @@ It is initialized as a Bun-based Nx workspace with app/package boundaries and mo
 
 Run from the workspace root:
 
+- `bun install` - Install workspace dependencies and register the repo-managed Git hooks.
 - `bun run build` - Build all projects with Nx.
 - `bun run typecheck` - Typecheck all projects with Nx.
 - `bun run quality` - Run foundational quality checks (`format:check` + `typecheck`).
@@ -24,6 +25,7 @@ Run from the workspace root:
 - `bun run integration` - Run integration harness checks (`compose:health` + `migrate:check`).
 - `bun run ci:required` - Run all required CI gates locally in sequence.
 - `bun run check` - Run `build` and `typecheck` targets across projects.
+- `bun run hooks:install` - Re-register the tracked Git hooks if local Git config was reset.
 - `bun run dev` - Start Studio watch build, server auto-restart, and the Studio example Next.js dev server in one command.
 - `bun run compose:dev` - Run the full dev loop in Docker Compose (infra + migrations + hot-reload app/server/studio).
 - `bun run compose:dev:down` - Stop the Docker Compose dev stack.
@@ -31,6 +33,14 @@ Run from the workspace root:
 - `bun run migrate:check` - Verify auto-run SQL migrations and server startup in Docker Compose.
 - `bun run format` - Format repository files with Prettier.
 - `bun run format:check` - Check repository formatting with Prettier.
+
+The repository targets Bun `1.3.11` in CI. Use the version recorded in [`.bun-version`](/Users/karol/Desktop/mdcms/.bun-version) for local parity when possible.
+
+## Git Hooks
+
+`bun install` configures `core.hooksPath` to the tracked [`.githooks`](/Users/karol/Desktop/mdcms/.githooks) directory when the repo is installed inside a Git worktree.
+
+The [`.githooks/pre-push`](/Users/karol/Desktop/mdcms/.githooks/pre-push) hook runs `bun run ci:required` from the workspace root and blocks `git push` when any required gate fails.
 
 ## Workspace Layout
 

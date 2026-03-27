@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
-import { test } from "node:test";
+import { test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
@@ -22,6 +22,8 @@ import {
   describeStudioStartupError,
 } from "./studio-component.js";
 import { loadStudioDocumentShell } from "./document-shell.js";
+
+const TYPECHECK_TEST_TIMEOUT_MS = 20_000;
 
 function readFetchHeader(
   input: string | URL | Request,
@@ -110,8 +112,11 @@ test("createStudioRuntimeContext wires env and logger", () => {
   assert.ok(context.logger);
 });
 
-test("Studio accepts the authored shared config shape for mdx-aware embedding", () => {
-  typecheckSource(`
+test(
+  "Studio accepts the authored shared config shape for mdx-aware embedding",
+  { timeout: TYPECHECK_TEST_TIMEOUT_MS },
+  () => {
+    typecheckSource(`
     import type { StudioProps } from "../index.ts";
 
     const props: StudioProps = {
@@ -145,10 +150,14 @@ test("Studio accepts the authored shared config shape for mdx-aware embedding", 
 
     void props;
   `);
-});
+  },
+);
 
-test("Studio accepts the minimal server-safe embed config shape", () => {
-  typecheckSource(`
+test(
+  "Studio accepts the minimal server-safe embed config shape",
+  { timeout: TYPECHECK_TEST_TIMEOUT_MS },
+  () => {
+    typecheckSource(`
     import type { StudioProps } from "../index.ts";
 
     const props: StudioProps = {
@@ -162,10 +171,14 @@ test("Studio accepts the minimal server-safe embed config shape", () => {
 
     void props;
   `);
-});
+  },
+);
 
-test("Studio exports generic custom props editor authoring types", () => {
-  typecheckSource(`
+test(
+  "Studio exports generic custom props editor authoring types",
+  { timeout: TYPECHECK_TEST_TIMEOUT_MS },
+  () => {
+    typecheckSource(`
     import type { PropsEditorComponent } from "../index.ts";
 
     type PricingTableProps = {
@@ -194,7 +207,8 @@ test("Studio exports generic custom props editor authoring types", () => {
 
     void PricingTableEditor;
   `);
-});
+  },
+);
 
 test("prepareStudioConfig enriches mdx component metadata from source files", async () => {
   const tempDir = join(

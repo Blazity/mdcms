@@ -3,7 +3,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { test } from "node:test";
+import { test } from "bun:test";
 
 import ts from "typescript";
 import { z } from "zod";
@@ -16,6 +16,8 @@ import {
   parseMdcmsConfig,
   reference,
 } from "./config.js";
+
+const TYPECHECK_TEST_TIMEOUT_MS = 15_000;
 
 function typecheckSource(source: string) {
   const tempDir = dirname(fileURLToPath(import.meta.url));
@@ -68,8 +70,11 @@ const standardStringSchema = {
   },
 };
 
-test("defineConfig accepts runtime-only component loader callbacks", () => {
-  typecheckSource(`
+test(
+  "defineConfig accepts runtime-only component loader callbacks",
+  { timeout: TYPECHECK_TEST_TIMEOUT_MS },
+  () => {
+    typecheckSource(`
     import type { MdcmsConfig } from "./config.ts";
     import { defineConfig } from "./config.ts";
 
@@ -88,7 +93,8 @@ test("defineConfig accepts runtime-only component loader callbacks", () => {
 
     defineConfig(config);
   `);
-});
+  },
+);
 
 test("parseMdcmsConfig accepts typed propHints and preserves them", () => {
   const parsed = parseMdcmsConfig(

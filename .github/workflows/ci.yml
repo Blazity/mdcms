@@ -11,6 +11,7 @@ permissions:
   contents: read
 
 env:
+  BUN_VERSION: "1.3.11"
   NX_DAEMON: "false"
   NX_CACHE_DIRECTORY: ".nx/cache"
 
@@ -25,7 +26,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v1
         with:
-          bun-version: latest
+          bun-version: ${{ env.BUN_VERSION }}
 
       - uses: actions/cache@v4
         with:
@@ -50,7 +51,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v1
         with:
-          bun-version: latest
+          bun-version: ${{ env.BUN_VERSION }}
 
       - uses: actions/cache@v4
         with:
@@ -75,6 +76,17 @@ jobs:
 
       - uses: oven-sh/setup-bun@v1
         with:
-          bun-version: latest
+          bun-version: ${{ env.BUN_VERSION }}
 
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+            .nx/cache
+          key: ${{ runner.os }}-bun-nx-${{ hashFiles('bun.lock', 'package.json', 'nx.json', 'tsconfig.base.json', 'tsconfig.json', 'apps/*/package.json', 'packages/*/package.json', '.github/workflows/ci.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-nx-
+
+      - run: bun install --frozen-lockfile
       - run: bun run integration

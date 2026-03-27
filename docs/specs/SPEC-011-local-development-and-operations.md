@@ -111,6 +111,7 @@ volumes:
 # 1. Clone the repo and start the backend
 git clone <repo>
 cd mdcms
+bun install
 docker compose up -d
 
 # 2. In the user's project, install the packages
@@ -126,6 +127,12 @@ npx cms init
 npm run dev
 # Visit /admin to access the CMS
 ```
+
+Repository-local Git hooks are installed during `bun install` when the repo is
+available as a Git worktree. The tracked `pre-push` hook must run the required
+local CI gate (`bun run ci:required`) from the workspace root and block pushes
+until formatting, typechecking, unit coverage, and integration coverage all
+pass.
 
 For the local demo compose profile (`docker-compose.dev.yml`), startup includes an idempotent demo seed step that ensures a fixed API key for raw demo-page reads:
 

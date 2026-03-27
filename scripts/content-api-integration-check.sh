@@ -87,6 +87,9 @@ verify_server_health() {
 
 trap cleanup EXIT
 
+echo "Resetting any existing compose stack"
+cleanup
+
 echo "Starting compose stack for content API integration tests"
 docker compose up -d --build
 

@@ -264,6 +264,9 @@ run_startup_cycle() {
 
 trap cleanup EXIT
 
+echo "Resetting any existing compose stack"
+cleanup
+
 run_startup_cycle "initial"
 
 echo "Restarting without dropping volumes to verify idempotent migration startup"
