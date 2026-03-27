@@ -461,3 +461,75 @@ test("diffDocumentVersions trims large shared context before diffing the middle 
     },
   ]);
 });
+
+test("diffDocumentVersions keeps large mixed insertions and deletions aligned", () => {
+  const leftBody = Array.from(
+    { length: 200 },
+    (_, index) => `Line ${index + 1}`,
+  ).join("\n");
+  const rightBody = [
+    ...Array.from({ length: 9 }, (_, index) => `Line ${index + 1}`),
+    "Inserted line 10",
+    ...Array.from({ length: 160 }, (_, index) => `Line ${index + 10}`),
+    ...Array.from({ length: 30 }, (_, index) => `Line ${index + 171}`),
+  ].join("\n");
+
+  const diff = diffDocumentVersions(
+    createVersion(18, {
+      body: leftBody,
+      frontmatter: {},
+    }),
+    createVersion(19, {
+      body: rightBody,
+      frontmatter: {},
+    }),
+  );
+
+  const counts = diff.body.lines.reduce(
+    (accumulator, line) => {
+      accumulator[line.status] += 1;
+      return accumulator;
+    },
+    {
+      unchanged: 0,
+      added: 0,
+      removed: 0,
+      changed: 0,
+    } satisfies Record<string, number>,
+  );
+
+  assert.equal(counts.unchanged, 199);
+  assert.equal(counts.added, 1);
+  assert.equal(counts.removed, 1);
+  assert.equal(counts.changed, 0);
+  assert.deepEqual(
+    diff.body.lines.find((line) => line.rightLineNumber === 10),
+    {
+      leftLineNumber: null,
+      rightLineNumber: 10,
+      leftText: null,
+      rightText: "Inserted line 10",
+      status: "added",
+    },
+  );
+  assert.deepEqual(
+    diff.body.lines.find((line) => line.leftLineNumber === 170),
+    {
+      leftLineNumber: 170,
+      rightLineNumber: null,
+      leftText: "Line 170",
+      rightText: null,
+      status: "removed",
+    },
+  );
+  assert.deepEqual(
+    diff.body.lines.find((line) => line.leftLineNumber === 171),
+    {
+      leftLineNumber: 171,
+      rightLineNumber: 171,
+      leftText: "Line 171",
+      rightText: "Line 171",
+      status: "unchanged",
+    },
+  );
+});

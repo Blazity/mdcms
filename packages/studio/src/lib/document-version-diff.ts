@@ -94,7 +94,8 @@ function splitBodyLines(body: string): string[] {
   return normalizeBodyText(body).split("\n");
 }
 
-const LCS_CELL_LIMIT = 4096;
+// Keep trimmed middle windows on the accurate path up to roughly 1024x1024.
+const LCS_CELL_LIMIT = 1024 * 1024;
 
 type BodyLineSlice = {
   leftLines: string[];
