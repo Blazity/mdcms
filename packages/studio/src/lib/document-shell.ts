@@ -57,6 +57,10 @@ const STUDIO_DOCUMENT_SHELL_ERROR_CODES: ReadonlySet<StudioDocumentShellErrorCod
 function normalizeDocumentShellErrorCode(
   code: unknown,
 ): StudioDocumentShellErrorCode {
+  if (code === "DOCUMENT_ROUTE_RESPONSE_INVALID") {
+    return "DOCUMENT_LOAD_FAILED";
+  }
+
   if (
     typeof code === "string" &&
     STUDIO_DOCUMENT_SHELL_ERROR_CODES.has(code as StudioDocumentShellErrorCode)

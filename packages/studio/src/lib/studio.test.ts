@@ -902,6 +902,42 @@ test("loadStudioDocumentShell exposes typed error code for failed responses", as
   assert.equal(result.errorMessage, "Document is outside of allowed scope.");
 });
 
+test("loadStudioDocumentShell maps malformed draft payloads to document load failure", async () => {
+  const result = await loadStudioDocumentShell(
+    {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+    },
+    {
+      type: "BlogPost",
+      documentId: "11111111-1111-4111-8111-111111111111",
+      locale: "en",
+    },
+    {
+      fetcher: async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              documentId: "11111111-1111-4111-8111-111111111111",
+              path: "blog/launch-notes",
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+    },
+  );
+
+  assert.equal(result.state, "error");
+  assert.equal(result.errorCode, "DOCUMENT_LOAD_FAILED");
+  assert.equal(result.errorMessage, "Failed to load document draft.");
+});
+
 test("loadStudioDocumentShell uses credentials for cookie auth", async () => {
   await loadStudioDocumentShell(
     {
