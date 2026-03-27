@@ -28,6 +28,14 @@ function readHeader(
   return null;
 }
 
+function readJsonBody(init: RequestInit | undefined): unknown {
+  if (typeof init?.body !== "string") {
+    return undefined;
+  }
+
+  return JSON.parse(init.body);
+}
+
 function createDocumentRouteApi(options: StudioDocumentRouteApiOptions = {}) {
   return createStudioDocumentRouteApi(
     {
@@ -50,10 +58,22 @@ test("loadStudioDocumentDraft fetches draft content with scoped headers", async 
         JSON.stringify({
           data: {
             documentId: "11111111-1111-4111-8111-111111111111",
+            translationGroupId: "22222222-2222-4222-8222-222222222222",
+            project: "marketing-site",
+            environment: "staging",
             type: "BlogPost",
             locale: "en",
             path: "blog/launch-notes",
+            format: "md",
+            isDeleted: false,
+            hasUnpublishedChanges: true,
+            version: 5,
+            publishedVersion: 5,
+            draftRevision: 12,
+            frontmatter: {},
             body: "# Launch Notes",
+            createdBy: "44444444-4444-4444-8444-444444444444",
+            createdAt: "2026-03-04T09:00:00.000Z",
             updatedAt: "2026-03-04T10:00:00.000Z",
           },
         }),
@@ -116,16 +136,36 @@ test("cookie-authenticated mutations bootstrap CSRF from auth/session", async ()
         "http://localhost:4000/api/v1/content/11111111-1111-4111-8111-111111111111",
       );
       assert.equal(readHeader(init, "x-mdcms-csrf-token"), "csrf-cookie-token");
+      assert.equal(readHeader(init, "x-mdcms-schema-hash"), "schema-hash-123");
       assert.equal(readHeader(init, "authorization"), null);
+      assert.deepEqual(readJsonBody(init), {
+        type: "BlogPost",
+        locale: "en",
+        format: "md",
+        frontmatter: {},
+        body: "# Updated",
+      });
 
       return new Response(
         JSON.stringify({
           data: {
             documentId: "11111111-1111-4111-8111-111111111111",
+            translationGroupId: "22222222-2222-4222-8222-222222222222",
+            project: "marketing-site",
+            environment: "staging",
             type: "BlogPost",
             locale: "en",
             path: "blog/launch-notes",
+            format: "md",
+            isDeleted: false,
+            hasUnpublishedChanges: true,
+            version: 5,
+            publishedVersion: 5,
+            draftRevision: 13,
+            frontmatter: {},
             body: "# Updated",
+            createdBy: "44444444-4444-4444-8444-444444444444",
+            createdAt: "2026-03-04T09:00:00.000Z",
             updatedAt: "2026-03-05T10:00:00.000Z",
           },
         }),
@@ -141,6 +181,7 @@ test("cookie-authenticated mutations bootstrap CSRF from auth/session", async ()
 
   const result = await api.updateDraft({
     documentId: "11111111-1111-4111-8111-111111111111",
+    schemaHash: "schema-hash-123",
     payload: {
       type: "BlogPost",
       locale: "en",
@@ -173,10 +214,22 @@ test("token-authenticated mutations do not bootstrap CSRF", async () => {
         JSON.stringify({
           data: {
             documentId: "11111111-1111-4111-8111-111111111111",
+            translationGroupId: "22222222-2222-4222-8222-222222222222",
+            project: "marketing-site",
+            environment: "staging",
             type: "BlogPost",
             locale: "en",
             path: "blog/launch-notes",
+            format: "md",
+            isDeleted: false,
+            hasUnpublishedChanges: false,
+            version: 6,
+            publishedVersion: 6,
+            draftRevision: 13,
+            frontmatter: {},
             body: "# Published",
+            createdBy: "44444444-4444-4444-8444-444444444444",
+            createdAt: "2026-03-04T09:00:00.000Z",
             updatedAt: "2026-03-06T10:00:00.000Z",
           },
         }),
@@ -196,24 +249,47 @@ test("token-authenticated mutations do not bootstrap CSRF", async () => {
   });
 
   assert.equal(calls.length, 1);
+  assert.deepEqual(readJsonBody(calls[0]?.init), {
+    changeSummary: "Polished introduction",
+  });
   assert.equal(result.body, "# Published");
 });
 
-test("version summary/detail helpers normalize success and failure states", async () => {
+test("version summary helper validates required fields and rejects malformed payloads", async () => {
   const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
     [];
   const api = createDocumentRouteApi({
     fetcher: async (input, init) => {
       calls.push({ input, init });
 
-      if (String(input).includes("/versions/2")) {
+      if (calls.length === 1) {
         return new Response(
           JSON.stringify({
-            code: "NOT_FOUND",
-            message: "Version not found.",
+            data: [
+              {
+                documentId: "11111111-1111-4111-8111-111111111111",
+                translationGroupId: "22222222-2222-4222-8222-222222222222",
+                project: "marketing-site",
+                environment: "staging",
+                version: 3,
+                path: "blog/launch-notes",
+                type: "BlogPost",
+                locale: "en",
+                format: "md",
+                publishedAt: "2026-03-06T10:00:00.000Z",
+                publishedBy: "33333333-3333-4333-8333-333333333333",
+                changeSummary: "Polished introduction",
+              },
+            ],
+            pagination: {
+              total: 1,
+              limit: 20,
+              offset: 0,
+              hasMore: false,
+            },
           }),
           {
-            status: 404,
+            status: 200,
             headers: {
               "content-type": "application/json",
             },
@@ -226,7 +302,6 @@ test("version summary/detail helpers normalize success and failure states", asyn
           data: [
             {
               documentId: "11111111-1111-4111-8111-111111111111",
-              translationGroupId: "22222222-2222-4222-8222-222222222222",
               project: "marketing-site",
               environment: "staging",
               version: 3,
@@ -236,7 +311,6 @@ test("version summary/detail helpers normalize success and failure states", asyn
               format: "md",
               publishedAt: "2026-03-06T10:00:00.000Z",
               publishedBy: "33333333-3333-4333-8333-333333333333",
-              changeSummary: "Polished introduction",
             },
           ],
           pagination: {
@@ -262,6 +336,91 @@ test("version summary/detail helpers normalize success and failure states", asyn
 
   assert.equal(summary.pagination.total, 1);
   assert.equal(summary.data[0]?.version, 3);
+  assert.equal(
+    summary.data[0]?.translationGroupId,
+    "22222222-2222-4222-8222-222222222222",
+  );
+
+  await assert.rejects(
+    () =>
+      api.listVersions({
+        documentId: "11111111-1111-4111-8111-111111111111",
+      }),
+    (error) =>
+      error instanceof RuntimeError &&
+      error.code === "DOCUMENT_ROUTE_RESPONSE_INVALID",
+  );
+});
+
+test("version detail helper validates required fields and rejects malformed payloads", async () => {
+  const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
+    [];
+  const api = createDocumentRouteApi({
+    fetcher: async (input, init) => {
+      calls.push({ input, init });
+
+      if (String(input).includes("/versions/2")) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              documentId: "11111111-1111-4111-8111-111111111111",
+              translationGroupId: "22222222-2222-4222-8222-222222222222",
+              project: "marketing-site",
+              environment: "staging",
+              version: 2,
+              path: "blog/launch-notes",
+              type: "BlogPost",
+              locale: "en",
+              format: "md",
+              publishedAt: "2026-03-05T10:00:00.000Z",
+              publishedBy: "33333333-3333-4333-8333-333333333333",
+              frontmatter: {},
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          data: {
+            documentId: "11111111-1111-4111-8111-111111111111",
+            translationGroupId: "22222222-2222-4222-8222-222222222222",
+            project: "marketing-site",
+            environment: "staging",
+            version: 3,
+            path: "blog/launch-notes",
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            publishedAt: "2026-03-06T10:00:00.000Z",
+            publishedBy: "33333333-3333-4333-8333-333333333333",
+            frontmatter: {},
+            body: "# Published",
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      );
+    },
+  });
+
+  const version = await api.getVersion({
+    documentId: "11111111-1111-4111-8111-111111111111",
+    version: 3,
+  });
+
+  assert.equal(version.version, 3);
+  assert.equal(version.body, "# Published");
 
   await assert.rejects(
     () =>
@@ -271,7 +430,6 @@ test("version summary/detail helpers normalize success and failure states", asyn
       }),
     (error) =>
       error instanceof RuntimeError &&
-      error.code === "NOT_FOUND" &&
-      error.message === "Version not found.",
+      error.code === "DOCUMENT_ROUTE_RESPONSE_INVALID",
   );
 });

@@ -72,6 +72,7 @@ export type StudioDocumentRouteApi = {
   updateDraft: (
     input: StudioDocumentRouteMutationInput & {
       payload: StudioDocumentRouteWritePayload;
+      schemaHash?: string;
     },
   ) => Promise<ContentDocumentResponse>;
   publish: (
@@ -96,6 +97,54 @@ type StudioDocumentRoutePayload = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return isString(value) && value.trim().length > 0;
+}
+
+function isBoolean(value: unknown): value is boolean {
+  return typeof value === "boolean";
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isContentFormat(value: unknown): value is "md" | "mdx" {
+  return value === "md" || value === "mdx";
+}
+
+function isResolveErrorsMap(value: unknown): value is Record<
+  string,
+  {
+    code: string;
+    message: string;
+    ref: {
+      documentId: string;
+      type: string;
+    };
+  }
+> {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return Object.values(value).every((entry) => {
+    if (!isRecord(entry) || !isString(entry.code) || !isString(entry.message)) {
+      return false;
+    }
+
+    return (
+      isRecord(entry.ref) &&
+      isString(entry.ref.documentId) &&
+      isString(entry.ref.type)
+    );
+  });
 }
 
 function mergeHeaders(
@@ -215,36 +264,161 @@ function toInvalidRouteResponseError(
   });
 }
 
-function getEnvelopeData<T>(
+function validateContentDocumentResponseData(
   operation: string,
   payload: unknown,
   fallbackMessage: string,
-): T {
+): ContentDocumentResponse {
   const parsed = extractRoutePayload(payload);
 
   if (!isRecord(parsed.data)) {
     throw toInvalidRouteResponseError(operation, fallbackMessage, payload);
   }
 
-  return parsed.data as T;
+  const data = parsed.data;
+
+  if (
+    !isNonEmptyString(data.documentId) ||
+    !isNonEmptyString(data.translationGroupId) ||
+    !isNonEmptyString(data.project) ||
+    !isNonEmptyString(data.environment) ||
+    !isNonEmptyString(data.path) ||
+    !isNonEmptyString(data.type) ||
+    !isNonEmptyString(data.locale) ||
+    !isContentFormat(data.format) ||
+    !isBoolean(data.isDeleted) ||
+    !isBoolean(data.hasUnpublishedChanges) ||
+    !isFiniteNumber(data.version) ||
+    !(
+      isFiniteNumber(data.publishedVersion) || data.publishedVersion === null
+    ) ||
+    !isFiniteNumber(data.draftRevision) ||
+    !isRecord(data.frontmatter) ||
+    Array.isArray(data.frontmatter) ||
+    !isString(data.body) ||
+    !isNonEmptyString(data.createdBy) ||
+    !isNonEmptyString(data.createdAt) ||
+    !isNonEmptyString(data.updatedAt) ||
+    (data.resolveErrors !== undefined &&
+      !isResolveErrorsMap(data.resolveErrors))
+  ) {
+    throw toInvalidRouteResponseError(operation, fallbackMessage, payload);
+  }
+
+  return data as ContentDocumentResponse;
 }
 
-function getPaginatedEnvelopeData<T>(
+function validateContentVersionSummaryResponseData(
   operation: string,
   payload: unknown,
   fallbackMessage: string,
-): ApiPaginatedEnvelope<T> {
+): ContentVersionSummaryResponse {
+  const parsed = extractRoutePayload(payload);
+
+  if (!isRecord(parsed.data)) {
+    throw toInvalidRouteResponseError(operation, fallbackMessage, payload);
+  }
+
+  const data = parsed.data;
+
   if (
-    !isRecord(payload) ||
-    !Array.isArray(payload.data) ||
-    !isRecord(payload.pagination)
+    !isNonEmptyString(data.documentId) ||
+    !isNonEmptyString(data.translationGroupId) ||
+    !isNonEmptyString(data.project) ||
+    !isNonEmptyString(data.environment) ||
+    !isFiniteNumber(data.version) ||
+    !isNonEmptyString(data.path) ||
+    !isNonEmptyString(data.type) ||
+    !isNonEmptyString(data.locale) ||
+    !isContentFormat(data.format) ||
+    !isNonEmptyString(data.publishedAt) ||
+    !isNonEmptyString(data.publishedBy) ||
+    (data.changeSummary !== undefined && !isString(data.changeSummary))
+  ) {
+    throw toInvalidRouteResponseError(operation, fallbackMessage, payload);
+  }
+
+  return data as ContentVersionSummaryResponse;
+}
+
+function validateContentVersionDocumentResponseData(
+  operation: string,
+  payload: unknown,
+  fallbackMessage: string,
+): ContentVersionDocumentResponse {
+  const data = validateContentVersionSummaryResponseData(
+    operation,
+    payload,
+    fallbackMessage,
+  );
+  const parsed = extractRoutePayload(payload);
+
+  if (
+    !isRecord(parsed.data) ||
+    !isRecord(parsed.data.frontmatter) ||
+    Array.isArray(parsed.data.frontmatter) ||
+    !isString(parsed.data.body) ||
+    (parsed.data.resolveErrors !== undefined &&
+      !isResolveErrorsMap(parsed.data.resolveErrors))
   ) {
     throw toInvalidRouteResponseError(operation, fallbackMessage, payload);
   }
 
   return {
-    data: payload.data as T[],
-    pagination: payload.pagination as ApiPaginatedEnvelope<T>["pagination"],
+    ...data,
+    frontmatter: parsed.data.frontmatter as Record<string, unknown>,
+    body: parsed.data.body as string,
+    resolveErrors: parsed.data.resolveErrors as
+      | ContentVersionDocumentResponse["resolveErrors"]
+      | undefined,
+  };
+}
+
+function validatePagination(
+  operation: string,
+  payload: unknown,
+  fallbackMessage: string,
+): ApiPaginatedEnvelope<unknown>["pagination"] {
+  if (
+    !isRecord(payload) ||
+    !isFiniteNumber(payload.total) ||
+    !isFiniteNumber(payload.limit) ||
+    !isFiniteNumber(payload.offset) ||
+    !isBoolean(payload.hasMore)
+  ) {
+    throw toInvalidRouteResponseError(operation, fallbackMessage, payload);
+  }
+
+  return {
+    total: payload.total,
+    limit: payload.limit,
+    offset: payload.offset,
+    hasMore: payload.hasMore,
+  };
+}
+
+function toPaginatedVersionSummaryResponse(
+  operation: string,
+  payload: unknown,
+  fallbackMessage: string,
+): ApiPaginatedEnvelope<ContentVersionSummaryResponse> {
+  if (!isRecord(payload) || !Array.isArray(payload.data)) {
+    throw toInvalidRouteResponseError(operation, fallbackMessage, payload);
+  }
+
+  return {
+    data: payload.data.map((item) =>
+      validateContentVersionSummaryResponseData(
+        operation,
+        { data: item },
+        fallbackMessage,
+      ),
+    ),
+    pagination: validatePagination(
+      operation,
+      payload.pagination,
+      fallbackMessage,
+    ),
   };
 }
 
@@ -253,22 +427,11 @@ function toContentDocumentResponse(
   payload: unknown,
   fallbackMessage: string,
 ): ContentDocumentResponse {
-  const data = getEnvelopeData<ContentDocumentResponse>(
+  return validateContentDocumentResponseData(
     operation,
     payload,
     fallbackMessage,
   );
-
-  if (
-    typeof data.documentId !== "string" ||
-    typeof data.path !== "string" ||
-    typeof data.type !== "string" ||
-    typeof data.locale !== "string"
-  ) {
-    throw toInvalidRouteResponseError(operation, fallbackMessage, payload);
-  }
-
-  return data;
 }
 
 function toContentVersionDocumentResponse(
@@ -276,40 +439,11 @@ function toContentVersionDocumentResponse(
   payload: unknown,
   fallbackMessage: string,
 ): ContentVersionDocumentResponse {
-  const data = getEnvelopeData<ContentVersionDocumentResponse>(
+  return validateContentVersionDocumentResponseData(
     operation,
     payload,
     fallbackMessage,
   );
-
-  if (
-    typeof data.documentId !== "string" ||
-    typeof data.path !== "string" ||
-    typeof data.type !== "string" ||
-    typeof data.locale !== "string" ||
-    typeof data.version !== "number"
-  ) {
-    throw toInvalidRouteResponseError(operation, fallbackMessage, payload);
-  }
-
-  return data;
-}
-
-function toContentVersionSummaryResponse(
-  operation: string,
-  payload: unknown,
-  fallbackMessage: string,
-): ApiPaginatedEnvelope<ContentVersionSummaryResponse> {
-  const data = getPaginatedEnvelopeData<ContentVersionSummaryResponse>(
-    operation,
-    payload,
-    fallbackMessage,
-  );
-
-  return {
-    data: data.data,
-    pagination: data.pagination,
-  };
 }
 
 async function requestRouteJson(
@@ -424,6 +558,7 @@ async function requestContentMutation(
     locale?: string;
     payload: unknown;
     signal?: AbortSignal;
+    schemaHash?: string;
   },
 ): Promise<unknown> {
   const csrfToken = await bootstrapStudioSessionCsrfToken(config, options);
@@ -433,6 +568,10 @@ async function requestContentMutation(
 
   if (csrfToken) {
     headers["x-mdcms-csrf-token"] = csrfToken;
+  }
+
+  if (input.schemaHash) {
+    headers["x-mdcms-schema-hash"] = input.schemaHash;
   }
 
   const payload = await requestContentRouteJson(
@@ -507,6 +646,7 @@ export function createStudioDocumentRouteApi(
         locale: input.locale,
         signal: input.signal,
         payload: input.payload,
+        schemaHash: input.schemaHash,
       });
 
       return toContentDocumentResponse(
@@ -559,7 +699,7 @@ export function createStudioDocumentRouteApi(
         },
       );
 
-      return toContentVersionSummaryResponse(
+      return toPaginatedVersionSummaryResponse(
         "GET /api/v1/content/:documentId/versions",
         payload,
         "Failed to load document version history.",
