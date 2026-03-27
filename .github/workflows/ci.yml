@@ -32,11 +32,9 @@ jobs:
         with:
           path: |
             ~/.bun/install/cache
-            node_modules
-            .nx/cache
-          key: ${{ runner.os }}-bun-nx-${{ hashFiles('bun.lock', 'package.json', 'nx.json', 'tsconfig.base.json', 'tsconfig.json', 'apps/*/package.json', 'packages/*/package.json', '.github/workflows/ci.yml') }}
+          key: ${{ runner.os }}-bun-install-${{ hashFiles('bun.lock', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
           restore-keys: |
-            ${{ runner.os }}-bun-nx-
+            ${{ runner.os }}-bun-install-
 
       - run: bun install --frozen-lockfile
       - run: bun run quality
@@ -57,11 +55,9 @@ jobs:
         with:
           path: |
             ~/.bun/install/cache
-            node_modules
-            .nx/cache
-          key: ${{ runner.os }}-bun-nx-${{ hashFiles('bun.lock', 'package.json', 'nx.json', 'tsconfig.base.json', 'tsconfig.json', 'apps/*/package.json', 'packages/*/package.json', '.github/workflows/ci.yml') }}
+          key: ${{ runner.os }}-bun-install-${{ hashFiles('bun.lock', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
           restore-keys: |
-            ${{ runner.os }}-bun-nx-
+            ${{ runner.os }}-bun-install-
 
       - run: bun install --frozen-lockfile
       - run: bun run unit
@@ -82,11 +78,9 @@ jobs:
         with:
           path: |
             ~/.bun/install/cache
-            node_modules
-            .nx/cache
-          key: ${{ runner.os }}-bun-nx-${{ hashFiles('bun.lock', 'package.json', 'nx.json', 'tsconfig.base.json', 'tsconfig.json', 'apps/*/package.json', 'packages/*/package.json', '.github/workflows/ci.yml') }}
+          key: ${{ runner.os }}-bun-install-${{ hashFiles('bun.lock', 'package.json', 'apps/*/package.json', 'packages/*/package.json') }}
           restore-keys: |
-            ${{ runner.os }}-bun-nx-
+            ${{ runner.os }}-bun-install-
 
       - run: bun install --frozen-lockfile
       - run: bun run integration
