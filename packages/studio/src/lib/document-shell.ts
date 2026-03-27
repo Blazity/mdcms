@@ -21,6 +21,8 @@ export type StudioDocumentShellData = {
   path: string;
   body: string;
   updatedAt: string;
+  hasUnpublishedChanges: boolean;
+  publishedVersion: number | null;
 };
 
 export type StudioDocumentShell = {
@@ -142,6 +144,8 @@ export async function loadStudioDocumentShell(
         path: document.path,
         body: document.body ?? "",
         updatedAt: document.updatedAt ?? "",
+        hasUnpublishedChanges: document.hasUnpublishedChanges,
+        publishedVersion: document.publishedVersion,
       },
     };
   } catch (error) {
