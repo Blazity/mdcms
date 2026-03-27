@@ -46,6 +46,9 @@ export type MdcmsConfig = StudioEmbedConfig &
     components?: StudioComponentRegistration[];
   };
 
+export { resolveStudioDocumentRouteSchemaCapability } from "./document-route-schema.js";
+export type { StudioDocumentRouteSchemaCapability } from "./document-route-schema.js";
+
 export type PrepareStudioConfigOptions = {
   cwd: string;
   resolveImportPath?: (
