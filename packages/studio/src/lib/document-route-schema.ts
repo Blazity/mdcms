@@ -126,22 +126,31 @@ export async function resolveStudioDocumentRouteSchemaCapability(
     );
   }
 
-  const rawConfigSnapshot = toRawConfigSnapshot(parsedConfig);
-  const resolvedSchema = serializeResolvedEnvironmentSchema(
-    parsedConfig,
-    environment,
-  );
-  const schemaHash = await sha256Hex(
-    JSON.stringify({
+  try {
+    const rawConfigSnapshot = toRawConfigSnapshot(parsedConfig);
+    const resolvedSchema = serializeResolvedEnvironmentSchema(
+      parsedConfig,
       environment,
-      rawConfigSnapshot,
-      resolvedSchema,
-    }),
-  );
+    );
+    const schemaHash = await sha256Hex(
+      JSON.stringify({
+        environment,
+        rawConfigSnapshot,
+        resolvedSchema,
+      }),
+    );
 
-  return {
-    canWrite: true,
-    environment,
-    schemaHash,
-  };
+    return {
+      canWrite: true,
+      environment,
+      schemaHash,
+    };
+  } catch (error) {
+    return createReadOnlyCapability(
+      "schema-unavailable",
+      error instanceof Error
+        ? `Studio could not derive a local schema hash: ${error.message}`
+        : "Studio could not derive a local schema hash for editor writes.",
+    );
+  }
 }

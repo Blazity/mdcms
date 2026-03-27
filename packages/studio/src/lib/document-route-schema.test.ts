@@ -9,6 +9,17 @@ import {
 } from "./document-route-schema.js";
 import { defineConfig, defineType, reference } from "@mdcms/shared";
 
+const unsupportedExecutableFieldSchema = {
+  "~standard": {
+    version: 1 as const,
+    vendor: "test",
+    validate: () => ({ value: "title" }),
+  },
+  _def: {
+    type: "pipe" as const,
+  },
+};
+
 function createAuthoredConfig() {
   return defineConfig({
     project: "marketing-site",
@@ -154,4 +165,30 @@ test("shell-only embed config does not produce a write-capable schema hash", asy
   assert.equal(capability.canWrite, false);
   assert.equal(capability.reason, "schema-unavailable");
   assert.match(capability.message, /resolved schema/i);
+});
+
+test("unsupported authored schema features fail closed to read-only capability", async () => {
+  const capability = await resolveStudioDocumentRouteSchemaCapability(
+    defineConfig({
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+      environment: "staging",
+      contentDirectories: ["content"],
+      types: [
+        defineType("Post", {
+          directory: "content/posts",
+          fields: {
+            title: unsupportedExecutableFieldSchema,
+          },
+        }),
+      ],
+      environments: {
+        staging: {},
+      },
+    }),
+  );
+
+  assert.equal(capability.canWrite, false);
+  assert.equal(capability.reason, "schema-unavailable");
+  assert.match(capability.message, /could not derive a local schema hash/i);
 });
