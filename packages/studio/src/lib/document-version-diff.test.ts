@@ -151,6 +151,43 @@ test("diffDocumentVersions surfaces path, frontmatter, and inserted body lines",
   ]);
 });
 
+test("diffDocumentVersions emits changed rows for one-to-one substitutions", () => {
+  const diff = diffDocumentVersions(
+    createVersion(10, {
+      body: "Intro\nOriginal line\nOutro",
+      frontmatter: {},
+    }),
+    createVersion(11, {
+      body: "Intro\nUpdated line\nOutro",
+      frontmatter: {},
+    }),
+  );
+
+  assert.deepEqual(diff.body.lines, [
+    {
+      leftLineNumber: 1,
+      rightLineNumber: 1,
+      leftText: "Intro",
+      rightText: "Intro",
+      status: "unchanged",
+    },
+    {
+      leftLineNumber: 2,
+      rightLineNumber: 2,
+      leftText: "Original line",
+      rightText: "Updated line",
+      status: "changed",
+    },
+    {
+      leftLineNumber: 3,
+      rightLineNumber: 3,
+      leftText: "Outro",
+      rightText: "Outro",
+      status: "unchanged",
+    },
+  ]);
+});
+
 test("diffDocumentVersions keeps deterministic ordering for equivalent inputs", () => {
   const left = createVersion(4, {
     path: "blog/deterministic",
@@ -226,4 +263,35 @@ test("diffDocumentVersions normalizes CRLF line endings", () => {
       status: "unchanged",
     },
   ]);
+});
+
+test("diffDocumentVersions uses a deterministic fallback for large bodies", () => {
+  const leftBody = Array.from({ length: 80 }, (_, index) =>
+    index === 39 ? "Middle line" : `Line ${index + 1}`,
+  ).join("\n");
+  const rightBody = Array.from({ length: 80 }, (_, index) =>
+    index === 39 ? "Updated middle line" : `Line ${index + 1}`,
+  ).join("\n");
+
+  const left = createVersion(12, {
+    body: leftBody,
+    frontmatter: {},
+  });
+  const right = createVersion(13, {
+    body: rightBody,
+    frontmatter: {},
+  });
+
+  const first = diffDocumentVersions(left, right);
+  const second = diffDocumentVersions(left, right);
+
+  assert.deepEqual(first, second);
+  assert.equal(first.body.lines.length, 80);
+  assert.deepEqual(first.body.lines[39], {
+    leftLineNumber: 40,
+    rightLineNumber: 40,
+    leftText: "Middle line",
+    rightText: "Updated middle line",
+    status: "changed",
+  });
 });

@@ -94,6 +94,222 @@ function splitBodyLines(body: string): string[] {
   return normalizeBodyText(body).split("\n");
 }
 
+const LCS_CELL_LIMIT = 4096;
+
+function compareBodyLinesWithFallback(
+  leftLines: string[],
+  rightLines: string[],
+): DocumentVersionDiffBodyLine[] {
+  const lines: DocumentVersionDiffBodyLine[] = [];
+  const leftCount = leftLines.length;
+  const rightCount = rightLines.length;
+  const shortestCount = Math.min(leftCount, rightCount);
+  let prefixLength = 0;
+
+  while (
+    prefixLength < shortestCount &&
+    leftLines[prefixLength] === rightLines[prefixLength]
+  ) {
+    prefixLength += 1;
+  }
+
+  let suffixLength = 0;
+
+  while (
+    suffixLength < leftCount - prefixLength &&
+    suffixLength < rightCount - prefixLength &&
+    leftLines[leftCount - suffixLength - 1] ===
+      rightLines[rightCount - suffixLength - 1]
+  ) {
+    suffixLength += 1;
+  }
+
+  for (let index = 0; index < prefixLength; index += 1) {
+    lines.push({
+      leftLineNumber: index + 1,
+      rightLineNumber: index + 1,
+      leftText: leftLines[index]!,
+      rightText: rightLines[index]!,
+      status: "unchanged",
+    });
+  }
+
+  const leftMiddleStart = prefixLength;
+  const rightMiddleStart = prefixLength;
+  const leftMiddleCount = leftCount - prefixLength - suffixLength;
+  const rightMiddleCount = rightCount - prefixLength - suffixLength;
+  const pairedMiddleCount = Math.min(leftMiddleCount, rightMiddleCount);
+
+  for (let index = 0; index < pairedMiddleCount; index += 1) {
+    const leftText = leftLines[leftMiddleStart + index]!;
+    const rightText = rightLines[rightMiddleStart + index]!;
+
+    lines.push({
+      leftLineNumber: leftMiddleStart + index + 1,
+      rightLineNumber: rightMiddleStart + index + 1,
+      leftText,
+      rightText,
+      status: leftText === rightText ? "unchanged" : "changed",
+    });
+  }
+
+  for (let index = pairedMiddleCount; index < leftMiddleCount; index += 1) {
+    lines.push({
+      leftLineNumber: leftMiddleStart + index + 1,
+      rightLineNumber: null,
+      leftText: leftLines[leftMiddleStart + index]!,
+      rightText: null,
+      status: "removed",
+    });
+  }
+
+  for (let index = pairedMiddleCount; index < rightMiddleCount; index += 1) {
+    lines.push({
+      leftLineNumber: null,
+      rightLineNumber: rightMiddleStart + index + 1,
+      leftText: null,
+      rightText: rightLines[rightMiddleStart + index]!,
+      status: "added",
+    });
+  }
+
+  for (let index = 0; index < suffixLength; index += 1) {
+    const leftIndex = leftCount - suffixLength + index;
+    const rightIndex = rightCount - suffixLength + index;
+
+    lines.push({
+      leftLineNumber: leftIndex + 1,
+      rightLineNumber: rightIndex + 1,
+      leftText: leftLines[leftIndex]!,
+      rightText: rightLines[rightIndex]!,
+      status: "unchanged",
+    });
+  }
+
+  return lines;
+}
+
+function compareBodyLinesWithLcs(
+  leftLines: string[],
+  rightLines: string[],
+): DocumentVersionDiffBodyLine[] {
+  const leftCount = leftLines.length;
+  const rightCount = rightLines.length;
+  const lines: DocumentVersionDiffBodyLine[] = [];
+
+  const lcsLengths = Array.from({ length: leftCount + 1 }, () =>
+    Array<number>(rightCount + 1).fill(0),
+  );
+
+  for (let leftIndex = leftCount - 1; leftIndex >= 0; leftIndex -= 1) {
+    for (let rightIndex = rightCount - 1; rightIndex >= 0; rightIndex -= 1) {
+      lcsLengths[leftIndex]![rightIndex] =
+        leftLines[leftIndex] === rightLines[rightIndex]
+          ? lcsLengths[leftIndex + 1]![rightIndex + 1]! + 1
+          : Math.max(
+              lcsLengths[leftIndex + 1]![rightIndex]!,
+              lcsLengths[leftIndex]![rightIndex + 1]!,
+            );
+    }
+  }
+
+  let leftIndex = 0;
+  let rightIndex = 0;
+
+  while (leftIndex < leftCount && rightIndex < rightCount) {
+    const leftText = leftLines[leftIndex]!;
+    const rightText = rightLines[rightIndex]!;
+
+    if (leftText === rightText) {
+      lines.push({
+        leftLineNumber: leftIndex + 1,
+        rightLineNumber: rightIndex + 1,
+        leftText,
+        rightText,
+        status: "unchanged",
+      });
+      leftIndex += 1;
+      rightIndex += 1;
+      continue;
+    }
+
+    const skipLeft = lcsLengths[leftIndex + 1]![rightIndex]!;
+    const skipRight = lcsLengths[leftIndex]![rightIndex + 1]!;
+    const pairScore = lcsLengths[leftIndex + 1]![rightIndex + 1]!;
+
+    if (pairScore >= skipLeft && pairScore >= skipRight) {
+      lines.push({
+        leftLineNumber: leftIndex + 1,
+        rightLineNumber: rightIndex + 1,
+        leftText,
+        rightText,
+        status: "changed",
+      });
+      leftIndex += 1;
+      rightIndex += 1;
+      continue;
+    }
+
+    if (skipLeft > skipRight) {
+      lines.push({
+        leftLineNumber: leftIndex + 1,
+        rightLineNumber: null,
+        leftText,
+        rightText: null,
+        status: "removed",
+      });
+      leftIndex += 1;
+      continue;
+    }
+
+    if (skipRight > skipLeft) {
+      lines.push({
+        leftLineNumber: null,
+        rightLineNumber: rightIndex + 1,
+        leftText: null,
+        rightText,
+        status: "added",
+      });
+      rightIndex += 1;
+      continue;
+    }
+
+    lines.push({
+      leftLineNumber: leftIndex + 1,
+      rightLineNumber: rightIndex + 1,
+      leftText,
+      rightText,
+      status: "changed",
+    });
+    leftIndex += 1;
+    rightIndex += 1;
+  }
+
+  while (leftIndex < leftCount) {
+    lines.push({
+      leftLineNumber: leftIndex + 1,
+      rightLineNumber: null,
+      leftText: leftLines[leftIndex]!,
+      rightText: null,
+      status: "removed",
+    });
+    leftIndex += 1;
+  }
+
+  while (rightIndex < rightCount) {
+    lines.push({
+      leftLineNumber: null,
+      rightLineNumber: rightIndex + 1,
+      leftText: null,
+      rightText: rightLines[rightIndex]!,
+      status: "added",
+    });
+    rightIndex += 1;
+  }
+
+  return lines;
+}
+
 function collectFrontmatterChanges(
   left: unknown,
   right: unknown,
@@ -145,98 +361,18 @@ function compareBodyLines(
 ): DocumentVersionDiffBodyLine[] {
   const leftLines = splitBodyLines(left);
   const rightLines = splitBodyLines(right);
-  const lines: DocumentVersionDiffBodyLine[] = [];
   const leftCount = leftLines.length;
   const rightCount = rightLines.length;
 
   if (leftCount === 0 && rightCount === 0) {
-    return lines;
+    return [];
   }
 
-  const lcsLengths = Array.from({ length: leftCount + 1 }, () =>
-    Array<number>(rightCount + 1).fill(0),
-  );
-
-  for (let leftIndex = leftCount - 1; leftIndex >= 0; leftIndex -= 1) {
-    for (let rightIndex = rightCount - 1; rightIndex >= 0; rightIndex -= 1) {
-      lcsLengths[leftIndex]![rightIndex] =
-        leftLines[leftIndex] === rightLines[rightIndex]
-          ? lcsLengths[leftIndex + 1]![rightIndex + 1]! + 1
-          : Math.max(
-              lcsLengths[leftIndex + 1]![rightIndex]!,
-              lcsLengths[leftIndex]![rightIndex + 1]!,
-            );
-    }
+  if (leftCount * rightCount > LCS_CELL_LIMIT) {
+    return compareBodyLinesWithFallback(leftLines, rightLines);
   }
 
-  let leftIndex = 0;
-  let rightIndex = 0;
-
-  while (leftIndex < leftCount && rightIndex < rightCount) {
-    const leftText = leftLines[leftIndex]!;
-    const rightText = rightLines[rightIndex]!;
-
-    if (leftText === rightText) {
-      lines.push({
-        leftLineNumber: leftIndex + 1,
-        rightLineNumber: rightIndex + 1,
-        leftText,
-        rightText,
-        status: "unchanged",
-      });
-      leftIndex += 1;
-      rightIndex += 1;
-      continue;
-    }
-
-    const skipLeft = lcsLengths[leftIndex + 1]![rightIndex]!;
-    const skipRight = lcsLengths[leftIndex]![rightIndex + 1]!;
-
-    if (skipLeft >= skipRight) {
-      lines.push({
-        leftLineNumber: leftIndex + 1,
-        rightLineNumber: null,
-        leftText,
-        rightText: null,
-        status: "removed",
-      });
-      leftIndex += 1;
-      continue;
-    }
-
-    lines.push({
-      leftLineNumber: null,
-      rightLineNumber: rightIndex + 1,
-      leftText: null,
-      rightText,
-      status: "added",
-    });
-    rightIndex += 1;
-  }
-
-  while (leftIndex < leftCount) {
-    lines.push({
-      leftLineNumber: leftIndex + 1,
-      rightLineNumber: null,
-      leftText: leftLines[leftIndex]!,
-      rightText: null,
-      status: "removed",
-    });
-    leftIndex += 1;
-  }
-
-  while (rightIndex < rightCount) {
-    lines.push({
-      leftLineNumber: null,
-      rightLineNumber: rightIndex + 1,
-      leftText: null,
-      rightText: rightLines[rightIndex]!,
-      status: "added",
-    });
-    rightIndex += 1;
-  }
-
-  return lines;
+  return compareBodyLinesWithLcs(leftLines, rightLines);
 }
 
 export function diffDocumentVersions(
