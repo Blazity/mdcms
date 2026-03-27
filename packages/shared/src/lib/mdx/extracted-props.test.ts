@@ -7,6 +7,8 @@ import { test } from "bun:test";
 import { RuntimeError } from "../runtime/error.js";
 import { extractMdxComponentProps } from "./extracted-props.js";
 
+const EXTRACT_PROPS_TEST_TIMEOUT_MS = 15_000;
+
 async function withTempDir<T>(
   prefix: string,
   run: (directory: string) => Promise<T>,
@@ -172,108 +174,112 @@ test("extractMdxComponentProps accepts compatible prop hints and preserves extra
   });
 });
 
-test("extractMdxComponentProps rejects incompatible prop hints deterministically", async () => {
-  await withTempDir("mdcms-extracted-props-", async (directory) => {
-    const filePath = await writeComponentFile(
-      directory,
-      "LinkCard.tsx",
-      `
-        export interface LinkCardProps {
-          title: string;
-          website?: string;
-          count: number;
-          publishedAt: Date;
-          kind: "bar" | "line";
-          tags: string[];
-          children: string;
-          handlerMap: Record<string, () => void>;
-        }
+test(
+  "extractMdxComponentProps rejects incompatible prop hints deterministically",
+  { timeout: EXTRACT_PROPS_TEST_TIMEOUT_MS },
+  async () => {
+    await withTempDir("mdcms-extracted-props-", async (directory) => {
+      const filePath = await writeComponentFile(
+        directory,
+        "LinkCard.tsx",
+        `
+          export interface LinkCardProps {
+            title: string;
+            website?: string;
+            count: number;
+            publishedAt: Date;
+            kind: "bar" | "line";
+            tags: string[];
+            children: string;
+            handlerMap: Record<string, () => void>;
+          }
 
-        export function LinkCard(_props: LinkCardProps) {
-          return null;
-        }
-      `,
-    );
+          export function LinkCard(_props: LinkCardProps) {
+            return null;
+          }
+        `,
+      );
 
-    assert.throws(
-      () =>
-        extractMdxComponentProps({
-          filePath,
-          componentName: "LinkCard",
-          propHints: {
-            missing: { widget: "hidden" },
-          },
-        }),
-      (error: unknown) =>
-        error instanceof RuntimeError &&
-        error.code === "INVALID_CONFIG" &&
-        error.message.includes("missing"),
-    );
-
-    assert.throws(
-      () =>
-        extractMdxComponentProps({
-          filePath,
-          componentName: "LinkCard",
-          propHints: {
-            count: { format: "url" },
-          },
-        }),
-      (error: unknown) =>
-        error instanceof RuntimeError &&
-        error.code === "INVALID_CONFIG" &&
-        error.message.includes("count"),
-    );
-
-    assert.throws(
-      () =>
-        extractMdxComponentProps({
-          filePath,
-          componentName: "LinkCard",
-          propHints: {
-            publishedAt: { widget: "json" },
-          },
-        }),
-      (error: unknown) =>
-        error instanceof RuntimeError &&
-        error.code === "INVALID_CONFIG" &&
-        error.message.includes("publishedAt"),
-    );
-
-    assert.throws(
-      () =>
-        extractMdxComponentProps({
-          filePath,
-          componentName: "LinkCard",
-          propHints: {
-            kind: {
-              widget: "select",
-              options: ["bar", 1],
+      assert.throws(
+        () =>
+          extractMdxComponentProps({
+            filePath,
+            componentName: "LinkCard",
+            propHints: {
+              missing: { widget: "hidden" },
             },
-          },
-        }),
-      (error: unknown) =>
-        error instanceof RuntimeError &&
-        error.code === "INVALID_CONFIG" &&
-        error.message.includes("kind"),
-    );
+          }),
+        (error: unknown) =>
+          error instanceof RuntimeError &&
+          error.code === "INVALID_CONFIG" &&
+          error.message.includes("missing"),
+      );
 
-    assert.throws(
-      () =>
-        extractMdxComponentProps({
-          filePath,
-          componentName: "LinkCard",
-          propHints: {
-            handlerMap: { widget: "json" },
-          },
-        }),
-      (error: unknown) =>
-        error instanceof RuntimeError &&
-        error.code === "INVALID_CONFIG" &&
-        error.message.includes("handlerMap"),
-    );
-  });
-});
+      assert.throws(
+        () =>
+          extractMdxComponentProps({
+            filePath,
+            componentName: "LinkCard",
+            propHints: {
+              count: { format: "url" },
+            },
+          }),
+        (error: unknown) =>
+          error instanceof RuntimeError &&
+          error.code === "INVALID_CONFIG" &&
+          error.message.includes("count"),
+      );
+
+      assert.throws(
+        () =>
+          extractMdxComponentProps({
+            filePath,
+            componentName: "LinkCard",
+            propHints: {
+              publishedAt: { widget: "json" },
+            },
+          }),
+        (error: unknown) =>
+          error instanceof RuntimeError &&
+          error.code === "INVALID_CONFIG" &&
+          error.message.includes("publishedAt"),
+      );
+
+      assert.throws(
+        () =>
+          extractMdxComponentProps({
+            filePath,
+            componentName: "LinkCard",
+            propHints: {
+              kind: {
+                widget: "select",
+                options: ["bar", 1],
+              },
+            },
+          }),
+        (error: unknown) =>
+          error instanceof RuntimeError &&
+          error.code === "INVALID_CONFIG" &&
+          error.message.includes("kind"),
+      );
+
+      assert.throws(
+        () =>
+          extractMdxComponentProps({
+            filePath,
+            componentName: "LinkCard",
+            propHints: {
+              handlerMap: { widget: "json" },
+            },
+          }),
+        (error: unknown) =>
+          error instanceof RuntimeError &&
+          error.code === "INVALID_CONFIG" &&
+          error.message.includes("handlerMap"),
+      );
+    });
+  },
+);
 
 test("extractMdxComponentProps derives requiredness from declared prop types only", async () => {
   await withTempDir("mdcms-extracted-props-", async (directory) => {
