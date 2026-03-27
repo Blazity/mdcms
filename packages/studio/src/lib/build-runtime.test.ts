@@ -109,13 +109,21 @@ test("buildStudioRuntimeArtifacts changes buildId and integrity when source chan
 
 test("buildStudioRuntimeArtifacts resolves the default project root from the package location", async () => {
   await withTempDir("studio-runtime-cwd-", async (directory) => {
+    const sourceFile = join(directory, "app.ts");
     const outDir = join(directory, "dist");
     const originalCwd = process.cwd();
+
+    await writeFile(
+      sourceFile,
+      "export const mount = () => () => {};\n",
+      "utf8",
+    );
 
     process.chdir(directory);
 
     try {
       const build = await buildStudioRuntimeArtifacts({
+        sourceFile,
         outDir,
         studioVersion: "1.2.3",
         mode: "module",
@@ -123,6 +131,10 @@ test("buildStudioRuntimeArtifacts resolves the default project root from the pac
 
       assert.equal(build.entryPath.startsWith(`${outDir}/`), true);
       assert.equal((await readFile(build.entryPath, "utf8")).length > 0, true);
+      assert.equal(
+        (await readFile(build.cssPath, "utf8")).includes(".bg-background"),
+        true,
+      );
     } finally {
       process.chdir(originalCwd);
     }
