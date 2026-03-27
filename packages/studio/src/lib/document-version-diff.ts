@@ -96,7 +96,47 @@ function splitBodyLines(body: string): string[] {
 
 const LCS_CELL_LIMIT = 4096;
 
-function compareBodyLinesWithFallback(
+type BodyLineSlice = {
+  leftLines: string[];
+  rightLines: string[];
+  leftOffset: number;
+  rightOffset: number;
+};
+
+function offsetBodyLineNumbers(
+  lines: DocumentVersionDiffBodyLine[],
+  input: BodyLineSlice,
+): DocumentVersionDiffBodyLine[] {
+  return lines.map((line) => ({
+    ...line,
+    ...(line.leftLineNumber !== null
+      ? { leftLineNumber: line.leftLineNumber + input.leftOffset }
+      : {}),
+    ...(line.rightLineNumber !== null
+      ? { rightLineNumber: line.rightLineNumber + input.rightOffset }
+      : {}),
+  }));
+}
+
+function compareBodySlice(input: BodyLineSlice): DocumentVersionDiffBodyLine[] {
+  if (input.leftLines.length === 0 && input.rightLines.length === 0) {
+    return [];
+  }
+
+  if (input.leftLines.length * input.rightLines.length <= LCS_CELL_LIMIT) {
+    return offsetBodyLineNumbers(
+      compareBodyLinesWithLcs(input.leftLines, input.rightLines),
+      input,
+    );
+  }
+
+  return offsetBodyLineNumbers(
+    compareBodyLinesWithLinearFallback(input.leftLines, input.rightLines),
+    input,
+  );
+}
+
+function compareBodyLinesWithLinearFallback(
   leftLines: string[],
   rightLines: string[],
 ): DocumentVersionDiffBodyLine[] {
@@ -368,11 +408,62 @@ function compareBodyLines(
     return [];
   }
 
-  if (leftCount * rightCount > LCS_CELL_LIMIT) {
-    return compareBodyLinesWithFallback(leftLines, rightLines);
+  const shortestCount = Math.min(leftCount, rightCount);
+  let prefixLength = 0;
+
+  while (
+    prefixLength < shortestCount &&
+    leftLines[prefixLength] === rightLines[prefixLength]
+  ) {
+    prefixLength += 1;
   }
 
-  return compareBodyLinesWithLcs(leftLines, rightLines);
+  let suffixLength = 0;
+
+  while (
+    suffixLength < leftCount - prefixLength &&
+    suffixLength < rightCount - prefixLength &&
+    leftLines[leftCount - suffixLength - 1] ===
+      rightLines[rightCount - suffixLength - 1]
+  ) {
+    suffixLength += 1;
+  }
+
+  const lines: DocumentVersionDiffBodyLine[] = [];
+
+  for (let index = 0; index < prefixLength; index += 1) {
+    lines.push({
+      leftLineNumber: index + 1,
+      rightLineNumber: index + 1,
+      leftText: leftLines[index]!,
+      rightText: rightLines[index]!,
+      status: "unchanged",
+    });
+  }
+
+  lines.push(
+    ...compareBodySlice({
+      leftLines: leftLines.slice(prefixLength, leftCount - suffixLength),
+      rightLines: rightLines.slice(prefixLength, rightCount - suffixLength),
+      leftOffset: prefixLength,
+      rightOffset: prefixLength,
+    }),
+  );
+
+  for (let index = 0; index < suffixLength; index += 1) {
+    const leftIndex = leftCount - suffixLength + index;
+    const rightIndex = rightCount - suffixLength + index;
+
+    lines.push({
+      leftLineNumber: leftIndex + 1,
+      rightLineNumber: rightIndex + 1,
+      leftText: leftLines[leftIndex]!,
+      rightText: rightLines[rightIndex]!,
+      status: "unchanged",
+    });
+  }
+
+  return lines;
 }
 
 export function diffDocumentVersions(

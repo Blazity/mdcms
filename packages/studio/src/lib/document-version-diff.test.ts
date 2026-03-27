@@ -295,3 +295,169 @@ test("diffDocumentVersions uses a deterministic fallback for large bodies", () =
     status: "changed",
   });
 });
+
+test("diffDocumentVersions keeps large insertions and deletions aligned", () => {
+  const leftBody = Array.from(
+    { length: 80 },
+    (_, index) => `Line ${index + 1}`,
+  ).join("\n");
+  const rightBody = [
+    ...Array.from({ length: 9 }, (_, index) => `Line ${index + 1}`),
+    "Inserted line 10",
+    ...Array.from({ length: 60 }, (_, index) => `Line ${index + 10}`),
+    ...Array.from({ length: 10 }, (_, index) => `Line ${index + 71}`),
+  ].join("\n");
+
+  const diff = diffDocumentVersions(
+    createVersion(14, {
+      body: leftBody,
+      frontmatter: {},
+    }),
+    createVersion(15, {
+      body: rightBody,
+      frontmatter: {},
+    }),
+  );
+
+  const counts = diff.body.lines.reduce(
+    (accumulator, line) => {
+      accumulator[line.status] += 1;
+      return accumulator;
+    },
+    {
+      unchanged: 0,
+      added: 0,
+      removed: 0,
+      changed: 0,
+    } satisfies Record<string, number>,
+  );
+
+  assert.equal(counts.added, 1);
+  assert.equal(counts.removed, 1);
+  assert.equal(counts.changed, 0);
+  assert.equal(counts.unchanged, 79);
+  assert.deepEqual(diff.body.lines.slice(8, 12), [
+    {
+      leftLineNumber: 9,
+      rightLineNumber: 9,
+      leftText: "Line 9",
+      rightText: "Line 9",
+      status: "unchanged",
+    },
+    {
+      leftLineNumber: null,
+      rightLineNumber: 10,
+      leftText: null,
+      rightText: "Inserted line 10",
+      status: "added",
+    },
+    {
+      leftLineNumber: 10,
+      rightLineNumber: 11,
+      leftText: "Line 10",
+      rightText: "Line 10",
+      status: "unchanged",
+    },
+    {
+      leftLineNumber: 11,
+      rightLineNumber: 12,
+      leftText: "Line 11",
+      rightText: "Line 11",
+      status: "unchanged",
+    },
+  ]);
+  assert.deepEqual(
+    diff.body.lines.find((line) => line.leftLineNumber === 69),
+    {
+      leftLineNumber: 69,
+      rightLineNumber: 70,
+      leftText: "Line 69",
+      rightText: "Line 69",
+      status: "unchanged",
+    },
+  );
+  assert.deepEqual(
+    diff.body.lines.find((line) => line.leftLineNumber === 70),
+    {
+      leftLineNumber: 70,
+      rightLineNumber: null,
+      leftText: "Line 70",
+      rightText: null,
+      status: "removed",
+    },
+  );
+  assert.deepEqual(
+    diff.body.lines.find((line) => line.leftLineNumber === 71),
+    {
+      leftLineNumber: 71,
+      rightLineNumber: 71,
+      leftText: "Line 71",
+      rightText: "Line 71",
+      status: "unchanged",
+    },
+  );
+});
+
+test("diffDocumentVersions trims large shared context before diffing the middle window", () => {
+  const shared = ["Shared A", "Shared B", "Shared C"];
+  const prefix = Array.from(
+    { length: 50 },
+    (_, index) => shared[index % shared.length],
+  );
+  const suffix = Array.from(
+    { length: 50 },
+    (_, index) => shared[index % shared.length],
+  );
+
+  const leftBody = [...prefix, "Shared B", "Shared C", ...suffix].join("\n");
+  const rightBody = [...prefix, "Shared C", "Shared X", ...suffix].join("\n");
+
+  const diff = diffDocumentVersions(
+    createVersion(16, {
+      body: leftBody,
+      frontmatter: {},
+    }),
+    createVersion(17, {
+      body: rightBody,
+      frontmatter: {},
+    }),
+  );
+
+  assert.deepEqual(diff.body.lines.slice(49, 54), [
+    {
+      leftLineNumber: 50,
+      rightLineNumber: 50,
+      leftText: "Shared B",
+      rightText: "Shared B",
+      status: "unchanged",
+    },
+    {
+      leftLineNumber: 51,
+      rightLineNumber: null,
+      leftText: "Shared B",
+      rightText: null,
+      status: "removed",
+    },
+    {
+      leftLineNumber: 52,
+      rightLineNumber: 51,
+      leftText: "Shared C",
+      rightText: "Shared C",
+      status: "unchanged",
+    },
+    {
+      leftLineNumber: null,
+      rightLineNumber: 52,
+      leftText: null,
+      rightText: "Shared X",
+      status: "added",
+    },
+    {
+      leftLineNumber: 53,
+      rightLineNumber: 53,
+      leftText: "Shared A",
+      rightText: "Shared A",
+      status: "unchanged",
+    },
+  ]);
+});
