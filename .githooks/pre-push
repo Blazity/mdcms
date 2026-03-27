@@ -5,4 +5,4 @@ ROOT_DIR="$(git rev-parse --show-toplevel)"
 cd "$ROOT_DIR"
 
 echo "[pre-push] Running required CI gates"
-NX_TUI=false bun run ci:required 2>&1 | cat
+bun run ci:required
