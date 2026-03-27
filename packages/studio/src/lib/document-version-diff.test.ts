@@ -76,7 +76,7 @@ test("diffDocumentVersions compares any two selected versions", () => {
   assert.equal(diff.rightVersion, 3);
 });
 
-test("diffDocumentVersions surfaces path, frontmatter, and body changes", () => {
+test("diffDocumentVersions surfaces path, frontmatter, and inserted body lines", () => {
   const diff = diffDocumentVersions(
     createVersion(1, {
       path: "blog/launch-notes",
@@ -87,7 +87,7 @@ test("diffDocumentVersions surfaces path, frontmatter, and body changes", () => 
         },
         title: "Launch Notes",
       },
-      body: "# Launch Notes\nIntro 1\nShared line",
+      body: "Intro 1\nShared line",
     }),
     createVersion(3, {
       path: "blog/launch-notes-updated",
@@ -98,7 +98,7 @@ test("diffDocumentVersions surfaces path, frontmatter, and body changes", () => 
         },
         title: "Launch Notes Updated",
       },
-      body: "# Launch Notes Updated\nIntro 3 updated\nShared line\nExtra line",
+      body: "Intro 1\nInserted line\nShared line",
     }),
   );
 
@@ -130,30 +130,23 @@ test("diffDocumentVersions surfaces path, frontmatter, and body changes", () => 
     {
       leftLineNumber: 1,
       rightLineNumber: 1,
-      leftText: "# Launch Notes",
-      rightText: "# Launch Notes Updated",
-      status: "changed",
-    },
-    {
-      leftLineNumber: 2,
-      rightLineNumber: 2,
       leftText: "Intro 1",
-      rightText: "Intro 3 updated",
-      status: "changed",
-    },
-    {
-      leftLineNumber: 3,
-      rightLineNumber: 3,
-      leftText: "Shared line",
-      rightText: "Shared line",
+      rightText: "Intro 1",
       status: "unchanged",
     },
     {
       leftLineNumber: null,
-      rightLineNumber: 4,
+      rightLineNumber: 2,
       leftText: null,
-      rightText: "Extra line",
+      rightText: "Inserted line",
       status: "added",
+    },
+    {
+      leftLineNumber: 2,
+      rightLineNumber: 3,
+      leftText: "Shared line",
+      rightText: "Shared line",
+      status: "unchanged",
     },
   ]);
 });
@@ -186,4 +179,51 @@ test("diffDocumentVersions keeps deterministic ordering for equivalent inputs", 
   const second = diffDocumentVersions(left, right);
 
   assert.deepEqual(first, second);
+});
+
+test("diffDocumentVersions keeps empty bodies empty", () => {
+  const diff = diffDocumentVersions(
+    createVersion(6, {
+      body: "",
+      frontmatter: {},
+    }),
+    createVersion(7, {
+      body: "",
+      frontmatter: {},
+    }),
+  );
+
+  assert.equal(diff.body.changed, false);
+  assert.deepEqual(diff.body.lines, []);
+});
+
+test("diffDocumentVersions normalizes CRLF line endings", () => {
+  const diff = diffDocumentVersions(
+    createVersion(8, {
+      body: "Line 1\r\nLine 2",
+      frontmatter: {},
+    }),
+    createVersion(9, {
+      body: "Line 1\nLine 2",
+      frontmatter: {},
+    }),
+  );
+
+  assert.equal(diff.body.changed, false);
+  assert.deepEqual(diff.body.lines, [
+    {
+      leftLineNumber: 1,
+      rightLineNumber: 1,
+      leftText: "Line 1",
+      rightText: "Line 1",
+      status: "unchanged",
+    },
+    {
+      leftLineNumber: 2,
+      rightLineNumber: 2,
+      leftText: "Line 2",
+      rightText: "Line 2",
+      status: "unchanged",
+    },
+  ]);
 });
