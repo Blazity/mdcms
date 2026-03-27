@@ -1,8 +1,8 @@
 import { RuntimeError } from "@mdcms/shared";
 
-import type { StudioRuntimeAuth } from "./request-auth.js";
-import { applyStudioAuthToRequestInit } from "./request-auth.js";
 import type { MdcmsConfig } from "./studio-component.js";
+import { createStudioDocumentRouteApi } from "./document-route-api.js";
+import type { StudioRuntimeAuth } from "./request-auth.js";
 
 export type StudioDocumentShellState = "loading" | "ready" | "error";
 
@@ -42,19 +42,6 @@ export type LoadStudioDocumentShellInput = {
 type LoadStudioDocumentShellOptions = {
   auth?: StudioRuntimeAuth;
   fetcher?: typeof fetch;
-};
-
-type ContentGetResponse = {
-  data?: {
-    documentId?: string;
-    type?: string;
-    locale?: string;
-    path?: string;
-    body?: string;
-    updatedAt?: string;
-  };
-  code?: string;
-  message?: string;
 };
 
 const STUDIO_DOCUMENT_SHELL_ERROR_CODES: ReadonlySet<StudioDocumentShellErrorCode> =
@@ -114,41 +101,17 @@ export async function loadStudioDocumentShell(
   options: LoadStudioDocumentShellOptions = {},
 ): Promise<StudioDocumentShell> {
   const locale = input.locale?.trim() || "en";
-  const fetcher = options.fetcher ?? fetch;
-  const url = new URL(
-    `/api/v1/content/${encodeURIComponent(input.documentId)}`,
-    config.serverUrl,
-  );
-  url.searchParams.set("draft", "true");
+  const documentRouteApi = createStudioDocumentRouteApi(config, {
+    auth: options.auth,
+    fetcher: options.fetcher,
+  });
 
   try {
-    const response = await fetcher(url, {
-      ...applyStudioAuthToRequestInit(options.auth, {
-        method: "GET",
-        headers: {
-          "x-mdcms-project": config.project,
-          "x-mdcms-environment": config.environment,
-          "x-mdcms-locale": locale,
-        },
-      }),
+    const document = await documentRouteApi.loadDraft({
+      type: input.type,
+      documentId: input.documentId,
+      locale,
     });
-    const payload = (await response.json()) as ContentGetResponse;
-
-    if (!response.ok) {
-      throw new RuntimeError({
-        code: payload.code ?? "DOCUMENT_LOAD_FAILED",
-        message: payload.message ?? "Failed to load document content.",
-        statusCode: response.status,
-      });
-    }
-
-    if (!payload.data?.documentId || !payload.data.path) {
-      throw new RuntimeError({
-        code: "DOCUMENT_LOAD_FAILED",
-        message: "Document response payload is missing required fields.",
-        statusCode: 500,
-      });
-    }
 
     return {
       state: "ready",
@@ -156,12 +119,12 @@ export async function loadStudioDocumentShell(
       documentId: input.documentId,
       locale,
       data: {
-        documentId: payload.data.documentId,
-        type: payload.data.type ?? input.type,
-        locale: payload.data.locale ?? locale,
-        path: payload.data.path,
-        body: payload.data.body ?? "",
-        updatedAt: payload.data.updatedAt ?? "",
+        documentId: document.documentId,
+        type: document.type ?? input.type,
+        locale: document.locale ?? locale,
+        path: document.path,
+        body: document.body ?? "",
+        updatedAt: document.updatedAt ?? "",
       },
     };
   } catch (error) {
