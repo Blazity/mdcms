@@ -11,10 +11,10 @@ interface MDCMSLogoProps {
 export function MDCMSLogo({ collapsed = false, className }: MDCMSLogoProps) {
   return (
     <div className={cn("flex items-center gap-1", className)}>
-      <span className="text-xl font-bold tracking-tight text-foreground">
+      <span className="text-xl font-bold tracking-tight text-foreground font-[var(--font-heading)]">
         {collapsed ? "m" : "mdcms"}
       </span>
-      <span className="h-2 w-2 rounded-full bg-accent" />
+      <span className="h-2 w-2 rounded-full bg-primary" />
     </div>
   );
 }

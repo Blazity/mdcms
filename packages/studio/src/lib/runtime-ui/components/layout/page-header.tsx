@@ -81,7 +81,7 @@ export function PageHeaderHeading({
 }: React.HTMLAttributes<HTMLHeadingElement>) {
   return (
     <h1
-      className={cn("text-2xl font-semibold tracking-tight", className)}
+      className={cn("text-2xl font-bold tracking-tight", className)}
       {...props}
     >
       {children}
@@ -168,7 +168,7 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
 
   return (
     <TooltipProvider>
-      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-background px-6">
+      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[rgba(197,197,216,0.3)] bg-card px-6">
         {/* Left side - Breadcrumbs */}
         <BreadcrumbTrail breadcrumbs={breadcrumbs} />
 
