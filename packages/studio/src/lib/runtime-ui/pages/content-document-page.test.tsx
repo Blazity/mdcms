@@ -8,6 +8,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { StudioDocumentShell } from "../../document-shell.js";
 import { StudioNavigationProvider } from "../navigation.js";
 import {
+  applyFailedDraftSaveToReadyState,
+  applySuccessfulPublishToReadyState,
   applySuccessfulDraftSaveToReadyState,
   ContentDocumentPageView,
   createContentDocumentPageState,
@@ -598,6 +600,138 @@ test("publishContentDocumentReadyState submits optional change summary and refre
     next.versionHistory.versions.map((version) => version.version),
     [6, 5],
   );
+});
+
+test("publishContentDocumentReadyState keeps the published draft state when version history refresh fails", async () => {
+  const initial = createReadyState();
+
+  const next = await publishContentDocumentReadyState({
+    api: {
+      publish: async () =>
+        createDocumentResponse({
+          hasUnpublishedChanges: false,
+          publishedVersion: 6,
+          version: 6,
+          updatedAt: "2026-03-27T12:10:00.000Z",
+        }),
+      listVersions: async () => {
+        throw new RuntimeError({
+          code: "INTERNAL_ERROR",
+          message: "Version history temporarily unavailable.",
+          statusCode: 500,
+        });
+      },
+    },
+    state: initial,
+    changeSummary: "Ready for launch.",
+  });
+
+  assert.equal(next.document.publishedVersion, 6);
+  assert.equal(next.document.hasUnpublishedChanges, false);
+  assert.equal(next.publishDialogOpen, false);
+  assert.equal(next.publishError, undefined);
+  assert.deepEqual(next.selectedComparison, {});
+  assert.deepEqual(next.versionDiff, {
+    status: "idle",
+  });
+
+  if (next.versionHistory.status !== "error") {
+    throw new Error("expected version history refresh error state");
+  }
+
+  assert.equal(
+    next.versionHistory.message,
+    "Version history temporarily unavailable.",
+  );
+});
+
+test("applySuccessfulPublishToReadyState preserves newer local edits made while publish was in flight", () => {
+  const requestState = createReadyState();
+  const currentState = reduceContentDocumentPageReadyState(requestState, {
+    type: "draftChanged",
+    body: "# Launch Notes\nNewer local edit",
+  });
+  const publishedState = {
+    ...requestState,
+    document: {
+      ...requestState.document,
+      hasUnpublishedChanges: false,
+      publishedVersion: 6,
+      updatedAt: "2026-03-27T12:12:00.000Z",
+    },
+    publishDialogOpen: false,
+    publishChangeSummary: "",
+    publishState: "idle" as const,
+    publishError: undefined,
+    versionHistory: {
+      status: "ready" as const,
+      versions: [createVersionSummary(6), createVersionSummary(5)],
+    },
+    selectedComparison: {
+      leftVersion: 5,
+      rightVersion: 6,
+    },
+    versionDiff: {
+      status: "idle" as const,
+    },
+  };
+
+  const next = applySuccessfulPublishToReadyState({
+    state: currentState,
+    requestBody: requestState.draftBody,
+    publishedState,
+  });
+
+  assert.equal(next.document.publishedVersion, 6);
+  assert.equal(next.document.body, requestState.document.body);
+  assert.equal(next.draftBody, "# Launch Notes\nNewer local edit");
+  assert.equal(next.saveState, "unsaved");
+  assert.equal(next.publishDialogOpen, false);
+  assert.deepEqual(next.selectedComparison, {
+    leftVersion: 5,
+    rightVersion: 6,
+  });
+});
+
+test("applyFailedDraftSaveToReadyState keeps the same draft eligible for autosave retry", async () => {
+  const requestBody = "# Launch Notes\nRetry me";
+  const saving = reduceContentDocumentPageReadyState(
+    reduceContentDocumentPageReadyState(createReadyState(), {
+      type: "draftChanged",
+      body: requestBody,
+    }),
+    {
+      type: "saveStarted",
+    },
+  );
+  const failed = applyFailedDraftSaveToReadyState({
+    state: saving,
+    requestBody,
+    message: "Temporary save failure.",
+  });
+  let saveCalls = 0;
+
+  const next = await saveContentDocumentReadyState({
+    api: {
+      updateDraft: async () => {
+        saveCalls += 1;
+
+        return createDocumentResponse({
+          body: requestBody,
+          hasUnpublishedChanges: true,
+          updatedAt: "2026-03-27T12:11:00.000Z",
+        });
+      },
+    },
+    route: createRouteContext(),
+    state: failed,
+  });
+
+  assert.equal(failed.saveState, "unsaved");
+  assert.equal(failed.saveRequestBody, undefined);
+  assert.equal(saveCalls, 1);
+  assert.equal(next.saveState, "saved");
+  assert.equal(next.document.body, requestBody);
 });
 
 test("loadContentDocumentVersionDiff compares any two selected versions", async () => {

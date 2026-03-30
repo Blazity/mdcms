@@ -372,23 +372,58 @@ export async function publishContentDocumentReadyState(input: {
     locale: input.state.document.locale,
     changeSummary,
   });
-  const versionHistoryResponse = await input.api.listVersions({
-    documentId: input.state.documentId,
-    locale: input.state.document.locale,
-  });
-  const selectedComparison = createDefaultVersionComparison(
-    versionHistoryResponse.data,
-  );
-
-  return {
+  const nextState = {
     ...applyDocumentResponseToReadyState(input.state, document),
     publishDialogOpen: false,
     publishChangeSummary: "",
-    publishState: "idle",
+    publishState: "idle" as const,
     publishError: undefined,
-    versionHistory: createVersionHistoryState(versionHistoryResponse.data),
-    selectedComparison,
-    versionDiff: resetVersionDiffState(),
+  };
+
+  try {
+    const versionHistoryResponse = await input.api.listVersions({
+      documentId: input.state.documentId,
+      locale: input.state.document.locale,
+    });
+
+    return {
+      ...nextState,
+      versionHistory: createVersionHistoryState(versionHistoryResponse.data),
+      selectedComparison: createDefaultVersionComparison(
+        versionHistoryResponse.data,
+      ),
+      versionDiff: resetVersionDiffState(),
+    };
+  } catch (error) {
+    return {
+      ...nextState,
+      versionHistory: createVersionHistoryErrorState(
+        toRouteErrorMessage(error, "Failed to refresh version history."),
+      ),
+      selectedComparison: {},
+      versionDiff: resetVersionDiffState(),
+    };
+  }
+}
+
+export function applySuccessfulPublishToReadyState(input: {
+  state: ContentDocumentPageReadyState;
+  requestBody: string;
+  publishedState: ContentDocumentPageReadyState;
+}): ContentDocumentPageReadyState {
+  if (input.state.draftBody === input.requestBody) {
+    return input.publishedState;
+  }
+
+  return {
+    ...input.publishedState,
+    draftBody: input.state.draftBody,
+    saveState:
+      input.state.draftBody === input.publishedState.document.body
+        ? "saved"
+        : "unsaved",
+    mutationError: input.state.mutationError,
+    saveRequestBody: input.state.saveRequestBody,
   };
 }
 
@@ -667,7 +702,7 @@ export function reduceContentDocumentPageReadyState(
         saveState:
           state.draftBody === state.document.body ? "saved" : "unsaved",
         mutationError: event.message,
-        saveRequestBody: state.saveRequestBody ?? state.draftBody,
+        saveRequestBody: undefined,
       };
     }
   }
@@ -719,7 +754,7 @@ export function applyFailedDraftSaveToReadyState(input: {
     saveState:
       input.state.draftBody === input.state.document.body ? "saved" : "unsaved",
     mutationError: input.message,
-    saveRequestBody: input.requestBody,
+    saveRequestBody: undefined,
   };
 }
 
@@ -1429,7 +1464,16 @@ export default function ContentDocumentPage({
         changeSummary: currentState.publishChangeSummary,
       });
 
-      setState(nextState);
+      setState((current) =>
+        current.status === "ready" &&
+        current.documentId === currentState.documentId
+          ? applySuccessfulPublishToReadyState({
+              state: current,
+              requestBody: currentState.draftBody,
+              publishedState: nextState,
+            })
+          : current,
+      );
     } catch (error) {
       const message = toRouteErrorMessage(error, "Failed to publish document.");
 

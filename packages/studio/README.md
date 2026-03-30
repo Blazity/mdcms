@@ -164,7 +164,7 @@ export function AdminStudioClient({ config }: { config: MdcmsConfig }) {
 - The routed document page now owns the live MVP document workflow against the
   existing content API contracts:
   - draft load via `GET /api/v1/content/:documentId?draft=true`
-  - debounced draft save via `PATCH /api/v1/content/:documentId`
+  - debounced draft save via `PUT /api/v1/content/:documentId`
   - publish via `POST /api/v1/content/:documentId/publish`
   - version history via `GET /api/v1/content/:documentId/versions`
   - arbitrary version diff by fetching any two selected immutable versions from
