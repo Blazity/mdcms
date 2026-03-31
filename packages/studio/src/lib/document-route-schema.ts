@@ -4,6 +4,7 @@ import {
   type JsonObject,
   type MdcmsConfig as SharedMdcmsConfig,
   type ParsedMdcmsConfig,
+  type SchemaRegistrySyncPayload,
 } from "@mdcms/shared";
 
 export type StudioDocumentRouteSchemaCapability =
@@ -21,6 +22,18 @@ export type StudioDocumentRouteSchemaCapability =
 export type StudioDocumentRouteSchemaReadOnlyReason =
   | "missing-environment"
   | "schema-unavailable";
+
+export type StudioDocumentRouteSchemaDetails =
+  | {
+      canWrite: true;
+      environment: string;
+      syncPayload: SchemaRegistrySyncPayload;
+    }
+  | {
+      canWrite: false;
+      reason: StudioDocumentRouteSchemaReadOnlyReason;
+      message: string;
+    };
 
 function toRawConfigSnapshot(config: ParsedMdcmsConfig): JsonObject {
   return {
@@ -76,7 +89,7 @@ async function sha256Hex(value: string): Promise<string> {
 function createReadOnlyCapability(
   reason: StudioDocumentRouteSchemaReadOnlyReason,
   message: string,
-): StudioDocumentRouteSchemaCapability {
+): Extract<StudioDocumentRouteSchemaCapability, { canWrite: false }> {
   return {
     canWrite: false,
     reason,
@@ -97,6 +110,22 @@ function hasResolvedEnvironment(
 export async function resolveStudioDocumentRouteSchemaCapability(
   config: SharedMdcmsConfig,
 ): Promise<StudioDocumentRouteSchemaCapability> {
+  const details = await resolveStudioDocumentRouteSchemaDetails(config);
+
+  if (!details.canWrite) {
+    return details;
+  }
+
+  return {
+    canWrite: true,
+    environment: details.environment,
+    schemaHash: details.syncPayload.schemaHash,
+  };
+}
+
+export async function resolveStudioDocumentRouteSchemaDetails(
+  config: SharedMdcmsConfig,
+): Promise<StudioDocumentRouteSchemaDetails> {
   let parsedConfig: ParsedMdcmsConfig;
 
   try {
@@ -143,7 +172,11 @@ export async function resolveStudioDocumentRouteSchemaCapability(
     return {
       canWrite: true,
       environment,
-      schemaHash,
+      syncPayload: {
+        rawConfigSnapshot,
+        resolvedSchema,
+        schemaHash,
+      },
     };
   } catch (error) {
     return createReadOnlyCapability(

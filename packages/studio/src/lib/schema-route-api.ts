@@ -31,7 +31,9 @@ export type StudioSchemaRouteSyncResult = {
 
 export type StudioSchemaRouteApi = {
   list: () => Promise<SchemaRegistryEntry[]>;
-  sync: (payload: SchemaRegistrySyncPayload) => Promise<StudioSchemaRouteSyncResult>;
+  sync: (
+    payload: SchemaRegistrySyncPayload,
+  ) => Promise<StudioSchemaRouteSyncResult>;
 };
 
 type SchemaRoutePayload = {
@@ -53,7 +55,9 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 function isArrayOfStrings(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+  return (
+    Array.isArray(value) && value.every((entry) => typeof entry === "string")
+  );
 }
 
 function mergeHeaders(
@@ -76,10 +80,7 @@ function mergeHeaders(
     : undefined;
 }
 
-function buildUrl(
-  config: StudioSchemaRouteConfig,
-  path: string,
-): URL {
+function buildUrl(config: StudioSchemaRouteConfig, path: string): URL {
   return new URL(path, config.serverUrl);
 }
 

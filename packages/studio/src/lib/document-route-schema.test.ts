@@ -4,6 +4,7 @@ import { test } from "bun:test";
 
 import { createStudioEmbedConfig } from "./studio.js";
 import {
+  resolveStudioDocumentRouteSchemaDetails,
   resolveStudioDocumentRouteSchemaCapability,
   type StudioDocumentRouteSchemaCapability,
 } from "./document-route-schema.js";
@@ -75,6 +76,10 @@ async function readCapability(): Promise<StudioDocumentRouteSchemaCapability> {
   return resolveStudioDocumentRouteSchemaCapability(createAuthoredConfig());
 }
 
+async function readCapabilityDetails() {
+  return resolveStudioDocumentRouteSchemaDetails(createAuthoredConfig());
+}
+
 test("derived schema hash is deterministic for authored Studio configs", async () => {
   const capability = await readCapability();
 
@@ -91,6 +96,36 @@ test("derived schema hash is deterministic for authored Studio configs", async (
 
   assert.match(capability.schemaHash, /^[a-f0-9]{64}$/);
   assert.equal(capability.schemaHash, repeatCapability.schemaHash);
+});
+
+test("derived schema details expose the local sync payload pieces", async () => {
+  const details = await readCapabilityDetails();
+
+  assert.equal(details.canWrite, true);
+  if (!details.canWrite) {
+    throw new Error("Expected a write-capable schema result.");
+  }
+
+  assert.equal(details.environment, "staging");
+  assert.deepEqual(details.syncPayload.rawConfigSnapshot, {
+    project: "marketing-site",
+    serverUrl: "http://localhost:4000",
+    environment: "staging",
+    contentDirectories: ["content"],
+    locales: {
+      default: "en",
+      supported: ["en", "fr"],
+      aliases: {
+        "fr-CA": "fr",
+        "en-US": "en",
+      },
+    },
+  });
+  assert.deepEqual(Object.keys(details.syncPayload.resolvedSchema).sort(), [
+    "Article",
+    "Author",
+  ]);
+  assert.match(details.syncPayload.schemaHash, /^[a-f0-9]{64}$/);
 });
 
 test("equivalent authored config data yields the same schema hash", async () => {
