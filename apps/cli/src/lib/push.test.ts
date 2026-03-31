@@ -97,10 +97,14 @@ test("push updates an existing manifest-tracked document via PUT", async () => {
           format: string;
           body: string;
           frontmatter: Record<string, unknown>;
+          draftRevision: number;
+          publishedVersion: number | null;
         };
         assert.equal(body.format, "md");
         assert.equal(body.body.includes("Updated draft body"), true);
         assert.equal(body.frontmatter.title, "Hello World");
+        assert.equal(body.draftRevision, 1);
+        assert.equal(body.publishedVersion, 1);
 
         return createSuccessResponse({
           documentId: "doc-1",
@@ -608,6 +612,136 @@ test("push fails with deterministic error on unsupported file extension", async 
 
     assert.equal(exitCode, 1);
     assert.equal(stderr.includes("UNSUPPORTED_EXTENSION"), true);
+  });
+});
+
+test("push reports stale document as failed and continues pushing remaining documents", async () => {
+  await withTempDir(async (cwd) => {
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "marketing-site.staging.json",
+    );
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeFile(
+      manifestPath,
+      JSON.stringify(
+        {
+          "doc-stale": {
+            path: "content/blog/stale-post.en.md",
+            format: "md",
+            draftRevision: 1,
+            publishedVersion: null,
+            hash: "old-hash-1",
+          },
+          "doc-fresh": {
+            path: "content/blog/fresh-post.en.md",
+            format: "md",
+            draftRevision: 3,
+            publishedVersion: 2,
+            hash: "old-hash-2",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await mkdir(join(cwd, "content", "blog"), { recursive: true });
+    await writeFile(
+      join(cwd, "content/blog/stale-post.en.md"),
+      '---\ntitle: "Stale"\n---\nstale body\n',
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, "content/blog/fresh-post.en.md"),
+      '---\ntitle: "Fresh"\n---\nfresh body\n',
+      "utf8",
+    );
+
+    const stdoutChunks: string[] = [];
+    let requestCount = 0;
+
+    const exitCode = await runMdcmsCli(["push", "--force"], {
+      cwd,
+      env: {} as NodeJS.ProcessEnv,
+      fetcher: async (input) => {
+        requestCount += 1;
+        const url = String(input);
+
+        if (url.endsWith("/api/v1/content/doc-stale")) {
+          return new Response(
+            JSON.stringify({
+              code: "STALE_DRAFT_REVISION",
+              message: "Draft has been modified since your last pull.",
+              statusCode: 409,
+            }),
+            { status: 409, headers: { "content-type": "application/json" } },
+          );
+        }
+
+        return createSuccessResponse({
+          documentId: "doc-fresh",
+          type: "BlogPost",
+          locale: "en",
+          path: "content/blog/fresh-post",
+          format: "md",
+          draftRevision: 4,
+          publishedVersion: 2,
+        });
+      },
+      loadConfig: async () => ({
+        config: {
+          serverUrl: "http://localhost:4000",
+          project: "marketing-site",
+          environment: "staging",
+          types: [
+            {
+              name: "BlogPost",
+              directory: "content/blog",
+              localized: true,
+            },
+          ],
+        },
+        configPath: join(cwd, "mdcms.config.ts"),
+      }),
+      stdout: {
+        write: (chunk: string) => {
+          stdoutChunks.push(chunk);
+        },
+      },
+      stderr: { write: () => undefined },
+      confirm: async () => true,
+    });
+
+    // Exit code 1 because there is at least one failure
+    assert.equal(exitCode, 1);
+    // Both documents were sent
+    assert.equal(requestCount, 2);
+
+    const output = stdoutChunks.join("");
+
+    // Stale doc reported as failed
+    assert.ok(output.includes("[FAILED]"));
+    assert.ok(output.includes("doc-stale"));
+    assert.ok(output.includes("STALE_DRAFT_REVISION"));
+
+    // Fresh doc reported as updated
+    assert.ok(output.includes("[UPDATED]"));
+    assert.ok(output.includes("doc-fresh"));
+
+    // Actionable summary printed
+    assert.ok(output.includes("cms pull"));
+
+    // Manifest updated for fresh doc, stale doc unchanged
+    const manifest = JSON.parse(
+      await readFile(manifestPath, "utf8"),
+    ) as Record<string, { draftRevision: number; hash: string }>;
+    assert.equal(manifest["doc-fresh"]?.draftRevision, 4);
+    assert.equal(manifest["doc-stale"]?.draftRevision, 1);
+    assert.equal(manifest["doc-stale"]?.hash, "old-hash-1");
   });
 });
 

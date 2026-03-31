@@ -497,7 +497,7 @@ export function createInMemoryContentStore(
       scope,
       documentId,
       payload,
-      _options?: ContentWriteOperationOptions,
+      options?: ContentWriteOperationOptions,
     ) {
       const store = getScopeStore(scope);
       const scopeSchemas = getScopeSchemas(scope);
@@ -514,6 +514,23 @@ export function createInMemoryContentStore(
           statusCode: 404,
           details: {
             documentId: normalizedDocumentId,
+          },
+        });
+      }
+
+      if (
+        options?.expectedDraftRevision !== undefined &&
+        existing.draftRevision !== options.expectedDraftRevision
+      ) {
+        throw new RuntimeError({
+          code: "STALE_DRAFT_REVISION",
+          message:
+            "Draft has been modified since your last pull. Run 'cms pull' to get the latest version.",
+          statusCode: 409,
+          details: {
+            documentId: normalizedDocumentId,
+            expectedDraftRevision: options.expectedDraftRevision,
+            currentDraftRevision: existing.draftRevision,
           },
         });
       }

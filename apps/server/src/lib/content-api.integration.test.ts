@@ -3336,3 +3336,56 @@ testWithDatabase(
     }
   },
 );
+
+testWithDatabase(
+  "database PUT rejects update with stale expectedDraftRevision",
+  async () => {
+    const context = await createDatabaseTestContext("cms151-stale-revision");
+    try {
+      const created = await createContentDocument(
+        context.handler,
+        context.csrfHeaders,
+        scopeHeaders,
+        {
+          path: stableFixturePath("blog", "cms151-stale"),
+          type: "BlogPost",
+          locale: "en",
+          format: "md",
+          frontmatter: { slug: stableFixtureName("cms151-stale") },
+          body: "original",
+        },
+      );
+
+      const documentId = created.documentId as string;
+
+      const firstUpdate = await context.handler(
+        new Request(`http://localhost/api/v1/content/${documentId}`, {
+          method: "PUT",
+          headers: context.csrfHeaders({
+            ...scopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({ body: "edit 1" }),
+        }),
+      );
+      assert.equal(firstUpdate.status, 200);
+
+      const staleUpdate = await context.handler(
+        new Request(`http://localhost/api/v1/content/${documentId}`, {
+          method: "PUT",
+          headers: context.csrfHeaders({
+            ...scopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({ body: "stale edit", draftRevision: 1 }),
+        }),
+      );
+
+      assert.equal(staleUpdate.status, 409);
+      const body = (await staleUpdate.json()) as { code: string };
+      assert.equal(body.code, "STALE_DRAFT_REVISION");
+    } finally {
+      await context.dbConnection.close();
+    }
+  },
+);

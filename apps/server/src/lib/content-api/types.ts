@@ -61,6 +61,7 @@ export type ContentWriteOperationOptions = {
   // header-derived hash once the route gate succeeds; non-HTTP direct store
   // callers may omit it.
   expectedSchemaHash?: string;
+  expectedDraftRevision?: number;
 };
 
 export type ContentListQuery = {
@@ -94,6 +95,8 @@ export type ContentWritePayload = {
   sourceDocumentId?: string;
   createdBy?: string;
   updatedBy?: string;
+  draftRevision?: number;
+  publishedVersion?: number | null;
 };
 
 export type ContentPublishPayload = {

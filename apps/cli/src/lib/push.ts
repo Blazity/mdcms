@@ -43,6 +43,7 @@ type PushResult = {
   nextDocumentId?: string;
   path: string;
   message: string;
+  reasonCode?: string;
 };
 
 type ContentDocumentPayload = Pick<
@@ -87,6 +88,11 @@ function parsePushOptions(args: string[]): PushOptions {
 function renderPushHelp(): string {
   return [
     "Usage: mdcms push [--force] [--dry-run] [--published]",
+    "",
+    "Upload changed local markdown files to CMS as draft content.",
+    "Each document is sent with its base draftRevision from the local manifest.",
+    "If the server draft has been modified since your last pull, that document",
+    "is rejected (stale) while the remaining documents continue normally.",
     "",
     "Options:",
     "  --force       Skip confirmation prompt before applying push",
@@ -373,6 +379,11 @@ async function updateExistingDocument(
   | {
       kind: "missing";
     }
+  | {
+      kind: "stale";
+      code: string;
+      message: string;
+    }
 > {
   const response = await context.fetcher(
     `${context.serverUrl}/api/v1/content/${candidate.documentId}`,
@@ -383,6 +394,8 @@ async function updateExistingDocument(
         format: candidate.format,
         frontmatter: candidate.frontmatter,
         body: candidate.body,
+        draftRevision: candidate.manifestEntry.draftRevision,
+        publishedVersion: candidate.manifestEntry.publishedVersion,
       }),
     },
   );
@@ -401,6 +414,18 @@ async function updateExistingDocument(
   }
 
   const remoteError = parseRemoteError(body, response.status);
+
+  if (
+    response.status === 409 &&
+    remoteError.code === "STALE_DRAFT_REVISION"
+  ) {
+    return {
+      kind: "stale",
+      code: remoteError.code,
+      message: remoteError.message,
+    };
+  }
+
   throw new RuntimeError({
     code: remoteError.code,
     message: remoteError.message,
@@ -494,6 +519,16 @@ function printPushResults(
 
     context.stdout.write(
       `  - [${result.status.toUpperCase()}] ${idLabel} (${result.path}) ${result.message}\n`,
+    );
+  }
+
+  const staleCount = results.filter(
+    (r) => r.reasonCode === "stale_draft_revision",
+  ).length;
+
+  if (staleCount > 0) {
+    context.stdout.write(
+      `\nSome documents were rejected as stale. Run 'cms pull' to get the latest drafts, then re-apply your local changes.\n`,
     );
   }
 }
@@ -593,6 +628,18 @@ async function applyPush(
           message: `(draft=${updateResult.remote.draftRevision}, published=${updateResult.remote.publishedVersion ?? "-"})`,
         });
 
+        continue;
+      }
+
+      if (updateResult.kind === "stale") {
+        failures += 1;
+        results.push({
+          status: "failed",
+          documentId: candidate.documentId,
+          path: candidate.manifestEntry.path,
+          message: `${updateResult.code}: ${updateResult.message}`,
+          reasonCode: updateResult.code.toLowerCase(),
+        });
         continue;
       }
 

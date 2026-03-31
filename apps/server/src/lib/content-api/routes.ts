@@ -430,12 +430,20 @@ export function mountContentApiRoutes(
             documentPath: nextPath,
           });
         }
+        const expectedDraftRevision =
+          typeof payload.draftRevision === "number" &&
+          Number.isInteger(payload.draftRevision) &&
+          payload.draftRevision >= 0
+            ? payload.draftRevision
+            : undefined;
+
         const document = await options.store.update(
           scope,
           params.documentId,
           payload,
           {
             expectedSchemaHash: schemaHash,
+            expectedDraftRevision,
           },
         );
 
