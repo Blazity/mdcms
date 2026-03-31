@@ -50,7 +50,7 @@ test("full init wizard creates config, schema state, and manifest", async () => 
     );
 
     const fetcher = createMockFetcher({
-      "/api/v1/ping": () =>
+      "/healthz": () =>
         new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
       "/api/v1/schema": () =>
         new Response(
@@ -156,7 +156,7 @@ test("full init wizard creates config, schema state, and manifest", async () => 
 test("init fails when server unreachable", async () => {
   await withTempDir(async (cwd) => {
     const fetcher = createMockFetcher({
-      "/api/v1/ping": () =>
+      "/healthz": () =>
         new Response("Service Unavailable", { status: 503 }),
     });
 
@@ -195,7 +195,7 @@ test("init fails when server unreachable", async () => {
 test("init with no content files still generates config", async () => {
   await withTempDir(async (cwd) => {
     const fetcher = createMockFetcher({
-      "/api/v1/ping": () =>
+      "/healthz": () =>
         new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
       "/api/v1/schema": (_url, init) => {
         const body = JSON.parse(String(init?.body)) as { schemaHash: string };

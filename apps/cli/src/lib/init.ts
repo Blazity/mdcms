@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { z } from "zod";
@@ -115,8 +116,12 @@ function buildRawConfig(input: {
         schema = z.number();
       } else if (field.zodType === "z.boolean()") {
         schema = z.boolean();
-      } else if (field.zodType === "z.array(z.unknown())") {
-        schema = z.array(z.unknown());
+      } else if (field.zodType === "z.array(z.string())") {
+        schema = z.array(z.string());
+      } else if (field.zodType === "z.array(z.number())") {
+        schema = z.array(z.number());
+      } else if (field.zodType === "z.array(z.boolean())") {
+        schema = z.array(z.boolean());
       } else {
         schema = z.unknown();
       }
@@ -178,7 +183,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
       );
 
       try {
-        const pingResponse = await fetcher(`${serverUrl}/api/v1/ping`);
+        const pingResponse = await fetcher(`${serverUrl}/healthz`);
         if (!pingResponse.ok) {
           stderr.write(
             `Server at ${serverUrl} responded with ${pingResponse.status}.\n`,
@@ -204,6 +209,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
       } else {
         // OAuth loopback flow
         const listener = await createLoopbackCallbackListener();
+        const oauthState = `state_${randomBytes(18).toString("base64url")}_${Date.now()}`;
         try {
           const startResponse = await fetcher(
             `${serverUrl}/api/v1/auth/cli/login/start`,
@@ -214,7 +220,13 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
                 project,
                 environment,
                 redirectUri: listener.redirectUri,
-                state: "init",
+                state: oauthState,
+                scopes: [
+                  "schema:read",
+                  "schema:write",
+                  "content:read",
+                  "content:write",
+                ],
               }),
             },
           );
@@ -247,7 +259,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
                 challengeId: startBody.data.challengeId,
-                state: "init",
+                state: oauthState,
                 code: callback.code,
               }),
             },
@@ -290,6 +302,9 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
       const dirGroups = groupFilesByDirectory(allFiles);
 
       let selectedDirectories: string[] = [];
+
+      // Drop root-level files — "." is not a valid content directory
+      dirGroups.delete(".");
 
       if (dirGroups.size === 0) {
         stdout.write("No content files found.\n");
@@ -480,24 +495,70 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
                 },
               );
 
-              if (!contentResponse.ok) {
-                const errBody = (await contentResponse
-                  .json()
-                  .catch(() => undefined)) as { message?: string } | undefined;
-                stderr.write(
-                  `Failed to import ${file.relativePath}: ${errBody?.message ?? contentResponse.status}\n`,
-                );
-                failCount++;
-                continue;
-              }
-
-              const contentResult = (await contentResponse.json()) as {
+              let contentResult: {
                 data: {
                   documentId: string;
                   draftRevision: number;
                   publishedVersion: number | null;
                 };
               };
+
+              if (!contentResponse.ok) {
+                const errBody = (await contentResponse
+                  .json()
+                  .catch(() => undefined)) as
+                  | {
+                      message?: string;
+                      code?: string;
+                      details?: { conflictDocumentId?: string };
+                    }
+                  | undefined;
+
+                if (
+                  contentResponse.status === 409 &&
+                  errBody?.details?.conflictDocumentId
+                ) {
+                  const updateResponse = await fetcher(
+                    `${serverUrl}/api/v1/content/${errBody.details.conflictDocumentId}`,
+                    {
+                      method: "PUT",
+                      headers: contentHeaders,
+                      body: JSON.stringify({
+                        format: file.format,
+                        frontmatter,
+                        body,
+                      }),
+                    },
+                  );
+
+                  if (!updateResponse.ok) {
+                    const updateErr = (await updateResponse
+                      .json()
+                      .catch(() => undefined)) as
+                      | {
+                          message?: string;
+                        }
+                      | undefined;
+                    stderr.write(
+                      `Failed to import ${file.relativePath}: ${updateErr?.message ?? updateResponse.status}\n`,
+                    );
+                    failCount++;
+                    continue;
+                  }
+
+                  contentResult =
+                    (await updateResponse.json()) as typeof contentResult;
+                } else {
+                  stderr.write(
+                    `Failed to import ${file.relativePath}: ${errBody?.message ?? contentResponse.status}\n`,
+                  );
+                  failCount++;
+                  continue;
+                }
+              } else {
+                contentResult =
+                  (await contentResponse.json()) as typeof contentResult;
+              }
 
               const entry: ScopedManifestEntry = {
                 path: file.relativePath,

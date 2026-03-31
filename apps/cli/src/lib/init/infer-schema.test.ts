@@ -31,10 +31,10 @@ test("infers a single type from one directory", () => {
   assert.equal(result[0]!.fileCount, 2);
   assert.equal(result[0]!.localized, false);
   assert.equal(result[0]!.fields["title"]!.zodType, "z.string()");
-  assert.equal(result[0]!.fields["title"]!.optional, false);
+  assert.equal(result[0]!.fields["title"]!.optional, true);
   assert.equal(result[0]!.fields["title"]!.samples, 2);
   assert.equal(result[0]!.fields["draft"]!.zodType, "z.boolean()");
-  assert.equal(result[0]!.fields["draft"]!.optional, false);
+  assert.equal(result[0]!.fields["draft"]!.optional, true);
 });
 
 test("marks fields optional when not present in all files", () => {
@@ -46,7 +46,7 @@ test("marks fields optional when not present in all files", () => {
 
   const result = inferSchema(files, ["content/posts"]);
 
-  assert.equal(result[0]!.fields["title"]!.optional, false);
+  assert.equal(result[0]!.fields["title"]!.optional, true);
   assert.equal(result[0]!.fields["title"]!.samples, 3);
   assert.equal(result[0]!.fields["tags"]!.optional, true);
   assert.equal(result[0]!.fields["tags"]!.samples, 1);
@@ -61,7 +61,7 @@ test("infers numeric fields as z.number()", () => {
   const result = inferSchema(files, ["content/posts"]);
 
   assert.equal(result[0]!.fields["order"]!.zodType, "z.number()");
-  assert.equal(result[0]!.fields["order"]!.optional, false);
+  assert.equal(result[0]!.fields["order"]!.optional, true);
 });
 
 test("infers boolean fields as z.boolean()", () => {
@@ -75,7 +75,7 @@ test("infers boolean fields as z.boolean()", () => {
   assert.equal(result[0]!.fields["draft"]!.zodType, "z.boolean()");
 });
 
-test("infers array fields as z.array(z.unknown())", () => {
+test("infers array of strings fields as z.array(z.string())", () => {
   const files = [
     makeFile("content/posts/a.md", { tags: ["js", "ts"] }),
     makeFile("content/posts/b.md", { tags: ["go"] }),
@@ -83,7 +83,7 @@ test("infers array fields as z.array(z.unknown())", () => {
 
   const result = inferSchema(files, ["content/posts"]);
 
-  assert.equal(result[0]!.fields["tags"]!.zodType, "z.array(z.unknown())");
+  assert.equal(result[0]!.fields["tags"]!.zodType, "z.array(z.string())");
 });
 
 test("infers multiple types from multiple directories", () => {
