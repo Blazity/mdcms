@@ -1,7 +1,12 @@
-// @ts-nocheck
 "use client";
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from "react";
 
 import {
   type ContentDocumentResponse,
@@ -24,15 +29,15 @@ import {
   diffDocumentVersions,
   type DocumentVersionDiff,
 } from "../../document-version-diff.js";
-import { useParams, useRouter } from "../adapters/next-navigation";
+import { useParams, useRouter } from "../adapters/next-navigation.js";
 import {
   MdxPropsPanel,
   type MdxPropsPanelSelection,
-} from "../components/editor/mdx-props-panel";
-import { TipTapEditor } from "../components/editor/tiptap-editor";
-import { BreadcrumbTrail } from "../components/layout/page-header";
-import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
+} from "../components/editor/mdx-props-panel.js";
+import { TipTapEditor } from "../components/editor/tiptap-editor.js";
+import { BreadcrumbTrail } from "../components/layout/page-header.js";
+import { Badge } from "../components/ui/badge.js";
+import { Button } from "../components/ui/button.js";
 import {
   Dialog,
   DialogContent,
@@ -40,14 +45,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "../components/ui/dialog";
-import { Textarea } from "../components/ui/textarea";
+} from "../components/ui/dialog.js";
+import { Textarea } from "../components/ui/textarea.js";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "../components/ui/tooltip";
+} from "../components/ui/tooltip.js";
 import {
   AlertCircle,
   Check,
@@ -186,11 +191,6 @@ type ContentDocumentPageViewProps = {
     version?: number,
   ) => void;
 };
-
-type CreateContentDocumentPageRouteApi = (input: {
-  context: StudioMountContext;
-  route: StudioDocumentRouteMountContext;
-}) => StudioDocumentRouteApi;
 
 type CreateContentDocumentPageHistoryApi = (input: {
   context: StudioMountContext;
@@ -1054,7 +1054,10 @@ function ContentDocumentPageSidebar(props: {
   context?: StudioMountContext;
   state: ContentDocumentPageReadyState;
   activeMdxComponent?: MdxPropsPanelSelection | null;
-  onSelectComparisonVersion?: (side: "left" | "right", version: number) => void;
+  onSelectComparisonVersion?: (
+    side: "left" | "right",
+    version?: number,
+  ) => void;
 }) {
   return (
     <aside
@@ -1296,7 +1299,7 @@ export function ContentDocumentPageView({
             onOpenChange={onPublishDialogOpenChange}
           >
             <DialogContent
-              forceMount={state.publishDialogOpen}
+              forceMount={state.publishDialogOpen ? true : undefined}
               data-mdcms-publish-dialog="open"
             >
               <DialogHeader>
@@ -1312,7 +1315,7 @@ export function ContentDocumentPageView({
                   </label>
                   <Textarea
                     value={state.publishChangeSummary}
-                    onChange={(event) =>
+                    onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
                       onPublishChangeSummaryChange?.(event.currentTarget.value)
                     }
                     placeholder="Describe what changed..."
@@ -1555,12 +1558,13 @@ export default function ContentDocumentPage({
 
   const saveDraft = useEffectEvent(async () => {
     const currentState = stateRef.current;
+    const api = createRouteApi();
 
     if (
-      !context ||
-      !route ||
+      !api ||
       // Fail closed when the embedded host cannot derive the local schema hash
       // required by guarded draft-write routes.
+      !route ||
       !route.write.canWrite ||
       currentState.status !== "ready" ||
       currentState.saveState !== "unsaved" ||
@@ -1581,18 +1585,19 @@ export default function ContentDocumentPage({
     );
 
     const nextState = await saveContentDocumentReadyState({
-      api: createRouteApi(),
+      api,
       route,
       state: currentState,
     });
 
-    if (nextState.mutationError) {
+    const mutationError = nextState.mutationError;
+    if (mutationError) {
       setState((current) =>
         current.status === "ready"
           ? applyFailedDraftSaveToReadyState({
               state: current,
               requestBody,
-              message: nextState.mutationError,
+              message: mutationError,
             })
           : current,
       );

@@ -1,11 +1,10 @@
-// @ts-nocheck
 "use client";
 
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { XIcon } from "lucide-react";
 
-import { cn } from "../../lib/utils";
+import { cn } from "../../lib/utils.js";
 
 function Dialog({
   ...props
@@ -89,7 +88,7 @@ function DialogContent({
   }
 
   return (
-    <DialogPortal data-slot="dialog-portal" forceMount={forceMount}>
+    <DialogPortal forceMount={forceMount}>
       <DialogOverlay forceMount={forceMount} />
       {content}
     </DialogPortal>
