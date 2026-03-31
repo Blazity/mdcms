@@ -3,7 +3,14 @@ import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 
 import type { ContentDocumentResponse } from "@mdcms/shared";
-import { RuntimeError } from "@mdcms/shared";
+import {
+  RuntimeError,
+  serializeResolvedEnvironmentSchema,
+  buildSchemaSyncPayload,
+  type ParsedMdcmsConfig,
+} from "@mdcms/shared";
+import { readSchemaState } from "./schema-state.js";
+import { validateCandidates, type DocumentValidationResult } from "./validate.js";
 import { parse as parseYaml } from "yaml";
 
 import type { CliContentTypeConfig } from "./config.js";
@@ -20,6 +27,7 @@ type PushOptions = {
   dryRun: boolean;
   force: boolean;
   published: boolean;
+  validate: boolean;
 };
 
 type PushCandidate = {
@@ -62,7 +70,8 @@ function parsePushOptions(args: string[]): PushOptions {
     if (
       token === "--published" ||
       token === "--force" ||
-      token === "--dry-run"
+      token === "--dry-run" ||
+      token === "--validate"
     ) {
       continue;
     }
@@ -82,12 +91,13 @@ function parsePushOptions(args: string[]): PushOptions {
     dryRun: args.includes("--dry-run"),
     force: args.includes("--force"),
     published: args.includes("--published"),
+    validate: args.includes("--validate"),
   };
 }
 
 function renderPushHelp(): string {
   return [
-    "Usage: mdcms push [--force] [--dry-run] [--published]",
+    "Usage: mdcms push [--force] [--dry-run] [--validate] [--published]",
     "",
     "Upload changed local markdown files to CMS as draft content.",
     "Each document is sent with its base draftRevision from the local manifest.",
@@ -97,6 +107,7 @@ function renderPushHelp(): string {
     "Options:",
     "  --force       Skip confirmation prompt before applying push",
     "  --dry-run     Show push plan only (no API writes)",
+    "  --validate    Validate frontmatter against local schema before pushing",
     "  --published   Reserved for future behavior (unsupported in demo mode)",
     "",
   ].join("\n");
@@ -505,6 +516,35 @@ function printPushPlan(
   context.stdout.write(`Unchanged (skipped): ${summary.unchangedCount}\n`);
 }
 
+function printValidationResults(
+  context: CliCommandContext,
+  results: DocumentValidationResult[],
+): void {
+  context.stdout.write(
+    `Validating ${results.length} document(s) against local schema...\n`,
+  );
+
+  for (const result of results) {
+    if (result.errors.length === 0 && result.warnings.length === 0) {
+      context.stdout.write(`  v ${result.path}\n`);
+      continue;
+    }
+
+    if (result.errors.length > 0) {
+      context.stderr.write(`  x ${result.path}\n`);
+    } else {
+      context.stdout.write(`  ~ ${result.path}\n`);
+    }
+
+    for (const error of result.errors) {
+      context.stderr.write(`    - ${error}\n`);
+    }
+    for (const warning of result.warnings) {
+      context.stdout.write(`    - [warn] ${warning}\n`);
+    }
+  }
+}
+
 function printPushResults(
   context: CliCommandContext,
   results: PushResult[],
@@ -728,6 +768,59 @@ export async function runPushCommand(
     trackedCount: pushPlan.trackedCount,
     unchangedCount: pushPlan.unchangedCount,
   });
+
+  if (options.validate) {
+    const resolvedSchema = serializeResolvedEnvironmentSchema(
+      context.config as ParsedMdcmsConfig,
+      context.environment,
+    );
+
+    const schemaSyncState = await readSchemaState({
+      cwd: context.cwd,
+      project: context.project,
+      environment: context.environment,
+    });
+
+    if (schemaSyncState) {
+      const currentPayload = buildSchemaSyncPayload(
+        context.config as ParsedMdcmsConfig,
+        context.environment,
+      );
+      if (schemaSyncState.schemaHash !== currentPayload.schemaHash) {
+        context.stderr.write(
+          "Warning: Local schema differs from last synced schema. Run `cms schema sync` to update the server.\n",
+        );
+      }
+    }
+
+    const validationCandidates = pushPlan.changedCandidates.map((candidate) => {
+      const pathWithoutExtension = candidate.manifestEntry.path.replace(/\.(md|mdx)$/i, "");
+      const typeConfig = pickTypeConfigForPath(
+        context.config.types ?? [],
+        pathWithoutExtension,
+      );
+      return {
+        path: candidate.manifestEntry.path,
+        typeName: typeConfig.name,
+        frontmatter: candidate.frontmatter,
+      };
+    });
+
+    const validationResults = validateCandidates(validationCandidates, resolvedSchema);
+    printValidationResults(context, validationResults);
+
+    const totalErrors = validationResults.reduce((sum, r) => sum + r.errors.length, 0);
+    const failedDocs = validationResults.filter((r) => r.errors.length > 0).length;
+
+    if (totalErrors > 0) {
+      context.stderr.write(
+        `\nValidation failed: ${totalErrors} error(s) in ${failedDocs} document(s).\n`,
+      );
+      return 1;
+    }
+
+    context.stdout.write("Validation passed.\n");
+  }
 
   if (options.dryRun) {
     return 0;

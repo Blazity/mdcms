@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import { test } from "node:test";
 
 import type { ContentDocumentResponse } from "@mdcms/shared";
+import { z } from "zod";
+import { defineConfig, defineType, parseMdcmsConfig } from "@mdcms/shared";
 
 import { runMdcmsCli } from "./framework.js";
 
@@ -815,5 +817,205 @@ test("push --dry-run prints plan without performing API calls", async () => {
     assert.equal(exitCode, 0);
     assert.equal(requestCount, 0);
     assert.equal(stdout.includes("Unchanged (skipped): 0"), true);
+  });
+});
+
+test("push --validate --dry-run passes valid documents without API calls", async () => {
+  await withTempDir(async (cwd) => {
+    const config = parseMdcmsConfig(
+      defineConfig({
+        serverUrl: "http://localhost:4000",
+        project: "test-project",
+        environment: "staging",
+        contentDirectories: ["content"],
+        types: [
+          defineType("Post", {
+            directory: "content/posts",
+            localized: false,
+            fields: {
+              title: z.string(),
+            },
+          }),
+        ],
+        environments: { staging: {} },
+      }),
+    );
+
+    const manifestPath = join(cwd, ".mdcms", "manifests", "test-project.staging.json");
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        "doc-1": {
+          path: "content/posts/hello.md",
+          format: "md",
+          draftRevision: 1,
+          publishedVersion: null,
+          hash: "old-hash",
+        },
+      }),
+      "utf8",
+    );
+
+    await mkdir(join(cwd, "content", "posts"), { recursive: true });
+    await writeFile(
+      join(cwd, "content/posts/hello.md"),
+      '---\ntitle: "Hello"\n---\nBody\n',
+      "utf8",
+    );
+
+    let requestCount = 0;
+    let stdout = "";
+
+    const exitCode = await runMdcmsCli(["push", "--validate", "--dry-run"], {
+      cwd,
+      env: {} as NodeJS.ProcessEnv,
+      fetcher: async () => {
+        requestCount += 1;
+        throw new Error("fetch should not be called");
+      },
+      loadConfig: async () => ({ config, configPath: join(cwd, "mdcms.config.ts") }),
+      stdout: { write: (chunk: string) => { stdout += chunk; } },
+      stderr: { write: () => undefined },
+      confirm: async () => true,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(requestCount, 0);
+    assert.equal(stdout.includes("Validation passed"), true);
+  });
+});
+
+test("push --validate --dry-run exits 1 on validation errors", async () => {
+  await withTempDir(async (cwd) => {
+    const config = parseMdcmsConfig(
+      defineConfig({
+        serverUrl: "http://localhost:4000",
+        project: "test-project",
+        environment: "staging",
+        contentDirectories: ["content"],
+        types: [
+          defineType("Post", {
+            directory: "content/posts",
+            localized: false,
+            fields: {
+              title: z.string(),
+              order: z.number(),
+            },
+          }),
+        ],
+        environments: { staging: {} },
+      }),
+    );
+
+    const manifestPath = join(cwd, ".mdcms", "manifests", "test-project.staging.json");
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        "doc-1": {
+          path: "content/posts/bad.md",
+          format: "md",
+          draftRevision: 1,
+          publishedVersion: null,
+          hash: "old-hash",
+        },
+      }),
+      "utf8",
+    );
+
+    await mkdir(join(cwd, "content", "posts"), { recursive: true });
+    await writeFile(
+      join(cwd, "content/posts/bad.md"),
+      "---\norder: not-a-number\n---\nBody\n",
+      "utf8",
+    );
+
+    let stderr = "";
+    let requestCount = 0;
+
+    const exitCode = await runMdcmsCli(["push", "--validate", "--dry-run"], {
+      cwd,
+      env: {} as NodeJS.ProcessEnv,
+      fetcher: async () => {
+        requestCount += 1;
+        throw new Error("fetch should not be called");
+      },
+      loadConfig: async () => ({ config, configPath: join(cwd, "mdcms.config.ts") }),
+      stdout: { write: () => undefined },
+      stderr: { write: (chunk: string) => { stderr += chunk; } },
+      confirm: async () => true,
+    });
+
+    assert.equal(exitCode, 1);
+    assert.equal(requestCount, 0);
+    assert.equal(stderr.includes("title"), true);
+    assert.equal(stderr.includes("required"), true);
+    assert.equal(stderr.includes("order"), true);
+    assert.equal(stderr.includes("number"), true);
+  });
+});
+
+test("push --validate blocks push on errors even without --dry-run", async () => {
+  await withTempDir(async (cwd) => {
+    const config = parseMdcmsConfig(
+      defineConfig({
+        serverUrl: "http://localhost:4000",
+        project: "test-project",
+        environment: "staging",
+        contentDirectories: ["content"],
+        types: [
+          defineType("Post", {
+            directory: "content/posts",
+            localized: false,
+            fields: {
+              title: z.string(),
+            },
+          }),
+        ],
+        environments: { staging: {} },
+      }),
+    );
+
+    const manifestPath = join(cwd, ".mdcms", "manifests", "test-project.staging.json");
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        "doc-1": {
+          path: "content/posts/bad.md",
+          format: "md",
+          draftRevision: 1,
+          publishedVersion: null,
+          hash: "old-hash",
+        },
+      }),
+      "utf8",
+    );
+
+    await mkdir(join(cwd, "content", "posts"), { recursive: true });
+    await writeFile(
+      join(cwd, "content/posts/bad.md"),
+      "---\n---\nBody\n",
+      "utf8",
+    );
+
+    let requestCount = 0;
+
+    const exitCode = await runMdcmsCli(["push", "--validate", "--force"], {
+      cwd,
+      env: {} as NodeJS.ProcessEnv,
+      fetcher: async () => {
+        requestCount += 1;
+        throw new Error("fetch should not be called");
+      },
+      loadConfig: async () => ({ config, configPath: join(cwd, "mdcms.config.ts") }),
+      stdout: { write: () => undefined },
+      stderr: { write: () => undefined },
+      confirm: async () => true,
+    });
+
+    assert.equal(exitCode, 1);
+    assert.equal(requestCount, 0);
   });
 });

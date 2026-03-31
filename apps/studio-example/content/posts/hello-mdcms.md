@@ -1,7 +1,6 @@
 ---
 excerpt: "Seeded demo post generated for compose runs."
 slug: "hello-mdcms"
-title: "Hello MDCMS"
 ---
 
 # Hello MDCMS

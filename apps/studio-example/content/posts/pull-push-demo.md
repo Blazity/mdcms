@@ -9,6 +9,8 @@ title: "Pull Push Demo"
 
 # Pull Push Demo
 
+edit
+
 This document exists to prove draft sync with CLI commands.
 
 1. `mdcms pull`
