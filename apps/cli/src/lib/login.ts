@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
+import { createServer } from "node:http";
 
 import { RuntimeError } from "@mdcms/shared";
 
@@ -14,7 +14,7 @@ type LoginOptions = {
   createCallbackListener?: () => Promise<LoopbackCallbackListener>;
 };
 
-type LoopbackCallbackListener = {
+export type LoopbackCallbackListener = {
   redirectUri: string;
   waitForCallback: () => Promise<{ code: string; state: string }>;
   close: () => Promise<void>;
@@ -59,7 +59,7 @@ function renderLoginHelp(): string {
   ].join("\n");
 }
 
-function createLoopbackCallbackListener(): Promise<LoopbackCallbackListener> {
+export function createLoopbackCallbackListener(): Promise<LoopbackCallbackListener> {
   return new Promise((resolve, reject) => {
     let settled = false;
     const server = createServer();
@@ -168,7 +168,7 @@ function createLoopbackCallbackListener(): Promise<LoopbackCallbackListener> {
   });
 }
 
-async function openBrowserUrl(url: string): Promise<boolean> {
+export async function openBrowserUrl(url: string): Promise<boolean> {
   const platform = process.platform;
 
   try {

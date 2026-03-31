@@ -11,6 +11,7 @@ import { createLoginCommand } from "./login.js";
 import { createLogoutCommand } from "./logout.js";
 import { createPullCommand } from "./pull.js";
 import { createPushCommand } from "./push.js";
+import { createInitCommand } from "./init.js";
 import { createSchemaSyncCommand } from "./schema-sync.js";
 import {
   createCliRuntimeContextWithModules,
@@ -89,6 +90,7 @@ export type RunMdcmsCliOptions = {
 };
 
 const DEFAULT_COMMANDS: CliCommand[] = [
+  createInitCommand(),
   createLoginCommand(),
   createLogoutCommand(),
   createPullCommand(),
@@ -277,7 +279,7 @@ export async function resolveExecutionContext(input: {
   const serverUrl =
     input.global.serverUrl ?? envServerUrl ?? input.config.serverUrl;
 
-  if (!serverUrl) {
+  if (!serverUrl && input.requiresTarget) {
     throw new RuntimeError({
       code: "INVALID_CONFIG",
       message:

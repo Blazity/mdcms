@@ -4,14 +4,17 @@ import { extname, join } from "node:path";
 
 import type { ContentDocumentResponse } from "@mdcms/shared";
 import {
+  buildSchemaSyncPayload,
   RuntimeError,
   serializeResolvedEnvironmentSchema,
-  buildSchemaSyncPayload,
   type ParsedMdcmsConfig,
 } from "@mdcms/shared";
-import { readSchemaState } from "./schema-state.js";
-import { validateCandidates, type DocumentValidationResult } from "./validate.js";
 import { parse as parseYaml } from "yaml";
+import { readSchemaState } from "./schema-state.js";
+import {
+  validateCandidates,
+  type DocumentValidationResult,
+} from "./validate.js";
 
 import type { CliContentTypeConfig } from "./config.js";
 import type { CliCommand, CliCommandContext } from "./framework.js";
@@ -127,11 +130,11 @@ function toRequestHeaders(context: CliCommandContext): Headers {
   return headers;
 }
 
-function hashContent(content: string): string {
+export function hashContent(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
-function parseFileFormat(path: string): "md" | "mdx" {
+export function parseFileFormat(path: string): "md" | "mdx" {
   const extension = extname(path).toLowerCase();
 
   if (extension === ".md") {
@@ -150,7 +153,7 @@ function parseFileFormat(path: string): "md" | "mdx" {
   });
 }
 
-function parseMarkdownDocument(content: string): {
+export function parseMarkdownDocument(content: string): {
   frontmatter: Record<string, unknown>;
   body: string;
 } {
@@ -204,7 +207,7 @@ function normalizeDirectory(directory: string | undefined): string {
   return directory.replace(/^\/+/, "").replace(/\/+$/, "");
 }
 
-function pickTypeConfigForPath(
+export function pickTypeConfigForPath(
   typeConfigs: readonly CliContentTypeConfig[],
   pathWithoutExtension: string,
 ): CliContentTypeConfig {
@@ -247,7 +250,7 @@ function pickTypeConfigForPath(
   return selected;
 }
 
-function resolveCreatePayload(input: {
+export function resolveCreatePayload(input: {
   path: string;
   format: "md" | "mdx";
   types: readonly CliContentTypeConfig[];
@@ -426,10 +429,7 @@ async function updateExistingDocument(
 
   const remoteError = parseRemoteError(body, response.status);
 
-  if (
-    response.status === 409 &&
-    remoteError.code === "STALE_DRAFT_REVISION"
-  ) {
+  if (response.status === 409 && remoteError.code === "STALE_DRAFT_REVISION") {
     return {
       kind: "stale",
       code: remoteError.code,
@@ -794,7 +794,10 @@ export async function runPushCommand(
     }
 
     const validationCandidates = pushPlan.changedCandidates.map((candidate) => {
-      const pathWithoutExtension = candidate.manifestEntry.path.replace(/\.(md|mdx)$/i, "");
+      const pathWithoutExtension = candidate.manifestEntry.path.replace(
+        /\.(md|mdx)$/i,
+        "",
+      );
       const typeConfig = pickTypeConfigForPath(
         context.config.types ?? [],
         pathWithoutExtension,
@@ -806,11 +809,19 @@ export async function runPushCommand(
       };
     });
 
-    const validationResults = validateCandidates(validationCandidates, resolvedSchema);
+    const validationResults = validateCandidates(
+      validationCandidates,
+      resolvedSchema,
+    );
     printValidationResults(context, validationResults);
 
-    const totalErrors = validationResults.reduce((sum, r) => sum + r.errors.length, 0);
-    const failedDocs = validationResults.filter((r) => r.errors.length > 0).length;
+    const totalErrors = validationResults.reduce(
+      (sum, r) => sum + r.errors.length,
+      0,
+    );
+    const failedDocs = validationResults.filter(
+      (r) => r.errors.length > 0,
+    ).length;
 
     if (totalErrors > 0) {
       context.stderr.write(
