@@ -13,6 +13,7 @@ import { createPullCommand } from "./pull.js";
 import { createPushCommand } from "./push.js";
 import { createInitCommand } from "./init.js";
 import { createSchemaSyncCommand } from "./schema-sync.js";
+import { createStatusCommand } from "./status.js";
 import {
   createCliRuntimeContextWithModules,
   type CliRuntimeContextWithModules,
@@ -96,6 +97,7 @@ const DEFAULT_COMMANDS: CliCommand[] = [
   createPullCommand(),
   createPushCommand(),
   createSchemaSyncCommand(),
+  createStatusCommand(),
 ];
 
 function parseOptionalValue(
