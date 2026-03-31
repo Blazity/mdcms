@@ -1,0 +1,23 @@
+{
+  "9b27402e-fdcd-4ddb-99e4-af249d8a42be": {
+    "path": "content/pages/about.mdx",
+    "format": "mdx",
+    "draftRevision": 1,
+    "publishedVersion": 1,
+    "hash": "c0bcd481a1bff50f4279b433cfde01a06c2b49a2ee8121e1f5342d0ae2051389"
+  },
+  "13c7336c-26f7-40bc-995d-e86320676f31": {
+    "path": "content/posts/pull-push-demo.md",
+    "format": "md",
+    "draftRevision": 1,
+    "publishedVersion": 1,
+    "hash": "ab9070f97dabc1cc6deb70898f4973248d09d71276cee2ae8c39f888ff24beeb"
+  },
+  "61d9b36c-1405-4364-b2c3-efb466596c4b": {
+    "path": "content/posts/hello-mdcms.md",
+    "format": "md",
+    "draftRevision": 1,
+    "publishedVersion": 1,
+    "hash": "bf1806f208fb9d7ec5acc463fafc06bd666b16da1dd7a3f5370b9fd3070b4334"
+  }
+}

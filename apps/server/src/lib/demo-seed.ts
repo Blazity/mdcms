@@ -1,8 +1,5 @@
-import { createHash } from "node:crypto";
-
 import {
-  serializeResolvedEnvironmentSchema,
-  type JsonObject,
+  buildSchemaSyncPayload,
   type ParsedMdcmsConfig,
 } from "@mdcms/shared";
 
@@ -58,58 +55,6 @@ async function loadDemoConfig(
   }
 
   return loaded;
-}
-
-function toRawConfigSnapshot(config: ParsedMdcmsConfig): JsonObject {
-  return {
-    project: config.project,
-    serverUrl: config.serverUrl,
-    ...(config.environment ? { environment: config.environment } : {}),
-    ...(config.contentDirectories.length > 0
-      ? { contentDirectories: config.contentDirectories }
-      : {}),
-    ...(config.locales.implicit
-      ? {}
-      : {
-          locales: {
-            default: config.locales.default,
-            supported: config.locales.supported,
-            ...(Object.keys(config.locales.aliases).length > 0
-              ? { aliases: config.locales.aliases }
-              : {}),
-          },
-        }),
-  };
-}
-
-function buildSchemaSyncPayload(
-  config: ParsedMdcmsConfig,
-  environment: string,
-): {
-  rawConfigSnapshot: JsonObject;
-  resolvedSchema: ReturnType<typeof serializeResolvedEnvironmentSchema>;
-  schemaHash: string;
-} {
-  const rawConfigSnapshot = toRawConfigSnapshot(config);
-  const resolvedSchema = serializeResolvedEnvironmentSchema(
-    config,
-    environment,
-  );
-  const schemaHash = createHash("sha256")
-    .update(
-      JSON.stringify({
-        environment,
-        rawConfigSnapshot,
-        resolvedSchema,
-      }),
-    )
-    .digest("hex");
-
-  return {
-    rawConfigSnapshot,
-    resolvedSchema,
-    schemaHash,
-  };
 }
 
 export async function ensureDemoScopeProvisioned(

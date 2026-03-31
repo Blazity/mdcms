@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import {
   type MdcmsFieldSchema,
   type ParsedMdcmsConfig,
@@ -759,4 +761,47 @@ export function serializeResolvedEnvironmentSchema(
         ),
       ]),
   );
+}
+
+export type SchemaStateFile = {
+  schemaHash: string;
+  syncedAt: string;
+  serverUrl: string;
+};
+
+export function toRawConfigSnapshot(config: ParsedMdcmsConfig): JsonObject {
+  return {
+    project: config.project,
+    serverUrl: config.serverUrl,
+    ...(config.environment ? { environment: config.environment } : {}),
+    ...(config.contentDirectories.length > 0
+      ? { contentDirectories: config.contentDirectories }
+      : {}),
+    ...(config.locales.implicit
+      ? {}
+      : {
+          locales: {
+            default: config.locales.default,
+            supported: config.locales.supported,
+            ...(Object.keys(config.locales.aliases).length > 0
+              ? { aliases: config.locales.aliases }
+              : {}),
+          },
+        }),
+  };
+}
+
+export function buildSchemaSyncPayload(
+  config: ParsedMdcmsConfig,
+  environment: string,
+): SchemaRegistrySyncPayload {
+  const rawConfigSnapshot = toRawConfigSnapshot(config);
+  const resolvedSchema = serializeResolvedEnvironmentSchema(
+    config,
+    environment,
+  );
+  const schemaHash = createHash("sha256")
+    .update(JSON.stringify({ environment, rawConfigSnapshot, resolvedSchema }))
+    .digest("hex");
+  return { rawConfigSnapshot, resolvedSchema, schemaHash };
 }

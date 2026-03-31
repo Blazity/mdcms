@@ -11,6 +11,7 @@ import { createLoginCommand } from "./login.js";
 import { createLogoutCommand } from "./logout.js";
 import { createPullCommand } from "./pull.js";
 import { createPushCommand } from "./push.js";
+import { createSchemaSyncCommand } from "./schema-sync.js";
 import {
   createCliRuntimeContextWithModules,
   type CliRuntimeContextWithModules,
@@ -92,6 +93,7 @@ const DEFAULT_COMMANDS: CliCommand[] = [
   createLogoutCommand(),
   createPullCommand(),
   createPushCommand(),
+  createSchemaSyncCommand(),
 ];
 
 function parseOptionalValue(
@@ -436,12 +438,26 @@ export async function runMdcmsCli(
     return 1;
   }
 
-  const command = registry.get(invocation.commandName);
+  const multiWordName =
+    invocation.commandArgs.length > 0
+      ? `${invocation.commandName} ${invocation.commandArgs[0]}`
+      : undefined;
+
+  let command = multiWordName ? registry.get(multiWordName) : undefined;
+  let commandArgs = command
+    ? invocation.commandArgs.slice(1)
+    : invocation.commandArgs;
 
   if (!command) {
-    stderr.write(
-      `INVALID_USAGE: Unknown command "${invocation.commandName}".\n\n`,
-    );
+    command = registry.get(invocation.commandName);
+  }
+
+  if (!command) {
+    const displayName =
+      multiWordName && !registry.has(invocation.commandName!)
+        ? multiWordName
+        : invocation.commandName;
+    stderr.write(`INVALID_USAGE: Unknown command "${displayName}".\n\n`);
     stderr.write(renderHelp(commands));
     return 1;
   }
@@ -489,7 +505,7 @@ export async function runMdcmsCli(
       actionId: command.name,
       input: {
         commandName: command.name,
-        args: invocation.commandArgs,
+        args: commandArgs,
         target: {
           project: resolved.project,
           environment: resolved.environment,
@@ -507,7 +523,7 @@ export async function runMdcmsCli(
       project: resolved.project,
       environment: resolved.environment,
       apiKey: resolved.apiKey,
-      args: invocation.commandArgs,
+      args: commandArgs,
       fetcher,
       confirm,
       stdout,

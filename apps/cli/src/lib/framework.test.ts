@@ -406,3 +406,114 @@ test("runMdcmsCli fails deterministically when preflight hook throws", async () 
   assert.equal(commandRuns, false);
   assert.equal(stderr.includes("CLI_PREFLIGHT_FAILED"), true);
 });
+
+test("runMdcmsCli resolves multi-word command name", async () => {
+  let ran = false;
+
+  const command: CliCommand = {
+    name: "schema sync",
+    description: "Sync schema",
+    requiresConfig: false,
+    requiresTarget: false,
+    run: async () => {
+      ran = true;
+      return 0;
+    },
+  };
+
+  const exitCode = await runMdcmsCli(
+    ["schema", "sync", "--server-url", "http://localhost:4000"],
+    {
+      commands: [command],
+      loadConfig: async () => {
+        throw new RuntimeError({
+          code: "CONFIG_NOT_FOUND",
+          message: "No config.",
+          statusCode: 404,
+        });
+      },
+      stdout: { write: () => undefined },
+      stderr: { write: () => undefined },
+    },
+  );
+
+  assert.equal(exitCode, 0);
+  assert.equal(ran, true);
+});
+
+test("runMdcmsCli passes remaining tokens as args for multi-word command", async () => {
+  let capturedArgs: string[] = [];
+
+  const command: CliCommand = {
+    name: "schema sync",
+    description: "Sync schema",
+    requiresConfig: false,
+    requiresTarget: false,
+    run: async (ctx) => {
+      capturedArgs = ctx.args;
+      return 0;
+    },
+  };
+
+  const exitCode = await runMdcmsCli(
+    ["schema", "sync", "--dry-run", "--server-url", "http://localhost:4000"],
+    {
+      commands: [command],
+      loadConfig: async () => {
+        throw new RuntimeError({
+          code: "CONFIG_NOT_FOUND",
+          message: "No config.",
+          statusCode: 404,
+        });
+      },
+      stdout: { write: () => undefined },
+      stderr: { write: () => undefined },
+    },
+  );
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(capturedArgs, ["--dry-run"]);
+});
+
+test("runMdcmsCli still resolves single-word commands when multi-word commands exist", async () => {
+  let ranPush = false;
+
+  const commands: CliCommand[] = [
+    {
+      name: "schema sync",
+      description: "Sync schema",
+      requiresConfig: false,
+      requiresTarget: false,
+      run: async () => 0,
+    },
+    {
+      name: "push",
+      description: "Push content",
+      requiresConfig: false,
+      requiresTarget: false,
+      run: async () => {
+        ranPush = true;
+        return 0;
+      },
+    },
+  ];
+
+  const exitCode = await runMdcmsCli(
+    ["push", "--server-url", "http://localhost:4000"],
+    {
+      commands,
+      loadConfig: async () => {
+        throw new RuntimeError({
+          code: "CONFIG_NOT_FOUND",
+          message: "No config.",
+          statusCode: 404,
+        });
+      },
+      stdout: { write: () => undefined },
+      stderr: { write: () => undefined },
+    },
+  );
+
+  assert.equal(exitCode, 0);
+  assert.equal(ranPush, true);
+});
