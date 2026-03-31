@@ -507,7 +507,7 @@ export function RemoteStudioApp({
           data-mdcms-active-route={activeRoute?.id ?? "unknown"}
           className="mdcms-studio-runtime"
         >
-          <AdminLayout>
+          <AdminLayout context={context}>
             {renderRouteContent(activeRoute, context)}
             {activeRoute?.id === "content.document" ? (
               <RuntimeDocumentDiagnostics

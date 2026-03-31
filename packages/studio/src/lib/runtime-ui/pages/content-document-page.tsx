@@ -26,6 +26,10 @@ import {
   type StudioDocumentRouteApi,
 } from "../../document-route-api.js";
 import {
+  loadStudioSchemaState,
+  type StudioSchemaState,
+} from "../../schema-state.js";
+import {
   diffDocumentVersions,
   type DocumentVersionDiff,
 } from "../../document-version-diff.js";
@@ -63,6 +67,19 @@ import {
 } from "lucide-react";
 
 const DOCUMENT_SAVE_DEBOUNCE_MS = 5000;
+const SCHEMA_MISMATCH_WRITE_MESSAGE =
+  "Schema changes detected. Studio is read-only until schema sync resolves the mismatch.";
+const SCHEMA_WRITE_GUARD_CODES = new Set([
+  "SCHEMA_HASH_MISMATCH",
+  "SCHEMA_NOT_SYNCED",
+]);
+
+type ContentDocumentSchemaReadyState = Extract<
+  StudioSchemaState,
+  {
+    status: "ready";
+  }
+>;
 
 export type ContentDocumentVersionHistoryState =
   | {
@@ -111,6 +128,7 @@ export type ContentDocumentPageReadyState = {
   documentId: string;
   locale: string;
   route: StudioDocumentRouteMountContext;
+  schemaState?: StudioSchemaState;
   document: StudioDocumentShellData;
   draftBody: string;
   saveState: "saved" | "saving" | "unsaved";
@@ -152,6 +170,7 @@ type ContentDocumentPageStateInput = {
   typeLabel: string;
   typeId?: string;
   documentRoute: StudioDocumentRouteMountContext;
+  schemaState?: StudioSchemaState;
 };
 
 type ContentDocumentPageReadyEvent =
@@ -186,6 +205,7 @@ type ContentDocumentPageViewProps = {
   onPublishDialogOpenChange?: (open: boolean) => void;
   onPublishChangeSummaryChange?: (value: string) => void;
   onPublishSubmit?: () => void;
+  onSchemaSync?: () => void;
   onSelectComparisonVersion?: (
     side: "left" | "right",
     version?: number,
@@ -214,6 +234,50 @@ function createLoadingState(input: {
   };
 }
 
+function resolveContentDocumentWriteAccess(input: {
+  route: StudioDocumentRouteMountContext;
+  schemaState?: StudioSchemaState;
+}): {
+  canWrite: boolean;
+  writeMessage?: string;
+} {
+  const schemaState = input.schemaState;
+
+  if (!schemaState) {
+    return input.route.write.canWrite
+      ? {
+          canWrite: true,
+        }
+      : {
+          canWrite: false,
+          writeMessage: input.route.write.message,
+        };
+  }
+
+  if (schemaState.status !== "ready") {
+    return {
+      canWrite: false,
+      writeMessage: schemaState.message,
+    };
+  }
+
+  if (hasSchemaRecoveryMismatch(schemaState)) {
+    return {
+      canWrite: false,
+      writeMessage: SCHEMA_MISMATCH_WRITE_MESSAGE,
+    };
+  }
+
+  return input.route.write.canWrite
+    ? {
+        canWrite: true,
+      }
+    : {
+        canWrite: false,
+        writeMessage: input.route.write.message,
+      };
+}
+
 function createErrorState(input: {
   status: "forbidden" | "not-found" | "error";
   typeId: string;
@@ -239,8 +303,13 @@ function createReadyState(input: {
   typeId: string;
   typeLabel: string;
   documentRoute: StudioDocumentRouteMountContext;
+  schemaState?: StudioSchemaState;
 }): ContentDocumentPageReadyState {
   const document = input.shell.data as StudioDocumentShellData;
+  const writeAccess = resolveContentDocumentWriteAccess({
+    route: input.documentRoute,
+    schemaState: input.schemaState,
+  });
 
   return {
     status: "ready",
@@ -249,10 +318,11 @@ function createReadyState(input: {
     documentId: input.shell.documentId,
     locale: document.locale ?? input.shell.locale,
     route: input.documentRoute,
+    ...(input.schemaState ? { schemaState: input.schemaState } : {}),
     document,
     draftBody: document.body ?? "",
     saveState: "saved",
-    canWrite: input.documentRoute.write.canWrite,
+    canWrite: writeAccess.canWrite,
     publishDialogOpen: false,
     publishChangeSummary: "",
     publishState: "idle",
@@ -264,11 +334,9 @@ function createReadyState(input: {
     versionDiff: {
       status: "idle",
     },
-    ...(input.documentRoute.write.canWrite
-      ? {}
-      : {
-          writeMessage: input.documentRoute.write.message,
-        }),
+    ...(writeAccess.writeMessage
+      ? { writeMessage: writeAccess.writeMessage }
+      : {}),
   };
 }
 
@@ -296,6 +364,118 @@ function createDefaultVersionComparison(
   return {
     leftVersion: versions[1]?.version,
     rightVersion: versions[0]?.version,
+  };
+}
+
+function isReadySchemaState(
+  schemaState?: StudioSchemaState,
+): schemaState is ContentDocumentSchemaReadyState {
+  return schemaState?.status === "ready";
+}
+
+function hasSchemaRecoveryMismatch(
+  schemaState?: StudioSchemaState,
+): schemaState is ContentDocumentSchemaReadyState {
+  return (
+    isReadySchemaState(schemaState) &&
+    (schemaState.isMismatch ||
+      (schemaState.localSchemaHash !== undefined &&
+        schemaState.serverSchemaHash === undefined))
+  );
+}
+
+function isSchemaGuardRuntimeError(error: unknown): error is RuntimeError {
+  return (
+    error instanceof RuntimeError && SCHEMA_WRITE_GUARD_CODES.has(error.code)
+  );
+}
+
+function formatSchemaRecoveryHash(hash?: string): string {
+  return hash?.trim().length ? hash : "Not synced";
+}
+
+async function reloadSchemaStateForGuard(
+  state: ContentDocumentPageReadyState,
+): Promise<StudioSchemaState | undefined> {
+  if (!isReadySchemaState(state.schemaState)) {
+    return undefined;
+  }
+
+  try {
+    return await state.schemaState.reload();
+  } catch {
+    return undefined;
+  }
+}
+
+function createGuardedSchemaRecoveryState(input: {
+  state: ContentDocumentPageReadyState;
+  error: RuntimeError;
+  reloadedSchemaState?: StudioSchemaState;
+}): ContentDocumentSchemaReadyState | undefined {
+  const baseState = isReadySchemaState(input.reloadedSchemaState)
+    ? input.reloadedSchemaState
+    : isReadySchemaState(input.state.schemaState)
+      ? input.state.schemaState
+      : undefined;
+
+  if (!baseState) {
+    return undefined;
+  }
+
+  return {
+    ...baseState,
+    isMismatch: true,
+    serverSchemaHash:
+      input.error.code === "SCHEMA_NOT_SYNCED"
+        ? undefined
+        : baseState.serverSchemaHash,
+    entries: input.error.code === "SCHEMA_NOT_SYNCED" ? [] : baseState.entries,
+    syncError: undefined,
+  };
+}
+
+function applyGuardedDraftSaveFailureToReadyState(input: {
+  state: ContentDocumentPageReadyState;
+  schemaState: ContentDocumentSchemaReadyState;
+}): ContentDocumentPageReadyState {
+  const nextState = applySchemaStateToReadyState(input);
+
+  return {
+    ...nextState,
+    saveState:
+      input.state.draftBody === input.state.document.body ? "saved" : "unsaved",
+    mutationError: undefined,
+    saveRequestBody: undefined,
+  };
+}
+
+function applyGuardedPublishFailureToReadyState(input: {
+  state: ContentDocumentPageReadyState;
+  schemaState: ContentDocumentSchemaReadyState;
+}): ContentDocumentPageReadyState {
+  return {
+    ...applySchemaStateToReadyState(input),
+    publishDialogOpen: false,
+    publishState: "idle",
+    publishError: undefined,
+  };
+}
+
+export function applySchemaStateToReadyState(input: {
+  state: ContentDocumentPageReadyState;
+  schemaState: StudioSchemaState;
+}): ContentDocumentPageReadyState {
+  const writeAccess = resolveContentDocumentWriteAccess({
+    route: input.state.route,
+    schemaState: input.schemaState,
+  });
+
+  return {
+    ...input.state,
+    schemaState: input.schemaState,
+    canWrite: writeAccess.canWrite,
+    writeMessage: writeAccess.writeMessage,
   };
 }
 
@@ -385,12 +565,38 @@ export async function publishContentDocumentReadyState(input: {
   state: ContentDocumentPageReadyState;
   changeSummary?: string;
 }): Promise<ContentDocumentPageReadyState> {
+  if (!input.state.canWrite) {
+    return input.state;
+  }
+
   const changeSummary = normalizeOptionalChangeSummary(input.changeSummary);
-  const document = await input.api.publish({
-    documentId: input.state.documentId,
-    locale: input.state.document.locale,
-    changeSummary,
-  });
+  let document: ContentDocumentResponse;
+
+  try {
+    document = await input.api.publish({
+      documentId: input.state.documentId,
+      locale: input.state.document.locale,
+      changeSummary,
+    });
+  } catch (error) {
+    if (isSchemaGuardRuntimeError(error)) {
+      const schemaState = createGuardedSchemaRecoveryState({
+        state: input.state,
+        error,
+        reloadedSchemaState: await reloadSchemaStateForGuard(input.state),
+      });
+
+      if (schemaState) {
+        return applyGuardedPublishFailureToReadyState({
+          state: input.state,
+          schemaState,
+        });
+      }
+    }
+
+    throw error;
+  }
+
   const nextState = {
     ...applyDocumentResponseToReadyState(input.state, document),
     publishDialogOpen: false,
@@ -475,6 +681,7 @@ export async function loadContentDocumentPageState(input: {
   typeLabel: string;
   documentId: string;
   loadDocumentShell?: typeof loadStudioDocumentShell;
+  loadSchemaState?: typeof loadStudioSchemaState;
   createRouteApi?: CreateContentDocumentPageHistoryApi;
 }): Promise<ContentDocumentPageState> {
   const route = input.context?.documentRoute;
@@ -490,6 +697,7 @@ export async function loadContentDocumentPageState(input: {
   }
 
   const loadDocumentShell = input.loadDocumentShell ?? loadStudioDocumentShell;
+  const loadSchemaState = input.loadSchemaState ?? loadStudioSchemaState;
   const routeApiFactory = input.createRouteApi ?? createContentDocumentRouteApi;
   const shell = await loadDocumentShell(
     {
@@ -517,16 +725,29 @@ export async function loadContentDocumentPageState(input: {
     return nextState;
   }
 
+  const schemaState = await loadSchemaState({
+    config: {
+      project: route.project,
+      environment: route.environment,
+      serverUrl: input.context.apiBaseUrl,
+    },
+    auth: input.context.auth,
+  });
+  const readyState = applySchemaStateToReadyState({
+    state: nextState,
+    schemaState,
+  });
+
   const versionState = await loadContentDocumentVersionHistoryState({
     api: routeApiFactory({
       context: input.context,
       route,
     }),
-    state: nextState,
+    state: readyState,
   });
 
   return {
-    ...nextState,
+    ...readyState,
     ...versionState,
   };
 }
@@ -538,6 +759,7 @@ export async function saveContentDocumentReadyState(input: {
 }): Promise<ContentDocumentPageReadyState> {
   if (
     !input.route.write.canWrite ||
+    !input.state.canWrite ||
     input.state.saveState !== "unsaved" ||
     input.state.draftBody === input.state.document.body ||
     input.state.saveRequestBody === input.state.draftBody
@@ -565,6 +787,21 @@ export async function saveContentDocumentReadyState(input: {
       updatedAt: result.updatedAt ?? input.state.document.updatedAt,
     });
   } catch (error) {
+    if (isSchemaGuardRuntimeError(error)) {
+      const schemaState = createGuardedSchemaRecoveryState({
+        state: savingState,
+        error,
+        reloadedSchemaState: await reloadSchemaStateForGuard(savingState),
+      });
+
+      if (schemaState) {
+        return applyGuardedDraftSaveFailureToReadyState({
+          state: savingState,
+          schemaState,
+        });
+      }
+    }
+
     return reduceContentDocumentPageReadyState(savingState, {
       type: "saveFailed",
       message: toRouteErrorMessage(error, "Failed to save draft."),
@@ -669,6 +906,7 @@ export function createContentDocumentPageState(
     typeId,
     typeLabel: input.typeLabel,
     documentRoute: input.documentRoute,
+    schemaState: input.schemaState,
   });
 }
 
@@ -1050,6 +1288,70 @@ function renderVersionDiffContent(state: ContentDocumentPageReadyState) {
   }
 }
 
+function renderSchemaRecoveryBanner(input: {
+  state: ContentDocumentPageReadyState;
+  onSchemaSync?: () => void;
+}) {
+  const schemaState = input.state.schemaState;
+
+  if (!hasSchemaRecoveryMismatch(schemaState)) {
+    return null;
+  }
+
+  const localSchemaHash = formatSchemaRecoveryHash(schemaState.localSchemaHash);
+  const serverSchemaHash = formatSchemaRecoveryHash(
+    schemaState.serverSchemaHash,
+  );
+
+  return (
+    <section
+      data-mdcms-schema-recovery-state="mismatch"
+      className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-foreground"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <p className="font-medium">Schema changes detected</p>
+          <p className="text-foreground-muted">
+            {SCHEMA_MISMATCH_WRITE_MESSAGE}
+          </p>
+          <div className="grid gap-2 text-xs text-foreground-muted sm:grid-cols-2">
+            <p data-mdcms-schema-recovery-hash="local">
+              <span className="font-medium text-foreground">
+                Local schema hash
+              </span>{" "}
+              <code>{localSchemaHash}</code>
+            </p>
+            <p data-mdcms-schema-recovery-hash="server">
+              <span className="font-medium text-foreground">
+                Server schema hash
+              </span>{" "}
+              <code>{serverSchemaHash}</code>
+            </p>
+          </div>
+          {schemaState.syncError ? (
+            <p
+              data-mdcms-schema-sync-state="error"
+              className="text-destructive"
+            >
+              {schemaState.syncError}
+            </p>
+          ) : null}
+        </div>
+
+        {schemaState.canSync ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => input.onSchemaSync?.()}
+          >
+            Sync Schema
+          </Button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 function ContentDocumentPageSidebar(props: {
   context?: StudioMountContext;
   state: ContentDocumentPageReadyState;
@@ -1120,6 +1422,7 @@ export function ContentDocumentPageView({
   onPublishDialogOpenChange,
   onPublishChangeSummaryChange,
   onPublishSubmit,
+  onSchemaSync,
   onSelectComparisonVersion,
 }: ContentDocumentPageViewProps) {
   const documentLabel =
@@ -1246,6 +1549,13 @@ export function ContentDocumentPageView({
                 />
               ) : (
                 <div className="space-y-4">
+                  {hasSchemaRecoveryMismatch(state.schemaState)
+                    ? renderSchemaRecoveryBanner({
+                        state,
+                        onSchemaSync,
+                      })
+                    : null}
+
                   {state.mutationError ? (
                     <div
                       data-mdcms-document-mutation-state="error"
@@ -1255,7 +1565,9 @@ export function ContentDocumentPageView({
                     </div>
                   ) : null}
 
-                  {!state.canWrite && state.writeMessage ? (
+                  {!state.canWrite &&
+                  state.writeMessage &&
+                  !hasSchemaRecoveryMismatch(state.schemaState) ? (
                     <div className="rounded-md border border-border bg-background-subtle px-4 py-3 text-sm text-foreground-muted">
                       {state.writeMessage}
                     </div>
@@ -1482,7 +1794,7 @@ export default function ContentDocumentPage({
     const currentState = stateRef.current;
     const api = createRouteApi();
 
-    if (!api || currentState.status !== "ready") {
+    if (!api || currentState.status !== "ready" || !currentState.canWrite) {
       return;
     }
 
@@ -1502,6 +1814,20 @@ export default function ContentDocumentPage({
         state: currentState,
         changeSummary: currentState.publishChangeSummary,
       });
+
+      const recoveredSchemaState = nextState.schemaState;
+
+      if (hasSchemaRecoveryMismatch(recoveredSchemaState)) {
+        setState((current) =>
+          current.status === "ready"
+            ? applyGuardedPublishFailureToReadyState({
+                state: current,
+                schemaState: recoveredSchemaState,
+              })
+            : current,
+        );
+        return;
+      }
 
       setState((current) =>
         current.status === "ready" &&
@@ -1526,6 +1852,33 @@ export default function ContentDocumentPage({
           : current,
       );
     }
+  });
+
+  const syncSchema = useEffectEvent(async () => {
+    const currentState = stateRef.current;
+
+    if (
+      currentState.status !== "ready" ||
+      !currentState.schemaState ||
+      currentState.schemaState.status !== "ready" ||
+      !currentState.schemaState.canSync
+    ) {
+      return;
+    }
+
+    // Sync Schema forwards the authored config snapshot through the schema
+    // registry contract; Studio does not edit schema definitions here.
+    const nextSchemaState = await currentState.schemaState.sync();
+
+    setState((current) =>
+      current.status === "ready" &&
+      current.documentId === currentState.documentId
+        ? applySchemaStateToReadyState({
+            state: current,
+            schemaState: nextSchemaState,
+          })
+        : current,
+    );
   });
 
   const loadDocument = useEffectEvent(async () => {
@@ -1566,7 +1919,13 @@ export default function ContentDocumentPage({
       // required by guarded draft-write routes.
       !route ||
       !route.write.canWrite ||
-      currentState.status !== "ready" ||
+      currentState.status !== "ready"
+    ) {
+      return;
+    }
+
+    if (
+      !currentState.canWrite ||
       currentState.saveState !== "unsaved" ||
       currentState.draftBody === currentState.document.body ||
       currentState.saveRequestBody === currentState.draftBody
@@ -1589,6 +1948,20 @@ export default function ContentDocumentPage({
       route,
       state: currentState,
     });
+
+    const recoveredSchemaState = nextState.schemaState;
+
+    if (hasSchemaRecoveryMismatch(recoveredSchemaState)) {
+      setState((current) =>
+        current.status === "ready"
+          ? applyGuardedDraftSaveFailureToReadyState({
+              state: current,
+              schemaState: recoveredSchemaState,
+            })
+          : current,
+      );
+      return;
+    }
 
     const mutationError = nextState.mutationError;
     if (mutationError) {
@@ -1754,6 +2127,9 @@ export default function ContentDocumentPage({
       }}
       onPublishSubmit={() => {
         void publishDocument();
+      }}
+      onSchemaSync={() => {
+        void syncSchema();
       }}
       onSelectComparisonVersion={(side, version) => {
         setState((current) =>

@@ -13,6 +13,7 @@ export const DEFAULT_TARGET_ROUTING_POLICIES: readonly ScopedRoutePolicy[] =
   Object.freeze([
     { prefix: "/api/v1/content", requirement: "project_environment" },
     { prefix: "/api/v1/schema", requirement: "project_environment" },
+    { prefix: "/api/v1/me/capabilities", requirement: "project_environment" },
     { prefix: "/api/v1/webhooks", requirement: "project_environment" },
     { prefix: "/api/v1/search", requirement: "project_environment" },
     { prefix: "/api/v1/collaboration", requirement: "project_environment" },

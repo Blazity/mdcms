@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 
 import { test } from "bun:test";
-import { defineConfig, defineType, reference } from "@mdcms/shared";
+import {
+  createEmptyCurrentPrincipalCapabilities,
+  defineConfig,
+  defineType,
+  reference,
+} from "@mdcms/shared";
 
 import { createStudioSchemaRouteApi } from "./schema-route-api.js";
+import type { StudioCurrentPrincipalCapabilitiesApi } from "./current-principal-capabilities-api.js";
 import { createStudioEmbedConfig } from "./studio.js";
 import {
   createStudioSchemaLoadingState,
@@ -63,13 +69,30 @@ function createSchemaRouteApi(fetcher: typeof fetch) {
   );
 }
 
+function createCapabilitiesApi(
+  overrides: Partial<
+    ReturnType<typeof createEmptyCurrentPrincipalCapabilities>
+  > = {},
+): StudioCurrentPrincipalCapabilitiesApi {
+  return {
+    get: async () => ({
+      project: "marketing-site",
+      environment: "staging",
+      capabilities: {
+        ...createEmptyCurrentPrincipalCapabilities(),
+        ...overrides,
+      },
+    }),
+  };
+}
+
 test("createStudioSchemaLoadingState returns a deterministic loading state", () => {
   const state = createStudioSchemaLoadingState();
 
   assert.equal(state.status, "loading");
 });
 
-test("loadStudioSchemaState returns ready state with local and server hashes", async () => {
+test("loadStudioSchemaState keeps local hash data but hides sync when schema.write is not allowed", async () => {
   const api = createSchemaRouteApi(async (input: RequestInfo | URL) => {
     assert.equal(String(input), "http://localhost:4000/api/v1/schema");
 
@@ -103,6 +126,12 @@ test("loadStudioSchemaState returns ready state with local and server hashes", a
   const state = await loadStudioSchemaState({
     config: createConfig(),
     schemaApi: api,
+    capabilitiesApi: createCapabilitiesApi({
+      schema: {
+        read: true,
+        write: false,
+      },
+    }),
   });
 
   assert.equal(state.status, "ready");
@@ -115,7 +144,60 @@ test("loadStudioSchemaState returns ready state with local and server hashes", a
   assert.equal(state.serverSchemaHash, "server-hash");
   assert.equal(state.isMismatch, true);
   assert.equal(state.entries.length, 1);
+  assert.equal(state.hasLocalSyncPayload, true);
+  assert.equal(state.canSync, false);
+  assert.equal(state.capabilities.schema.write, false);
+});
+
+test("loadStudioSchemaState enables sync only when schema.write is allowed and local schema data exists", async () => {
+  const api = createSchemaRouteApi(
+    async () =>
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              type: "BlogPost",
+              directory: "content/blog",
+              localized: true,
+              schemaHash: "server-hash",
+              syncedAt: "2026-03-31T12:00:00.000Z",
+              resolvedSchema: {
+                type: "BlogPost",
+                directory: "content/blog",
+                localized: true,
+                fields: {},
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+  );
+
+  const state = await loadStudioSchemaState({
+    config: createConfig(),
+    schemaApi: api,
+    capabilitiesApi: createCapabilitiesApi({
+      schema: {
+        read: true,
+        write: true,
+      },
+    }),
+  });
+
+  assert.equal(state.status, "ready");
+  if (state.status !== "ready") {
+    throw new Error("Expected a ready schema state.");
+  }
+
+  assert.equal(state.hasLocalSyncPayload, true);
   assert.equal(state.canSync, true);
+  assert.equal(state.capabilities.schema.write, true);
 });
 
 test("loadStudioSchemaState maps forbidden schema responses deterministically", async () => {
@@ -202,6 +284,12 @@ test("loadStudioSchemaState falls back to read-only ready state when local schem
   const state = await loadStudioSchemaState({
     config: createStudioEmbedConfig(createAuthoredConfig()),
     schemaApi: api,
+    capabilitiesApi: createCapabilitiesApi({
+      schema: {
+        read: true,
+        write: true,
+      },
+    }),
   });
 
   assert.equal(state.status, "ready");
@@ -209,6 +297,7 @@ test("loadStudioSchemaState falls back to read-only ready state when local schem
     throw new Error("Expected a ready schema state.");
   }
 
+  assert.equal(state.hasLocalSyncPayload, false);
   assert.equal(state.canSync, false);
   assert.equal(state.localSchemaHash, undefined);
   assert.equal(state.syncPayload, undefined);
@@ -275,6 +364,12 @@ test("loadStudioSchemaState keeps ready-state data when a sync attempt fails", a
   const state = await loadStudioSchemaState({
     config: createAuthoredConfig(),
     schemaApi: api,
+    capabilitiesApi: createCapabilitiesApi({
+      schema: {
+        read: true,
+        write: true,
+      },
+    }),
   });
 
   assert.equal(state.status, "ready");

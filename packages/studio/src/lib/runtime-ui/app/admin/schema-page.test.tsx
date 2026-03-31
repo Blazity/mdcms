@@ -4,7 +4,10 @@ import { test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { StudioMountContext } from "@mdcms/shared";
+import {
+  createEmptyCurrentPrincipalCapabilities,
+  type StudioMountContext,
+} from "@mdcms/shared";
 import {
   createStudioSchemaLoadingState,
   type StudioSchemaReadyState,
@@ -22,7 +25,9 @@ function createReadyState(
     localSchemaHash: "local-hash",
     serverSchemaHash: "server-hash",
     isMismatch: false,
+    hasLocalSyncPayload: false,
     canSync: false,
+    capabilities: createEmptyCurrentPrincipalCapabilities(),
     entries: [],
     reload: async () => createReadyState(),
     sync: async () => createReadyState(),

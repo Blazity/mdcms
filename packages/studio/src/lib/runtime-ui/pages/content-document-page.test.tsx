@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 
 import { test } from "bun:test";
-import { RuntimeError } from "@mdcms/shared";
+import {
+  RuntimeError,
+  createEmptyCurrentPrincipalCapabilities,
+} from "@mdcms/shared";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -11,6 +14,7 @@ import {
   applyFailedDraftSaveToReadyState,
   applySuccessfulPublishToReadyState,
   applySuccessfulDraftSaveToReadyState,
+  applySchemaStateToReadyState,
   ContentDocumentPageView,
   createContentDocumentPageState,
   loadContentDocumentPageState,
@@ -102,6 +106,39 @@ function createReadyState() {
   }
 
   return state;
+}
+
+type ReadySchemaState = Extract<
+  NonNullable<ReturnType<typeof createReadyState>["schemaState"]>,
+  { status: "ready" }
+>;
+
+function createReadySchemaState(
+  overrides: Partial<ReadySchemaState> = {},
+): ReadySchemaState {
+  return {
+    status: "ready" as const,
+    project: "marketing-site",
+    environment: "staging",
+    localSchemaHash: "local-hash",
+    serverSchemaHash: "local-hash",
+    isMismatch: false,
+    hasLocalSyncPayload: true,
+    canSync: true,
+    capabilities: {
+      ...createEmptyCurrentPrincipalCapabilities(),
+      schema: {
+        read: true,
+        write: true,
+      },
+    },
+    entries: [],
+    reload: async (): Promise<ReadySchemaState> =>
+      createReadySchemaState(overrides),
+    sync: async (): Promise<ReadySchemaState> =>
+      createReadySchemaState(overrides),
+    ...overrides,
+  };
 }
 
 function createRouteContext(canWrite = true) {
@@ -331,6 +368,129 @@ test("ContentDocumentPageView renders document route loading and failure states"
   assert.match(notFoundMarkup, /Document not found/);
   assert.match(errorMarkup, /data-mdcms-document-state="error"/);
   assert.match(errorMarkup, /Draft load failed/);
+});
+
+test("ContentDocumentPageView renders guarded schema mismatch recovery controls", () => {
+  const markup = renderPageMarkup({
+    ...createReadyState(),
+    canWrite: false,
+    writeMessage:
+      "Schema changes detected. Studio is read-only until schema sync resolves the mismatch.",
+    schemaState: createReadySchemaState({
+      serverSchemaHash: "server-hash",
+      isMismatch: true,
+    }),
+  } as unknown as Parameters<typeof ContentDocumentPageView>[0]["state"]);
+
+  assert.match(markup, /Schema changes detected/);
+  assert.match(markup, /data-mdcms-schema-recovery-state="mismatch"/);
+  assert.match(markup, /Local schema hash/);
+  assert.match(markup, /local-hash/);
+  assert.match(markup, /Server schema hash/);
+  assert.match(markup, /server-hash/);
+  assert.match(markup, /Sync Schema/);
+});
+
+test("loadContentDocumentPageState applies the schema mismatch guard before returning the ready document state", async () => {
+  const next = await loadContentDocumentPageState({
+    context: createMountContext(),
+    typeId: "BlogPost",
+    typeLabel: "Blog post",
+    documentId: "11111111-1111-4111-8111-111111111111",
+    loadDocumentShell: async () => createReadyShell(),
+    loadSchemaState: async () =>
+      ({
+        status: "ready",
+        project: "marketing-site",
+        environment: "staging",
+        localSchemaHash: "local-hash",
+        serverSchemaHash: "server-hash",
+        isMismatch: true,
+        canSync: true,
+        entries: [],
+        reload: async () => ({
+          status: "ready",
+          project: "marketing-site",
+          environment: "staging",
+          localSchemaHash: "local-hash",
+          serverSchemaHash: "server-hash",
+          isMismatch: true,
+          canSync: true,
+          entries: [],
+          reload: async () => {
+            throw new Error("not used");
+          },
+          sync: async () => {
+            throw new Error("not used");
+          },
+        }),
+        sync: async () => ({
+          status: "ready",
+          project: "marketing-site",
+          environment: "staging",
+          localSchemaHash: "local-hash",
+          serverSchemaHash: "server-hash",
+          isMismatch: false,
+          canSync: true,
+          entries: [],
+          reload: async () => {
+            throw new Error("not used");
+          },
+          sync: async () => {
+            throw new Error("not used");
+          },
+        }),
+      }) as any,
+    createRouteApi: () => ({
+      listVersions: async () => ({
+        data: [createVersionSummary(3), createVersionSummary(1)],
+        pagination: {
+          total: 2,
+          limit: 20,
+          offset: 0,
+          hasMore: false,
+        },
+      }),
+    }),
+  } as any);
+
+  assert.equal(next.status, "ready");
+  if (next.status !== "ready") {
+    throw new Error("expected ready state");
+  }
+
+  assert.equal(next.canWrite, false);
+  assert.match(
+    next.writeMessage ?? "",
+    /Schema changes detected\. Studio is read-only until schema sync resolves the mismatch\./,
+  );
+  assert.equal((next as any).schemaState?.isMismatch, true);
+  assert.equal(next.versionHistory.status, "ready");
+});
+
+test("applySchemaStateToReadyState keeps the current draft visible when schema sync fails", () => {
+  const initial = createReadyState();
+  const next = applySchemaStateToReadyState({
+    state: initial,
+    schemaState: createReadySchemaState({
+      serverSchemaHash: "server-hash",
+      isMismatch: true,
+      syncError: "Forbidden.",
+    }) as any,
+  });
+
+  assert.equal(next.document.body, initial.document.body);
+  assert.equal(next.draftBody, initial.draftBody);
+  assert.equal(next.canWrite, false);
+  assert.match(
+    next.writeMessage ?? "",
+    /Schema changes detected\. Studio is read-only until schema sync resolves the mismatch\./,
+  );
+  if (next.schemaState?.status !== "ready") {
+    throw new Error("expected ready schema state");
+  }
+
+  assert.equal(next.schemaState.syncError, "Forbidden.");
 });
 
 test("reduceContentDocumentPageReadyState moves draft edits through unsaved, saving, and saved", () => {
@@ -574,6 +734,52 @@ test("saveContentDocumentReadyState surfaces forbidden routed draft updates with
   );
 });
 
+test("saveContentDocumentReadyState maps schema hash mismatches into guarded recovery instead of a generic save error", async () => {
+  const initial = reduceContentDocumentPageReadyState(
+    {
+      ...createReadyState(),
+      schemaState: createReadySchemaState({
+        reload: async () =>
+          createReadySchemaState({
+            serverSchemaHash: "server-hash",
+            isMismatch: true,
+          }),
+      }),
+    },
+    {
+      type: "draftChanged",
+      body: "# Launch Notes\nSchema changed",
+    },
+  );
+
+  const next = await saveContentDocumentReadyState({
+    api: {
+      updateDraft: async () => {
+        throw new RuntimeError({
+          code: "SCHEMA_HASH_MISMATCH",
+          message: "Schema hash mismatch.",
+          statusCode: 409,
+        });
+      },
+    },
+    route: createRouteContext(),
+    state: initial,
+  });
+
+  assert.equal(next.canWrite, false);
+  assert.equal(next.mutationError, undefined);
+  assert.equal(next.saveState, "unsaved");
+  assert.match(
+    next.writeMessage ?? "",
+    /Schema changes detected\. Studio is read-only until schema sync resolves the mismatch\./,
+  );
+  if (next.schemaState?.status !== "ready") {
+    throw new Error("expected ready schema recovery state");
+  }
+  assert.equal(next.schemaState.isMismatch, true);
+  assert.equal(next.schemaState.serverSchemaHash, "server-hash");
+});
+
 test("publishContentDocumentReadyState submits optional change summary and refreshes version history", async () => {
   const initial = createReadyState();
   const publishCalls: Array<Record<string, unknown>> = [];
@@ -668,6 +874,56 @@ test("publishContentDocumentReadyState keeps the published draft state when vers
     next.versionHistory.message,
     "Version history temporarily unavailable.",
   );
+});
+
+test("publishContentDocumentReadyState maps SCHEMA_NOT_SYNCED into guarded recovery instead of a generic publish error", async () => {
+  const initial = {
+    ...createReadyState(),
+    schemaState: createReadySchemaState({
+      reload: async () =>
+        createReadySchemaState({
+          serverSchemaHash: undefined,
+          entries: [],
+        }),
+    }),
+  };
+
+  const next = await publishContentDocumentReadyState({
+    api: {
+      publish: async () => {
+        throw new RuntimeError({
+          code: "SCHEMA_NOT_SYNCED",
+          message: "Schema must be synced before content writes.",
+          statusCode: 409,
+        });
+      },
+      listVersions: async () => ({
+        data: [],
+        pagination: {
+          total: 0,
+          limit: 20,
+          offset: 0,
+          hasMore: false,
+        },
+      }),
+    },
+    state: initial,
+    changeSummary: "Blocked by schema sync.",
+  });
+
+  assert.equal(next.canWrite, false);
+  assert.equal(next.publishError, undefined);
+  assert.equal(next.publishState, "idle");
+  assert.equal(next.publishDialogOpen, false);
+  assert.match(
+    next.writeMessage ?? "",
+    /Schema changes detected\. Studio is read-only until schema sync resolves the mismatch\./,
+  );
+  if (next.schemaState?.status !== "ready") {
+    throw new Error("expected ready schema recovery state");
+  }
+  assert.equal(next.schemaState.serverSchemaHash, undefined);
+  assert.deepEqual(next.schemaState.entries, []);
 });
 
 test("applySuccessfulPublishToReadyState preserves newer local edits made while publish was in flight", () => {

@@ -60,6 +60,7 @@ const STUDIO_BROWSER_ROUTE_PREFIXES = [
   "/api/v1/studio",
   "/api/v1/actions",
   "/api/v1/auth",
+  "/api/v1/me",
   "/api/v1/content",
   "/api/v1/schema",
   "/api/v1/environments",

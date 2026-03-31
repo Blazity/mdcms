@@ -2,7 +2,14 @@ import { createHash, randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { inflateRawSync } from "node:zlib";
 
-import { RuntimeError, serializeError } from "@mdcms/shared";
+import {
+  RuntimeError,
+  assertRequestTargetRouting,
+  createEmptyCurrentPrincipalCapabilities,
+  serializeError,
+  type CurrentPrincipalCapabilities,
+  type CurrentPrincipalCapabilitiesResponse,
+} from "@mdcms/shared";
 import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -185,6 +192,9 @@ export type AuthService = {
     password: string,
   ) => Promise<PasswordLoginResult>;
   getSession: (request: Request) => Promise<StudioSession | undefined>;
+  getCurrentPrincipalCapabilities: (
+    request: Request,
+  ) => Promise<CurrentPrincipalCapabilitiesResponse>;
   requireAdminSession: (request: Request) => Promise<StudioSession>;
   logout: (request: Request) => Promise<{
     revoked: boolean;
@@ -1737,6 +1747,87 @@ function apiKeyScopesSatisfyRequirement(
   return false;
 }
 
+function apiKeyAllowsTarget(
+  contextAllowlist: readonly ApiKeyScopeTuple[],
+  target: {
+    project: string;
+    environment: string;
+  },
+): boolean {
+  return contextAllowlist.some(
+    (candidate) =>
+      candidate.project === target.project &&
+      candidate.environment === target.environment,
+  );
+}
+
+function buildCapabilitiesFromSessionGrants(input: {
+  grants: readonly RbacGrant[];
+  target: {
+    project: string;
+    environment: string;
+  };
+}): CurrentPrincipalCapabilities {
+  const capabilities = createEmptyCurrentPrincipalCapabilities();
+  const evaluate = (action: RbacAction): boolean =>
+    evaluatePermission({
+      grants: input.grants,
+      target: input.target,
+      action,
+    }).allowed;
+
+  capabilities.schema.read = evaluate("schema:read");
+  capabilities.schema.write = evaluate("schema:write");
+  capabilities.content.read = evaluate("content:read");
+  capabilities.content.readDraft = evaluate("content:read:draft");
+  capabilities.content.write = evaluate("content:write");
+  capabilities.content.publish = evaluate("content:publish");
+  capabilities.content.unpublish = evaluate("content:unpublish");
+  capabilities.content.delete = evaluate("content:delete");
+  capabilities.users.manage = evaluate("user:manage");
+  capabilities.settings.manage = evaluate("settings:manage");
+
+  return capabilities;
+}
+
+function buildCapabilitiesFromApiKeyScopes(
+  scopes: readonly ApiKeyOperationScope[],
+): CurrentPrincipalCapabilities {
+  const capabilities = createEmptyCurrentPrincipalCapabilities();
+
+  capabilities.schema.read = apiKeyScopesSatisfyRequirement(
+    scopes,
+    "schema:read",
+  );
+  capabilities.schema.write = apiKeyScopesSatisfyRequirement(
+    scopes,
+    "schema:write",
+  );
+  capabilities.content.read = apiKeyScopesSatisfyRequirement(
+    scopes,
+    "content:read",
+  );
+  capabilities.content.readDraft = apiKeyScopesSatisfyRequirement(
+    scopes,
+    "content:read:draft",
+  );
+  capabilities.content.write = apiKeyScopesSatisfyRequirement(
+    scopes,
+    "content:write",
+  );
+  capabilities.content.publish = apiKeyScopesSatisfyRequirement(
+    scopes,
+    "content:publish",
+  );
+  capabilities.content.unpublish = capabilities.content.publish;
+  capabilities.content.delete = apiKeyScopesSatisfyRequirement(
+    scopes,
+    "content:delete",
+  );
+
+  return capabilities;
+}
+
 function isSessionBeyondAbsoluteMaxAge(session: StudioSession): boolean {
   const issuedAt = Date.parse(session.issuedAt);
 
@@ -2789,6 +2880,49 @@ export function createAuthService(
     return rows.map((row) => toRbacGrant(row));
   }
 
+  async function assertSessionCanIssueApiKeyScopes(
+    session: StudioSession,
+    scopes: readonly ApiKeyOperationScope[],
+    contextAllowlist: readonly ApiKeyScopeTuple[],
+  ): Promise<void> {
+    const grants = await loadSessionRbacGrants(session);
+
+    for (const scope of new Set(scopes)) {
+      const action = toRbacAction(scope);
+
+      if (!action) {
+        continue;
+      }
+
+      for (const target of contextAllowlist) {
+        const decision = evaluatePermission({
+          grants,
+          target: {
+            project: target.project,
+            environment: target.environment,
+          },
+          action,
+        });
+
+        if (decision.allowed) {
+          continue;
+        }
+
+        throw new RuntimeError({
+          code: "FORBIDDEN",
+          message:
+            "Session role does not allow minting this API key scope for the requested target.",
+          statusCode: 403,
+          details: {
+            requiredScope: scope,
+            project: target.project,
+            environment: target.environment,
+          },
+        });
+      }
+    }
+  }
+
   async function assertSessionRbacAuthorization(
     session: StudioSession,
     requirement: AuthorizationRequirement,
@@ -2922,6 +3056,15 @@ export function createAuthService(
       row,
       metadata: toApiKeyMetadata(row),
     };
+  }
+
+  async function touchApiKeyLastUsed(keyId: string): Promise<void> {
+    await options.db
+      .update(apiKeys)
+      .set({
+        lastUsedAt: new Date(),
+      })
+      .where(eq(apiKeys.id, keyId));
   }
 
   function normalizeRequestedCliScopes(
@@ -3166,6 +3309,63 @@ export function createAuthService(
       return getSessionIfAvailable(request);
     },
 
+    async getCurrentPrincipalCapabilities(request) {
+      const target = assertRequestTargetRouting(request, "project_environment");
+      const project = assertNonEmptyString(target.project, "project");
+      const environment = assertNonEmptyString(
+        target.environment,
+        "environment",
+      );
+      const bearerToken = extractBearerToken(
+        request.headers.get("authorization"),
+      );
+
+      if (bearerToken) {
+        const { row, metadata } = await requireActiveApiKey(bearerToken);
+
+        if (
+          !apiKeyAllowsTarget(metadata.contextAllowlist, {
+            project,
+            environment,
+          })
+        ) {
+          throw new RuntimeError({
+            code: "TARGET_ROUTING_MISMATCH",
+            message:
+              "Explicit target routing does not match the API key allowlist.",
+            statusCode: 400,
+            details: {
+              project,
+              environment,
+            },
+          });
+        }
+
+        await touchApiKeyLastUsed(row.id);
+
+        return {
+          project,
+          environment,
+          capabilities: buildCapabilitiesFromApiKeyScopes(metadata.scopes),
+        };
+      }
+
+      const session = await requireSession(request);
+      const grants = await loadSessionRbacGrants(session);
+
+      return {
+        project,
+        environment,
+        capabilities: buildCapabilitiesFromSessionGrants({
+          grants,
+          target: {
+            project,
+            environment,
+          },
+        }),
+      };
+    },
+
     async requireAdminSession(request) {
       return assertAdminSession(request);
     },
@@ -3224,11 +3424,10 @@ export function createAuthService(
           });
         }
 
-        const isContextAllowed = metadata.contextAllowlist.some(
-          (candidate) =>
-            candidate.project === requirement.project &&
-            candidate.environment === requirement.environment,
-        );
+        const isContextAllowed = apiKeyAllowsTarget(metadata.contextAllowlist, {
+          project: requirement.project,
+          environment: requirement.environment,
+        });
 
         if (!isContextAllowed) {
           throw new RuntimeError({
@@ -3243,12 +3442,7 @@ export function createAuthService(
           });
         }
 
-        await options.db
-          .update(apiKeys)
-          .set({
-            lastUsedAt: new Date(),
-          })
-          .where(eq(apiKeys.id, row.id));
+        await touchApiKeyLastUsed(row.id);
 
         return {
           mode: "api_key",
@@ -3302,6 +3496,12 @@ export function createAuthService(
           },
         });
       }
+
+      await assertSessionCanIssueApiKeyScopes(
+        session,
+        parsed.data.scopes,
+        parsed.data.contextAllowlist,
+      );
 
       const expiresAt = parsed.data.expiresAt
         ? new Date(parsed.data.expiresAt)
@@ -3485,6 +3685,19 @@ export function createAuthService(
           statusCode: 401,
         });
       }
+
+      await assertSessionCanIssueApiKeyScopes(
+        session,
+        normalizeRequestedCliScopes(
+          challenge.requestedScopes as ApiKeyOperationScope[],
+        ),
+        [
+          {
+            project: challenge.project,
+            environment: challenge.environment,
+          },
+        ],
+      );
 
       const code = randomBytes(24).toString("base64url");
       const codeHash = hashCliLoginToken(code);
@@ -3927,6 +4140,17 @@ export function mountAuthRoutes(
   };
 
   mountSessionRoute("/api/v1/auth/session");
+
+  authApp.get?.("/api/v1/me/capabilities", ({ request }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () => {
+      const capabilities =
+        await options.authService.getCurrentPrincipalCapabilities(request);
+
+      return {
+        data: capabilities,
+      };
+    }),
+  );
 
   authApp.post?.("/api/v1/auth/logout", ({ request }: any) =>
     executeWithRuntimeErrorsHandled(request, async () => {

@@ -1,9 +1,15 @@
 import {
   RuntimeError,
+  createEmptyCurrentPrincipalCapabilities,
+  type CurrentPrincipalCapabilities,
   type SchemaRegistryEntry,
   type SchemaRegistrySyncPayload,
 } from "@mdcms/shared";
 
+import {
+  createStudioCurrentPrincipalCapabilitiesApi,
+  type StudioCurrentPrincipalCapabilitiesApi,
+} from "./current-principal-capabilities-api.js";
 import { resolveStudioDocumentRouteSchemaDetails } from "./document-route-schema.js";
 import {
   createStudioSchemaRouteApi,
@@ -24,7 +30,9 @@ export type StudioSchemaReadyState = {
   localSchemaHash?: string;
   serverSchemaHash?: string;
   isMismatch: boolean;
+  hasLocalSyncPayload: boolean;
   canSync: boolean;
+  capabilities: CurrentPrincipalCapabilities;
   entries: SchemaRegistryEntry[];
   syncPayload?: SchemaRegistrySyncPayload;
   syncError?: string;
@@ -57,6 +65,7 @@ export type LoadStudioSchemaStateInput = {
   auth?: StudioRuntimeAuth;
   fetcher?: typeof fetch;
   schemaApi?: StudioSchemaRouteApi;
+  capabilitiesApi?: StudioCurrentPrincipalCapabilitiesApi;
 };
 
 function createSchemaRouteApi(
@@ -67,6 +76,26 @@ function createSchemaRouteApi(
   }
 
   return createStudioSchemaRouteApi(
+    {
+      project: input.config.project,
+      environment: input.config.environment,
+      serverUrl: input.config.serverUrl,
+    },
+    {
+      auth: input.auth,
+      fetcher: input.fetcher,
+    },
+  );
+}
+
+function createCapabilitiesRouteApi(
+  input: LoadStudioSchemaStateInput,
+): StudioCurrentPrincipalCapabilitiesApi {
+  if (input.capabilitiesApi) {
+    return input.capabilitiesApi;
+  }
+
+  return createStudioCurrentPrincipalCapabilitiesApi(
     {
       project: input.config.project,
       environment: input.config.environment,
@@ -112,6 +141,7 @@ function createReadyState(input: {
   environment: string;
   localSchemaHash?: string;
   syncPayload?: SchemaRegistrySyncPayload;
+  capabilities: CurrentPrincipalCapabilities;
   syncError?: string;
   entries: SchemaRegistryEntry[];
   api: StudioSchemaRouteApi;
@@ -122,6 +152,7 @@ function createReadyState(input: {
     input.localSchemaHash !== undefined &&
     serverSchemaHash !== undefined &&
     input.localSchemaHash !== serverSchemaHash;
+  const hasLocalSyncPayload = input.syncPayload !== undefined;
 
   const state: StudioSchemaReadyState = {
     status: "ready",
@@ -130,7 +161,9 @@ function createReadyState(input: {
     localSchemaHash: input.localSchemaHash,
     serverSchemaHash,
     isMismatch,
-    canSync: input.syncPayload !== undefined,
+    hasLocalSyncPayload,
+    canSync: hasLocalSyncPayload && input.capabilities.schema.write,
+    capabilities: input.capabilities,
     entries: input.entries,
     ...(input.syncPayload ? { syncPayload: input.syncPayload } : {}),
     ...(input.syncError ? { syncError: input.syncError } : {}),
@@ -140,6 +173,13 @@ function createReadyState(input: {
         return {
           ...state,
           syncError: "Studio cannot sync schema without local schema data.",
+        };
+      }
+
+      if (!input.capabilities.schema.write) {
+        return {
+          ...state,
+          syncError: "Current user is not allowed to sync schema.",
         };
       }
 
@@ -212,16 +252,26 @@ export async function loadStudioSchemaState(
   input: LoadStudioSchemaStateInput,
 ): Promise<StudioSchemaState> {
   const api = createSchemaRouteApi(input);
+  const capabilitiesApi = createCapabilitiesRouteApi(input);
   const localDetails = await resolveStudioDocumentRouteSchemaDetails(
     input.config,
   );
 
   try {
     const entries = await api.list();
+    let capabilities = createEmptyCurrentPrincipalCapabilities();
+
+    try {
+      const response = await capabilitiesApi.get();
+      capabilities = response.capabilities;
+    } catch {
+      capabilities = createEmptyCurrentPrincipalCapabilities();
+    }
 
     return createReadyState({
       project: input.config.project,
       environment: input.config.environment,
+      capabilities,
       ...(localDetails.canWrite
         ? {
             localSchemaHash: localDetails.syncPayload.schemaHash,

@@ -48,9 +48,11 @@ Host-embedded Studio package boundary for MDCMS.
   - `/admin/workflows`
   - `/admin/api`
   - `/admin/trash`
-- `/admin/media`, `/admin/schema`, `/admin/workflows`, and `/admin/api` are
-  present as runtime-owned UI surfaces in the current phase and may render
-  shell-only/mock content until their backend wiring is implemented.
+- `/admin/media`, `/admin/workflows`, and `/admin/api` are present as
+  runtime-owned UI surfaces in the current phase and may render shell-only/mock
+  content until their backend wiring is implemented.
+- `/admin/schema` is now backed by the live schema registry read contract and
+  renders a read-only schema browser for the active project/environment.
 
 Usage:
 
@@ -171,9 +173,34 @@ export function AdminStudioClient({ config }: { config: MdcmsConfig }) {
     `GET /api/v1/content/:documentId/versions/:version`
 - The current routed editor is intentionally truthful about MVP scope:
   - publish, version history, and arbitrary version comparison are live
-  - schema-hash mismatch recovery UX, locale switching, unpublish, restore, and
-    other follow-up workflows remain owned by their later tasks and are not
-    exposed here as fake controls
+  - schema-hash mismatch recovery is live and blocks draft/publish writes until
+    the active environment schema is resynced
+  - locale switching, unpublish, restore, and other follow-up workflows remain
+    owned by their later tasks and are not exposed here as fake controls
+- Guarded schema recovery uses the shared schema registry state:
+  - the page compares the local authored schema hash against the server schema
+    hash for the active `(project, environment)`
+  - when the server is unsynced or the hashes differ, Studio keeps the current
+    draft readable, switches the editor into read-only mode, and renders
+    recovery details for the local/server schema hashes
+  - successful `Sync Schema` runs reuse the same local config snapshot payload
+    as CLI schema sync; Studio does not expose manual schema editing controls
+
+## Schema Browser
+
+- Remote runtime route: `/admin/schema`
+- The schema page is a live read-only browser over `GET /api/v1/schema` for the
+  active `(project, environment)` route context.
+- It renders loading, empty, forbidden, error, and ready states from shared
+  schema registry data.
+- The browser is intentionally descriptive only:
+  - type name
+  - directory
+  - localization mode
+  - field kind / required / nullable metadata
+  - simple constraint summaries derived from the synced schema snapshot
+- `/admin/settings` now links users to `/admin/schema` instead of maintaining a
+  second mock schema viewer.
 
 ## TipTap Markdown Baseline (CMS-51)
 
