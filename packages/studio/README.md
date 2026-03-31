@@ -140,6 +140,41 @@ export function AdminStudioClient({ config }: { config: MdcmsConfig }) {
   `NOT_FOUND`, `DOCUMENT_LOAD_FAILED`, `INTERNAL_ERROR`, `UNKNOWN_ERROR`) plus
   an operator-facing `errorMessage`.
 
+## Routed Document Editor
+
+- Remote runtime route: `/admin/content/:type/:documentId`
+- The embedded Studio mount context now carries `documentRoute` alongside the
+  existing auth and host-bridge data:
+  - `project`
+  - `environment`
+  - `write.canWrite`
+  - `write.schemaHash` when draft writes are allowed, or `write.message` when
+    the route must stay read-only
+- `loadStudioRuntimeFromBootstrap(...)` derives `documentRoute.write` from the
+  local authored config. Write-enabled routes require enough local config data
+  to deterministically derive the active environment schema hash.
+- In practice that means the host must provide authored config with:
+  - `project`
+  - `environment`
+  - the local schema/config data required by
+    `resolveStudioDocumentRouteSchemaCapability(...)`
+- If the runtime cannot derive that local schema hash, the routed editor still
+  loads draft content and version history but stays read-only for draft
+  mutations.
+- The routed document page now owns the live MVP document workflow against the
+  existing content API contracts:
+  - draft load via `GET /api/v1/content/:documentId?draft=true`
+  - debounced draft save via `PUT /api/v1/content/:documentId`
+  - publish via `POST /api/v1/content/:documentId/publish`
+  - version history via `GET /api/v1/content/:documentId/versions`
+  - arbitrary version diff by fetching any two selected immutable versions from
+    `GET /api/v1/content/:documentId/versions/:version`
+- The current routed editor is intentionally truthful about MVP scope:
+  - publish, version history, and arbitrary version comparison are live
+  - schema-hash mismatch recovery UX, locale switching, unpublish, restore, and
+    other follow-up workflows remain owned by their later tasks and are not
+    exposed here as fake controls
+
 ## TipTap Markdown Baseline (CMS-51)
 
 - Import path: `@mdcms/studio/markdown-pipeline`

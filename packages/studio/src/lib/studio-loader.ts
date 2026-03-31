@@ -17,6 +17,7 @@ import {
 } from "@mdcms/shared";
 
 import { assertStudioRuntimePublication } from "./bootstrap-verification.js";
+import { resolveStudioDocumentRouteSchemaCapability } from "./document-route-schema.js";
 import type { MdcmsConfig } from "./studio.js";
 
 export const STUDIO_PACKAGE_VERSION = "0.0.1";
@@ -212,6 +213,39 @@ async function createLoadedLocalMdxRuntime(
         return loadResult;
       },
     },
+  };
+}
+
+function readTrimmedConfigString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+async function createDocumentRouteMountContext(
+  config: MdcmsConfig,
+): Promise<StudioMountContext["documentRoute"] | undefined> {
+  const project = readTrimmedConfigString(config?.project);
+  const environment = readTrimmedConfigString(config?.environment);
+
+  if (!project || !environment) {
+    return undefined;
+  }
+
+  const capability = await resolveStudioDocumentRouteSchemaCapability(config);
+
+  return {
+    project,
+    environment,
+    write: capability.canWrite
+      ? {
+          canWrite: true,
+          schemaHash: capability.schemaHash,
+        }
+      : {
+          canWrite: false,
+          message: capability.message,
+        },
   };
 }
 
@@ -455,12 +489,14 @@ async function loadStudioRuntimeFromBootstrap(
           fallback: configHostBridge,
         })
       : (options.hostBridge ?? configHostBridge ?? createDefaultHostBridge());
+  const documentRoute = await createDocumentRouteMountContext(options.config);
 
   const mountContext: StudioMountContext = {
     apiBaseUrl: input.apiBaseUrl,
     basePath: options.basePath,
     auth: options.auth ?? { mode: "cookie" },
     hostBridge,
+    ...(documentRoute ? { documentRoute } : {}),
     ...(localMdxRuntime?.mdx !== undefined ? { mdx: localMdxRuntime.mdx } : {}),
   };
   assertStudioMountContext(mountContext);

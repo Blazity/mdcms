@@ -130,6 +130,22 @@ export type HostBridgeV1 = {
   }) => () => void;
 };
 
+export type StudioDocumentRouteWriteContext =
+  | {
+      canWrite: true;
+      schemaHash: string;
+    }
+  | {
+      canWrite: false;
+      message: string;
+    };
+
+export type StudioDocumentRouteMountContext = {
+  project: string;
+  environment: string;
+  write: StudioDocumentRouteWriteContext;
+};
+
 export type StudioMountContext = {
   apiBaseUrl: string;
   basePath: string;
@@ -138,6 +154,7 @@ export type StudioMountContext = {
     token?: string;
   };
   hostBridge: HostBridgeV1;
+  documentRoute?: StudioDocumentRouteMountContext;
   mdx?: {
     catalog: MdxComponentCatalog;
     resolvePropsEditor: MdxComponentHostCapabilities["resolvePropsEditor"];
@@ -507,12 +524,36 @@ const studioMountAuthSchema = z
     }
   });
 
+const studioDocumentRouteWriteSchema = z.discriminatedUnion("canWrite", [
+  z
+    .object({
+      canWrite: z.literal(true),
+      schemaHash: nonEmptyStringSchema,
+    })
+    .strict(),
+  z
+    .object({
+      canWrite: z.literal(false),
+      message: nonEmptyStringSchema,
+    })
+    .strict(),
+]);
+
+const studioDocumentRouteContextSchema = z
+  .object({
+    project: nonEmptyStringSchema,
+    environment: nonEmptyStringSchema,
+    write: studioDocumentRouteWriteSchema,
+  })
+  .strict();
+
 const studioMountContextSchema = z
   .object({
     apiBaseUrl: nonEmptyStringSchema,
     basePath: nonEmptyStringSchema,
     auth: studioMountAuthSchema,
     hostBridge: hostBridgeV1Schema,
+    documentRoute: studioDocumentRouteContextSchema.optional(),
     mdx: z
       .object({
         catalog: mdxComponentCatalogSchema,
