@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-26
+last_updated: 2026-03-31
 ---
 
 # SPEC-008 CLI and SDK
@@ -210,7 +210,9 @@ Project: marketing-site
 - Sends the base draft revision token and latest published version (from the manifest) with each document.
 - Change detection is hash-based against `.mdcms/manifests/<project>.<environment>.json`; unchanged documents are skipped and not sent.
 - If a manifest entry has a missing/empty hash, that document is treated as changed and the hash is repaired on successful push.
-- **Draft optimistic concurrency:** If the server's current `draft_revision` differs from the base draft revision in the manifest, the push is **rejected** for that document. The developer must `cms pull` first, then re-apply their changes.
+- **Schema hash requirement:** Before sending any content write request, `cms push` reads the schema hash from `.mdcms/schema/<project>.<environment>.json` (see SPEC-004 "Local Schema State File"). If the file does not exist, push fails immediately: `"No synced schema found for <project>/<environment>. Run 'cms schema sync' before pushing."` (exit code 1). The hash is sent as `x-mdcms-schema-hash` on every `POST` and `PUT` content request.
+- **Schema mismatch handling:** If the server returns `SCHEMA_HASH_MISMATCH` (`409`) for a document, that document is reported as failed with reason code `schema_hash_mismatch`. Other documents in the same push run continue (partial success). The exit summary directs the developer to run `cms schema sync` before retrying.
+- **Draft optimistic concurrency:** If the server's current `draft_revision` differs from the base draft revision in the manifest, the push is **rejected** for that document with reason code `stale_draft_revision`. The developer must `cms pull` first, then re-apply their changes.
 - On success, the server updates `documents`, increments `draft_revision`, and does not create new `document_versions` rows.
 - Optional `--validate` flag runs schema validation locally before pushing.
 
@@ -218,10 +220,13 @@ Project: marketing-site
 
 `cms schema sync` synchronizes the current `mdcms.config.ts` schema to the server for a specific `(project, environment)` target.
 
-- Uploads raw schema snapshot + resolved environment schema.
-- Validates schema compatibility at sync time.
+- Parses `mdcms.config.ts` and resolves per-environment overlays.
+- Builds schema payload (types + fields, excluding MDX component registrations and prop metadata).
+- Uploads raw schema snapshot + resolved environment schema via `PUT /api/v1/schema`.
+- Validates schema compatibility at sync time; incompatibilities produce actionable error output.
 - Does not mutate content rows.
-- Intended to run before content writes when Studio reports schema mismatch.
+- On success, persists the server-returned `schemaHash` to `.mdcms/schema/<project>.<environment>.json` using atomic file writes (see SPEC-004 "Local Schema State File"). This file is read by `cms push` and future SDK write methods to satisfy the `x-mdcms-schema-hash` write gate.
+- Supports `--project` and `--environment` overrides; defaults from config.
 
 ### `cms migrate`
 

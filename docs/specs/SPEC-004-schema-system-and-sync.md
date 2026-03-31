@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-11
+last_updated: 2026-03-31
 ---
 
 # SPEC-004 Schema System and Sync
@@ -237,6 +237,26 @@ Inspired by Payload CMS's dev/prod split:
 - **Content write gate:** `POST /api/v1/content` and `PUT /api/v1/content/:documentId` require the `x-mdcms-schema-hash` header. Missing or blank values fail with `SCHEMA_HASH_REQUIRED` (`400`), a missing target sync record fails with `SCHEMA_NOT_SYNCED` (`409`), and a non-matching client/server hash fails with `SCHEMA_HASH_MISMATCH` (`409`).
 
 This ensures schemas only change through deliberate, reviewable actions.
+
+### Local Schema State File
+
+`cms schema sync` persists a local schema state file after each successful sync. This file is the canonical source of `x-mdcms-schema-hash` for all CLI and SDK write operations (see ADR-006).
+
+**Location:** `.mdcms/schema/<project>.<environment>.json`
+
+```json
+{
+  "schemaHash": "<hash>",
+  "syncedAt": "<ISO 8601>",
+  "serverUrl": "<url>"
+}
+```
+
+- Written atomically by `cms schema sync` using the write-temp-then-rename pattern.
+- One file per `(project, environment)` tuple.
+- `.gitignore`d — local to each developer's machine, not a shared artifact.
+- `cms schema sync` is the sole writer of this file. No other command or process may create or update it.
+- Write clients (`cms push`, future SDK write methods) read the `schemaHash` value from this file and send it as the `x-mdcms-schema-hash` header. If the file does not exist, the write command fails immediately with an actionable error directing the developer to run `cms schema sync`.
 
 ### Reference Field Identity
 
