@@ -285,6 +285,14 @@ test("RemoteStudioApp renders the expanded admin route surfaces", () => {
       resolveComponent: () => null,
       renderMdxPreview: () => () => {},
     },
+    documentRoute: {
+      project: "marketing-site",
+      environment: "staging",
+      write: {
+        canWrite: false,
+        message: "Schema sync required before Studio can write drafts.",
+      },
+    },
   };
 
   const apiMarkup = renderToStaticMarkup(
@@ -318,6 +326,8 @@ test("RemoteStudioApp renders the expanded admin route surfaces", () => {
 
   assert.match(apiMarkup, /API Playground/);
   assert.match(mediaMarkup, /Media Library/);
-  assert.match(schemaMarkup, /Schema Builder/);
+  assert.match(schemaMarkup, /data-mdcms-schema-page-state="loading"/);
+  assert.match(schemaMarkup, /Schema/);
+  assert.doesNotMatch(schemaMarkup, /Schema Builder/);
   assert.match(workflowsMarkup, /Workflows/);
 });
