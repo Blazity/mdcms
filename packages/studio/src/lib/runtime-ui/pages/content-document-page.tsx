@@ -160,6 +160,7 @@ type ContentDocumentPageReadyEvent =
   | {
       type: "saveSucceeded";
       updatedAt: string;
+      body?: string;
     }
   | {
       type: "saveFailed";
@@ -180,7 +181,10 @@ type ContentDocumentPageViewProps = {
   onPublishDialogOpenChange?: (open: boolean) => void;
   onPublishChangeSummaryChange?: (value: string) => void;
   onPublishSubmit?: () => void;
-  onSelectComparisonVersion?: (side: "left" | "right", version: number) => void;
+  onSelectComparisonVersion?: (
+    side: "left" | "right",
+    version?: number,
+  ) => void;
 };
 
 type CreateContentDocumentPageRouteApi = (input: {
@@ -316,6 +320,21 @@ function normalizeOptionalChangeSummary(
 ): string | undefined {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
+}
+
+export function parseSelectedComparisonVersionValue(
+  value: string,
+): number | undefined {
+  const normalized = value.trim();
+
+  if (normalized.length === 0) {
+    return undefined;
+  }
+
+  const nextVersion = Number(normalized);
+  return Number.isInteger(nextVersion) && nextVersion > 0
+    ? nextVersion
+    : undefined;
 }
 
 function toRouteErrorMessage(error: unknown, fallback: string): string {
@@ -542,6 +561,7 @@ export async function saveContentDocumentReadyState(input: {
 
     return reduceContentDocumentPageReadyState(savingState, {
       type: "saveSucceeded",
+      body: result.body ?? input.state.draftBody,
       updatedAt: result.updatedAt ?? input.state.document.updatedAt,
     });
   } catch (error) {
@@ -681,7 +701,10 @@ export function reduceContentDocumentPageReadyState(
       };
     }
     case "saveSucceeded": {
-      const savedBody = state.saveRequestBody ?? state.draftBody;
+      const requestBody = state.saveRequestBody ?? state.draftBody;
+      const savedBody = event.body ?? requestBody;
+      const draftBody =
+        state.draftBody === requestBody ? savedBody : state.draftBody;
 
       return {
         ...state,
@@ -691,7 +714,8 @@ export function reduceContentDocumentPageReadyState(
           hasUnpublishedChanges: true,
           updatedAt: event.updatedAt,
         },
-        saveState: state.draftBody === savedBody ? "saved" : "unsaved",
+        draftBody,
+        saveState: draftBody === savedBody ? "saved" : "unsaved",
         mutationError: undefined,
         saveRequestBody: undefined,
       };
@@ -711,27 +735,34 @@ export function reduceContentDocumentPageReadyState(
 export function applySuccessfulDraftSaveToReadyState(input: {
   state: ContentDocumentPageReadyState;
   requestBody: string;
+  persistedBody?: string;
   updatedAt: string;
 }): ContentDocumentPageReadyState {
   const hasNewerSaveInFlight =
     input.state.saveRequestBody !== undefined &&
     input.state.saveRequestBody !== input.requestBody;
+  const persistedBody = input.persistedBody ?? input.requestBody;
+  const draftBody =
+    input.state.draftBody === input.requestBody
+      ? persistedBody
+      : input.state.draftBody;
 
   return {
     ...input.state,
     document: {
       ...input.state.document,
-      body: input.requestBody,
+      body: persistedBody,
       hasUnpublishedChanges: true,
       updatedAt: input.updatedAt,
     },
+    draftBody,
     mutationError: undefined,
     saveRequestBody: hasNewerSaveInFlight
       ? input.state.saveRequestBody
       : undefined,
     saveState: hasNewerSaveInFlight
       ? input.state.saveState
-      : input.state.draftBody === input.requestBody
+      : draftBody === persistedBody
         ? "saved"
         : "unsaved",
   };
@@ -811,7 +842,10 @@ function ContentDocumentPageStatusView(props: {
 
 function renderVersionHistoryContent(props: {
   state: ContentDocumentPageReadyState;
-  onSelectComparisonVersion?: (side: "left" | "right", version: number) => void;
+  onSelectComparisonVersion?: (
+    side: "left" | "right",
+    version?: number,
+  ) => void;
 }) {
   switch (props.state.versionHistory.status) {
     case "idle":
@@ -848,11 +882,12 @@ function renderVersionHistoryContent(props: {
                 className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground"
                 value={String(props.state.selectedComparison.leftVersion ?? "")}
                 onChange={(event) => {
-                  const nextVersion = Number(event.currentTarget.value);
-
-                  if (Number.isFinite(nextVersion)) {
-                    props.onSelectComparisonVersion?.("left", nextVersion);
-                  }
+                  props.onSelectComparisonVersion?.(
+                    "left",
+                    parseSelectedComparisonVersionValue(
+                      event.currentTarget.value,
+                    ),
+                  );
                 }}
               >
                 <option value="">Select version</option>
@@ -875,11 +910,12 @@ function renderVersionHistoryContent(props: {
                   props.state.selectedComparison.rightVersion ?? "",
                 )}
                 onChange={(event) => {
-                  const nextVersion = Number(event.currentTarget.value);
-
-                  if (Number.isFinite(nextVersion)) {
-                    props.onSelectComparisonVersion?.("right", nextVersion);
-                  }
+                  props.onSelectComparisonVersion?.(
+                    "right",
+                    parseSelectedComparisonVersionValue(
+                      event.currentTarget.value,
+                    ),
+                  );
                 }}
               >
                 <option value="">Select version</option>
@@ -1568,6 +1604,7 @@ export default function ContentDocumentPage({
         ? applySuccessfulDraftSaveToReadyState({
             state: current,
             requestBody,
+            persistedBody: nextState.document.body,
             updatedAt: nextState.document.updatedAt,
           })
         : current,

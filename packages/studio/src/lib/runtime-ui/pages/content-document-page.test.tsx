@@ -15,6 +15,7 @@ import {
   createContentDocumentPageState,
   loadContentDocumentPageState,
   loadContentDocumentVersionDiff,
+  parseSelectedComparisonVersionValue,
   publishContentDocumentReadyState,
   reduceContentDocumentPageReadyState,
   saveContentDocumentReadyState,
@@ -494,6 +495,30 @@ test("saveContentDocumentReadyState persists routed draft updates through the co
   assert.equal(next.document.updatedAt, "2026-03-27T12:05:00.000Z");
 });
 
+test("saveContentDocumentReadyState applies the normalized body returned by the server", async () => {
+  const initial = reduceContentDocumentPageReadyState(createReadyState(), {
+    type: "draftChanged",
+    body: "  # Launch Notes  ",
+  });
+
+  const next = await saveContentDocumentReadyState({
+    api: {
+      updateDraft: async () =>
+        createDocumentResponse({
+          body: "# Launch Notes",
+          hasUnpublishedChanges: true,
+          updatedAt: "2026-03-27T12:05:30.000Z",
+        }),
+    },
+    route: createRouteContext(),
+    state: initial,
+  });
+
+  assert.equal(next.document.body, "# Launch Notes");
+  assert.equal(next.draftBody, "# Launch Notes");
+  assert.equal(next.saveState, "saved");
+});
+
 test("saveContentDocumentReadyState keeps the unsaved draft when the routed update returns a validation failure", async () => {
   const initial = reduceContentDocumentPageReadyState(createReadyState(), {
     type: "draftChanged",
@@ -732,6 +757,36 @@ test("applyFailedDraftSaveToReadyState keeps the same draft eligible for autosav
   assert.equal(saveCalls, 1);
   assert.equal(next.saveState, "saved");
   assert.equal(next.document.body, requestBody);
+});
+
+test("applySuccessfulDraftSaveToReadyState prefers the persisted body returned by the server", () => {
+  const saving = reduceContentDocumentPageReadyState(
+    reduceContentDocumentPageReadyState(createReadyState(), {
+      type: "draftChanged",
+      body: "  # Launch Notes  ",
+    }),
+    {
+      type: "saveStarted",
+    },
+  );
+
+  const next = applySuccessfulDraftSaveToReadyState({
+    state: saving,
+    requestBody: "  # Launch Notes  ",
+    persistedBody: "# Launch Notes",
+    updatedAt: "2026-03-27T12:06:00.000Z",
+  } as Parameters<typeof applySuccessfulDraftSaveToReadyState>[0] & {
+    persistedBody: string;
+  });
+
+  assert.equal(next.document.body, "# Launch Notes");
+  assert.equal(next.draftBody, "# Launch Notes");
+  assert.equal(next.saveState, "saved");
+});
+
+test("parseSelectedComparisonVersionValue clears the selection for an empty placeholder value", () => {
+  assert.equal(parseSelectedComparisonVersionValue(""), undefined);
+  assert.equal(parseSelectedComparisonVersionValue("3"), 3);
 });
 
 test("loadContentDocumentVersionDiff compares any two selected versions", async () => {
