@@ -27,6 +27,7 @@ export type StudioSchemaReadyState = {
   canSync: boolean;
   entries: SchemaRegistryEntry[];
   syncPayload?: SchemaRegistrySyncPayload;
+  syncError?: string;
   reload: () => Promise<StudioSchemaState>;
   sync: () => Promise<StudioSchemaState>;
 };
@@ -111,6 +112,7 @@ function createReadyState(input: {
   environment: string;
   localSchemaHash?: string;
   syncPayload?: SchemaRegistrySyncPayload;
+  syncError?: string;
   entries: SchemaRegistryEntry[];
   api: StudioSchemaRouteApi;
   reloadInput: LoadStudioSchemaStateInput;
@@ -121,7 +123,7 @@ function createReadyState(input: {
     serverSchemaHash !== undefined &&
     input.localSchemaHash !== serverSchemaHash;
 
-  return {
+  const state: StudioSchemaReadyState = {
     status: "ready",
     project: input.project,
     environment: input.environment,
@@ -131,14 +133,13 @@ function createReadyState(input: {
     canSync: input.syncPayload !== undefined,
     entries: input.entries,
     ...(input.syncPayload ? { syncPayload: input.syncPayload } : {}),
+    ...(input.syncError ? { syncError: input.syncError } : {}),
     reload: async () => loadStudioSchemaState(input.reloadInput),
     sync: async () => {
       if (!input.syncPayload) {
         return {
-          status: "error",
-          project: input.project,
-          environment: input.environment,
-          message: "Studio cannot sync schema without local schema data.",
+          ...state,
+          syncError: "Studio cannot sync schema without local schema data.",
         };
       }
 
@@ -146,25 +147,18 @@ function createReadyState(input: {
         await input.api.sync(input.syncPayload);
         return await loadStudioSchemaState(input.reloadInput);
       } catch (error) {
-        if (error instanceof RuntimeError && error.statusCode === 403) {
-          return {
-            status: "forbidden",
-            project: input.project,
-            environment: input.environment,
-            message: error.message,
-          };
-        }
+        const syncError =
+          error instanceof Error ? error.message : "Schema sync failed.";
 
         return {
-          status: "error",
-          project: input.project,
-          environment: input.environment,
-          message:
-            error instanceof Error ? error.message : "Schema sync failed.",
+          ...state,
+          syncError,
         };
       }
     },
   };
+
+  return state;
 }
 
 function createForbiddenState(input: {
@@ -222,22 +216,18 @@ export async function loadStudioSchemaState(
     input.config,
   );
 
-  if (!localDetails.canWrite) {
-    return createErrorState({
-      project: input.config.project,
-      environment: input.config.environment,
-      message: localDetails.message,
-    });
-  }
-
   try {
     const entries = await api.list();
 
     return createReadyState({
       project: input.config.project,
       environment: input.config.environment,
-      localSchemaHash: localDetails.syncPayload.schemaHash,
-      syncPayload: localDetails.syncPayload,
+      ...(localDetails.canWrite
+        ? {
+            localSchemaHash: localDetails.syncPayload.schemaHash,
+            syncPayload: localDetails.syncPayload,
+          }
+        : {}),
       entries,
       api,
       reloadInput: input,

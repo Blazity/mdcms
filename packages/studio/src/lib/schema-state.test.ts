@@ -4,12 +4,33 @@ import { test } from "bun:test";
 import { defineConfig, defineType, reference } from "@mdcms/shared";
 
 import { createStudioSchemaRouteApi } from "./schema-route-api.js";
+import { createStudioEmbedConfig } from "./studio.js";
 import {
   createStudioSchemaLoadingState,
   loadStudioSchemaState,
 } from "./schema-state.js";
 
 function createConfig() {
+  return defineConfig({
+    project: "marketing-site",
+    serverUrl: "http://localhost:4000",
+    environment: "staging",
+    contentDirectories: ["content/blog"],
+    types: [
+      defineType("BlogPost", {
+        directory: "content/blog",
+        fields: {
+          title: reference("BlogPost"),
+        },
+      }),
+    ],
+    environments: {
+      staging: {},
+    },
+  });
+}
+
+function createAuthoredConfig() {
   return defineConfig({
     project: "marketing-site",
     serverUrl: "http://localhost:4000",
@@ -146,4 +167,131 @@ test("loadStudioSchemaState maps invalid schema responses to error state", async
 
   assert.equal(state.status, "error");
   assert.match(state.message, /invalid/i);
+});
+
+test("loadStudioSchemaState falls back to read-only ready state when local schema details are unavailable", async () => {
+  const api = createSchemaRouteApi(
+    async () =>
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              type: "BlogPost",
+              directory: "content/blog",
+              localized: true,
+              schemaHash: "server-hash",
+              syncedAt: "2026-03-31T12:00:00.000Z",
+              resolvedSchema: {
+                type: "BlogPost",
+                directory: "content/blog",
+                localized: true,
+                fields: {},
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+  );
+
+  const state = await loadStudioSchemaState({
+    config: createStudioEmbedConfig(createAuthoredConfig()),
+    schemaApi: api,
+  });
+
+  assert.equal(state.status, "ready");
+  if (state.status !== "ready") {
+    throw new Error("Expected a ready schema state.");
+  }
+
+  assert.equal(state.canSync, false);
+  assert.equal(state.localSchemaHash, undefined);
+  assert.equal(state.syncPayload, undefined);
+  assert.equal(state.entries.length, 1);
+  assert.equal(state.serverSchemaHash, "server-hash");
+});
+
+test("loadStudioSchemaState keeps ready-state data when a sync attempt fails", async () => {
+  const api = createStudioSchemaRouteApi(
+    {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+    },
+    {
+      fetcher: async (input, init) => {
+        if (
+          String(input) === "http://localhost:4000/api/v1/schema" &&
+          init?.method === "PUT"
+        ) {
+          return new Response(
+            JSON.stringify({
+              code: "FORBIDDEN",
+              message: "Forbidden.",
+            }),
+            {
+              status: 403,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                type: "BlogPost",
+                directory: "content/blog",
+                localized: true,
+                schemaHash: "server-hash",
+                syncedAt: "2026-03-31T12:00:00.000Z",
+                resolvedSchema: {
+                  type: "BlogPost",
+                  directory: "content/blog",
+                  localized: true,
+                  fields: {},
+                },
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      },
+    },
+  );
+
+  const state = await loadStudioSchemaState({
+    config: createAuthoredConfig(),
+    schemaApi: api,
+  });
+
+  assert.equal(state.status, "ready");
+  if (state.status !== "ready") {
+    throw new Error("Expected a ready schema state.");
+  }
+
+  const failedState = await state.sync();
+
+  assert.equal(failedState.status, "ready");
+  if (failedState.status !== "ready") {
+    throw new Error("Expected the sync failure state to stay ready.");
+  }
+
+  assert.equal(failedState.entries, state.entries);
+  assert.equal(failedState.serverSchemaHash, state.serverSchemaHash);
+  assert.equal(failedState.isMismatch, state.isMismatch);
+  assert.equal(failedState.canSync, state.canSync);
+  assert.equal(failedState.syncError, "Forbidden.");
 });
