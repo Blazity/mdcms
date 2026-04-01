@@ -93,7 +93,7 @@ export default function MediaPage() {
                   <div className="h-9 w-64 rounded-md border border-border bg-background pl-9" />
                 </div>
               </div>
-              <div className="flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-white text-sm">
+              <div className="flex items-center gap-2 rounded-[var(--radius-md)] bg-accent px-3 py-2 text-primary-foreground text-sm">
                 <Upload className="h-4 w-4" />
                 Upload
               </div>

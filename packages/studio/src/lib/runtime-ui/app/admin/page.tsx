@@ -135,11 +135,6 @@ export default function DashboardPage() {
               key={action.label}
               variant={action.variant}
               asChild
-              className={
-                action.variant === "default"
-                  ? "bg-primary hover:bg-accent-hover text-white"
-                  : ""
-              }
             >
               <Link href={action.href}>
                 <action.icon className="mr-2 h-4 w-4" />

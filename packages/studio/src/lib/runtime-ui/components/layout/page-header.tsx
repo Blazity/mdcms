@@ -168,7 +168,7 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
 
   return (
     <TooltipProvider>
-      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[rgba(197,197,216,0.3)] bg-card px-6">
+      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-divider bg-card px-6">
         {/* Left side - Breadcrumbs */}
         <BreadcrumbTrail breadcrumbs={breadcrumbs} />
 

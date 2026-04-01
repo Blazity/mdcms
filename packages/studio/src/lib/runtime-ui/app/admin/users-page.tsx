@@ -89,7 +89,7 @@ export default function UsersPage() {
           <h1 className="text-2xl font-semibold">Users</h1>
           <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-accent hover:bg-accent-hover text-white">
+              <Button>
                 <Plus className="mr-2 h-4 w-4" />
                 Invite User
               </Button>
@@ -164,7 +164,6 @@ export default function UsersPage() {
                   Cancel
                 </Button>
                 <Button
-                  className="bg-accent hover:bg-accent-hover text-white"
                   onClick={() => setInviteDialogOpen(false)}
                 >
                   Send Invitation

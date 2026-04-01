@@ -190,7 +190,6 @@ export default function DocumentEditorPage() {
 
             {/* Publish button */}
             <Button
-              className="bg-accent hover:bg-accent-hover text-white"
               onClick={() => setPublishDialogOpen(true)}
             >
               <Send className="mr-2 h-4 w-4" />
@@ -305,7 +304,6 @@ export default function DocumentEditorPage() {
                 Cancel
               </Button>
               <Button
-                className="bg-accent hover:bg-accent-hover text-white"
                 onClick={handlePublish}
               >
                 Publish

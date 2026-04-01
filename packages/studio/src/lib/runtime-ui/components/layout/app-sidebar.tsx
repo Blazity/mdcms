@@ -72,14 +72,14 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
     <TooltipProvider delayDuration={0}>
       <aside
         className={cn(
-          "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-[rgba(197,197,216,0.3)] bg-card transition-all duration-300",
+          "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-divider bg-card transition-all duration-300",
           collapsed ? "w-16" : "w-60",
         )}
       >
         {/* Logo */}
         <div
           className={cn(
-            "flex h-14 items-center border-b border-[rgba(197,197,216,0.3)] px-4",
+            "flex h-14 items-center border-b border-divider px-4",
             collapsed && "justify-center px-2",
           )}
         >
@@ -128,7 +128,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
           </ul>
 
           {/* Separator */}
-          <div className="my-4 h-px bg-[rgba(197,197,216,0.3)]" />
+          <div className="my-4 h-px bg-divider" />
 
           {/* Coming Soon Section */}
           {collapsed ? (
@@ -192,7 +192,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         </nav>
 
         {/* Bottom Section */}
-        <div className="border-t border-[rgba(197,197,216,0.3)] p-2">
+        <div className="border-t border-divider p-2">
           {/* Online Users */}
           {!collapsed && onlineUsers.length > 0 && (
             <div className="mb-2 px-3 py-2">

@@ -198,8 +198,7 @@ export default function ContentDocumentPage({
             </Badge>
 
             <Button
-              className="bg-accent text-white hover:bg-accent-hover"
-              onClick={() => setPublishDialogOpen(true)}
+                            onClick={() => setPublishDialogOpen(true)}
             >
               <Send className="mr-2 h-4 w-4" />
               Publish
@@ -324,8 +323,7 @@ export default function ContentDocumentPage({
                 Cancel
               </Button>
               <Button
-                className="bg-accent text-white hover:bg-accent-hover"
-                onClick={handlePublish}
+                                onClick={handlePublish}
               >
                 Publish
               </Button>
