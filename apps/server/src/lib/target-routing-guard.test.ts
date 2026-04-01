@@ -25,6 +25,9 @@ function createHandler() {
 
       serverApp.get?.("/api/v1/content", () => ({ route: "content" }));
       serverApp.get?.("/api/v1/schema", () => ({ route: "schema" }));
+      serverApp.get?.("/api/v1/me/capabilities", () => ({
+        route: "me-capabilities",
+      }));
       serverApp.get?.("/api/v1/environments", () => ({
         route: "environments",
       }));
@@ -69,6 +72,22 @@ test("schema endpoint accepts explicit headers", async () => {
   assert.equal(body.route, "schema");
 });
 
+test("current principal capabilities endpoint accepts explicit headers", async () => {
+  const handler = createHandler();
+  const response = await handler(
+    new Request("http://localhost/api/v1/me/capabilities", {
+      headers: {
+        [MDCMS_PROJECT_HEADER]: "marketing-site",
+        [MDCMS_ENVIRONMENT_HEADER]: "staging",
+      },
+    }),
+  );
+  const body = (await response.json()) as Record<string, unknown>;
+
+  assert.equal(response.status, 200);
+  assert.equal(body.route, "me-capabilities");
+});
+
 test("environment-scoped endpoint accepts explicit query parameters", async () => {
   const handler = createHandler();
   const response = await handler(
@@ -96,6 +115,17 @@ test("environment-scoped endpoint rejects missing routing", async () => {
 test("schema endpoint rejects missing routing", async () => {
   const handler = createHandler();
   const response = await handler(new Request("http://localhost/api/v1/schema"));
+  const body = (await response.json()) as Record<string, unknown>;
+
+  assert.equal(response.status, 400);
+  assert.equal(body.code, "MISSING_TARGET_ROUTING");
+});
+
+test("current principal capabilities endpoint rejects missing routing", async () => {
+  const handler = createHandler();
+  const response = await handler(
+    new Request("http://localhost/api/v1/me/capabilities"),
+  );
   const body = (await response.json()) as Record<string, unknown>;
 
   assert.equal(response.status, 400);

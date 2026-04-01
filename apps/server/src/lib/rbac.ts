@@ -67,7 +67,6 @@ const ROLE_ACTIONS: Record<RbacRole, readonly RbacAction[]> = {
     "content:unpublish",
     "content:delete",
     "schema:read",
-    "schema:write",
   ],
   admin: [
     "content:read",

@@ -63,7 +63,7 @@
     }
   },
   "scripts": {
-    "dev": "sh -lc 'trap \"kill 0\" INT TERM EXIT; bun tsc --build packages/studio/tsconfig.lib.json --watch --preserveWatchOutput & bun --conditions @mdcms/source packages/studio/src/lib/dev-runtime-watch.ts & wait'",
+    "dev": "sh -lc 'trap \"kill 0\" INT TERM EXIT; bun x --bun tsc --build tsconfig.lib.json --watch --preserveWatchOutput & bun --conditions @mdcms/source src/lib/dev-runtime-watch.ts & wait'",
     "test": "bun test ./src"
   },
   "peerDependencies": {

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { RuntimeError } from "@mdcms/shared";
+import {
+  RuntimeError,
+  createEmptyCurrentPrincipalCapabilities,
+} from "@mdcms/shared";
 
 import {
   createCollaborationAuthGuard,
@@ -43,6 +46,13 @@ function createAuthServiceStub(overrides: Partial<AuthService>): AuthService {
     },
     async getSession() {
       return session;
+    },
+    async getCurrentPrincipalCapabilities() {
+      return {
+        project: "marketing-site",
+        environment: "staging",
+        capabilities: createEmptyCurrentPrincipalCapabilities(),
+      };
     },
     async requireAdminSession() {
       return session;

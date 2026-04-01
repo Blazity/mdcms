@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-25
+last_updated: 2026-03-31
 ---
 
 # SPEC-006 Studio Runtime and UI
@@ -77,6 +77,7 @@ export type StudioMountContext = {
 
 - `cookie` mode is the default. The remote Studio runtime uses credentialed browser requests against `apiBaseUrl` and obtains CSRF bootstrap state from the auth/session endpoints.
 - `token` mode uses `Authorization: Bearer <token>` on Studio API requests. In MVP, this bearer token is an MDCMS API key.
+- In both auth modes, the runtime may call `GET /api/v1/me/capabilities` with explicit `X-MDCMS-Project` and `X-MDCMS-Environment` routing to determine target-scoped UI capabilities. Capability responses drive UI gating only; backend authorization remains the final authority.
 
 Host bridge (minimum):
 
@@ -180,17 +181,22 @@ Internal Studio routes (examples):
 - `/admin/content/:type/:documentId` — Document editor
 - `/admin/environments` — Environment management
 - `/admin/media` — Media library shell surface
-- `/admin/schema` — Schema explorer shell surface
+- `/admin/schema` — Read-only schema explorer
 - `/admin/users` — User management (admin only)
 - `/admin/settings` — CMS settings (admin only)
 - `/admin/workflows` — Workflow shell surface
 - `/admin/api` — API playground shell surface
 - `/admin/trash` — Deleted content recovery
 
-For `/admin/media`, `/admin/schema`, `/admin/workflows`, and `/admin/api`, the
-current phase permits Studio-runtime-owned shell rendering backed by local mock
-state or placeholder content while their future live data and mutation
-contracts remain deferred to the owning work for those domains.
+For `/admin/media`, `/admin/workflows`, and `/admin/api`, the current phase
+permits Studio-runtime-owned shell rendering backed by local mock state or
+placeholder content while their future live data and mutation contracts remain
+deferred to the owning work for those domains.
+
+The `/admin/schema` route is a live read-only schema browser for the active
+`(project, environment)` target. It is backed by `GET /api/v1/schema`, is
+visible when the current caller has `schema.read`, and never authors schema
+changes in the UI.
 
 ### Content Navigation
 
@@ -203,6 +209,37 @@ Secondary navigation by folder path is available as an alternative view.
 Each embedded Studio instance is configured with a specific project through `mdcms.config.ts` and shows only that project's content and schema.
 
 For users who manage multiple projects, the Studio header provides a project switcher that links to the other Studio instances they are allowed to access.
+
+### Target-Scoped Capabilities and Schema Recovery
+
+Studio uses `GET /api/v1/me/capabilities` as the canonical source for
+target-scoped UI capability gating.
+
+Normative behavior:
+
+- The runtime requests capabilities for the active `(project, environment)`
+  target using the same explicit routing contract as other environment-scoped
+  APIs.
+- Schema route visibility depends on `capabilities.schema.read`.
+- The `Sync Schema` action depends on both `capabilities.schema.write` and the
+  runtime having a local schema sync payload available from the embedded
+  `mdcms.config.ts` snapshot.
+- The runtime must not infer write authority from local schema availability
+  alone.
+
+Schema mismatch recovery:
+
+- If a content write operation fails with `SCHEMA_NOT_SYNCED` (`409`) or
+  `SCHEMA_HASH_MISMATCH` (`409`), Studio transitions the affected document
+  editor into guarded read-only recovery mode.
+- Guarded read-only recovery shows a schema mismatch banner, disables document
+  write/publish/delete actions, and surfaces the local and server schema hashes
+  when known.
+- If `capabilities.schema.write` is `true`, the recovery UI may offer `Sync
+Schema` as the privileged remediation action.
+- If `capabilities.schema.write` is `false`, Studio must keep the recovery UI
+  read-only and direct the user to the read-only schema browser and/or an
+  authorized operator.
 
 ### Branding
 
@@ -273,8 +310,9 @@ Execution mode:
 
 ## Core Runtime and Studio Runtime Endpoints
 
-| Method | Path                               | Auth Mode | Required Scope | Target Routing | Request                                                   | Success                                                     | Deterministic Errors                                                                                                                                         |
-| ------ | ---------------------------------- | --------- | -------------- | -------------- | --------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| GET    | `/healthz`                         | public    | none           | none           | no body                                                   | `200` health payload (service/version/uptime/startedAt/now) | `INTERNAL_ERROR` (`500`) when health provider fails                                                                                                          |
-| GET    | `/api/v1/studio/bootstrap`         | public    | none           | none           | optional query pair: `rejectedBuildId`, `rejectionReason` | `200` `StudioBootstrapReadyResponse`                        | `INVALID_QUERY_PARAM` (`400`), `FORBIDDEN_ORIGIN` (`403`), `STUDIO_RUNTIME_DISABLED` (`503`), `STUDIO_RUNTIME_UNAVAILABLE` (`503`), `INTERNAL_ERROR` (`500`) |
-| GET    | `/api/v1/studio/assets/:buildId/*` | public    | none           | none           | `buildId` path param                                      | `200` immutable runtime asset stream                        | `FORBIDDEN_ORIGIN` (`403`), `NOT_FOUND` (`404`)                                                                                                              |
+| Method | Path                               | Auth Mode          | Required Scope | Target Routing      | Request                                                                                                                     | Success                                                     | Deterministic Errors                                                                                                                                         |
+| ------ | ---------------------------------- | ------------------ | -------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/healthz`                         | public             | none           | none                | no body                                                                                                                     | `200` health payload (service/version/uptime/startedAt/now) | `INTERNAL_ERROR` (`500`) when health provider fails                                                                                                          |
+| GET    | `/api/v1/studio/bootstrap`         | public             | none           | none                | optional query pair: `rejectedBuildId`, `rejectionReason`                                                                   | `200` `StudioBootstrapReadyResponse`                        | `INVALID_QUERY_PARAM` (`400`), `FORBIDDEN_ORIGIN` (`403`), `STUDIO_RUNTIME_DISABLED` (`503`), `STUDIO_RUNTIME_UNAVAILABLE` (`503`), `INTERNAL_ERROR` (`500`) |
+| GET    | `/api/v1/studio/assets/:buildId/*` | public             | none           | none                | `buildId` path param                                                                                                        | `200` immutable runtime asset stream                        | `FORBIDDEN_ORIGIN` (`403`), `NOT_FOUND` (`404`)                                                                                                              |
+| GET    | `/api/v1/me/capabilities`          | session_or_api_key | none           | project+environment | session cookie or `Authorization: Bearer <mdcms_key_...>` plus explicit `X-MDCMS-Project` and `X-MDCMS-Environment` routing | `200` `{ data: { project, environment, capabilities } }`    | `UNAUTHORIZED` (`401`), `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `FORBIDDEN_ORIGIN` (`403`)                                      |

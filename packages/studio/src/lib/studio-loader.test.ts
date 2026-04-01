@@ -210,26 +210,44 @@ test("loadStudioRuntime fetches bootstrap, verifies runtime, and mounts the remo
       "http://localhost:4000/api/v1/studio/bootstrap",
       "http://localhost:4000" + fixture.manifest.entryUrl,
     ]);
-    assert.deepEqual(contexts, [
-      {
-        apiBaseUrl: "http://localhost:4000",
-        basePath: "/admin",
-        auth: { mode: "cookie" },
-        hostBridge: validHostBridge,
+    assert.equal(contexts.length, 1);
+    const mountedContext = contexts[0] as {
+      apiBaseUrl: string;
+      basePath: string;
+      auth: { mode: string };
+      hostBridge: HostBridgeV1;
+      documentRoute?: {
+        project: string;
+        environment: string;
+        write:
+          | {
+              canWrite: true;
+              schemaHash: string;
+            }
+          | {
+              canWrite: false;
+              message: string;
+            };
+      };
+    };
+
+    assert.equal(mountedContext.apiBaseUrl, "http://localhost:4000");
+    assert.equal(mountedContext.basePath, "/admin");
+    assert.deepEqual(mountedContext.auth, { mode: "cookie" });
+    assert.equal(mountedContext.hostBridge, validHostBridge);
+    assert.deepEqual(mountedContext.documentRoute, {
+      project: "marketing-site",
+      environment: "staging",
+      write: {
+        canWrite: false,
+        message:
+          'Studio writes require a resolved schema for environment "staging".',
       },
-    ]);
+    });
 
     unmount();
 
-    assert.deepEqual(contexts, [
-      {
-        apiBaseUrl: "http://localhost:4000",
-        basePath: "/admin",
-        auth: { mode: "cookie" },
-        hostBridge: validHostBridge,
-      },
-      "unmounted",
-    ]);
+    assert.deepEqual(contexts[1], "unmounted");
   });
 });
 

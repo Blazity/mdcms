@@ -11,6 +11,13 @@ const packageJson = JSON.parse(
 test("studio dev script runs both TypeScript watch and runtime artifact watch", () => {
   const devScript = packageJson.scripts?.dev ?? "";
 
-  assert.match(devScript, /tsc --build .*--watch/);
-  assert.match(devScript, /dev-runtime-watch\.ts/);
+  assert.match(
+    devScript,
+    /bun x --bun tsc --build tsconfig\.lib\.json --watch --preserveWatchOutput/,
+  );
+  assert.match(
+    devScript,
+    /bun --conditions @mdcms\/source src\/lib\/dev-runtime-watch\.ts/,
+  );
+  assert.doesNotMatch(devScript, /packages\/studio\//);
 });

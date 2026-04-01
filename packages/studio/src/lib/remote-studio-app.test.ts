@@ -11,6 +11,10 @@ import {
   startDocumentPreview,
   stripStudioBasePath,
 } from "./remote-studio-app.js";
+import { AdminCapabilitiesProvider } from "./runtime-ui/app/admin/capabilities-context.js";
+import SettingsPage from "./runtime-ui/app/admin/settings-page.js";
+import { ThemeProvider } from "./runtime-ui/adapters/next-themes.js";
+import { StudioNavigationProvider } from "./runtime-ui/navigation.js";
 
 test("stripStudioBasePath resolves internal routes under an explicit base path", () => {
   assert.equal(stripStudioBasePath("/admin", "/admin"), "/");
@@ -144,6 +148,14 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
       resolveComponent: () => null,
       renderMdxPreview: () => () => {},
     },
+    documentRoute: {
+      project: "marketing-site",
+      environment: "staging",
+      write: {
+        canWrite: true,
+        schemaHash: "schema-hash",
+      },
+    },
     mdx: {
       catalog: {
         components: [
@@ -222,7 +234,7 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
   assert.match(markup, /data-mdcms-mdx-component="Chart"/);
   assert.match(markup, /data-mdcms-mdx-component="JsonOnly"/);
   assert.match(markup, /data-mdcms-mdx-component="PricingTable"/);
-  assert.match(markup, /data-mdcms-mdx-props-panel="idle"/);
+  assert.match(markup, /data-mdcms-document-state="loading"/);
   assert.match(markup, /data-mdcms-mdx-auto-form="Chart"/);
   assert.match(markup, /data-mdcms-mdx-auto-control="Chart:title:textarea"/);
   assert.match(markup, /data-mdcms-mdx-auto-control="Chart:website:url"/);
@@ -240,6 +252,14 @@ test("RemoteStudioApp keeps the editor route chrome truthful and width-constrain
       resolveComponent: () => null,
       renderMdxPreview: () => () => {},
     },
+    documentRoute: {
+      project: "marketing-site",
+      environment: "staging",
+      write: {
+        canWrite: true,
+        schemaHash: "schema-hash",
+      },
+    },
   };
 
   const markup = renderToStaticMarkup(
@@ -251,6 +271,7 @@ test("RemoteStudioApp keeps the editor route chrome truthful and width-constrain
   );
 
   assert.match(markup, /data-mdcms-editor-layout="document"/);
+  assert.match(markup, /data-mdcms-document-state="loading"/);
   assert.match(markup, /data-mdcms-editor-pane="canvas"/);
   assert.match(markup, /overflow-x-hidden/);
   assert.doesNotMatch(markup, /Search \(Cmd\+K\)/);
@@ -267,6 +288,14 @@ test("RemoteStudioApp renders the expanded admin route surfaces", () => {
       version: "1",
       resolveComponent: () => null,
       renderMdxPreview: () => () => {},
+    },
+    documentRoute: {
+      project: "marketing-site",
+      environment: "staging",
+      write: {
+        canWrite: false,
+        message: "Schema sync required before Studio can write drafts.",
+      },
     },
   };
 
@@ -298,9 +327,57 @@ test("RemoteStudioApp renders the expanded admin route surfaces", () => {
       initialActions: [],
     }),
   );
+  const settingsMarkup = renderToStaticMarkup(
+    createElement(RemoteStudioApp, {
+      context,
+      initialPathname: "/admin/settings",
+      initialActions: [],
+    }),
+  );
 
   assert.match(apiMarkup, /API Playground/);
   assert.match(mediaMarkup, /Media Library/);
-  assert.match(schemaMarkup, /Schema Builder/);
+  assert.match(schemaMarkup, /data-mdcms-schema-page-state="loading"/);
+  assert.match(schemaMarkup, /Schema/);
+  assert.doesNotMatch(schemaMarkup, /Schema Builder/);
   assert.match(workflowsMarkup, /Workflows/);
+  assert.match(settingsMarkup, /General Settings/);
+});
+
+test("SettingsPage links the schema tab to the live schema browser instead of rendering a mock viewer", () => {
+  const markup = renderToStaticMarkup(
+    createElement(
+      ThemeProvider,
+      null,
+      createElement(
+        StudioNavigationProvider,
+        {
+          value: {
+            pathname: "/admin/settings",
+            params: {},
+            basePath: "/admin",
+            push: () => {},
+            replace: () => {},
+            back: () => {},
+          },
+        },
+        createElement(
+          AdminCapabilitiesProvider,
+          {
+            value: {
+              canReadSchema: true,
+            },
+          },
+          createElement(SettingsPage, {
+            initialTab: "schema",
+          }),
+        ),
+      ),
+    ),
+  );
+
+  assert.match(markup, /data-mdcms-settings-schema-state="linked"/);
+  assert.match(markup, /Open schema browser/);
+  assert.match(markup, /href="\/admin\/schema"/);
+  assert.doesNotMatch(markup, /Schema Viewer/);
 });
