@@ -86,6 +86,12 @@ export default function DocumentEditorPage() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    setEditorContent(document?.body ?? "");
+    setSelectedLocale(document?.locale || "en-US");
+    setSaveStatus("saved");
+  }, [documentId, document?.body, document?.locale]);
+
+  useEffect(() => {
     return () => {
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
