@@ -834,10 +834,22 @@ test("loadStudioDocumentShell fetches draft content with scoped headers", async 
           JSON.stringify({
             data: {
               documentId: "11111111-1111-4111-8111-111111111111",
+              translationGroupId: "22222222-2222-4222-8222-222222222222",
+              project: "marketing-site",
+              environment: "staging",
               type: "BlogPost",
               locale: "en",
               path: "blog/launch-notes",
+              format: "md",
+              isDeleted: false,
+              hasUnpublishedChanges: true,
+              version: 5,
+              publishedVersion: 5,
+              draftRevision: 12,
+              frontmatter: {},
               body: "# Launch Notes",
+              createdBy: "44444444-4444-4444-8444-444444444444",
+              createdAt: "2026-03-04T09:00:00.000Z",
               updatedAt: "2026-03-04T10:00:00.000Z",
             },
           }),
@@ -890,6 +902,67 @@ test("loadStudioDocumentShell exposes typed error code for failed responses", as
   assert.equal(result.errorMessage, "Document is outside of allowed scope.");
 });
 
+test("loadStudioDocumentShell maps malformed draft payloads to document load failure", async () => {
+  const result = await loadStudioDocumentShell(
+    {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+    },
+    {
+      type: "BlogPost",
+      documentId: "11111111-1111-4111-8111-111111111111",
+      locale: "en",
+    },
+    {
+      fetcher: async () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              documentId: "11111111-1111-4111-8111-111111111111",
+              path: "blog/launch-notes",
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+    },
+  );
+
+  assert.equal(result.state, "error");
+  assert.equal(result.errorCode, "DOCUMENT_LOAD_FAILED");
+  assert.equal(result.errorMessage, "Failed to load document draft.");
+});
+
+test("loadStudioDocumentShell maps code-less draft failures to document load failure", async () => {
+  const result = await loadStudioDocumentShell(
+    {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+    },
+    {
+      type: "BlogPost",
+      documentId: "11111111-1111-4111-8111-111111111111",
+      locale: "en",
+    },
+    {
+      fetcher: async () =>
+        new Response(undefined, {
+          status: 500,
+        }),
+    },
+  );
+
+  assert.equal(result.state, "error");
+  assert.equal(result.errorCode, "DOCUMENT_LOAD_FAILED");
+  assert.equal(result.errorMessage, "Failed to load document draft.");
+});
+
 test("loadStudioDocumentShell uses credentials for cookie auth", async () => {
   await loadStudioDocumentShell(
     {
@@ -910,7 +983,23 @@ test("loadStudioDocumentShell uses credentials for cookie auth", async () => {
             return JSON.stringify({
               data: {
                 documentId: "11111111-1111-4111-8111-111111111111",
+                translationGroupId: "22222222-2222-4222-8222-222222222222",
+                project: "marketing-site",
+                environment: "staging",
+                type: "BlogPost",
+                locale: "en",
                 path: "blog/example",
+                format: "md",
+                isDeleted: false,
+                hasUnpublishedChanges: true,
+                version: 5,
+                publishedVersion: 5,
+                draftRevision: 12,
+                frontmatter: {},
+                body: "# Example",
+                createdBy: "44444444-4444-4444-8444-444444444444",
+                createdAt: "2026-03-04T09:00:00.000Z",
+                updatedAt: "2026-03-04T10:00:00.000Z",
               },
             });
           })(),
@@ -948,7 +1037,23 @@ test("loadStudioDocumentShell adds bearer token for token auth", async () => {
             return JSON.stringify({
               data: {
                 documentId: "11111111-1111-4111-8111-111111111111",
+                translationGroupId: "22222222-2222-4222-8222-222222222222",
+                project: "marketing-site",
+                environment: "staging",
+                type: "BlogPost",
+                locale: "en",
                 path: "blog/example",
+                format: "md",
+                isDeleted: false,
+                hasUnpublishedChanges: true,
+                version: 5,
+                publishedVersion: 5,
+                draftRevision: 12,
+                frontmatter: {},
+                body: "# Example",
+                createdBy: "44444444-4444-4444-8444-444444444444",
+                createdAt: "2026-03-04T09:00:00.000Z",
+                updatedAt: "2026-03-04T10:00:00.000Z",
               },
             });
           })(),

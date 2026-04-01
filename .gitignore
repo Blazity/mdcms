@@ -44,3 +44,4 @@ Thumbs.db
 .mdcms/manifests/
 
 .claude/
+.worktrees/

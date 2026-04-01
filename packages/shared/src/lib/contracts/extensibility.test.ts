@@ -372,6 +372,14 @@ test("runtime contract validators cover positive and negative shapes", () => {
       basePath: "/admin",
       auth: { mode: "cookie" },
       hostBridge: validHostBridge,
+      documentRoute: {
+        project: "marketing-site",
+        environment: "staging",
+        write: {
+          canWrite: true,
+          schemaHash: "schema-hash",
+        },
+      },
       mdx: {
         catalog: {
           components: [
@@ -421,6 +429,24 @@ test("runtime contract validators cover positive and negative shapes", () => {
         hostBridge: validHostBridge,
       }),
     /auth\.token must be a non-empty string/,
+  );
+
+  assert.throws(
+    () =>
+      assertStudioMountContext({
+        apiBaseUrl: "http://localhost:4000",
+        basePath: "/admin",
+        auth: { mode: "cookie" },
+        hostBridge: validHostBridge,
+        documentRoute: {
+          project: "marketing-site",
+          environment: "staging",
+          write: {
+            canWrite: true,
+          },
+        },
+      }),
+    /documentRoute\.write\.schemaHash/,
   );
 
   assert.throws(

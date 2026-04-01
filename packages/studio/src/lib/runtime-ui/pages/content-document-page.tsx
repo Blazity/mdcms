@@ -1,20 +1,43 @@
-// @ts-nocheck
 "use client";
 
-import { useState } from "react";
+import {
+  type ChangeEvent,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from "react";
 
-import type { StudioMountContext } from "@mdcms/shared";
+import {
+  type ContentDocumentResponse,
+  type ContentVersionSummaryResponse,
+  RuntimeError,
+  type StudioDocumentRouteMountContext,
+  type StudioMountContext,
+} from "@mdcms/shared";
 
-import { useParams, useRouter } from "../adapters/next-navigation";
-import { EditorSidebar } from "../components/editor/editor-sidebar";
+import {
+  loadStudioDocumentShell,
+  type StudioDocumentShell,
+  type StudioDocumentShellData,
+} from "../../document-shell.js";
+import {
+  createStudioDocumentRouteApi,
+  type StudioDocumentRouteApi,
+} from "../../document-route-api.js";
+import {
+  diffDocumentVersions,
+  type DocumentVersionDiff,
+} from "../../document-version-diff.js";
+import { useParams, useRouter } from "../adapters/next-navigation.js";
 import {
   MdxPropsPanel,
   type MdxPropsPanelSelection,
-} from "../components/editor/mdx-props-panel";
-import { TipTapEditor } from "../components/editor/tiptap-editor";
-import { BreadcrumbTrail } from "../components/layout/page-header";
-import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
+} from "../components/editor/mdx-props-panel.js";
+import { TipTapEditor } from "../components/editor/tiptap-editor.js";
+import { BreadcrumbTrail } from "../components/layout/page-header.js";
+import { Badge } from "../components/ui/badge.js";
+import { Button } from "../components/ui/button.js";
 import {
   Dialog,
   DialogContent,
@@ -22,110 +45,1106 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "../components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../components/ui/dropdown-menu";
-import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
-import { Textarea } from "../components/ui/textarea";
+} from "../components/ui/dialog.js";
+import { Textarea } from "../components/ui/textarea.js";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "../components/ui/tooltip";
-import { currentUser, mockContentTypes, mockDocuments } from "../lib/mock-data";
-import { cn } from "../lib/utils";
+} from "../components/ui/tooltip.js";
 import {
   AlertCircle,
   Check,
-  Copy,
-  ExternalLink,
-  FolderInput,
   History,
-  MoreVertical,
   PanelRight,
   PanelRightClose,
   Send,
-  Trash2,
 } from "lucide-react";
 
-const statusConfig = {
-  published: {
-    label: "Published",
-    className: "bg-success/10 text-success border-success/20",
-  },
-  draft: {
-    label: "Draft",
-    className: "bg-warning/10 text-warning border-warning/20",
-  },
-  changed: {
-    label: "Changed",
-    className: "bg-warning/10 text-warning border-warning/20",
-  },
+const DOCUMENT_SAVE_DEBOUNCE_MS = 5000;
+
+export type ContentDocumentVersionHistoryState =
+  | {
+      status: "idle" | "loading" | "empty";
+      versions: ContentVersionSummaryResponse[];
+    }
+  | {
+      status: "error";
+      versions: ContentVersionSummaryResponse[];
+      message: string;
+    }
+  | {
+      status: "ready";
+      versions: ContentVersionSummaryResponse[];
+    };
+
+export type ContentDocumentVersionDiffState =
+  | {
+      status: "idle";
+    }
+  | {
+      status: "loading";
+      leftVersion: number;
+      rightVersion: number;
+    }
+  | {
+      status: "error";
+      leftVersion: number;
+      rightVersion: number;
+      message: string;
+    }
+  | {
+      status: "ready";
+      diff: DocumentVersionDiff;
+    };
+
+export type ContentDocumentVersionComparison = {
+  leftVersion?: number;
+  rightVersion?: number;
 };
 
-export default function ContentDocumentPage({
-  context,
-}: {
+export type ContentDocumentPageReadyState = {
+  status: "ready";
+  typeId: string;
+  typeLabel: string;
+  documentId: string;
+  locale: string;
+  route: StudioDocumentRouteMountContext;
+  document: StudioDocumentShellData;
+  draftBody: string;
+  saveState: "saved" | "saving" | "unsaved";
+  mutationError?: string;
+  saveRequestBody?: string;
+  canWrite: boolean;
+  writeMessage?: string;
+  publishDialogOpen: boolean;
+  publishChangeSummary: string;
+  publishState: "idle" | "publishing";
+  publishError?: string;
+  versionHistory: ContentDocumentVersionHistoryState;
+  selectedComparison: ContentDocumentVersionComparison;
+  versionDiff: ContentDocumentVersionDiffState;
+};
+
+export type ContentDocumentPageState =
+  | {
+      status: "loading";
+      typeId: string;
+      typeLabel: string;
+      documentId: string;
+      locale: string;
+      route?: StudioDocumentRouteMountContext;
+    }
+  | {
+      status: "forbidden" | "not-found" | "error";
+      typeId: string;
+      typeLabel: string;
+      documentId: string;
+      locale: string;
+      route?: StudioDocumentRouteMountContext;
+      message: string;
+    }
+  | ContentDocumentPageReadyState;
+
+type ContentDocumentPageStateInput = {
+  shell: StudioDocumentShell;
+  typeLabel: string;
+  typeId?: string;
+  documentRoute: StudioDocumentRouteMountContext;
+};
+
+type ContentDocumentPageReadyEvent =
+  | {
+      type: "draftChanged";
+      body: string;
+    }
+  | {
+      type: "saveStarted";
+    }
+  | {
+      type: "saveSucceeded";
+      updatedAt: string;
+      body?: string;
+    }
+  | {
+      type: "saveFailed";
+      message: string;
+    };
+
+type ContentDocumentPageViewProps = {
+  state: ContentDocumentPageState;
   context?: StudioMountContext;
-}) {
-  const params = useParams();
-  const router = useRouter();
-  const typeId = params.type as string;
-  const documentId = params.documentId as string;
+  sidebarOpen?: boolean;
+  activeMdxComponent?: MdxPropsPanelSelection | null;
+  onDraftChange?: (body: string) => void;
+  onActiveMdxComponentChange?: (
+    selection: MdxPropsPanelSelection | null,
+  ) => void;
+  onToggleSidebar?: () => void;
+  onGoBack?: () => void;
+  onPublishDialogOpenChange?: (open: boolean) => void;
+  onPublishChangeSummaryChange?: (value: string) => void;
+  onPublishSubmit?: () => void;
+  onSelectComparisonVersion?: (
+    side: "left" | "right",
+    version?: number,
+  ) => void;
+};
 
-  const contentType = mockContentTypes.find((type) => type.id === typeId);
-  const document = mockDocuments.find((entry) => entry.id === documentId);
+type CreateContentDocumentPageHistoryApi = (input: {
+  context: StudioMountContext;
+  route: StudioDocumentRouteMountContext;
+}) => Pick<StudioDocumentRouteApi, "listVersions">;
 
-  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">(
-    "saved",
-  );
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [publishDialogOpen, setPublishDialogOpen] = useState(false);
-  const [changeDescription, setChangeDescription] = useState("");
-  const [selectedLocale, setSelectedLocale] = useState(
-    document?.locale || "en-US",
-  );
-  const [draftBody, setDraftBody] = useState(document?.body ?? "");
-  const [activeMdxComponent, setActiveMdxComponent] =
-    useState<MdxPropsPanelSelection | null>(null);
-  const isDocumentReadOnly = currentUser.role === "viewer";
-  const isDocumentForbidden = currentUser.role === "viewer";
+function createLoadingState(input: {
+  typeId: string;
+  typeLabel: string;
+  documentId: string;
+  locale?: string;
+  route?: StudioDocumentRouteMountContext;
+}): ContentDocumentPageState {
+  return {
+    status: "loading",
+    typeId: input.typeId,
+    typeLabel: input.typeLabel,
+    documentId: input.documentId,
+    locale: input.locale ?? "en",
+    ...(input.route ? { route: input.route } : {}),
+  };
+}
 
-  if (!contentType || !document) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <p className="mb-4 text-foreground-muted">Document not found</p>
-          <Button onClick={() => router.back()}>Go back</Button>
-        </div>
-      </div>
-    );
+function createErrorState(input: {
+  status: "forbidden" | "not-found" | "error";
+  typeId: string;
+  typeLabel: string;
+  documentId: string;
+  locale?: string;
+  route?: StudioDocumentRouteMountContext;
+  message: string;
+}): ContentDocumentPageState {
+  return {
+    status: input.status,
+    typeId: input.typeId,
+    typeLabel: input.typeLabel,
+    documentId: input.documentId,
+    locale: input.locale ?? "en",
+    ...(input.route ? { route: input.route } : {}),
+    message: input.message,
+  };
+}
+
+function createReadyState(input: {
+  shell: StudioDocumentShell;
+  typeId: string;
+  typeLabel: string;
+  documentRoute: StudioDocumentRouteMountContext;
+}): ContentDocumentPageReadyState {
+  const document = input.shell.data as StudioDocumentShellData;
+
+  return {
+    status: "ready",
+    typeId: input.typeId,
+    typeLabel: input.typeLabel,
+    documentId: input.shell.documentId,
+    locale: document.locale ?? input.shell.locale,
+    route: input.documentRoute,
+    document,
+    draftBody: document.body ?? "",
+    saveState: "saved",
+    canWrite: input.documentRoute.write.canWrite,
+    publishDialogOpen: false,
+    publishChangeSummary: "",
+    publishState: "idle",
+    versionHistory: {
+      status: "idle",
+      versions: [],
+    },
+    selectedComparison: {},
+    versionDiff: {
+      status: "idle",
+    },
+    ...(input.documentRoute.write.canWrite
+      ? {}
+      : {
+          writeMessage: input.documentRoute.write.message,
+        }),
+  };
+}
+
+function createVersionHistoryState(
+  versions: ContentVersionSummaryResponse[],
+): ContentDocumentVersionHistoryState {
+  return versions.length === 0
+    ? {
+        status: "empty",
+        versions: [],
+      }
+    : {
+        status: "ready",
+        versions,
+      };
+}
+
+function createDefaultVersionComparison(
+  versions: ContentVersionSummaryResponse[],
+): ContentDocumentVersionComparison {
+  if (versions.length < 2) {
+    return {};
   }
 
-  const handleContentChange = (nextBody: string) => {
-    setDraftBody(nextBody);
-    setSaveStatus("saving");
+  return {
+    leftVersion: versions[1]?.version,
+    rightVersion: versions[0]?.version,
+  };
+}
 
-    setTimeout(() => {
-      setSaveStatus("saved");
-    }, 1000);
+function createVersionHistoryErrorState(
+  message: string,
+): ContentDocumentVersionHistoryState {
+  return {
+    status: "error",
+    versions: [],
+    message,
+  };
+}
+
+function resetVersionDiffState(): ContentDocumentVersionDiffState {
+  return {
+    status: "idle",
+  };
+}
+
+function normalizeOptionalChangeSummary(
+  value: string | undefined,
+): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
+}
+
+export function parseSelectedComparisonVersionValue(
+  value: string,
+): number | undefined {
+  const normalized = value.trim();
+
+  if (normalized.length === 0) {
+    return undefined;
+  }
+
+  const nextVersion = Number(normalized);
+  return Number.isInteger(nextVersion) && nextVersion > 0
+    ? nextVersion
+    : undefined;
+}
+
+function toRouteErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof RuntimeError) {
+    return error.message;
+  }
+
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  return fallback;
+}
+
+function applyDocumentResponseToReadyState(
+  state: ContentDocumentPageReadyState,
+  document: ContentDocumentResponse,
+): ContentDocumentPageReadyState {
+  return {
+    ...state,
+    locale: document.locale,
+    document,
+    draftBody: document.body ?? "",
+    saveState: "saved",
+    mutationError: undefined,
+    saveRequestBody: undefined,
+  };
+}
+
+export function createContentDocumentRouteApi(input: {
+  context: StudioMountContext;
+  route: StudioDocumentRouteMountContext;
+}): StudioDocumentRouteApi {
+  return createStudioDocumentRouteApi(
+    {
+      project: input.route.project,
+      environment: input.route.environment,
+      serverUrl: input.context.apiBaseUrl,
+    },
+    {
+      auth: input.context.auth,
+    },
+  );
+}
+
+export async function publishContentDocumentReadyState(input: {
+  api: Pick<StudioDocumentRouteApi, "publish" | "listVersions">;
+  state: ContentDocumentPageReadyState;
+  changeSummary?: string;
+}): Promise<ContentDocumentPageReadyState> {
+  const changeSummary = normalizeOptionalChangeSummary(input.changeSummary);
+  const document = await input.api.publish({
+    documentId: input.state.documentId,
+    locale: input.state.document.locale,
+    changeSummary,
+  });
+  const nextState = {
+    ...applyDocumentResponseToReadyState(input.state, document),
+    publishDialogOpen: false,
+    publishChangeSummary: "",
+    publishState: "idle" as const,
+    publishError: undefined,
   };
 
-  const handlePublish = () => {
-    setPublishDialogOpen(false);
-    setChangeDescription("");
+  try {
+    const versionHistoryResponse = await input.api.listVersions({
+      documentId: input.state.documentId,
+      locale: input.state.document.locale,
+    });
+
+    return {
+      ...nextState,
+      versionHistory: createVersionHistoryState(versionHistoryResponse.data),
+      selectedComparison: createDefaultVersionComparison(
+        versionHistoryResponse.data,
+      ),
+      versionDiff: resetVersionDiffState(),
+    };
+  } catch (error) {
+    return {
+      ...nextState,
+      versionHistory: createVersionHistoryErrorState(
+        toRouteErrorMessage(error, "Failed to refresh version history."),
+      ),
+      selectedComparison: {},
+      versionDiff: resetVersionDiffState(),
+    };
+  }
+}
+
+export function applySuccessfulPublishToReadyState(input: {
+  state: ContentDocumentPageReadyState;
+  requestBody: string;
+  publishedState: ContentDocumentPageReadyState;
+}): ContentDocumentPageReadyState {
+  if (input.state.draftBody === input.requestBody) {
+    return input.publishedState;
+  }
+
+  return {
+    ...input.publishedState,
+    draftBody: input.state.draftBody,
+    saveState:
+      input.state.draftBody === input.publishedState.document.body
+        ? "saved"
+        : "unsaved",
+    mutationError: input.state.mutationError,
+    saveRequestBody: input.state.saveRequestBody,
   };
+}
+
+export async function loadContentDocumentVersionDiff(input: {
+  api: Pick<StudioDocumentRouteApi, "getVersion">;
+  documentId: string;
+  locale: string;
+  leftVersion: number;
+  rightVersion: number;
+}): Promise<DocumentVersionDiff> {
+  const [leftVersion, rightVersion] = await Promise.all([
+    input.api.getVersion({
+      documentId: input.documentId,
+      locale: input.locale,
+      version: input.leftVersion,
+    }),
+    input.api.getVersion({
+      documentId: input.documentId,
+      locale: input.locale,
+      version: input.rightVersion,
+    }),
+  ]);
+
+  return diffDocumentVersions(leftVersion, rightVersion);
+}
+
+export async function loadContentDocumentPageState(input: {
+  context?: StudioMountContext;
+  typeId: string;
+  typeLabel: string;
+  documentId: string;
+  loadDocumentShell?: typeof loadStudioDocumentShell;
+  createRouteApi?: CreateContentDocumentPageHistoryApi;
+}): Promise<ContentDocumentPageState> {
+  const route = input.context?.documentRoute;
+
+  if (!input.context || !route) {
+    return createErrorState({
+      status: "error",
+      typeId: input.typeId,
+      typeLabel: input.typeLabel,
+      documentId: input.documentId,
+      message: "Studio document route context is unavailable.",
+    });
+  }
+
+  const loadDocumentShell = input.loadDocumentShell ?? loadStudioDocumentShell;
+  const routeApiFactory = input.createRouteApi ?? createContentDocumentRouteApi;
+  const shell = await loadDocumentShell(
+    {
+      project: route.project,
+      environment: route.environment,
+      serverUrl: input.context.apiBaseUrl,
+    },
+    {
+      type: input.typeId,
+      documentId: input.documentId,
+    },
+    {
+      auth: input.context.auth,
+    },
+  );
+
+  const nextState = createContentDocumentPageState({
+    shell,
+    typeId: input.typeId,
+    typeLabel: input.typeLabel,
+    documentRoute: route,
+  });
+
+  if (nextState.status !== "ready") {
+    return nextState;
+  }
+
+  const versionState = await loadContentDocumentVersionHistoryState({
+    api: routeApiFactory({
+      context: input.context,
+      route,
+    }),
+    state: nextState,
+  });
+
+  return {
+    ...nextState,
+    ...versionState,
+  };
+}
+
+export async function saveContentDocumentReadyState(input: {
+  api: Pick<StudioDocumentRouteApi, "updateDraft">;
+  route: StudioDocumentRouteMountContext;
+  state: ContentDocumentPageReadyState;
+}): Promise<ContentDocumentPageReadyState> {
+  if (
+    !input.route.write.canWrite ||
+    input.state.saveState !== "unsaved" ||
+    input.state.draftBody === input.state.document.body ||
+    input.state.saveRequestBody === input.state.draftBody
+  ) {
+    return input.state;
+  }
+
+  const savingState = reduceContentDocumentPageReadyState(input.state, {
+    type: "saveStarted",
+  });
+
+  try {
+    const result = await input.api.updateDraft({
+      documentId: input.state.documentId,
+      locale: input.state.document.locale,
+      payload: {
+        body: input.state.draftBody,
+      },
+      schemaHash: input.route.write.schemaHash,
+    });
+
+    return reduceContentDocumentPageReadyState(savingState, {
+      type: "saveSucceeded",
+      body: result.body ?? input.state.draftBody,
+      updatedAt: result.updatedAt ?? input.state.document.updatedAt,
+    });
+  } catch (error) {
+    return reduceContentDocumentPageReadyState(savingState, {
+      type: "saveFailed",
+      message: toRouteErrorMessage(error, "Failed to save draft."),
+    });
+  }
+}
+
+async function loadContentDocumentVersionHistoryState(input: {
+  api: Pick<StudioDocumentRouteApi, "listVersions">;
+  state: ContentDocumentPageReadyState;
+}): Promise<{
+  versionHistory: ContentDocumentVersionHistoryState;
+  selectedComparison: ContentDocumentVersionComparison;
+  versionDiff: ContentDocumentVersionDiffState;
+}> {
+  try {
+    const response = await input.api.listVersions({
+      documentId: input.state.documentId,
+      locale: input.state.document.locale,
+    });
+
+    return {
+      versionHistory: createVersionHistoryState(response.data),
+      selectedComparison: createDefaultVersionComparison(response.data),
+      versionDiff: resetVersionDiffState(),
+    };
+  } catch (error) {
+    return {
+      versionHistory: createVersionHistoryErrorState(
+        toRouteErrorMessage(error, "Failed to load version history."),
+      ),
+      selectedComparison: {},
+      versionDiff: resetVersionDiffState(),
+    };
+  }
+}
+
+function getForbiddenMessage(): string {
+  return "You do not have access to this document draft.";
+}
+
+function getNotFoundMessage(): string {
+  return "Document not found.";
+}
+
+export function createContentDocumentPageState(
+  input: ContentDocumentPageStateInput,
+): ContentDocumentPageState {
+  const typeId = input.typeId ?? input.typeLabel;
+
+  if (input.shell.state === "loading") {
+    return createLoadingState({
+      typeId,
+      typeLabel: input.typeLabel,
+      documentId: input.shell.documentId,
+      locale: input.shell.locale,
+      route: input.documentRoute,
+    });
+  }
+
+  if (input.shell.state === "error") {
+    if (
+      input.shell.errorCode === "FORBIDDEN" ||
+      input.shell.errorCode === "UNAUTHORIZED"
+    ) {
+      return createErrorState({
+        status: "forbidden",
+        typeId,
+        typeLabel: input.typeLabel,
+        documentId: input.shell.documentId,
+        locale: input.shell.locale,
+        route: input.documentRoute,
+        message: getForbiddenMessage(),
+      });
+    }
+
+    if (input.shell.errorCode === "NOT_FOUND") {
+      return createErrorState({
+        status: "not-found",
+        typeId,
+        typeLabel: input.typeLabel,
+        documentId: input.shell.documentId,
+        locale: input.shell.locale,
+        route: input.documentRoute,
+        message: getNotFoundMessage(),
+      });
+    }
+
+    return createErrorState({
+      status: "error",
+      typeId,
+      typeLabel: input.typeLabel,
+      documentId: input.shell.documentId,
+      locale: input.shell.locale,
+      route: input.documentRoute,
+      message: input.shell.errorMessage || "Failed to load document draft.",
+    });
+  }
+
+  return createReadyState({
+    shell: input.shell,
+    typeId,
+    typeLabel: input.typeLabel,
+    documentRoute: input.documentRoute,
+  });
+}
+
+export function reduceContentDocumentPageReadyState(
+  state: ContentDocumentPageReadyState,
+  event: ContentDocumentPageReadyEvent,
+): ContentDocumentPageReadyState {
+  switch (event.type) {
+    case "draftChanged": {
+      const isPersisted = event.body === state.document.body;
+
+      return {
+        ...state,
+        draftBody: event.body,
+        saveState: isPersisted ? "saved" : "unsaved",
+        mutationError: undefined,
+        saveRequestBody: undefined,
+      };
+    }
+    case "saveStarted": {
+      if (!state.canWrite || state.draftBody === state.document.body) {
+        return state;
+      }
+
+      return {
+        ...state,
+        saveState: "saving",
+        mutationError: undefined,
+        saveRequestBody: state.draftBody,
+      };
+    }
+    case "saveSucceeded": {
+      const requestBody = state.saveRequestBody ?? state.draftBody;
+      const savedBody = event.body ?? requestBody;
+      const draftBody =
+        state.draftBody === requestBody ? savedBody : state.draftBody;
+
+      return {
+        ...state,
+        document: {
+          ...state.document,
+          body: savedBody,
+          hasUnpublishedChanges: true,
+          updatedAt: event.updatedAt,
+        },
+        draftBody,
+        saveState: draftBody === savedBody ? "saved" : "unsaved",
+        mutationError: undefined,
+        saveRequestBody: undefined,
+      };
+    }
+    case "saveFailed": {
+      return {
+        ...state,
+        saveState:
+          state.draftBody === state.document.body ? "saved" : "unsaved",
+        mutationError: event.message,
+        saveRequestBody: undefined,
+      };
+    }
+  }
+}
+
+export function applySuccessfulDraftSaveToReadyState(input: {
+  state: ContentDocumentPageReadyState;
+  requestBody: string;
+  persistedBody?: string;
+  updatedAt: string;
+}): ContentDocumentPageReadyState {
+  const hasNewerSaveInFlight =
+    input.state.saveRequestBody !== undefined &&
+    input.state.saveRequestBody !== input.requestBody;
+  const persistedBody = input.persistedBody ?? input.requestBody;
+  const draftBody =
+    input.state.draftBody === input.requestBody
+      ? persistedBody
+      : input.state.draftBody;
+
+  return {
+    ...input.state,
+    document: {
+      ...input.state.document,
+      body: persistedBody,
+      hasUnpublishedChanges: true,
+      updatedAt: input.updatedAt,
+    },
+    draftBody,
+    mutationError: undefined,
+    saveRequestBody: hasNewerSaveInFlight
+      ? input.state.saveRequestBody
+      : undefined,
+    saveState: hasNewerSaveInFlight
+      ? input.state.saveState
+      : draftBody === persistedBody
+        ? "saved"
+        : "unsaved",
+  };
+}
+
+export function applyFailedDraftSaveToReadyState(input: {
+  state: ContentDocumentPageReadyState;
+  requestBody: string;
+  message: string;
+}): ContentDocumentPageReadyState {
+  if (
+    input.state.saveRequestBody !== undefined &&
+    input.state.saveRequestBody !== input.requestBody
+  ) {
+    return input.state;
+  }
+
+  return {
+    ...input.state,
+    saveState:
+      input.state.draftBody === input.state.document.body ? "saved" : "unsaved",
+    mutationError: input.message,
+    saveRequestBody: undefined,
+  };
+}
+
+function formatDocumentLabel(path: string, documentId: string): string {
+  const trimmedPath = path.trim();
+
+  if (trimmedPath.length === 0) {
+    return documentId;
+  }
+
+  const segments = trimmedPath.split("/").filter(Boolean);
+  return segments[segments.length - 1] ?? trimmedPath;
+}
+
+function renderStatusContent(state: ContentDocumentPageState): string {
+  switch (state.status) {
+    case "loading":
+      return "Loading document draft...";
+    case "forbidden":
+    case "not-found":
+    case "error":
+      return state.message;
+    case "ready":
+      switch (state.saveState) {
+        case "saved":
+          return "Saved";
+        case "saving":
+          return "Saving...";
+        case "unsaved":
+          return "Unsaved changes";
+      }
+  }
+}
+
+function ContentDocumentPageStatusView(props: {
+  state: ContentDocumentPageState;
+  onGoBack?: () => void;
+}) {
+  return (
+    <div className="flex min-h-[320px] items-center justify-center p-6">
+      <div className="max-w-md text-center">
+        <p className="mb-3 text-sm text-foreground-muted">
+          {renderStatusContent(props.state)}
+        </p>
+        {props.state.status !== "loading" ? (
+          <Button variant="outline" onClick={() => props.onGoBack?.()}>
+            Go back
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function renderVersionHistoryContent(props: {
+  state: ContentDocumentPageReadyState;
+  onSelectComparisonVersion?: (
+    side: "left" | "right",
+    version?: number,
+  ) => void;
+}) {
+  switch (props.state.versionHistory.status) {
+    case "idle":
+      return (
+        <p className="text-sm text-foreground-muted">
+          Version history will load once the draft is ready.
+        </p>
+      );
+    case "loading":
+      return (
+        <p className="text-sm text-foreground-muted">
+          Loading version history...
+        </p>
+      );
+    case "empty":
+      return (
+        <p className="text-sm text-foreground-muted">
+          No published versions yet.
+        </p>
+      );
+    case "error":
+      return (
+        <p className="text-sm text-destructive">
+          {props.state.versionHistory.message}
+        </p>
+      );
+    case "ready":
+      return (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="space-y-1 text-xs font-medium text-foreground-muted">
+              <span>Compare from</span>
+              <select
+                className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground"
+                value={String(props.state.selectedComparison.leftVersion ?? "")}
+                onChange={(event) => {
+                  props.onSelectComparisonVersion?.(
+                    "left",
+                    parseSelectedComparisonVersionValue(
+                      event.currentTarget.value,
+                    ),
+                  );
+                }}
+              >
+                <option value="">Select version</option>
+                {props.state.versionHistory.versions.map((version) => (
+                  <option
+                    key={`left-${version.version}`}
+                    value={version.version}
+                  >
+                    Version {version.version}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-1 text-xs font-medium text-foreground-muted">
+              <span>Compare to</span>
+              <select
+                className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground"
+                value={String(
+                  props.state.selectedComparison.rightVersion ?? "",
+                )}
+                onChange={(event) => {
+                  props.onSelectComparisonVersion?.(
+                    "right",
+                    parseSelectedComparisonVersionValue(
+                      event.currentTarget.value,
+                    ),
+                  );
+                }}
+              >
+                <option value="">Select version</option>
+                {props.state.versionHistory.versions.map((version) => (
+                  <option
+                    key={`right-${version.version}`}
+                    value={version.version}
+                  >
+                    Version {version.version}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {props.state.versionHistory.versions.map((version) => (
+            <article
+              key={version.version}
+              data-mdcms-version={version.version}
+              className="space-y-2 rounded-md border border-border bg-background-subtle p-3"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium">Version {version.version}</p>
+              </div>
+              <p className="text-xs text-foreground-muted">
+                {version.publishedBy}
+              </p>
+              <p className="text-xs text-foreground-muted">
+                {version.publishedAt}
+              </p>
+              <p className="text-sm text-foreground-muted">
+                {version.changeSummary ?? "No change summary."}
+              </p>
+            </article>
+          ))}
+        </div>
+      );
+  }
+}
+
+function renderVersionDiffContent(state: ContentDocumentPageReadyState) {
+  switch (state.versionDiff.status) {
+    case "idle":
+      return (
+        <p className="text-sm text-foreground-muted">
+          Select two versions to compare.
+        </p>
+      );
+    case "loading":
+      return (
+        <p className="text-sm text-foreground-muted">Loading comparison...</p>
+      );
+    case "error":
+      return (
+        <p className="text-sm text-destructive">{state.versionDiff.message}</p>
+      );
+    case "ready": {
+      const { diff } = state.versionDiff;
+
+      return (
+        <div className="space-y-3">
+          <div>
+            <p className="text-sm font-medium">
+              Comparing v{diff.leftVersion} to v{diff.rightVersion}
+            </p>
+            {state.selectedComparison.leftVersion &&
+            state.selectedComparison.rightVersion ? (
+              <p className="text-xs text-foreground-muted">
+                Selected versions: v{state.selectedComparison.leftVersion} and v
+                {state.selectedComparison.rightVersion}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="space-y-1">
+            <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
+              Path
+            </p>
+            <p className="text-sm text-foreground-muted">{diff.path.before}</p>
+            <p className="text-sm">{diff.path.after}</p>
+          </div>
+
+          <div className="space-y-1">
+            <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
+              Frontmatter
+            </p>
+            {diff.frontmatter.changes.length === 0 ? (
+              <p className="text-sm text-foreground-muted">
+                No frontmatter changes.
+              </p>
+            ) : (
+              diff.frontmatter.changes.map((change) => (
+                <div
+                  key={change.path}
+                  className="rounded-md border border-border p-2"
+                >
+                  <p className="text-xs text-foreground-muted">{change.path}</p>
+                  <p className="text-sm">{String(change.after ?? "")}</p>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
+              Body
+            </p>
+            {diff.body.lines.length === 0 ? (
+              <p className="text-sm text-foreground-muted">No body changes.</p>
+            ) : (
+              <div className="space-y-1 rounded-md border border-border p-2">
+                {diff.body.lines.map((line, index) => (
+                  <div
+                    key={`${line.leftLineNumber}:${line.rightLineNumber}:${index}`}
+                    className="grid grid-cols-[56px_56px_1fr] gap-2 text-xs"
+                  >
+                    <span className="text-foreground-muted">
+                      {line.leftLineNumber ?? ""}
+                    </span>
+                    <span className="text-foreground-muted">
+                      {line.rightLineNumber ?? ""}
+                    </span>
+                    <span>{line.rightText ?? line.leftText ?? ""}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+  }
+}
+
+function ContentDocumentPageSidebar(props: {
+  context?: StudioMountContext;
+  state: ContentDocumentPageReadyState;
+  activeMdxComponent?: MdxPropsPanelSelection | null;
+  onSelectComparisonVersion?: (
+    side: "left" | "right",
+    version?: number,
+  ) => void;
+}) {
+  return (
+    <aside
+      data-mdcms-editor-pane="sidebar"
+      className="w-80 shrink-0 border-l border-border bg-background"
+    >
+      <div className="space-y-4 p-4">
+        <div className="space-y-1">
+          <p className="text-sm font-medium">Route status</p>
+          <p className="text-sm text-foreground-muted">
+            Publish, version history, and arbitrary version comparison are
+            backed by the live Studio content route contracts on this page.
+          </p>
+          <p className="text-sm text-foreground-muted">
+            Write-enabled draft saves require a local schema hash derived from
+            the authored Studio config. When that capability is unavailable, the
+            editor stays read-only.
+          </p>
+        </div>
+
+        <div
+          data-mdcms-version-history-state={props.state.versionHistory.status}
+          className="space-y-3"
+        >
+          <div className="flex items-center gap-2">
+            <History className="h-4 w-4 text-foreground-muted" />
+            <p className="text-sm font-medium">Version history</p>
+          </div>
+          {renderVersionHistoryContent(props)}
+        </div>
+
+        <div
+          data-mdcms-version-diff-state={props.state.versionDiff.status}
+          className="space-y-3"
+        >
+          <p className="text-sm font-medium">Version diff</p>
+          {renderVersionDiffContent(props.state)}
+        </div>
+
+        {props.context?.mdx ? (
+          <MdxPropsPanel
+            context={props.context}
+            selection={props.activeMdxComponent ?? null}
+          />
+        ) : null}
+      </div>
+    </aside>
+  );
+}
+
+export function ContentDocumentPageView({
+  state,
+  context,
+  sidebarOpen = true,
+  activeMdxComponent = null,
+  onDraftChange,
+  onActiveMdxComponentChange,
+  onToggleSidebar,
+  onGoBack,
+  onPublishDialogOpenChange,
+  onPublishChangeSummaryChange,
+  onPublishSubmit,
+  onSelectComparisonVersion,
+}: ContentDocumentPageViewProps) {
+  const documentLabel =
+    state.status === "ready"
+      ? formatDocumentLabel(state.document.path, state.documentId)
+      : state.documentId;
+  const writeState =
+    state.status === "ready"
+      ? state.canWrite
+        ? "enabled"
+        : "blocked"
+      : "idle";
+  const canPublish =
+    state.status === "ready" &&
+    state.canWrite &&
+    state.saveState === "saved" &&
+    state.document.hasUnpublishedChanges &&
+    state.publishState !== "publishing";
 
   return (
     <TooltipProvider>
       <div
         data-mdcms-editor-layout="document"
+        data-mdcms-document-state={state.status}
+        data-mdcms-document-write-state={writeState}
         className="flex h-screen min-w-0 flex-col overflow-x-hidden"
       >
         <header className="sticky top-0 z-30 flex min-w-0 flex-wrap items-center gap-3 border-b border-border bg-background px-4 py-3">
@@ -134,115 +1153,72 @@ export default function ContentDocumentPage({
               className="flex-1"
               breadcrumbs={[
                 { label: "Content", href: "/admin/content" },
-                { label: contentType.name, href: `/admin/content/${typeId}` },
-                { label: document.title },
+                {
+                  label: state.typeLabel,
+                  href: `/admin/content/${state.typeId}`,
+                },
+                { label: documentLabel },
               ]}
             />
 
             <div className="flex shrink-0 items-center gap-1.5 text-sm">
-              {saveStatus === "saved" ? (
+              {state.status === "ready" && state.saveState === "saved" ? (
                 <>
                   <Check className="h-4 w-4 text-success" />
                   <span className="text-foreground-muted">Saved</span>
                 </>
               ) : null}
-              {saveStatus === "saving" ? (
+              {state.status === "ready" && state.saveState === "saving" ? (
                 <span className="animate-pulse text-foreground-muted">
                   Saving...
                 </span>
               ) : null}
-              {saveStatus === "unsaved" ? (
+              {state.status === "ready" && state.saveState === "unsaved" ? (
                 <>
                   <AlertCircle className="h-4 w-4 text-warning" />
                   <span className="text-warning">Unsaved changes</span>
                 </>
               ) : null}
+              {state.status === "loading" ? (
+                <span className="text-foreground-muted">
+                  Loading document draft...
+                </span>
+              ) : null}
             </div>
           </div>
 
-          {contentType.localized && contentType.locales ? (
-            <Tabs
-              value={selectedLocale}
-              onValueChange={setSelectedLocale}
-              className="shrink-0"
-            >
-              <TabsList className="bg-transparent">
-                {contentType.locales.map((locale) => (
-                  <TabsTrigger
-                    key={locale}
-                    value={locale}
-                    className={cn(
-                      "rounded-none data-[state=active]:border-b-2 data-[state=active]:border-accent data-[state=active]:bg-transparent",
-                      locale !== document.locale && "border-dashed opacity-60",
-                    )}
-                  >
-                    {locale}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-          ) : null}
-
           <div className="ml-auto flex shrink-0 items-center gap-3">
-            {document.status === "published" ? (
-              <Button variant="ghost" size="sm">
-                Unpublish
+            <Badge variant="outline" className="text-xs">
+              Draft
+            </Badge>
+
+            {state.status === "ready" &&
+            state.document.publishedVersion !== null ? (
+              <Badge variant="outline" className="text-xs">
+                v{state.document.publishedVersion}
+              </Badge>
+            ) : null}
+
+            {state.status === "ready" && !state.canWrite ? (
+              <Badge variant="outline" className="text-xs">
+                Read-only
+              </Badge>
+            ) : null}
+
+            {state.status === "ready" ? (
+              <Button
+                className="bg-accent text-white hover:bg-accent-hover"
+                disabled={!canPublish}
+                onClick={() => onPublishDialogOpenChange?.(true)}
+              >
+                <Send className="mr-2 h-4 w-4" />
+                Publish
               </Button>
             ) : null}
 
-            <Badge
-              variant="outline"
-              className={cn("text-xs", statusConfig[document.status].className)}
-            >
-              {statusConfig[document.status].label}
-            </Badge>
-
-            <Button
-              className="bg-accent text-white hover:bg-accent-hover"
-              onClick={() => setPublishDialogOpen(true)}
-            >
-              <Send className="mr-2 h-4 w-4" />
-              Publish
-            </Button>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem>
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  View published version
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <Copy className="mr-2 h-4 w-4" />
-                  Duplicate document
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <FolderInput className="mr-2 h-4 w-4" />
-                  Move / Rename
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <History className="mr-2 h-4 w-4" />
-                  Version history
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-destructive focus:text-destructive">
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setSidebarOpen(!sidebarOpen)}
-                >
+                <Button variant="ghost" size="icon" onClick={onToggleSidebar}>
                   {sidebarOpen ? (
                     <PanelRightClose className="h-4 w-4" />
                   ) : (
@@ -263,76 +1239,536 @@ export default function ContentDocumentPage({
             className="min-w-0 flex-1 overflow-y-auto p-6"
           >
             <div className="mx-auto max-w-4xl">
-              <TipTapEditor
-                content={draftBody}
-                context={context}
-                onChange={handleContentChange}
-                onActiveMdxComponentChange={setActiveMdxComponent}
-                readOnly={isDocumentReadOnly}
-                forbidden={isDocumentForbidden}
-              />
+              {state.status !== "ready" ? (
+                <ContentDocumentPageStatusView
+                  state={state}
+                  onGoBack={onGoBack}
+                />
+              ) : (
+                <div className="space-y-4">
+                  {state.mutationError ? (
+                    <div
+                      data-mdcms-document-mutation-state="error"
+                      className="rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+                    >
+                      {state.mutationError}
+                    </div>
+                  ) : null}
+
+                  {!state.canWrite && state.writeMessage ? (
+                    <div className="rounded-md border border-border bg-background-subtle px-4 py-3 text-sm text-foreground-muted">
+                      {state.writeMessage}
+                    </div>
+                  ) : null}
+
+                  {state.publishError ? (
+                    <div
+                      data-mdcms-document-publish-state="error"
+                      className="rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+                    >
+                      {state.publishError}
+                    </div>
+                  ) : null}
+
+                  <TipTapEditor
+                    content={state.draftBody}
+                    context={context}
+                    onChange={onDraftChange}
+                    onActiveMdxComponentChange={onActiveMdxComponentChange}
+                    readOnly={!state.canWrite}
+                    forbidden={false}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
-          {sidebarOpen ? (
-            <div data-mdcms-editor-pane="sidebar" className="w-80 shrink-0">
-              <EditorSidebar
-                document={document}
-                mdxPropsPanel={
-                  context?.mdx ? (
-                    <MdxPropsPanel
-                      context={context}
-                      selection={activeMdxComponent}
-                    />
-                  ) : undefined
-                }
-              />
-            </div>
+          {state.status === "ready" && sidebarOpen ? (
+            <ContentDocumentPageSidebar
+              context={context}
+              state={state}
+              activeMdxComponent={activeMdxComponent}
+              onSelectComparisonVersion={onSelectComparisonVersion}
+            />
           ) : null}
         </div>
 
-        <Dialog open={publishDialogOpen} onOpenChange={setPublishDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Publish document</DialogTitle>
-              <DialogDescription>
-                This will create a new published version visible through the
-                content API.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Change summary (optional)
-                </label>
-                <Textarea
-                  placeholder="Describe what changed..."
-                  value={changeDescription}
-                  onChange={(event) => setChangeDescription(event.target.value)}
-                  rows={3}
-                />
+        {state.status === "ready" ? (
+          <Dialog
+            open={state.publishDialogOpen}
+            onOpenChange={onPublishDialogOpenChange}
+          >
+            <DialogContent
+              forceMount={state.publishDialogOpen ? true : undefined}
+              data-mdcms-publish-dialog="open"
+            >
+              <DialogHeader>
+                <DialogTitle>Publish document</DialogTitle>
+                <DialogDescription>
+                  This creates a new immutable version from the current draft.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    Change summary (optional)
+                  </label>
+                  <Textarea
+                    value={state.publishChangeSummary}
+                    onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
+                      onPublishChangeSummaryChange?.(event.currentTarget.value)
+                    }
+                    placeholder="Describe what changed..."
+                    rows={3}
+                  />
+                </div>
+                <p className="text-sm text-foreground-muted">
+                  Current published version:{" "}
+                  {state.document.publishedVersion === null
+                    ? "Not published"
+                    : `v${state.document.publishedVersion}`}
+                </p>
               </div>
-              <p className="text-sm text-foreground-muted">
-                Current version: 4 - New version: 5
-              </p>
-            </div>
-            <DialogFooter>
-              <Button
-                variant="ghost"
-                onClick={() => setPublishDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                className="bg-accent text-white hover:bg-accent-hover"
-                onClick={handlePublish}
-              >
-                Publish
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              <DialogFooter>
+                <Button
+                  variant="ghost"
+                  onClick={() => onPublishDialogOpenChange?.(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="bg-accent text-white hover:bg-accent-hover"
+                  disabled={state.publishState === "publishing"}
+                  onClick={onPublishSubmit}
+                >
+                  {state.publishState === "publishing"
+                    ? "Publishing..."
+                    : "Publish"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        ) : null}
       </div>
     </TooltipProvider>
+  );
+}
+
+export default function ContentDocumentPage({
+  context,
+}: {
+  context?: StudioMountContext;
+}) {
+  const params = useParams();
+  const router = useRouter();
+  const typeId = (params.type as string) || "content";
+  const documentId = (params.documentId as string) || "";
+  const typeLabel = typeId;
+  const route = context?.documentRoute;
+
+  const [state, setState] = useState<ContentDocumentPageState>(() =>
+    route
+      ? createLoadingState({
+          typeId,
+          typeLabel,
+          documentId,
+          route,
+        })
+      : createErrorState({
+          status: "error",
+          typeId,
+          typeLabel,
+          documentId,
+          message: "Studio document route context is unavailable.",
+        }),
+  );
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeMdxComponent, setActiveMdxComponent] =
+    useState<MdxPropsPanelSelection | null>(null);
+  const stateRef = useRef(state);
+  const loadRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  function createRouteApi(): StudioDocumentRouteApi | undefined {
+    if (!context || !route) {
+      return undefined;
+    }
+
+    return createContentDocumentRouteApi({
+      context,
+      route,
+    });
+  }
+
+  const loadSelectedVersionDiff = useEffectEvent(async () => {
+    const currentState = stateRef.current;
+    const api = createRouteApi();
+
+    if (
+      !api ||
+      currentState.status !== "ready" ||
+      !currentState.selectedComparison.leftVersion ||
+      !currentState.selectedComparison.rightVersion
+    ) {
+      return;
+    }
+
+    const leftVersion = currentState.selectedComparison.leftVersion;
+    const rightVersion = currentState.selectedComparison.rightVersion;
+
+    setState((current) =>
+      current.status === "ready"
+        ? {
+            ...current,
+            versionDiff: {
+              status: "loading",
+              leftVersion,
+              rightVersion,
+            },
+          }
+        : current,
+    );
+
+    try {
+      const diff = await loadContentDocumentVersionDiff({
+        api,
+        documentId: currentState.documentId,
+        locale: currentState.document.locale,
+        leftVersion,
+        rightVersion,
+      });
+
+      setState((current) =>
+        current.status === "ready" &&
+        current.selectedComparison.leftVersion === leftVersion &&
+        current.selectedComparison.rightVersion === rightVersion
+          ? {
+              ...current,
+              versionDiff: {
+                status: "ready",
+                diff,
+              },
+            }
+          : current,
+      );
+    } catch (error) {
+      const message = toRouteErrorMessage(
+        error,
+        "Failed to load document version diff.",
+      );
+
+      setState((current) =>
+        current.status === "ready" &&
+        current.selectedComparison.leftVersion === leftVersion &&
+        current.selectedComparison.rightVersion === rightVersion
+          ? {
+              ...current,
+              versionDiff: {
+                status: "error",
+                leftVersion,
+                rightVersion,
+                message,
+              },
+            }
+          : current,
+      );
+    }
+  });
+
+  const publishDocument = useEffectEvent(async () => {
+    const currentState = stateRef.current;
+    const api = createRouteApi();
+
+    if (!api || currentState.status !== "ready") {
+      return;
+    }
+
+    setState((current) =>
+      current.status === "ready"
+        ? {
+            ...current,
+            publishState: "publishing",
+            publishError: undefined,
+          }
+        : current,
+    );
+
+    try {
+      const nextState = await publishContentDocumentReadyState({
+        api,
+        state: currentState,
+        changeSummary: currentState.publishChangeSummary,
+      });
+
+      setState((current) =>
+        current.status === "ready" &&
+        current.documentId === currentState.documentId
+          ? applySuccessfulPublishToReadyState({
+              state: current,
+              requestBody: currentState.draftBody,
+              publishedState: nextState,
+            })
+          : current,
+      );
+    } catch (error) {
+      const message = toRouteErrorMessage(error, "Failed to publish document.");
+
+      setState((current) =>
+        current.status === "ready"
+          ? {
+              ...current,
+              publishState: "idle",
+              publishError: message,
+            }
+          : current,
+      );
+    }
+  });
+
+  const loadDocument = useEffectEvent(async () => {
+    const loadRequestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = loadRequestId;
+
+    setState(
+      createLoadingState({
+        typeId,
+        typeLabel,
+        documentId,
+        route,
+      }),
+    );
+
+    const nextState = await loadContentDocumentPageState({
+      context,
+      typeId,
+      typeLabel,
+      documentId,
+    });
+
+    if (loadRequestIdRef.current !== loadRequestId) {
+      return;
+    }
+
+    setState(nextState);
+    stateRef.current = nextState;
+  });
+
+  const saveDraft = useEffectEvent(async () => {
+    const currentState = stateRef.current;
+    const api = createRouteApi();
+
+    if (
+      !api ||
+      // Fail closed when the embedded host cannot derive the local schema hash
+      // required by guarded draft-write routes.
+      !route ||
+      !route.write.canWrite ||
+      currentState.status !== "ready" ||
+      currentState.saveState !== "unsaved" ||
+      currentState.draftBody === currentState.document.body ||
+      currentState.saveRequestBody === currentState.draftBody
+    ) {
+      return;
+    }
+
+    const requestBody = currentState.draftBody;
+
+    setState((current) =>
+      current.status === "ready"
+        ? reduceContentDocumentPageReadyState(current, {
+            type: "saveStarted",
+          })
+        : current,
+    );
+
+    const nextState = await saveContentDocumentReadyState({
+      api,
+      route,
+      state: currentState,
+    });
+
+    const mutationError = nextState.mutationError;
+    if (mutationError) {
+      setState((current) =>
+        current.status === "ready"
+          ? applyFailedDraftSaveToReadyState({
+              state: current,
+              requestBody,
+              message: mutationError,
+            })
+          : current,
+      );
+      return;
+    }
+
+    setState((current) =>
+      current.status === "ready"
+        ? applySuccessfulDraftSaveToReadyState({
+            state: current,
+            requestBody,
+            persistedBody: nextState.document.body,
+            updatedAt: nextState.document.updatedAt,
+          })
+        : current,
+    );
+  });
+
+  useEffect(() => {
+    void loadDocument();
+  }, [context, documentId, loadDocument, route, typeId, typeLabel]);
+
+  const readyDraftBody = state.status === "ready" ? state.draftBody : undefined;
+  const readyDocumentBody =
+    state.status === "ready" ? state.document.body : undefined;
+  const readyCanWrite = state.status === "ready" ? state.canWrite : false;
+  const readySaveRequestBody =
+    state.status === "ready" ? state.saveRequestBody : undefined;
+  const readySaveState = state.status === "ready" ? state.saveState : undefined;
+  const readyLeftComparisonVersion =
+    state.status === "ready" ? state.selectedComparison.leftVersion : undefined;
+  const readyRightComparisonVersion =
+    state.status === "ready"
+      ? state.selectedComparison.rightVersion
+      : undefined;
+
+  useEffect(() => {
+    if (
+      state.status !== "ready" ||
+      !state.canWrite ||
+      state.saveState !== "unsaved" ||
+      state.draftBody === state.document.body ||
+      state.saveRequestBody === state.draftBody
+    ) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      void saveDraft();
+    }, DOCUMENT_SAVE_DEBOUNCE_MS);
+
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [
+    saveDraft,
+    readyCanWrite,
+    readyDocumentBody,
+    readyDraftBody,
+    readySaveRequestBody,
+    readySaveState,
+    state.status,
+  ]);
+
+  useEffect(() => {
+    if (
+      state.status !== "ready" ||
+      !state.selectedComparison.leftVersion ||
+      !state.selectedComparison.rightVersion
+    ) {
+      return;
+    }
+
+    if (
+      state.versionDiff.status === "ready" &&
+      state.versionDiff.diff.leftVersion ===
+        state.selectedComparison.leftVersion &&
+      state.versionDiff.diff.rightVersion ===
+        state.selectedComparison.rightVersion
+    ) {
+      return;
+    }
+
+    if (
+      state.versionDiff.status === "loading" &&
+      state.versionDiff.leftVersion === state.selectedComparison.leftVersion &&
+      state.versionDiff.rightVersion === state.selectedComparison.rightVersion
+    ) {
+      return;
+    }
+
+    void loadSelectedVersionDiff();
+  }, [
+    loadSelectedVersionDiff,
+    readyLeftComparisonVersion,
+    readyRightComparisonVersion,
+    state.status,
+    state.status === "ready" ? state.versionDiff.status : "idle",
+    state.status === "ready" && state.versionDiff.status === "ready"
+      ? state.versionDiff.diff.leftVersion
+      : undefined,
+    state.status === "ready" && state.versionDiff.status === "ready"
+      ? state.versionDiff.diff.rightVersion
+      : undefined,
+    state.status === "ready" && state.versionDiff.status === "loading"
+      ? state.versionDiff.leftVersion
+      : undefined,
+    state.status === "ready" && state.versionDiff.status === "loading"
+      ? state.versionDiff.rightVersion
+      : undefined,
+  ]);
+
+  return (
+    <ContentDocumentPageView
+      state={state}
+      context={context}
+      sidebarOpen={sidebarOpen}
+      activeMdxComponent={activeMdxComponent}
+      onDraftChange={(body) => {
+        setState((current) =>
+          current.status === "ready"
+            ? reduceContentDocumentPageReadyState(current, {
+                type: "draftChanged",
+                body,
+              })
+            : current,
+        );
+      }}
+      onActiveMdxComponentChange={setActiveMdxComponent}
+      onToggleSidebar={() => setSidebarOpen((current) => !current)}
+      onGoBack={() => router.back()}
+      onPublishDialogOpenChange={(open) => {
+        setState((current) =>
+          current.status === "ready"
+            ? {
+                ...current,
+                publishDialogOpen: open,
+                publishState: open ? current.publishState : "idle",
+                publishError: open ? undefined : current.publishError,
+                publishChangeSummary: open ? current.publishChangeSummary : "",
+              }
+            : current,
+        );
+      }}
+      onPublishChangeSummaryChange={(value) => {
+        setState((current) =>
+          current.status === "ready"
+            ? {
+                ...current,
+                publishChangeSummary: value,
+              }
+            : current,
+        );
+      }}
+      onPublishSubmit={() => {
+        void publishDocument();
+      }}
+      onSelectComparisonVersion={(side, version) => {
+        setState((current) =>
+          current.status === "ready"
+            ? {
+                ...current,
+                selectedComparison: {
+                  ...current.selectedComparison,
+                  [side === "left" ? "leftVersion" : "rightVersion"]: version,
+                },
+                versionDiff: resetVersionDiffState(),
+              }
+            : current,
+        );
+      }}
+    />
   );
 }

@@ -144,6 +144,14 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
       resolveComponent: () => null,
       renderMdxPreview: () => () => {},
     },
+    documentRoute: {
+      project: "marketing-site",
+      environment: "staging",
+      write: {
+        canWrite: true,
+        schemaHash: "schema-hash",
+      },
+    },
     mdx: {
       catalog: {
         components: [
@@ -222,7 +230,7 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
   assert.match(markup, /data-mdcms-mdx-component="Chart"/);
   assert.match(markup, /data-mdcms-mdx-component="JsonOnly"/);
   assert.match(markup, /data-mdcms-mdx-component="PricingTable"/);
-  assert.match(markup, /data-mdcms-mdx-props-panel="idle"/);
+  assert.match(markup, /data-mdcms-document-state="loading"/);
   assert.match(markup, /data-mdcms-mdx-auto-form="Chart"/);
   assert.match(markup, /data-mdcms-mdx-auto-control="Chart:title:textarea"/);
   assert.match(markup, /data-mdcms-mdx-auto-control="Chart:website:url"/);
@@ -240,6 +248,14 @@ test("RemoteStudioApp keeps the editor route chrome truthful and width-constrain
       resolveComponent: () => null,
       renderMdxPreview: () => () => {},
     },
+    documentRoute: {
+      project: "marketing-site",
+      environment: "staging",
+      write: {
+        canWrite: true,
+        schemaHash: "schema-hash",
+      },
+    },
   };
 
   const markup = renderToStaticMarkup(
@@ -251,6 +267,7 @@ test("RemoteStudioApp keeps the editor route chrome truthful and width-constrain
   );
 
   assert.match(markup, /data-mdcms-editor-layout="document"/);
+  assert.match(markup, /data-mdcms-document-state="loading"/);
   assert.match(markup, /data-mdcms-editor-pane="canvas"/);
   assert.match(markup, /overflow-x-hidden/);
   assert.doesNotMatch(markup, /Search \(Cmd\+K\)/);
