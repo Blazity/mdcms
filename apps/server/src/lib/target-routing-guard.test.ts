@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "bun:test";
 
 import { MDCMS_ENVIRONMENT_HEADER, MDCMS_PROJECT_HEADER } from "@mdcms/shared";
 

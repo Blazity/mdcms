@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { test } from "node:test";
+import { test } from "bun:test";
 
 import { createConsoleLogger } from "@mdcms/shared";
 import { and, eq } from "drizzle-orm";
