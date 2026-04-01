@@ -69,7 +69,9 @@ export default function DocumentEditorPage() {
   const documentId = params.documentId as string;
 
   const contentType = mockContentTypes.find((t) => t.id === typeId);
-  const document = mockDocuments.find((d) => d.id === documentId);
+  const document = mockDocuments.find(
+    (d) => d.id === documentId && d.type === contentType?.name,
+  );
 
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">(
     "saved",
@@ -77,6 +79,7 @@ export default function DocumentEditorPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   const [changeDescription, setChangeDescription] = useState("");
+  const [editorContent, setEditorContent] = useState(document?.body ?? "");
   const [selectedLocale, setSelectedLocale] = useState(
     document?.locale || "en-US",
   );
@@ -101,7 +104,8 @@ export default function DocumentEditorPage() {
     );
   }
 
-  const handleContentChange = () => {
+  const handleContentChange = (nextContent: string) => {
+    setEditorContent(nextContent);
     setSaveStatus("saving");
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -201,9 +205,7 @@ export default function DocumentEditorPage() {
             </Badge>
 
             {/* Publish button */}
-            <Button
-              onClick={() => setPublishDialogOpen(true)}
-            >
+            <Button onClick={() => setPublishDialogOpen(true)}>
               <Send className="mr-2 h-4 w-4" />
               Publish
             </Button>
@@ -211,7 +213,7 @@ export default function DocumentEditorPage() {
             {/* More actions */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon">
+                <Button variant="ghost" size="icon" aria-label="More actions">
                   <MoreVertical className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -246,6 +248,7 @@ export default function DocumentEditorPage() {
                 <Button
                   variant="ghost"
                   size="icon"
+                  aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
                   onClick={() => setSidebarOpen(!sidebarOpen)}
                 >
                   {sidebarOpen ? (
@@ -270,7 +273,11 @@ export default function DocumentEditorPage() {
             className="min-w-0 flex-1 overflow-y-auto p-6"
           >
             <div className="mx-auto max-w-4xl">
-              <TipTapEditor key={documentId} onChange={handleContentChange} />
+              <TipTapEditor
+                key={documentId}
+                content={editorContent}
+                onChange={handleContentChange}
+              />
             </div>
           </div>
 
@@ -315,11 +322,7 @@ export default function DocumentEditorPage() {
               >
                 Cancel
               </Button>
-              <Button
-                onClick={handlePublish}
-              >
-                Publish
-              </Button>
+              <Button onClick={handlePublish}>Publish</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
