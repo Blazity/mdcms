@@ -1059,6 +1059,20 @@ function formatDocumentLabel(path: string, documentId: string): string {
   return segments[segments.length - 1] ?? trimmedPath;
 }
 
+function getDocumentWorkflowBadgeLabel(
+  state: ContentDocumentPageState,
+): string | undefined {
+  if (state.status !== "ready") {
+    return undefined;
+  }
+
+  if (state.document.publishedVersion === null) {
+    return "Draft";
+  }
+
+  return state.document.hasUnpublishedChanges ? "Changed" : "Published";
+}
+
 function renderStatusContent(state: ContentDocumentPageState): string {
   switch (state.status) {
     case "loading":
@@ -1389,15 +1403,14 @@ function ContentDocumentPageSidebar(props: {
     >
       <div className="space-y-4 p-4">
         <div className="space-y-1">
-          <p className="text-sm font-medium">Route status</p>
+          <p className="text-sm font-medium">Document workflow</p>
           <p className="text-sm text-foreground-muted">
-            Publish, version history, and arbitrary version comparison are
-            backed by the live Studio content route contracts on this page.
+            This page loads the routed draft, saves draft edits, and publishes
+            the current draft through the live content API.
           </p>
           <p className="text-sm text-foreground-muted">
-            Write-enabled draft saves require a local schema hash derived from
-            the authored Studio config. When that capability is unavailable, the
-            editor stays read-only.
+            If Studio cannot derive the local schema hash required for writes,
+            the editor stays read-only until schema recovery completes.
           </p>
         </div>
 
@@ -1462,6 +1475,7 @@ export function ContentDocumentPageView({
     state.saveState === "saved" &&
     state.document.hasUnpublishedChanges &&
     state.publishState !== "publishing";
+  const workflowBadgeLabel = getDocumentWorkflowBadgeLabel(state);
 
   return (
     <TooltipProvider>
@@ -1512,9 +1526,11 @@ export function ContentDocumentPageView({
           </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-3">
-            <Badge variant="outline" className="text-xs">
-              Draft
-            </Badge>
+            {workflowBadgeLabel ? (
+              <Badge variant="outline" className="text-xs">
+                {workflowBadgeLabel}
+              </Badge>
+            ) : null}
 
             {state.status === "ready" &&
             state.document.publishedVersion !== null ? (
