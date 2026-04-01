@@ -225,6 +225,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
                   "schema:read",
                   "schema:write",
                   "content:read",
+                  "content:read:draft",
                   "content:write",
                 ],
               }),

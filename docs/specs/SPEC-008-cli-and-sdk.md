@@ -269,7 +269,7 @@ export const migration: Migration = {
 - CLI starts a local loopback callback listener (`127.0.0.1`) and exchanges a one-time code for an API key scoped to `serverUrl` (project and environment are **not** sent during login).
 - The credential store is keyed by server URL and supports one active profile per server.
 - In interactive mode, credentials are stored in the OS credential store when available (fallback to `~/.mdcms/credentials.json` with `0600` permissions).
-- Login-generated API keys default to scopes: `projects:read`, `projects:write`, `schema:read`, `schema:write`, `content:read`, `content:write`.
+- Login-generated API keys default to scopes: `projects:read`, `projects:write`, `schema:read`, `schema:write`, `content:read`, `content:read:draft`, `content:write`.
 - CLI auth precedence is: `--api-key` > `MDCMS_API_KEY` > stored profile.
 - `cms logout` always clears the local profile for the current server and performs best-effort remote self-revoke of the active API key.
 

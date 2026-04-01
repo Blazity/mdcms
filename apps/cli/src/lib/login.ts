@@ -315,6 +315,7 @@ export function createLoginCommand(options: LoginOptions = {}): CliCommand {
                 "schema:read",
                 "schema:write",
                 "content:read",
+                "content:read:draft",
                 "content:write",
               ],
             }),
