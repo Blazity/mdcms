@@ -9,6 +9,7 @@ import {
 type StudioNavigationValue = {
   pathname: string;
   params: Record<string, string>;
+  basePath?: string;
   push: (href: string) => void;
   replace: (href: string) => void;
   back: () => void;
@@ -44,6 +45,30 @@ function isExternalHref(href: string): boolean {
   return /^(https?:)?\/\//.test(href) || href.startsWith("mailto:");
 }
 
+function normalizeBasePath(path: string | undefined): string {
+  if (!path) {
+    return "";
+  }
+
+  const trimmed = path.trim();
+
+  if (trimmed.length === 0 || trimmed === "/") {
+    return "";
+  }
+
+  return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
+}
+
+function normalizeInternalHref(path: string): string {
+  const trimmed = path.trim();
+
+  if (trimmed.length === 0 || trimmed === "/") {
+    return "/";
+  }
+
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
 export function StudioNavigationProvider({
   value,
   children,
@@ -61,6 +86,10 @@ export function usePathname(): string {
   return useStudioNavigationContext().pathname;
 }
 
+export function useBasePath(): string {
+  return useStudioNavigationContext().basePath ?? "";
+}
+
 export function useParams<
   T extends Record<string, string> = Record<string, string>,
 >(): T {
@@ -75,6 +104,24 @@ export function useRouter() {
     replace: navigation.replace,
     back: navigation.back,
   };
+}
+
+export function resolveStudioHref(
+  basePath: string | undefined,
+  href: string,
+): string {
+  const normalizedBasePath = normalizeBasePath(basePath);
+  const normalizedHref = normalizeInternalHref(href);
+
+  if (normalizedBasePath.length === 0) {
+    return normalizedHref;
+  }
+
+  if (normalizedHref === "/") {
+    return normalizedBasePath;
+  }
+
+  return `${normalizedBasePath}${normalizedHref}`;
 }
 
 export function RuntimeLink({

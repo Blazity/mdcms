@@ -3,6 +3,7 @@
 
 import Link from "../../adapters/next-link";
 import { usePathname } from "../../adapters/next-navigation";
+import { useCanReadSchema } from "../../app/admin/capabilities-context";
 import {
   LayoutDashboard,
   FileText,
@@ -40,6 +41,7 @@ import { mockUsers } from "../../lib/mock-data";
 import { useState } from "react";
 
 interface AppSidebarProps {
+  canReadSchema?: boolean;
   collapsed: boolean;
   onToggle: () => void;
 }
@@ -57,14 +59,26 @@ const mainNavItems = [
   { icon: Trash2, label: "Trash", href: "/admin/trash" },
 ];
 
+function getMainNavItems(canReadSchema: boolean) {
+  return canReadSchema
+    ? mainNavItems
+    : mainNavItems.filter((item) => item.href !== "/admin/schema");
+}
+
 const comingSoonItems = [
   { icon: Calendar, label: "Scheduled" },
   { icon: Shield, label: "Audit Log" },
   { icon: Search, label: "SEO Analysis" },
 ];
 
-export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
+export function AppSidebar({
+  canReadSchema,
+  collapsed,
+  onToggle,
+}: AppSidebarProps) {
   const pathname = usePathname();
+  const contextCanReadSchema = useCanReadSchema();
+  const effectiveCanReadSchema = canReadSchema ?? contextCanReadSchema;
   const [comingSoonOpen, setComingSoonOpen] = useState(false);
   const onlineUsers = mockUsers.filter((u) => u.isOnline).slice(0, 5);
 
@@ -91,7 +105,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         {/* Main Navigation */}
         <nav className="flex-1 overflow-y-auto p-2">
           <ul className="space-y-1">
-            {mainNavItems.map((item) => {
+            {getMainNavItems(effectiveCanReadSchema).map((item) => {
               const isActive =
                 pathname === item.href ||
                 (item.href !== "/admin" && pathname.startsWith(item.href));
@@ -134,7 +148,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
           {collapsed ? (
             <ul className="space-y-1">
               {comingSoonItems.map((item) => (
-                <li key={item.href}>
+                <li key={item.label}>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Link
