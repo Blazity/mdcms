@@ -307,10 +307,11 @@ export default function DocumentEditorPage() {
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">
+                <label htmlFor="change-summary" className="text-sm font-medium">
                   Change summary (optional)
                 </label>
                 <Textarea
+                  id="change-summary"
                   placeholder="Describe what changed..."
                   value={changeDescription}
                   onChange={(e) => setChangeDescription(e.target.value)}
