@@ -60,7 +60,7 @@ export function generateConfigSource(input: GenerateConfigInput): string {
     sharedImports.push("reference");
   }
   lines.push(
-    `import { ${sharedImports.join(", ")} } from "@mdcms/shared";`,
+    `import { ${sharedImports.join(", ")} } from "@mdcms/cli";`,
   );
 
   if (hasZodFields(input.types)) {

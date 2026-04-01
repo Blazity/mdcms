@@ -49,7 +49,13 @@ function inferZodType(value: unknown): string {
   if (typeof value === "string") return "z.string()";
   if (typeof value === "number") return "z.number()";
   if (typeof value === "boolean") return "z.boolean()";
-  if (Array.isArray(value)) return "z.array(z.unknown())";
+  if (Array.isArray(value)) {
+    const first = value.find((v) => v !== null && v !== undefined);
+    if (typeof first === "string") return "z.array(z.string())";
+    if (typeof first === "number") return "z.array(z.number())";
+    if (typeof first === "boolean") return "z.array(z.boolean())";
+    return "z.array(z.string())";
+  }
   return "z.unknown()";
 }
 
@@ -123,7 +129,7 @@ export function inferSchema(
 
       fields[key] = {
         zodType,
-        optional: count < fileCount,
+        optional: true,
         samples: count,
       };
     }

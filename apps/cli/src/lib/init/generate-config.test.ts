@@ -28,7 +28,7 @@ test("generates minimal config without locales", () => {
     localeConfig: null,
   });
 
-  assert.ok(source.includes('import { defineConfig, defineType } from "@mdcms/shared"'));
+  assert.ok(source.includes('import { defineConfig, defineType } from "@mdcms/cli"'));
   assert.ok(source.includes('import { z } from "zod"'));
   assert.ok(source.includes('project: "my-site"'));
   assert.ok(source.includes('serverUrl: "http://localhost:4000"'));
@@ -104,7 +104,7 @@ test("includes reference import when reference fields exist", () => {
   });
 
   assert.ok(source.includes("reference"));
-  assert.ok(source.includes('import { defineConfig, defineType, reference } from "@mdcms/shared"'));
+  assert.ok(source.includes('import { defineConfig, defineType, reference } from "@mdcms/cli"'));
   assert.ok(source.includes('reference("author").optional()'));
 });
 
