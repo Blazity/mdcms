@@ -73,6 +73,8 @@ const CLI_LOGIN_DEFAULT_SCOPES: readonly ApiKeyOperationScope[] = [
   "content:read",
   "content:read:draft",
   "content:write",
+  "schema:read",
+  "schema:write",
 ];
 
 export type ApiKeyOperationScope = (typeof API_KEY_OPERATION_SCOPES)[number];

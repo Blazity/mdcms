@@ -16,8 +16,13 @@ const DEFAULT_DEMO_USER_PASSWORD = "Demo12345!";
 const DEFAULT_DEMO_PROJECT = "marketing-site";
 const DEFAULT_DEMO_ENVIRONMENT = "staging";
 const DEFAULT_DEMO_CONTENT_ACTOR_ID = "00000000-0000-0000-0000-000000000001";
-const DEMO_KEY_LABEL = "compose-dev-demo-content-read";
-const DEMO_KEY_SCOPES = ["content:read", "content:read:draft"] as const;
+const DEMO_KEY_LABEL = "compose-dev-demo";
+const DEMO_KEY_SCOPES = [
+  "content:read",
+  "content:read:draft",
+  "schema:read",
+  "schema:write",
+] as const;
 const LOCAL_AUTH_ORIGIN = "http://localhost";
 const DEMO_CONTENT_CHANGE_SUMMARY = "compose demo seed";
 
