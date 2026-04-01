@@ -37,15 +37,15 @@ test("login command stores exchanged API key in scoped credential profile", asyn
       if (url.endsWith("/api/v1/auth/cli/login/start")) {
         startCalled = true;
         const body = JSON.parse(String(init?.body)) as {
-          project: string;
-          environment: string;
           redirectUri: string;
           state: string;
+          scopes: string[];
         };
-        assert.equal(body.project, "marketing-site");
-        assert.equal(body.environment, "staging");
+        assert.equal(body.project, undefined);
         assert.equal(body.redirectUri, "http://127.0.0.1:41001/callback");
         assert.equal(body.state, "state_test_login_abcdefghijklmnop");
+        assert.ok(body.scopes.includes("projects:read"));
+        assert.ok(body.scopes.includes("projects:write"));
 
         return new Response(
           JSON.stringify({

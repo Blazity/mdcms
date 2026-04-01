@@ -27,6 +27,10 @@ import {
   createDatabaseEnvironmentStore,
   mountEnvironmentApiRoutes,
 } from "./environments-api.js";
+import {
+  createDatabaseProjectStore,
+  mountProjectApiRoutes,
+} from "./projects-api.js";
 import { loadServerConfig } from "./config.js";
 import type { ParsedMdcmsConfig } from "@mdcms/shared";
 import {
@@ -118,6 +122,7 @@ export function createServerRequestHandlerWithModules(
     db: dbConnection.db,
     getConfig,
   });
+  const projectStore = createDatabaseProjectStore({ db: dbConnection.db });
   const actions = collectServerModuleActions(moduleLoadReport);
   const moduleDeps = { ...(options.moduleDeps ?? {}), dal };
 
@@ -172,6 +177,13 @@ export function createServerRequestHandlerWithModules(
         store: environmentStore,
         authorizeAdmin: (request) => authService.requireAdminSession(request),
         requireCsrf: (request) => authService.requireCsrfProtection(request),
+      });
+      mountProjectApiRoutes(app, {
+        store: projectStore,
+        authorize: (request) =>
+          authService
+            .authorizeRequest(request, { requiredScope: "projects:read" })
+            .then(() => undefined),
       });
       mountCollaborationRoutes(app, {
         authService,

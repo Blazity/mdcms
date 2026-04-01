@@ -281,7 +281,7 @@ export function createLoginCommand(options: LoginOptions = {}): CliCommand {
   return {
     name: "login",
     description: "Authenticate via browser flow and store scoped credentials",
-    requiresTarget: true,
+    requiresTarget: false,
     requiresConfig: false,
     run: async (context: CliCommandContext): Promise<number> => {
       const store =
@@ -307,10 +307,16 @@ export function createLoginCommand(options: LoginOptions = {}): CliCommand {
               "content-type": "application/json",
             },
             body: JSON.stringify({
-              project: context.project,
-              environment: context.environment,
               redirectUri: listener.redirectUri,
               state,
+              scopes: [
+                "projects:read",
+                "projects:write",
+                "schema:read",
+                "schema:write",
+                "content:read",
+                "content:write",
+              ],
             }),
           },
         );
@@ -381,8 +387,8 @@ export function createLoginCommand(options: LoginOptions = {}): CliCommand {
         await store.setProfile(
           {
             serverUrl: context.serverUrl,
-            project: context.project,
-            environment: context.environment,
+            project: context.project ?? "*",
+            environment: context.environment ?? "*",
           },
           {
             authMode: "api_key",
@@ -394,7 +400,7 @@ export function createLoginCommand(options: LoginOptions = {}): CliCommand {
         );
 
         context.stdout.write(
-          `Login successful for ${context.project}/${context.environment}. Credentials stored.\n`,
+          `Login successful for ${context.project ?? "*"}/${context.environment ?? "*"}. Credentials stored.\n`,
         );
         context.stdout.write(
           `MDCMS_DEMO_API_KEY="${exchanged.key}" (use this value for demo app requests if needed).\n`,

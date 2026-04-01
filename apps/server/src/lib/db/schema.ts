@@ -126,8 +126,8 @@ export const cliLoginChallenges = pgTable(
   "cli_login_challenges",
   {
     id: uuid().defaultRandom().primaryKey(),
-    project: text().notNull(),
-    environment: text().notNull(),
+    project: text(),
+    environment: text(),
     redirectUri: text().notNull(),
     requestedScopes: jsonb().$type<string[]>().notNull(),
     stateHash: text().notNull(),

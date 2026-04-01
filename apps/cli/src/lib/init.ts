@@ -22,7 +22,6 @@ import {
 } from "./manifest.js";
 import { hashContent, parseMarkdownDocument } from "./push.js";
 import { writeSchemaState } from "./schema-state.js";
-
 import {
   detectLocaleConfig,
   normalizeLocale,
@@ -38,7 +37,7 @@ import {
   updateGitignore,
 } from "./init/git-cleanup.js";
 import { inferSchema, type InferredType } from "./init/infer-schema.js";
-import { createReadlinePrompter, type Prompter } from "./init/prompt.js";
+import { createClackPrompter, type Prompter } from "./init/prompt.js";
 import { scanContentFiles, type DiscoveredFile } from "./init/scan.js";
 
 export type InitCommandOptions = {
@@ -172,9 +171,13 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
     requiresConfig: false,
     requiresTarget: false,
     run: async (context: CliCommandContext): Promise<number> => {
-      const prompter = options?.prompter ?? createReadlinePrompter();
+      const prompter = options?.prompter ?? createClackPrompter();
       const fetcher = options?.fetcher ?? context.fetcher;
       const { cwd, stdout, stderr } = context;
+
+      const CREATE_NEW = "__create_new__";
+
+      prompter.intro("mdcms init");
 
       // ── Step 1: Server URL ──────────────────────────────────────────
       const serverUrl = await prompter.text(
@@ -182,46 +185,43 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
         "http://localhost:4000",
       );
 
-      try {
-        const pingResponse = await fetcher(`${serverUrl}/healthz`);
-        if (!pingResponse.ok) {
-          stderr.write(
-            `Server at ${serverUrl} responded with ${pingResponse.status}.\n`,
-          );
+      {
+        const s = prompter.spinner();
+        s.start("Checking server...");
+        try {
+          const pingResponse = await fetcher(`${serverUrl}/healthz`);
+          if (!pingResponse.ok) {
+            s.stop(`Server responded with ${pingResponse.status}`);
+            return 1;
+          }
+          s.stop("Server reachable");
+        } catch {
+          s.stop("Could not reach server");
           return 1;
         }
-      } catch {
-        stderr.write(`Could not reach server at ${serverUrl}.\n`);
-        return 1;
       }
 
-      // ── Step 2: Project + Environment + Auth ────────────────────────
-      const project = await prompter.text("Project name");
-      const environment = await prompter.select("Environment", [
-        { label: "production", value: "production" },
-        { label: "staging", value: "staging" },
-        { label: "development", value: "development" },
-      ]);
-
+      // ── Step 2: Login ──────────────────────────────────────────────
       let apiKey: string;
       if (options?.skipAuth) {
         apiKey = "skip-auth-key";
       } else {
-        // OAuth loopback flow
         const listener = await createLoopbackCallbackListener();
         const oauthState = `state_${randomBytes(18).toString("base64url")}_${Date.now()}`;
         try {
+          const s = prompter.spinner();
+          s.start("Opening browser for login...");
           const startResponse = await fetcher(
             `${serverUrl}/api/v1/auth/cli/login/start`,
             {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
-                project,
-                environment,
                 redirectUri: listener.redirectUri,
                 state: oauthState,
                 scopes: [
+                  "projects:read",
+                  "projects:write",
                   "schema:read",
                   "schema:write",
                   "content:read",
@@ -232,7 +232,10 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
           );
 
           if (!startResponse.ok) {
-            stderr.write("Failed to start authentication flow.\n");
+            const errBody = await startResponse.text().catch(() => "");
+            s.stop(
+              `Failed to start authentication flow: ${startResponse.status} ${errBody}`,
+            );
             return 1;
           }
 
@@ -241,12 +244,9 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
           };
           const opened = await openBrowserUrl(startBody.data.authorizeUrl);
           if (!opened) {
+            s.stop("Could not open browser");
             stdout.write(
               `Open this URL in your browser:\n${startBody.data.authorizeUrl}\n`,
-            );
-          } else {
-            stdout.write(
-              "Browser login started. Complete authentication in your browser...\n",
             );
           }
 
@@ -266,7 +266,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
           );
 
           if (!exchangeResponse.ok) {
-            stderr.write("Failed to exchange authentication code.\n");
+            s.stop("Failed to exchange authentication code");
             return 1;
           }
 
@@ -274,30 +274,134 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
             data: { id: string; key: string };
           };
           apiKey = exchangeBody.data.key;
-
-          if (options?.credentialStore) {
-            const nowIso = new Date().toISOString();
-            await options.credentialStore.setProfile(
-              { serverUrl, project, environment },
-              {
-                authMode: "api_key",
-                apiKey: exchangeBody.data.key,
-                apiKeyId: exchangeBody.data.id,
-                createdAt: nowIso,
-                updatedAt: nowIso,
-              },
-            );
-          }
-
-          stdout.write(
-            `Logged in as ${project}/${environment}. Credentials stored.\n`,
-          );
+          s.stop("Logged in");
         } finally {
           await listener.close();
         }
       }
 
-      // ── Step 3-4: Scan + Select Directories ─────────────────────────
+      // ── Step 3: Select / Create Project ─────────────────────────────
+      const authHeaders: Record<string, string> = {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      };
+
+      const projectsResponse = await fetcher(`${serverUrl}/api/v1/projects`, {
+        headers: authHeaders,
+      });
+      if (!projectsResponse.ok) {
+        const errText = await projectsResponse.text().catch(() => "");
+        stderr.write(
+          `Failed to fetch projects: ${projectsResponse.status} ${errText}\n`,
+        );
+        return 1;
+      }
+      const projectsBody = (await projectsResponse.json()) as {
+        data: {
+          id: string;
+          slug: string;
+          name: string;
+          environmentCount: number;
+        }[];
+      };
+
+      const projectChoices = [
+        ...projectsBody.data.map((p) => ({
+          label: `${p.name} (${p.environmentCount} environment${p.environmentCount !== 1 ? "s" : ""})`,
+          value: p.slug,
+        })),
+        { label: "Create a new project", value: CREATE_NEW },
+      ];
+
+      let project: string;
+      const projectSelection = await prompter.select(
+        "Select a project",
+        projectChoices,
+      );
+
+      if (projectSelection === CREATE_NEW) {
+        const projectName = await prompter.text("Project name");
+        const s = prompter.spinner();
+        s.start("Creating project...");
+        const createResponse = await fetcher(`${serverUrl}/api/v1/projects`, {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({ name: projectName }),
+        });
+        if (!createResponse.ok) {
+          s.stop("Failed to create project");
+          return 1;
+        }
+        const created = (await createResponse.json()) as {
+          data: { slug: string };
+        };
+        project = created.data.slug;
+        s.stop(`Project "${project}" created`);
+      } else {
+        project = projectSelection;
+      }
+
+      // ── Step 4: Select / Create Environment ─────────────────────────
+      const envsResponse = await fetcher(
+        `${serverUrl}/api/v1/projects/${project}/environments`,
+        { headers: authHeaders },
+      );
+      const envsBody = (await envsResponse.json()) as {
+        data: { id: string; name: string }[];
+      };
+
+      const envChoices = [
+        ...envsBody.data.map((e) => ({
+          label: e.name,
+          value: e.name,
+        })),
+        { label: "Create a new environment", value: CREATE_NEW },
+      ];
+
+      let environment: string;
+      const envSelection = await prompter.select(
+        "Select an environment",
+        envChoices,
+      );
+
+      if (envSelection === CREATE_NEW) {
+        const envName = await prompter.text("Environment name");
+        const s = prompter.spinner();
+        s.start("Creating environment...");
+        const createEnvResponse = await fetcher(
+          `${serverUrl}/api/v1/projects/${project}/environments`,
+          {
+            method: "POST",
+            headers: authHeaders,
+            body: JSON.stringify({ name: envName }),
+          },
+        );
+        if (!createEnvResponse.ok) {
+          s.stop("Failed to create environment");
+          return 1;
+        }
+        environment = envName;
+        s.stop(`Environment "${environment}" created`);
+      } else {
+        environment = envSelection;
+      }
+
+      // Store credentials after project/env selection
+      if (options?.credentialStore && apiKey !== "skip-auth-key") {
+        const nowIso = new Date().toISOString();
+        await options.credentialStore.setProfile(
+          { serverUrl, project, environment },
+          {
+            authMode: "api_key",
+            apiKey,
+            apiKeyId: "cli-init",
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          },
+        );
+      }
+
+      // ── Step 5-6: Scan + Select Directories ─────────────────────────
       const allFiles = await scanContentFiles(cwd);
       const dirGroups = groupFilesByDirectory(allFiles);
 
@@ -614,7 +718,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
         }
       }
 
-      stdout.write("Initialization complete.\n");
+      prompter.outro("Initialization complete!");
       return 0;
     },
   };

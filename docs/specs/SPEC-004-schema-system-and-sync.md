@@ -268,6 +268,32 @@ This ensures schemas only change through deliberate, reviewable actions.
 
 ---
 
+## Project and Environment Management Endpoints
+
+### `GET /api/v1/projects`
+
+- **Auth**: Bearer token, scope `projects:read`
+- **Response**: `{ "data": [{ "id": "uuid", "slug": "my-blog", "name": "my-blog", "environmentCount": 3, "createdAt": "ISO8601" }] }`
+- Returns projects accessible to the authenticated user.
+
+### `POST /api/v1/projects`
+
+- **Auth**: Bearer token, scope `projects:write`
+- **Body**: `{ "name": "awesome-docs" }`
+- Slug auto-generated from name. Creates default "production" environment.
+- **Response**: `{ "data": { "id": "uuid", "slug": "awesome-docs", "name": "awesome-docs", "environments": [{ "id": "uuid", "name": "production" }] } }`
+
+### `GET /api/v1/projects/:slug/environments`
+
+- **Auth**: Bearer token, scope `projects:read`
+- **Response**: `{ "data": [{ "id": "uuid", "name": "production" }, { "id": "uuid", "name": "staging" }] }`
+
+### `POST /api/v1/projects/:slug/environments`
+
+- **Auth**: Bearer token, scope `projects:write`
+- **Body**: `{ "name": "development" }`
+- **Response**: `{ "data": { "id": "uuid", "name": "development" } }`
+
 ## Schema Endpoints
 
 | Method | Endpoint        | Description                                                                                                 |

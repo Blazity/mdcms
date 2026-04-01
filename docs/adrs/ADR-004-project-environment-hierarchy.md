@@ -33,3 +33,9 @@ Use a Project -> Environment hierarchy for the self-hosted product. Keep the dat
 
 - `docs/specs/SPEC-005-auth-authorization-and-request-routing.md`
 - `docs/specs/SPEC-009-i18n-and-environments.md`
+
+## Addendum: Explicit Project Creation via CLI (2026-04-01)
+
+Projects and environments are now created explicitly during `mdcms init` via dedicated API endpoints (`POST /api/v1/projects`, `POST /api/v1/projects/:slug/environments`). The init flow fetches available projects, offers selection or creation, then similarly for environments.
+
+Auto-provisioning via `ensureProjectProvisioned` remains as a fallback for direct API calls that reference a project not yet in the database.

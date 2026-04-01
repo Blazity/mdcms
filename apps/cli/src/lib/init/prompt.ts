@@ -1,5 +1,4 @@
-import { createInterface } from "node:readline/promises";
-import { stdin, stdout } from "node:process";
+import * as clack from "@clack/prompts";
 
 export type PromptChoice<T extends string = string> = {
   label: string;
@@ -7,6 +6,8 @@ export type PromptChoice<T extends string = string> = {
 };
 
 export type Prompter = {
+  intro(message: string): void;
+  outro(message: string): void;
   text(message: string, defaultValue?: string): Promise<string>;
   select<T extends string>(
     message: string,
@@ -17,67 +18,72 @@ export type Prompter = {
     choices: PromptChoice<T>[],
   ): Promise<T[]>;
   confirm(message: string): Promise<boolean>;
+  spinner(): { start(msg: string): void; stop(msg: string): void };
 };
 
-export function createReadlinePrompter(): Prompter {
-  const rl = createInterface({ input: stdin, output: stdout });
-
-  const prompter: Prompter = {
-    async text(message, defaultValue) {
-      const suffix = defaultValue !== undefined ? ` (${defaultValue})` : "";
-      const answer = await rl.question(`${message}${suffix}: `);
-      const trimmed = answer.trim();
-      if (trimmed === "" && defaultValue !== undefined) return defaultValue;
-      return trimmed;
+export function createClackPrompter(): Prompter {
+  return {
+    intro(message) {
+      clack.intro(message);
     },
-
+    outro(message) {
+      clack.outro(message);
+    },
+    async text(message, defaultValue) {
+      const result = await clack.text({
+        message,
+        defaultValue,
+        placeholder: defaultValue,
+      });
+      if (clack.isCancel(result)) process.exit(0);
+      return result as string;
+    },
     async select<T extends string>(
       message: string,
       choices: PromptChoice<T>[],
     ): Promise<T> {
-      stdout.write(`${message}\n`);
-      for (let i = 0; i < choices.length; i++) {
-        stdout.write(`  ${i + 1}) ${choices[i]!.label}\n`);
-      }
-      const answer = await rl.question("Choose a number: ");
-      const index = parseInt(answer.trim(), 10) - 1;
-      if (isNaN(index) || index < 0 || index >= choices.length) {
-        throw new Error(`Invalid selection: ${answer.trim()}`);
-      }
-      return choices[index]!.value;
+      const result = await clack.select({
+        message,
+        options: choices.map((c) => ({
+          label: c.label,
+          value: c.value as string,
+        })),
+      });
+      if (clack.isCancel(result)) process.exit(0);
+      return result as T;
     },
-
     async multiSelect<T extends string>(
       message: string,
       choices: PromptChoice<T>[],
     ): Promise<T[]> {
-      stdout.write(`${message}\n`);
-      for (let i = 0; i < choices.length; i++) {
-        stdout.write(`  ${i + 1}) ${choices[i]!.label}\n`);
-      }
-      const answer = await rl.question(
-        "Choose numbers (comma-separated): ",
-      );
-      const indices = answer
-        .split(",")
-        .map((s) => parseInt(s.trim(), 10) - 1);
-      const selected: T[] = [];
-      for (const idx of indices) {
-        if (isNaN(idx) || idx < 0 || idx >= choices.length) {
-          throw new Error(`Invalid selection: ${idx + 1}`);
-        }
-        selected.push(choices[idx]!.value);
-      }
-      return selected;
+      const result = await clack.multiselect({
+        message,
+        options: choices.map((c) => ({
+          label: c.label,
+          value: c.value as string,
+        })),
+        required: false,
+      });
+      if (clack.isCancel(result)) process.exit(0);
+      return result as T[];
     },
-
     async confirm(message) {
-      const answer = await rl.question(`${message} (y/N): `);
-      return answer.trim().toLowerCase() === "y";
+      const result = await clack.confirm({ message });
+      if (clack.isCancel(result)) process.exit(0);
+      return result as boolean;
+    },
+    spinner() {
+      const s = clack.spinner();
+      return {
+        start(msg: string) {
+          s.start(msg);
+        },
+        stop(msg: string) {
+          s.stop(msg);
+        },
+      };
     },
   };
-
-  return prompter;
 }
 
 export type MockPrompterQueues = {
@@ -98,6 +104,9 @@ export function createMockPrompter(canned: MockPrompterQueues): Prompter {
   };
 
   const prompter: Prompter = {
+    intro() {},
+    outro() {},
+
     async text(_message, _defaultValue) {
       if (queues.text.length === 0) {
         throw new Error("No more canned text responses");
@@ -130,6 +139,13 @@ export function createMockPrompter(canned: MockPrompterQueues): Prompter {
         throw new Error("No more canned confirm responses");
       }
       return queues.confirm.shift()!;
+    },
+
+    spinner() {
+      return {
+        start() {},
+        stop() {},
+      };
     },
   };
 

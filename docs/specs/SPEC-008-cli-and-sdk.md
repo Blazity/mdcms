@@ -99,17 +99,22 @@ CLI extensibility in v1 is intentionally action-based: aliases, formatters, and 
 
 ### `cms init` — Interactive Wizard
 
-The setup wizard walks through:
+The setup wizard uses `@clack/prompts` for the interactive TUI and walks through:
 
-1. **Server URL** — Prompt for the MDCMS server URL.
-2. **Authentication** — Open browser for login, store credentials.
-3. **Directory scanning** — Scan the project for directories containing `.md`/`.mdx` files and collect locale hints from frontmatter, filename suffixes, and locale folder segments.
-4. **Directory selection** — Let the developer choose which directories to manage.
-5. **Schema inference** — Analyze existing frontmatter across files to suggest schema types/fields and infer per-type localization mode (`localized: false` when no locale evidence exists, `localized: true` when two or more distinct locales are detected).
-6. **Schema + locale confirmation** — Present inferred schema and locale mapping plan, let developer adjust. Locale detection precedence is `frontmatter > filename suffix > folder segment`; frontmatter keys checked are `locale`, `lang`, and `language`.
-7. **Config generation** — Generate `mdcms.config.ts` with the confirmed schema, server URL, and settings. If localized types are present, generate `locales.default`, `locales.supported`, and persisted remaps in `locales.aliases`. The wizard recommends `locales.default` as the most frequently detected locale and prompts for confirmation/override.
-8. **Initial import** — Push all selected content to the CMS server with explicit `locale` and `content_format` per document.
-9. **Gitignore + untracking update** — Add managed content directories to `.gitignore` and explicitly remove already tracked managed content files from the Git index (`git rm -r --cached <dir>`), so they are no longer tracked.
+1. **Server URL** — Prompt for the MDCMS server URL + health check.
+2. **Authentication** — Open browser for login via OAuth flow. The login is **not** scoped to a specific project or environment. Scopes: `projects:read`, `projects:write`, `schema:read`, `schema:write`, `content:read`, `content:write`.
+3. **Project selection** — Fetch projects list via `GET /api/v1/projects`. User selects an existing project or "Create new".
+4. **Project creation (if new)** — Prompt for name, `POST /api/v1/projects`. Slug is auto-generated from name; a default "production" environment is created automatically.
+5. **Environment selection** — Fetch environments via `GET /api/v1/projects/:slug/environments`. User selects an existing environment or "Create new".
+6. **Environment creation (if new)** — Prompt for name, `POST /api/v1/projects/:slug/environments`.
+7. **Directory scanning** — Scan the project for directories containing `.md`/`.mdx` files and collect locale hints from frontmatter, filename suffixes, and locale folder segments.
+8. **Directory selection** — Let the developer choose which directories to manage.
+9. **Schema inference** — Analyze existing frontmatter across files to suggest schema types/fields and infer per-type localization mode (`localized: false` when no locale evidence exists, `localized: true` when two or more distinct locales are detected).
+10. **Schema + locale confirmation** — Present inferred schema and locale mapping plan, let developer adjust. Locale detection precedence is `frontmatter > filename suffix > folder segment`; frontmatter keys checked are `locale`, `lang`, and `language`.
+11. **Config generation** — Generate `mdcms.config.ts` with the confirmed schema, server URL, and settings. If localized types are present, generate `locales.default`, `locales.supported`, and persisted remaps in `locales.aliases`. The wizard recommends `locales.default` as the most frequently detected locale and prompts for confirmation/override.
+12. **Schema sync** — Sync schema to server via `PUT /api/v1/schema`.
+13. **Initial import** — Push all selected content to the CMS server with explicit `locale` and `content_format` per document.
+14. **Gitignore + untracking update** — Add managed content directories to `.gitignore` and explicitly remove already tracked managed content files from the Git index (`git rm -r --cached <dir>`), so they are no longer tracked.
 
 If the selected managed directories are inside a Git repository and contain tracked files, the wizard must:
 
@@ -261,12 +266,12 @@ export const migration: Migration = {
 ### Authentication
 
 - `cms login` starts a browser-based authorization code flow via `/api/v1/auth/cli/login/*`.
-- CLI starts a local loopback callback listener (`127.0.0.1`) and exchanges a one-time code for an API key scoped to `(serverUrl, project, environment)`.
-- The credential store is keyed by server URL, project, and environment and supports one active profile per tuple.
+- CLI starts a local loopback callback listener (`127.0.0.1`) and exchanges a one-time code for an API key scoped to `serverUrl` (project and environment are **not** sent during login).
+- The credential store is keyed by server URL and supports one active profile per server.
 - In interactive mode, credentials are stored in the OS credential store when available (fallback to `~/.mdcms/credentials.json` with `0600` permissions).
-- Login-generated API keys default to scopes: `content:read`, `content:read:draft`, `content:write`.
+- Login-generated API keys default to scopes: `projects:read`, `projects:write`, `schema:read`, `schema:write`, `content:read`, `content:write`.
 - CLI auth precedence is: `--api-key` > `MDCMS_API_KEY` > stored profile.
-- `cms logout` always clears the local profile for the current tuple and performs best-effort remote self-revoke of the active API key.
+- `cms logout` always clears the local profile for the current server and performs best-effort remote self-revoke of the active API key.
 
 ### Action Runner and Alias Resolution
 

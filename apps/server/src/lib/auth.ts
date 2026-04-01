@@ -55,6 +55,8 @@ export const API_KEY_OPERATION_SCOPES = [
   "environments:clone",
   "environments:promote",
   "migrations:run",
+  "projects:read",
+  "projects:write",
 ] as const;
 
 const API_KEY_PREFIX = "mdcms_key_";
@@ -137,8 +139,8 @@ export type ApiKeyMetadata = {
 };
 
 export type CliLoginStartInput = {
-  project: string;
-  environment: string;
+  project?: string;
+  environment?: string;
   redirectUri: string;
   state: string;
   scopes?: ApiKeyOperationScope[];
@@ -402,8 +404,8 @@ const CreateApiKeyInputSchema = z.object({
 });
 
 const CliLoginStartInputSchema = z.object({
-  project: z.string().trim().min(1),
-  environment: z.string().trim().min(1),
+  project: z.string().trim().min(1).optional(),
+  environment: z.string().trim().min(1).optional(),
   redirectUri: z.string().trim().url(),
   state: z.string().trim().min(16).max(256),
   scopes: z.array(z.enum(API_KEY_OPERATION_SCOPES)).min(1).optional(),
@@ -3217,32 +3219,34 @@ export function createAuthService(
           });
         }
 
-        if (!requirement.project || !requirement.environment) {
-          throw new RuntimeError({
-            code: "FORBIDDEN",
-            message:
-              "API key authorization requires explicit project/environment routing context.",
-            statusCode: 403,
-          });
-        }
+        if (metadata.contextAllowlist.length > 0) {
+          if (!requirement.project || !requirement.environment) {
+            throw new RuntimeError({
+              code: "FORBIDDEN",
+              message:
+                "API key authorization requires explicit project/environment routing context.",
+              statusCode: 403,
+            });
+          }
 
-        const isContextAllowed = metadata.contextAllowlist.some(
-          (candidate) =>
-            candidate.project === requirement.project &&
-            candidate.environment === requirement.environment,
-        );
+          const isContextAllowed = metadata.contextAllowlist.some(
+            (candidate) =>
+              candidate.project === requirement.project &&
+              candidate.environment === requirement.environment,
+          );
 
-        if (!isContextAllowed) {
-          throw new RuntimeError({
-            code: "FORBIDDEN",
-            message:
-              "API key is not allowed for the requested project/environment context.",
-            statusCode: 403,
-            details: {
-              project: requirement.project,
-              environment: requirement.environment,
-            },
-          });
+          if (!isContextAllowed) {
+            throw new RuntimeError({
+              code: "FORBIDDEN",
+              message:
+                "API key is not allowed for the requested project/environment context.",
+              statusCode: 403,
+              details: {
+                project: requirement.project,
+                environment: requirement.environment,
+              },
+            });
+          }
         }
 
         await options.db
@@ -3547,18 +3551,19 @@ export function createAuthService(
         });
       }
 
+      const label = challenge.project
+        ? `cli:${challenge.project}/${challenge.environment ?? "*"}`
+        : "cli:user-level";
+      const contextAllowlist = challenge.project
+        ? [{ project: challenge.project, environment: challenge.environment ?? "*" }]
+        : [];
       const created = await createApiKeyForUser({
         userId: challenge.userId,
-        label: `cli:${challenge.project}/${challenge.environment}`,
+        label,
         scopes: normalizeRequestedCliScopes(
           challenge.requestedScopes as ApiKeyOperationScope[],
         ),
-        contextAllowlist: [
-          {
-            project: challenge.project,
-            environment: challenge.environment,
-          },
-        ],
+        contextAllowlist,
       });
 
       await options.db
