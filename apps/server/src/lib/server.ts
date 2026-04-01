@@ -478,6 +478,7 @@ async function normalizeElysiaErrorResponse(input: {
 export function createServerRequestHandler(
   options: CreateServerRequestHandlerOptions = {},
 ): ServerRequestHandler {
+  console.log("miau miau");
   const env = parseServerEnv(options.env ?? process.env);
   const startedAtMs = options.startedAtMs ?? Date.now();
   const now = options.now ?? (() => new Date());
