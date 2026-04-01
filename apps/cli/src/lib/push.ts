@@ -116,11 +116,15 @@ function renderPushHelp(): string {
   ].join("\n");
 }
 
-function toRequestHeaders(context: CliCommandContext): Headers {
+function toRequestHeaders(
+  context: CliCommandContext,
+  schemaHash: string,
+): Headers {
   const headers = new Headers({
     "content-type": "application/json",
     "x-mdcms-project": context.project,
     "x-mdcms-environment": context.environment,
+    "x-mdcms-schema-hash": schemaHash,
   });
 
   if (context.apiKey) {
@@ -385,6 +389,7 @@ function parseRemoteError(
 async function updateExistingDocument(
   context: CliCommandContext,
   candidate: PushCandidate,
+  schemaHash: string,
 ): Promise<
   | {
       kind: "updated";
@@ -403,7 +408,7 @@ async function updateExistingDocument(
     `${context.serverUrl}/api/v1/content/${candidate.documentId}`,
     {
       method: "PUT",
-      headers: toRequestHeaders(context),
+      headers: toRequestHeaders(context, schemaHash),
       body: JSON.stringify({
         format: candidate.format,
         frontmatter: candidate.frontmatter,
@@ -447,6 +452,7 @@ async function updateExistingDocument(
 async function createDocumentFromLocalFile(
   context: CliCommandContext,
   candidate: PushCandidate,
+  schemaHash: string,
 ): Promise<ContentDocumentPayload> {
   const types = context.config.types ?? [];
 
@@ -469,7 +475,7 @@ async function createDocumentFromLocalFile(
     `${context.serverUrl}/api/v1/content`,
     {
       method: "POST",
-      headers: toRequestHeaders(context),
+      headers: toRequestHeaders(context, schemaHash),
       body: JSON.stringify({
         type: createTarget.type,
         path: createTarget.path,
@@ -643,6 +649,7 @@ async function applyPush(
   manifestPath: string,
   manifest: ScopedManifest,
   candidates: PushCandidate[],
+  schemaHash: string,
 ): Promise<{ results: PushResult[]; failures: number }> {
   const nextManifest: ScopedManifest = { ...manifest };
   const results: PushResult[] = [];
@@ -650,7 +657,7 @@ async function applyPush(
 
   for (const candidate of candidates) {
     try {
-      const updateResult = await updateExistingDocument(context, candidate);
+      const updateResult = await updateExistingDocument(context, candidate, schemaHash);
 
       if (updateResult.kind === "updated") {
         nextManifest[candidate.documentId] = {
@@ -683,7 +690,7 @@ async function applyPush(
         continue;
       }
 
-      const created = await createDocumentFromLocalFile(context, candidate);
+      const created = await createDocumentFromLocalFile(context, candidate, schemaHash);
       delete nextManifest[candidate.documentId];
       nextManifest[created.documentId] = {
         path: candidate.manifestEntry.path,
@@ -745,6 +752,21 @@ export async function runPushCommand(
     throw new RuntimeError({
       code: "INVALID_INPUT",
       message: 'Flag "--published" is reserved and not supported for push yet.',
+      statusCode: 400,
+    });
+  }
+
+  const schemaState = await readSchemaState({
+    cwd: context.cwd,
+    project: context.project,
+    environment: context.environment,
+  });
+
+  if (!schemaState) {
+    throw new RuntimeError({
+      code: "SCHEMA_STATE_MISSING",
+      message:
+        'No local schema state found. Run "cms schema sync" before pushing.',
       statusCode: 400,
     });
   }
@@ -863,6 +885,7 @@ export async function runPushCommand(
     manifestPath,
     manifest,
     pushPlan.changedCandidates,
+    schemaState.schemaHash,
   );
   printPushResults(context, results);
 

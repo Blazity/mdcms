@@ -51,6 +51,24 @@ function hashRawContent(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
+async function writeSchemaStateFile(
+  cwd: string,
+  project: string,
+  environment: string,
+): Promise<void> {
+  const dir = join(cwd, ".mdcms", "schema");
+  await mkdir(dir, { recursive: true });
+  await writeFile(
+    join(dir, `${project}.${environment}.json`),
+    JSON.stringify({
+      schemaHash: "test-schema-hash-" + "a".repeat(48),
+      syncedAt: "2026-03-31T12:00:00.000Z",
+      serverUrl: "http://localhost:4000",
+    }),
+    "utf8",
+  );
+}
+
 test("push updates an existing manifest-tracked document via PUT", async () => {
   await withTempDir(async (cwd) => {
     const manifestPath = join(
@@ -60,6 +78,7 @@ test("push updates an existing manifest-tracked document via PUT", async () => {
       "marketing-site.staging.json",
     );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
     await writeFile(
       manifestPath,
       JSON.stringify(
@@ -94,6 +113,12 @@ test("push updates an existing manifest-tracked document via PUT", async () => {
         requestCount += 1;
         assert.equal(String(input).endsWith("/api/v1/content/doc-1"), true);
         assert.equal(init?.method, "PUT");
+
+        const headers = new Headers(init?.headers as HeadersInit);
+        assert.ok(
+          headers.get("x-mdcms-schema-hash"),
+          "x-mdcms-schema-hash header must be present",
+        );
 
         const body = JSON.parse(String(init?.body)) as {
           format: string;
@@ -163,6 +188,7 @@ test("push falls back to POST and rewrites manifest key when PUT target is missi
       "marketing-site.staging.json",
     );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
     await writeFile(
       manifestPath,
       JSON.stringify(
@@ -281,6 +307,7 @@ test("push sends only changed documents and skips unchanged manifest entries", a
       "marketing-site.staging.json",
     );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
     await mkdir(join(cwd, "content", "blog"), { recursive: true });
 
     const changedContent = "# Changed\n";
@@ -396,6 +423,7 @@ test("push exits successfully without API calls when no changed documents are fo
       "marketing-site.staging.json",
     );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
     await mkdir(join(cwd, "content", "blog"), { recursive: true });
 
     const localContent = "# Stable document\n";
@@ -478,6 +506,7 @@ test("push treats missing manifest hash as changed and repairs hash after succes
       "marketing-site.staging.json",
     );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
     await mkdir(join(cwd, "content", "blog"), { recursive: true });
 
     const localContent = "# Missing hash compatibility\n";
@@ -560,6 +589,7 @@ test("push fails with deterministic error on unsupported file extension", async 
       "marketing-site.staging.json",
     );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
     await writeFile(
       manifestPath,
       JSON.stringify(
@@ -626,6 +656,7 @@ test("push reports stale document as failed and continues pushing remaining docu
       "marketing-site.staging.json",
     );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
     await writeFile(
       manifestPath,
       JSON.stringify(
@@ -756,6 +787,7 @@ test("push --dry-run prints plan without performing API calls", async () => {
       "marketing-site.staging.json",
     );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
     await writeFile(
       manifestPath,
       JSON.stringify(
@@ -822,6 +854,7 @@ test("push --dry-run prints plan without performing API calls", async () => {
 
 test("push --validate --dry-run passes valid documents without API calls", async () => {
   await withTempDir(async (cwd) => {
+    await writeSchemaStateFile(cwd, "test-project", "staging");
     const config = parseMdcmsConfig(
       defineConfig({
         serverUrl: "http://localhost:4000",
@@ -888,6 +921,7 @@ test("push --validate --dry-run passes valid documents without API calls", async
 
 test("push --validate --dry-run exits 1 on validation errors", async () => {
   await withTempDir(async (cwd) => {
+    await writeSchemaStateFile(cwd, "test-project", "staging");
     const config = parseMdcmsConfig(
       defineConfig({
         serverUrl: "http://localhost:4000",
@@ -958,6 +992,7 @@ test("push --validate --dry-run exits 1 on validation errors", async () => {
 
 test("push --validate blocks push on errors even without --dry-run", async () => {
   await withTempDir(async (cwd) => {
+    await writeSchemaStateFile(cwd, "test-project", "staging");
     const config = parseMdcmsConfig(
       defineConfig({
         serverUrl: "http://localhost:4000",
