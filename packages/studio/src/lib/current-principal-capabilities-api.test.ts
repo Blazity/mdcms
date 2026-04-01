@@ -48,6 +48,7 @@ test("get fetches current principal capabilities with scoped headers", async () 
   const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
     [];
   const api = createCapabilitiesApi({
+    auth: { mode: "cookie" },
     fetcher: async (input, init) => {
       calls.push({ input, init });
 
@@ -85,7 +86,7 @@ test("get fetches current principal capabilities with scoped headers", async () 
   assert.equal(readHeader(calls[0]?.init, "x-mdcms-project"), "marketing-site");
   assert.equal(readHeader(calls[0]?.init, "x-mdcms-environment"), "staging");
   assert.equal(readHeader(calls[0]?.init, "authorization"), null);
-  assert.equal(calls[0]?.init?.credentials, undefined);
+  assert.equal(calls[0]?.init?.credentials, "include");
   assert.equal(result.project, "marketing-site");
   assert.equal(result.environment, "staging");
   assert.equal(result.capabilities.schema.read, true);

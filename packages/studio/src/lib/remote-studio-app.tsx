@@ -491,6 +491,7 @@ export function RemoteStudioApp({
         value={{
           pathname,
           params: routeParams,
+          basePath: context.basePath,
           push: (href) => updatePathname(href, "push"),
           replace: (href) => updatePathname(href, "replace"),
           back: () => {

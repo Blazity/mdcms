@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import type { StudioMountContext } from "@mdcms/shared";
 
 import { createStudioCurrentPrincipalCapabilitiesApi } from "../../../current-principal-capabilities-api.js";
+import { AdminCapabilitiesProvider } from "./capabilities-context.js";
 import { AppSidebar } from "../../components/layout/app-sidebar";
 import { cn } from "../../lib/utils";
 
@@ -102,19 +103,21 @@ export default function AdminLayout({
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-background">
-      <AppSidebar
-        canReadSchema={canReadSchema}
-        collapsed={sidebarCollapsed}
-        onToggle={handleToggle}
-      />
-      <main
-        className={cn(
-          "min-h-screen min-w-0 overflow-x-hidden transition-all duration-300",
-          sidebarCollapsed ? "ml-16" : "ml-60",
-        )}
-      >
-        {children}
-      </main>
+      <AdminCapabilitiesProvider value={{ canReadSchema }}>
+        <AppSidebar
+          canReadSchema={canReadSchema}
+          collapsed={sidebarCollapsed}
+          onToggle={handleToggle}
+        />
+        <main
+          className={cn(
+            "min-h-screen min-w-0 overflow-x-hidden transition-all duration-300",
+            sidebarCollapsed ? "ml-16" : "ml-60",
+          )}
+        >
+          {children}
+        </main>
+      </AdminCapabilitiesProvider>
     </div>
   );
 }

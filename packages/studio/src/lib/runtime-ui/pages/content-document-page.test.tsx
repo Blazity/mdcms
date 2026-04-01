@@ -21,8 +21,10 @@ import {
   loadContentDocumentVersionDiff,
   parseSelectedComparisonVersionValue,
   publishContentDocumentReadyState,
+  reloadSchemaStateForGuard,
   reduceContentDocumentPageReadyState,
   saveContentDocumentReadyState,
+  syncSchemaStateForGuard,
 } from "./content-document-page.js";
 
 function createReadyShell(
@@ -399,48 +401,20 @@ test("loadContentDocumentPageState applies the schema mismatch guard before retu
     documentId: "11111111-1111-4111-8111-111111111111",
     loadDocumentShell: async () => createReadyShell(),
     loadSchemaState: async () =>
-      ({
-        status: "ready",
-        project: "marketing-site",
-        environment: "staging",
-        localSchemaHash: "local-hash",
+      createReadySchemaState({
         serverSchemaHash: "server-hash",
         isMismatch: true,
-        canSync: true,
-        entries: [],
-        reload: async () => ({
-          status: "ready",
-          project: "marketing-site",
-          environment: "staging",
-          localSchemaHash: "local-hash",
-          serverSchemaHash: "server-hash",
-          isMismatch: true,
-          canSync: true,
-          entries: [],
-          reload: async () => {
-            throw new Error("not used");
-          },
-          sync: async () => {
-            throw new Error("not used");
-          },
-        }),
-        sync: async () => ({
-          status: "ready",
-          project: "marketing-site",
-          environment: "staging",
-          localSchemaHash: "local-hash",
-          serverSchemaHash: "server-hash",
-          isMismatch: false,
-          canSync: true,
-          entries: [],
-          reload: async () => {
-            throw new Error("not used");
-          },
-          sync: async () => {
-            throw new Error("not used");
-          },
-        }),
-      }) as any,
+        reload: async () =>
+          createReadySchemaState({
+            serverSchemaHash: "server-hash",
+            isMismatch: true,
+          }),
+        sync: async () =>
+          createReadySchemaState({
+            serverSchemaHash: "server-hash",
+            isMismatch: false,
+          }),
+      }),
     createRouteApi: () => ({
       listVersions: async () => ({
         data: [createVersionSummary(3), createVersionSummary(1)],
@@ -466,6 +440,47 @@ test("loadContentDocumentPageState applies the schema mismatch guard before retu
   );
   assert.equal((next as any).schemaState?.isMismatch, true);
   assert.equal(next.versionHistory.status, "ready");
+});
+
+test("reloadSchemaStateForGuard logs and returns undefined when schema reload fails", async () => {
+  const logged: unknown[] = [];
+  const next = await reloadSchemaStateForGuard(
+    {
+      ...createReadyState(),
+      schemaState: createReadySchemaState({
+        reload: async () => {
+          throw new Error("reload failed");
+        },
+      }),
+    },
+    (...args) => {
+      logged.push(args);
+    },
+  );
+
+  assert.equal(next, undefined);
+  assert.equal(logged.length, 1);
+  assert.equal((logged[0] as unknown[])[0], "reloadSchemaStateForGuard failed");
+  assert.equal(((logged[0] as unknown[])[1] as Error).message, "reload failed");
+});
+
+test("syncSchemaStateForGuard logs and returns undefined when schema sync fails", async () => {
+  const logged: unknown[] = [];
+  const next = await syncSchemaStateForGuard(
+    createReadySchemaState({
+      sync: async () => {
+        throw new Error("sync failed");
+      },
+    }),
+    (...args) => {
+      logged.push(args);
+    },
+  );
+
+  assert.equal(next, undefined);
+  assert.equal(logged.length, 1);
+  assert.equal((logged[0] as unknown[])[0], "syncSchemaStateForGuard failed");
+  assert.equal(((logged[0] as unknown[])[1] as Error).message, "sync failed");
 });
 
 test("applySchemaStateToReadyState keeps the current draft visible when schema sync fails", () => {

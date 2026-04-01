@@ -1732,6 +1732,22 @@ function toRbacAction(requiredScope: ApiKeyOperationScope): RbacAction | null {
   return null;
 }
 
+export function resolveApiKeyRbacAction(
+  requiredScope: ApiKeyOperationScope,
+): RbacAction {
+  const action = toRbacAction(requiredScope);
+
+  if (action) {
+    return action;
+  }
+
+  throw new RuntimeError({
+    code: "FORBIDDEN",
+    message: "Session role cannot mint this API key scope.",
+    statusCode: 403,
+  });
+}
+
 function apiKeyScopesSatisfyRequirement(
   scopes: readonly ApiKeyOperationScope[],
   requiredScope: ApiKeyOperationScope,
@@ -2888,11 +2904,7 @@ export function createAuthService(
     const grants = await loadSessionRbacGrants(session);
 
     for (const scope of new Set(scopes)) {
-      const action = toRbacAction(scope);
-
-      if (!action) {
-        continue;
-      }
+      const action = resolveApiKeyRbacAction(scope);
 
       for (const target of contextAllowlist) {
         const decision = evaluatePermission({

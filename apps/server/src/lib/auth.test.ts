@@ -10,6 +10,7 @@ import {
   buildStaticSsoPluginOptions,
   buildStaticOidcProviders,
   mapSsoCallbackErrorCode,
+  resolveApiKeyRbacAction,
   resolveStartupOidcProviders,
   validateSsoSignInPayload,
   validateSsoRedirectUrl,
@@ -374,6 +375,14 @@ test("auth oidc fixture rejects missing sub claims", () => {
   const fixture = createMissingSubOidcFixture("okta");
 
   assert.throws(() => normalizeOidcFixtureClaims(fixture.claims), /sub/i);
+});
+
+test("resolveApiKeyRbacAction rejects unmapped API key scopes", () => {
+  assert.throws(
+    () => resolveApiKeyRbacAction("media:upload"),
+    (error: unknown) =>
+      error instanceof Error && "code" in error && error.code === "FORBIDDEN",
+  );
 });
 
 if (dbAvailable) {
@@ -2942,7 +2951,7 @@ testWithDatabase(
           body: JSON.stringify({
             label: "schema-read-wrong-target",
             scopes: ["schema:read"],
-            contextAllowlist: [blockedScope],
+            contextAllowlist: [allowedScope, blockedScope],
           }),
         }),
       );
@@ -3263,6 +3272,19 @@ testWithDatabase(
         email: editorEmail,
         password,
       });
+      const scope = {
+        project: "marketing-site",
+        environment: "staging",
+      };
+      await seedScope(dbConnection.db, scope);
+      await dbConnection.db.insert(rbacGrants).values({
+        userId: editorLogin.session.userId,
+        role: "editor",
+        scopeKind: "project",
+        project: scope.project,
+        source: "test:schema-scope-editor",
+        createdByUserId: ownerLogin.session.userId,
+      });
 
       const createResponse = await handler(
         new Request("http://localhost/api/v1/auth/api-keys", {
@@ -3273,12 +3295,68 @@ testWithDatabase(
           body: JSON.stringify({
             label: "schema-write-attempt",
             scopes: ["schema:write"],
-            contextAllowlist: [
-              {
-                project: "marketing-site",
-                environment: "staging",
-              },
-            ],
+            contextAllowlist: [scope],
+          }),
+        }),
+      );
+      const createBody = (await createResponse.json()) as {
+        code: string;
+      };
+
+      assert.equal(createResponse.status, 403);
+      assert.equal(createBody.code, "FORBIDDEN");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "API key creation rejects unmapped scopes even for owner sessions",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const ownerEmail = uniqueEmail();
+    const password = "Admin12345!";
+    const scope = {
+      project: `unmapped-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      environment: `env-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    };
+
+    try {
+      await signUp(handler, {
+        email: ownerEmail,
+        password,
+        name: "Owner",
+      });
+      const ownerLogin = await login(handler, {
+        email: ownerEmail,
+        password,
+      });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: ownerLogin.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:unmapped-scope-owner",
+          createdByUserId: ownerLogin.session.userId,
+        })
+        .onConflictDoNothing();
+      await seedScope(dbConnection.db, scope);
+
+      const createResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          method: "POST",
+          headers: createCsrfHeaders(ownerLogin, {
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            label: "media-upload",
+            scopes: ["media:upload"],
+            contextAllowlist: [scope],
           }),
         }),
       );

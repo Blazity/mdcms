@@ -241,17 +241,11 @@ function resolveContentDocumentWriteAccess(input: {
   canWrite: boolean;
   writeMessage?: string;
 } {
+  const routeWriteAccess = resolveRouteWriteAccess(input.route);
   const schemaState = input.schemaState;
 
   if (!schemaState) {
-    return input.route.write.canWrite
-      ? {
-          canWrite: true,
-        }
-      : {
-          canWrite: false,
-          writeMessage: input.route.write.message,
-        };
+    return routeWriteAccess;
   }
 
   if (schemaState.status !== "ready") {
@@ -268,13 +262,20 @@ function resolveContentDocumentWriteAccess(input: {
     };
   }
 
-  return input.route.write.canWrite
+  return routeWriteAccess;
+}
+
+function resolveRouteWriteAccess(route: StudioDocumentRouteMountContext): {
+  canWrite: boolean;
+  writeMessage?: string;
+} {
+  return route.write.canWrite
     ? {
         canWrite: true,
       }
     : {
         canWrite: false,
-        writeMessage: input.route.write.message,
+        writeMessage: route.write.message,
       };
 }
 
@@ -394,8 +395,15 @@ function formatSchemaRecoveryHash(hash?: string): string {
   return hash?.trim().length ? hash : "Not synced";
 }
 
-async function reloadSchemaStateForGuard(
+type SchemaGuardLogger = (message: string, error: unknown) => void;
+
+function defaultSchemaGuardLogger(message: string, error: unknown): void {
+  console.error(message, error);
+}
+
+export async function reloadSchemaStateForGuard(
   state: ContentDocumentPageReadyState,
+  logError: SchemaGuardLogger = defaultSchemaGuardLogger,
 ): Promise<StudioSchemaState | undefined> {
   if (!isReadySchemaState(state.schemaState)) {
     return undefined;
@@ -403,7 +411,20 @@ async function reloadSchemaStateForGuard(
 
   try {
     return await state.schemaState.reload();
-  } catch {
+  } catch (error) {
+    logError("reloadSchemaStateForGuard failed", error);
+    return undefined;
+  }
+}
+
+export async function syncSchemaStateForGuard(
+  schemaState: ContentDocumentSchemaReadyState,
+  logError: SchemaGuardLogger = defaultSchemaGuardLogger,
+): Promise<StudioSchemaState | undefined> {
+  try {
+    return await schemaState.sync();
+  } catch (error) {
+    logError("syncSchemaStateForGuard failed", error);
     return undefined;
   }
 }
@@ -1868,7 +1889,13 @@ export default function ContentDocumentPage({
 
     // Sync Schema forwards the authored config snapshot through the schema
     // registry contract; Studio does not edit schema definitions here.
-    const nextSchemaState = await currentState.schemaState.sync();
+    const nextSchemaState = await syncSchemaStateForGuard(
+      currentState.schemaState,
+    );
+
+    if (!nextSchemaState) {
+      return;
+    }
 
     setState((current) =>
       current.status === "ready" &&

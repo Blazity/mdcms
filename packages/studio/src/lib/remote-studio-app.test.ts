@@ -11,6 +11,7 @@ import {
   startDocumentPreview,
   stripStudioBasePath,
 } from "./remote-studio-app.js";
+import { AdminCapabilitiesProvider } from "./runtime-ui/app/admin/capabilities-context.js";
 import SettingsPage from "./runtime-ui/app/admin/settings-page.js";
 import { ThemeProvider } from "./runtime-ui/adapters/next-themes.js";
 import { StudioNavigationProvider } from "./runtime-ui/navigation.js";
@@ -354,14 +355,23 @@ test("SettingsPage links the schema tab to the live schema browser instead of re
           value: {
             pathname: "/admin/settings",
             params: {},
+            basePath: "/admin",
             push: () => {},
             replace: () => {},
             back: () => {},
           },
         },
-        createElement(SettingsPage, {
-          initialTab: "schema",
-        }),
+        createElement(
+          AdminCapabilitiesProvider,
+          {
+            value: {
+              canReadSchema: true,
+            },
+          },
+          createElement(SettingsPage, {
+            initialTab: "schema",
+          }),
+        ),
       ),
     ),
   );

@@ -17,6 +17,7 @@ import {
   Trash2,
 } from "lucide-react";
 import Link from "../../adapters/next-link";
+import { resolveStudioHref, useBasePath } from "../../adapters/next-navigation";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Badge } from "../../components/ui/badge";
@@ -37,6 +38,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/ui/table";
+import { useCanReadSchema } from "./capabilities-context.js";
 import { PageHeader } from "../../components/layout/page-header";
 import { mockEnvironments, currentProject } from "../../lib/mock-data";
 import { cn } from "../../lib/utils";
@@ -105,6 +115,9 @@ export default function SettingsPage({
 }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [showSecret, setShowSecret] = useState(false);
+  const canReadSchema = useCanReadSchema();
+  const basePath = useBasePath();
+  const schemaBrowserHref = resolveStudioHref(basePath, "/schema");
 
   return (
     <div className="min-h-screen">
@@ -438,7 +451,7 @@ export default function SettingsPage({
           )}
 
           {/* Schema */}
-          {activeTab === "schema" && (
+          {activeTab === "schema" && canReadSchema && (
             <div className="space-y-6">
               <div>
                 <h2 className="text-xl font-semibold">Schema</h2>
@@ -467,7 +480,7 @@ export default function SettingsPage({
                     asChild
                     className="bg-accent text-white hover:bg-accent-hover"
                   >
-                    <Link href="/admin/schema">
+                    <Link href={schemaBrowserHref}>
                       Open schema browser
                       <ArrowRight className="ml-2 h-4 w-4" />
                     </Link>

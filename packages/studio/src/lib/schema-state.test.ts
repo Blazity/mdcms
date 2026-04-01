@@ -384,7 +384,7 @@ test("loadStudioSchemaState keeps ready-state data when a sync attempt fails", a
     throw new Error("Expected the sync failure state to stay ready.");
   }
 
-  assert.equal(failedState.entries, state.entries);
+  assert.deepEqual(failedState.entries, state.entries);
   assert.equal(failedState.serverSchemaHash, state.serverSchemaHash);
   assert.equal(failedState.isMismatch, state.isMismatch);
   assert.equal(failedState.canSync, state.canSync);

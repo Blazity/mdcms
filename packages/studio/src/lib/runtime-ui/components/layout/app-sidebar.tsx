@@ -3,6 +3,7 @@
 
 import Link from "../../adapters/next-link";
 import { usePathname } from "../../adapters/next-navigation";
+import { useCanReadSchema } from "../../app/admin/capabilities-context";
 import {
   LayoutDashboard,
   FileText,
@@ -40,7 +41,7 @@ import { mockUsers } from "../../lib/mock-data";
 import { useState } from "react";
 
 interface AppSidebarProps {
-  canReadSchema: boolean;
+  canReadSchema?: boolean;
   collapsed: boolean;
   onToggle: () => void;
 }
@@ -76,6 +77,8 @@ export function AppSidebar({
   onToggle,
 }: AppSidebarProps) {
   const pathname = usePathname();
+  const contextCanReadSchema = useCanReadSchema();
+  const effectiveCanReadSchema = canReadSchema ?? contextCanReadSchema;
   const [comingSoonOpen, setComingSoonOpen] = useState(false);
   const onlineUsers = mockUsers.filter((u) => u.isOnline).slice(0, 5);
 
@@ -102,7 +105,7 @@ export function AppSidebar({
         {/* Main Navigation */}
         <nav className="flex-1 overflow-y-auto p-2">
           <ul className="space-y-1">
-            {getMainNavItems(canReadSchema).map((item) => {
+            {getMainNavItems(effectiveCanReadSchema).map((item) => {
               const isActive =
                 pathname === item.href ||
                 (item.href !== "/admin" && pathname.startsWith(item.href));
@@ -145,7 +148,7 @@ export function AppSidebar({
           {collapsed ? (
             <ul className="space-y-1">
               {comingSoonItems.map((item) => (
-                <li key={item.href}>
+                <li key={item.label}>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Link
