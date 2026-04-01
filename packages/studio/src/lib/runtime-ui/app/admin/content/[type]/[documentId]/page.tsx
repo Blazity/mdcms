@@ -1,7 +1,7 @@
 // @ts-nocheck
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "../../../../../adapters/next-navigation";
 import {
   Check,
@@ -80,6 +80,15 @@ export default function DocumentEditorPage() {
   const [selectedLocale, setSelectedLocale] = useState(
     document?.locale || "en-US",
   );
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
+    };
+  }, []);
 
   if (!contentType || !document) {
     return (
@@ -94,8 +103,11 @@ export default function DocumentEditorPage() {
 
   const handleContentChange = () => {
     setSaveStatus("saving");
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
     // Simulate auto-save
-    setTimeout(() => {
+    saveTimerRef.current = setTimeout(() => {
       setSaveStatus("saved");
     }, 1000);
   };
@@ -258,7 +270,7 @@ export default function DocumentEditorPage() {
             className="min-w-0 flex-1 overflow-y-auto p-6"
           >
             <div className="mx-auto max-w-4xl">
-              <TipTapEditor onChange={handleContentChange} />
+              <TipTapEditor key={documentId} onChange={handleContentChange} />
             </div>
           </div>
 
