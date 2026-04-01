@@ -361,15 +361,20 @@ test("ContentDocumentPageView renders document route loading and failure states"
 
   assert.match(loadingMarkup, /data-mdcms-document-state="loading"/);
   assert.match(loadingMarkup, /Loading document draft/);
+  assert.doesNotMatch(loadingMarkup, />Draft</);
+  assert.doesNotMatch(loadingMarkup, />Publish</);
   assert.match(forbiddenMarkup, /data-mdcms-document-state="forbidden"/);
   assert.match(
     forbiddenMarkup,
     /You do not have access to this document draft/,
   );
+  assert.doesNotMatch(forbiddenMarkup, />Draft</);
   assert.match(notFoundMarkup, /data-mdcms-document-state="not-found"/);
   assert.match(notFoundMarkup, /Document not found/);
+  assert.doesNotMatch(notFoundMarkup, />Draft</);
   assert.match(errorMarkup, /data-mdcms-document-state="error"/);
   assert.match(errorMarkup, /Draft load failed/);
+  assert.doesNotMatch(errorMarkup, />Draft</);
 });
 
 test("ContentDocumentPageView renders guarded schema mismatch recovery controls", () => {
@@ -1260,13 +1265,46 @@ test("ContentDocumentPageView renders version history states and arbitrary-versi
   assert.match(readyMarkup, /Comparing v1 to v3/);
   assert.match(readyMarkup, /blog\/launch-notes-updated/);
   assert.match(readyMarkup, /Launch Notes v3/);
+  assert.match(readyMarkup, /Document workflow/);
   assert.match(
     readyMarkup,
-    /Write-enabled draft saves require a local schema hash derived from the authored Studio config\./,
+    /This page loads the routed draft, saves draft edits, and publishes the current draft through the live content API\./,
+  );
+  assert.match(
+    readyMarkup,
+    /If Studio cannot derive the local schema hash required for writes, the editor stays read-only until schema recovery completes\./,
   );
   assert.doesNotMatch(readyMarkup, />Unpublish</);
   assert.doesNotMatch(readyMarkup, /Move \/ Rename/);
   assert.doesNotMatch(readyMarkup, /View published version/);
+  assert.doesNotMatch(readyMarkup, /Route status/);
+});
+
+test("ContentDocumentPageView derives truthful document badges from live document state", () => {
+  const changedMarkup = renderPageMarkup(createReadyState());
+  const publishedMarkup = renderPageMarkup({
+    ...createReadyState(),
+    document: {
+      ...createReadyState().document,
+      hasUnpublishedChanges: false,
+      publishedVersion: 5,
+    },
+  });
+  const draftMarkup = renderPageMarkup({
+    ...createReadyState(),
+    document: {
+      ...createReadyState().document,
+      hasUnpublishedChanges: true,
+      publishedVersion: null,
+    },
+  });
+
+  assert.match(changedMarkup, />Changed</);
+  assert.doesNotMatch(changedMarkup, />Published</);
+  assert.match(publishedMarkup, />Published</);
+  assert.doesNotMatch(publishedMarkup, />Changed</);
+  assert.match(draftMarkup, />Draft</);
+  assert.doesNotMatch(draftMarkup, />Published</);
 });
 
 test("ContentDocumentPageView blocks writes when the local schema hash capability is unavailable", () => {

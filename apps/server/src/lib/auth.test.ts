@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "bun:test";
 
 import { createConsoleLogger } from "@mdcms/shared";
 import { and, eq } from "drizzle-orm";
@@ -2314,6 +2314,16 @@ testWithDatabase(
         email,
         password,
       });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: loginResult.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:csrf-api-key-owner",
+          createdByUserId: loginResult.session.userId,
+        })
+        .onConflictDoNothing();
 
       const missingHeaderResponse = await handler(
         new Request("http://localhost/api/v1/auth/api-keys", {
@@ -2750,6 +2760,16 @@ testWithDatabase(
         email,
         password,
       });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: loginResult.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:api-key-lifecycle-owner",
+          createdByUserId: loginResult.session.userId,
+        })
+        .onConflictDoNothing();
       const cookie = loginResult.cookie;
 
       const readKeyResponse = await handler(
@@ -4042,6 +4062,20 @@ testWithDatabase(
 
     try {
       await signUp(handler, { email, password });
+      const ownerLogin = await login(handler, {
+        email,
+        password,
+      });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: ownerLogin.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:cli-login-owner",
+          createdByUserId: ownerLogin.session.userId,
+        })
+        .onConflictDoNothing();
 
       const startResponse = await handler(
         new Request("http://localhost/api/v1/auth/cli/login/start", {
