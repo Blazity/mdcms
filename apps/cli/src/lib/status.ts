@@ -6,7 +6,8 @@ import type {
   ContentDocumentResponse,
   ParsedMdcmsConfig,
 } from "@mdcms/shared";
-import { buildSchemaSyncPayload, RuntimeError } from "@mdcms/shared";
+import { RuntimeError } from "@mdcms/shared";
+import { buildSchemaSyncPayload } from "@mdcms/shared/server";
 
 import { readSchemaState } from "./schema-state.js";
 

@@ -13,12 +13,12 @@ import { RuntimeError } from "../runtime/error.js";
 import {
   assertSchemaRegistryEntry,
   assertSchemaRegistrySyncPayload,
-  buildSchemaSyncPayload,
   serializeResolvedEnvironmentSchema,
   toRawConfigSnapshot,
   type SchemaRegistryEntry,
   type SchemaStateFile,
 } from "./schema.js";
+import { buildSchemaSyncPayload } from "./schema-hash.js";
 
 function expectInvalidInput(fn: () => unknown, path: string, message?: RegExp) {
   assert.throws(fn, (error) => {

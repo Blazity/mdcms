@@ -7,11 +7,11 @@ import { test } from "node:test";
 
 import type { ContentDocumentResponse } from "@mdcms/shared";
 import {
-  buildSchemaSyncPayload,
   defineConfig,
   defineType,
   parseMdcmsConfig,
 } from "@mdcms/shared";
+import { buildSchemaSyncPayload } from "@mdcms/shared/server";
 import { z } from "zod";
 
 import { runMdcmsCli } from "./framework.js";

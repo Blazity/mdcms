@@ -4,12 +4,12 @@ import { extname, join } from "node:path";
 import { z } from "zod";
 
 import {
-  buildSchemaSyncPayload,
   defineConfig,
   defineType,
   parseMdcmsConfig,
   type MdcmsFieldSchema,
 } from "@mdcms/shared";
+import { buildSchemaSyncPayload } from "@mdcms/shared/server";
 
 import type { CredentialStore } from "./credentials.js";
 import type { CliCommand, CliCommandContext } from "./framework.js";

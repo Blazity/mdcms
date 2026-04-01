@@ -1,7 +1,5 @@
-import {
-  buildSchemaSyncPayload,
-  type ParsedMdcmsConfig,
-} from "@mdcms/shared";
+import type { ParsedMdcmsConfig } from "@mdcms/shared";
+import { buildSchemaSyncPayload } from "@mdcms/shared/server";
 
 import type { CliCommand, CliCommandContext } from "./framework.js";
 import { writeSchemaState } from "./schema-state.js";

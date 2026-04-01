@@ -1,7 +1,5 @@
-import {
-  buildSchemaSyncPayload,
-  type ParsedMdcmsConfig,
-} from "@mdcms/shared";
+import type { ParsedMdcmsConfig } from "@mdcms/shared";
+import { buildSchemaSyncPayload } from "@mdcms/shared/server";
 
 import { createDatabaseEnvironmentStore } from "./environments-api.js";
 import { loadServerConfig } from "./config.js";

@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import {
   type MdcmsFieldSchema,
   type ParsedMdcmsConfig,
@@ -791,17 +789,3 @@ export function toRawConfigSnapshot(config: ParsedMdcmsConfig): JsonObject {
   };
 }
 
-export function buildSchemaSyncPayload(
-  config: ParsedMdcmsConfig,
-  environment: string,
-): SchemaRegistrySyncPayload {
-  const rawConfigSnapshot = toRawConfigSnapshot(config);
-  const resolvedSchema = serializeResolvedEnvironmentSchema(
-    config,
-    environment,
-  );
-  const schemaHash = createHash("sha256")
-    .update(JSON.stringify({ environment, rawConfigSnapshot, resolvedSchema }))
-    .digest("hex");
-  return { rawConfigSnapshot, resolvedSchema, schemaHash };
-}

@@ -4,11 +4,11 @@ import { extname, join } from "node:path";
 
 import type { ContentDocumentResponse } from "@mdcms/shared";
 import {
-  buildSchemaSyncPayload,
   RuntimeError,
   serializeResolvedEnvironmentSchema,
   type ParsedMdcmsConfig,
 } from "@mdcms/shared";
+import { buildSchemaSyncPayload } from "@mdcms/shared/server";
 import { parse as parseYaml } from "yaml";
 import { readSchemaState } from "./schema-state.js";
 import {
