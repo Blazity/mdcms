@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "bun:test";
 
 import { createConsoleLogger } from "@mdcms/shared";
 import { and, eq } from "drizzle-orm";
@@ -10,6 +10,7 @@ import {
   buildStaticSsoPluginOptions,
   buildStaticOidcProviders,
   mapSsoCallbackErrorCode,
+  resolveApiKeyRbacAction,
   resolveStartupOidcProviders,
   validateSsoSignInPayload,
   validateSsoRedirectUrl,
@@ -374,6 +375,14 @@ test("auth oidc fixture rejects missing sub claims", () => {
   const fixture = createMissingSubOidcFixture("okta");
 
   assert.throws(() => normalizeOidcFixtureClaims(fixture.claims), /sub/i);
+});
+
+test("resolveApiKeyRbacAction rejects unmapped API key scopes", () => {
+  assert.throws(
+    () => resolveApiKeyRbacAction("media:upload"),
+    (error: unknown) =>
+      error instanceof Error && "code" in error && error.code === "FORBIDDEN",
+  );
 });
 
 if (dbAvailable) {
@@ -2305,6 +2314,16 @@ testWithDatabase(
         email,
         password,
       });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: loginResult.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:csrf-api-key-owner",
+          createdByUserId: loginResult.session.userId,
+        })
+        .onConflictDoNothing();
 
       const missingHeaderResponse = await handler(
         new Request("http://localhost/api/v1/auth/api-keys", {
@@ -2741,6 +2760,16 @@ testWithDatabase(
         email,
         password,
       });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: loginResult.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:api-key-lifecycle-owner",
+          createdByUserId: loginResult.session.userId,
+        })
+        .onConflictDoNothing();
       const cookie = loginResult.cookie;
 
       const readKeyResponse = await handler(
@@ -2833,6 +2862,124 @@ testWithDatabase(
 
       assert.equal(listAfterRevoke.status, 200);
       assert.ok(revokedMetadata?.revokedAt);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "API key creation requires the session to already hold the requested schema scope for each allowlisted target",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const ownerEmail = uniqueEmail();
+    const editorEmail = uniqueEmail();
+    const password = "Admin12345!";
+    const allowedScope = {
+      project: `schema-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      environment: `env-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    };
+    const blockedScope = {
+      project: `schema-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      environment: `env-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    };
+
+    try {
+      await signUp(handler, {
+        email: ownerEmail,
+        password,
+        name: "API Key Owner",
+      });
+      const ownerLogin = await login(handler, {
+        email: ownerEmail,
+        password,
+      });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: ownerLogin.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:api-key-owner",
+          createdByUserId: ownerLogin.session.userId,
+        })
+        .onConflictDoNothing();
+      await seedScope(dbConnection.db, allowedScope);
+      await seedScope(dbConnection.db, blockedScope);
+
+      await signUp(handler, {
+        email: editorEmail,
+        password,
+        name: "Scoped Editor",
+      });
+      const editorLogin = await login(handler, {
+        email: editorEmail,
+        password,
+      });
+      await dbConnection.db.insert(rbacGrants).values({
+        userId: editorLogin.session.userId,
+        role: "editor",
+        scopeKind: "project",
+        project: allowedScope.project,
+        source: "test:api-key-editor",
+        createdByUserId: ownerLogin.session.userId,
+      });
+
+      const allowedReadResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          method: "POST",
+          headers: createCsrfHeaders(editorLogin, {
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            label: "schema-read-allowed",
+            scopes: ["schema:read"],
+            contextAllowlist: [allowedScope],
+          }),
+        }),
+      );
+      assert.equal(allowedReadResponse.status, 200);
+
+      const blockedWriteResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          method: "POST",
+          headers: createCsrfHeaders(editorLogin, {
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            label: "schema-write-blocked",
+            scopes: ["schema:write"],
+            contextAllowlist: [allowedScope],
+          }),
+        }),
+      );
+      const blockedWriteBody = (await blockedWriteResponse.json()) as {
+        code: string;
+      };
+      assert.equal(blockedWriteResponse.status, 403);
+      assert.equal(blockedWriteBody.code, "FORBIDDEN");
+
+      const blockedTargetResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          method: "POST",
+          headers: createCsrfHeaders(editorLogin, {
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            label: "schema-read-wrong-target",
+            scopes: ["schema:read"],
+            contextAllowlist: [allowedScope, blockedScope],
+          }),
+        }),
+      );
+      const blockedTargetBody = (await blockedTargetResponse.json()) as {
+        code: string;
+      };
+      assert.equal(blockedTargetResponse.status, 403);
+      assert.equal(blockedTargetBody.code, "FORBIDDEN");
     } finally {
       await dbConnection.close();
     }
@@ -3105,6 +3252,147 @@ testWithDatabase(
 );
 
 testWithDatabase(
+  "API key creation rejects reserved schema:write scope for non-admin sessions",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const ownerEmail = uniqueEmail();
+    const editorEmail = uniqueEmail();
+    const password = "Admin12345!";
+
+    try {
+      await signUp(handler, {
+        email: ownerEmail,
+        password,
+        name: "Bootstrap Owner",
+      });
+      const ownerLogin = await login(handler, {
+        email: ownerEmail,
+        password,
+      });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: ownerLogin.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:api-key-scope-owner",
+          createdByUserId: ownerLogin.session.userId,
+        })
+        .onConflictDoNothing();
+
+      await signUp(handler, {
+        email: editorEmail,
+        password,
+        name: "Schema Scope Editor",
+      });
+      const editorLogin = await login(handler, {
+        email: editorEmail,
+        password,
+      });
+      const scope = {
+        project: "marketing-site",
+        environment: "staging",
+      };
+      await seedScope(dbConnection.db, scope);
+      await dbConnection.db.insert(rbacGrants).values({
+        userId: editorLogin.session.userId,
+        role: "editor",
+        scopeKind: "project",
+        project: scope.project,
+        source: "test:schema-scope-editor",
+        createdByUserId: ownerLogin.session.userId,
+      });
+
+      const createResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          method: "POST",
+          headers: createCsrfHeaders(editorLogin, {
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            label: "schema-write-attempt",
+            scopes: ["schema:write"],
+            contextAllowlist: [scope],
+          }),
+        }),
+      );
+      const createBody = (await createResponse.json()) as {
+        code: string;
+      };
+
+      assert.equal(createResponse.status, 403);
+      assert.equal(createBody.code, "FORBIDDEN");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "API key creation rejects unmapped scopes even for owner sessions",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const ownerEmail = uniqueEmail();
+    const password = "Admin12345!";
+    const scope = {
+      project: `unmapped-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      environment: `env-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    };
+
+    try {
+      await signUp(handler, {
+        email: ownerEmail,
+        password,
+        name: "Owner",
+      });
+      const ownerLogin = await login(handler, {
+        email: ownerEmail,
+        password,
+      });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: ownerLogin.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:unmapped-scope-owner",
+          createdByUserId: ownerLogin.session.userId,
+        })
+        .onConflictDoNothing();
+      await seedScope(dbConnection.db, scope);
+
+      const createResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          method: "POST",
+          headers: createCsrfHeaders(ownerLogin, {
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            label: "media-upload",
+            scopes: ["media:upload"],
+            contextAllowlist: [scope],
+          }),
+        }),
+      );
+      const createBody = (await createResponse.json()) as {
+        code: string;
+      };
+
+      assert.equal(createResponse.status, 403);
+      assert.equal(createBody.code, "FORBIDDEN");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
   "API key schema scopes require schema:read for GET and schema:write for PUT",
   async () => {
     const { handler, dbConnection } = createServerRequestHandlerWithModules({
@@ -3257,7 +3545,7 @@ testWithDatabase(
 );
 
 testWithDatabase(
-  "session RBAC gates schema routes with read-only viewer and write-capable editor scopes",
+  "session RBAC gates schema routes with read-only viewer/editor scopes and write-capable admin scope",
   async () => {
     const { handler, dbConnection } = createServerRequestHandlerWithModules({
       env,
@@ -3382,7 +3670,378 @@ testWithDatabase(
           ),
         }),
       );
-      assert.equal(editorWriteResponse.status, 200);
+      const editorWriteBody = (await editorWriteResponse.json()) as {
+        code: string;
+      };
+      assert.equal(editorWriteResponse.status, 403);
+      assert.equal(editorWriteBody.code, "FORBIDDEN");
+
+      await dbConnection.db.insert(rbacGrants).values({
+        userId: scopedLogin.session.userId,
+        role: "admin",
+        scopeKind: "global",
+        source: "test:schema-session-admin",
+        createdByUserId: ownerLogin.session.userId,
+      });
+
+      const adminWriteResponse = await handler(
+        new Request("http://localhost/api/v1/schema", {
+          method: "PUT",
+          headers: createCsrfHeaders(scopedLogin, {
+            ...scopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify(
+            createSchemaSyncPayload("admin-write-allowed", scope.project),
+          ),
+        }),
+      );
+      assert.equal(adminWriteResponse.status, 200);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "current principal capabilities report effective session permissions for the routed target",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const ownerEmail = uniqueEmail();
+    const editorEmail = uniqueEmail();
+    const password = "Admin12345!";
+    const scope = {
+      project: `caps-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      environment: `env-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    };
+    const scopeHeaders = {
+      "x-mdcms-project": scope.project,
+      "x-mdcms-environment": scope.environment,
+    };
+
+    try {
+      await signUp(handler, {
+        email: ownerEmail,
+        password,
+        name: "Capabilities Owner",
+      });
+      const ownerLogin = await login(handler, {
+        email: ownerEmail,
+        password,
+      });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: ownerLogin.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:capabilities-owner",
+          createdByUserId: ownerLogin.session.userId,
+        })
+        .onConflictDoNothing();
+      await seedScope(dbConnection.db, {
+        project: scope.project,
+        environment: scope.environment,
+      });
+
+      await signUp(handler, {
+        email: editorEmail,
+        password,
+        name: "Capabilities Editor",
+      });
+      const editorLogin = await login(handler, {
+        email: editorEmail,
+        password,
+      });
+      await dbConnection.db.insert(rbacGrants).values({
+        userId: editorLogin.session.userId,
+        role: "editor",
+        scopeKind: "project",
+        project: scope.project,
+        source: "test:capabilities-editor",
+        createdByUserId: ownerLogin.session.userId,
+      });
+
+      const response = await handler(
+        new Request("http://localhost/api/v1/me/capabilities", {
+          headers: {
+            ...scopeHeaders,
+            cookie: editorLogin.cookie,
+          },
+        }),
+      );
+      const body = (await response.json()) as {
+        data: {
+          project: string;
+          environment: string;
+          capabilities: {
+            schema: { read: boolean; write: boolean };
+            content: {
+              read: boolean;
+              readDraft: boolean;
+              write: boolean;
+              publish: boolean;
+              unpublish: boolean;
+              delete: boolean;
+            };
+            users: { manage: boolean };
+            settings: { manage: boolean };
+          };
+        };
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(body.data.project, scope.project);
+      assert.equal(body.data.environment, scope.environment);
+      assert.deepEqual(body.data.capabilities, {
+        schema: {
+          read: true,
+          write: false,
+        },
+        content: {
+          read: true,
+          readDraft: true,
+          write: true,
+          publish: true,
+          unpublish: true,
+          delete: true,
+        },
+        users: {
+          manage: false,
+        },
+        settings: {
+          manage: false,
+        },
+      });
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "current principal capabilities report effective API key permissions and reject disallowed target routing",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+    const scope = {
+      project: `caps-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      environment: `env-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    };
+    const scopeHeaders = {
+      "x-mdcms-project": scope.project,
+      "x-mdcms-environment": scope.environment,
+    };
+
+    try {
+      await signUp(handler, {
+        email,
+        password,
+        name: "Capabilities Key Owner",
+      });
+      const loginResult = await login(handler, {
+        email,
+        password,
+      });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: loginResult.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:capabilities-key-owner",
+          createdByUserId: loginResult.session.userId,
+        })
+        .onConflictDoNothing();
+      await seedScope(dbConnection.db, {
+        project: scope.project,
+        environment: scope.environment,
+      });
+
+      const keyResponse = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          method: "POST",
+          headers: createCsrfHeaders(loginResult, {
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            label: "capabilities-readonly",
+            scopes: ["schema:read", "content:read"],
+            contextAllowlist: [
+              {
+                project: scope.project,
+                environment: scope.environment,
+              },
+            ],
+          }),
+        }),
+      );
+      const keyBody = (await keyResponse.json()) as {
+        data: { key: string };
+      };
+      assert.equal(keyResponse.status, 200);
+
+      const response = await handler(
+        new Request("http://localhost/api/v1/me/capabilities", {
+          headers: {
+            ...scopeHeaders,
+            authorization: `Bearer ${keyBody.data.key}`,
+          },
+        }),
+      );
+      const body = (await response.json()) as {
+        data: {
+          capabilities: {
+            schema: { read: boolean; write: boolean };
+            content: {
+              read: boolean;
+              readDraft: boolean;
+              write: boolean;
+              publish: boolean;
+              unpublish: boolean;
+              delete: boolean;
+            };
+            users: { manage: boolean };
+            settings: { manage: boolean };
+          };
+        };
+      };
+
+      assert.equal(response.status, 200);
+      assert.deepEqual(body.data.capabilities, {
+        schema: {
+          read: true,
+          write: false,
+        },
+        content: {
+          read: true,
+          readDraft: false,
+          write: false,
+          publish: false,
+          unpublish: false,
+          delete: false,
+        },
+        users: {
+          manage: false,
+        },
+        settings: {
+          manage: false,
+        },
+      });
+
+      const mismatchedResponse = await handler(
+        new Request("http://localhost/api/v1/me/capabilities", {
+          headers: {
+            "x-mdcms-project": scope.project,
+            "x-mdcms-environment": `${scope.environment}-other`,
+            authorization: `Bearer ${keyBody.data.key}`,
+          },
+        }),
+      );
+      const mismatchedBody = (await mismatchedResponse.json()) as {
+        code: string;
+      };
+
+      assert.equal(mismatchedResponse.status, 400);
+      assert.equal(mismatchedBody.code, "TARGET_ROUTING_MISMATCH");
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "CLI login authorize rejects reserved schema:write scope for non-admin sessions",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const ownerEmail = uniqueEmail();
+    const editorEmail = uniqueEmail();
+    const password = "Admin12345!";
+    const state = `state-${Date.now()}-abcdefghijklmnop`;
+
+    try {
+      await signUp(handler, {
+        email: ownerEmail,
+        password,
+        name: "Bootstrap Owner",
+      });
+      const ownerLogin = await login(handler, {
+        email: ownerEmail,
+        password,
+      });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: ownerLogin.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:cli-scope-owner",
+          createdByUserId: ownerLogin.session.userId,
+        })
+        .onConflictDoNothing();
+
+      await signUp(handler, {
+        email: editorEmail,
+        password,
+        name: "CLI Schema Editor",
+      });
+
+      const startResponse = await handler(
+        new Request("http://localhost/api/v1/auth/cli/login/start", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            project: "marketing-site",
+            environment: "staging",
+            redirectUri: "http://127.0.0.1:45123/callback",
+            state,
+            scopes: ["schema:write"],
+          }),
+        }),
+      );
+      const startBody = (await startResponse.json()) as {
+        data: { challengeId: string; authorizeUrl: string };
+      };
+
+      const authorizeResponse = await handler(
+        new Request(startBody.data.authorizeUrl, {
+          method: "POST",
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams({
+            email: editorEmail,
+            password,
+          }).toString(),
+        }),
+      );
+      const authorizeBody = (await authorizeResponse.json()) as {
+        code: string;
+      };
+
+      assert.equal(authorizeResponse.status, 403);
+      assert.equal(authorizeBody.code, "FORBIDDEN");
+
+      const [challengeRow] = await dbConnection.db
+        .select()
+        .from(cliLoginChallenges)
+        .where(eq(cliLoginChallenges.id, startBody.data.challengeId));
+
+      assert.equal(challengeRow?.status, "pending");
+      assert.equal(challengeRow?.authorizedAt, null);
+      assert.equal(challengeRow?.authorizationCodeHash, null);
     } finally {
       await dbConnection.close();
     }
@@ -3403,6 +4062,20 @@ testWithDatabase(
 
     try {
       await signUp(handler, { email, password });
+      const ownerLogin = await login(handler, {
+        email,
+        password,
+      });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: ownerLogin.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:cli-login-owner",
+          createdByUserId: ownerLogin.session.userId,
+        })
+        .onConflictDoNothing();
 
       const startResponse = await handler(
         new Request("http://localhost/api/v1/auth/cli/login/start", {

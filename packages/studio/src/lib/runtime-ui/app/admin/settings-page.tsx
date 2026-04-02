@@ -8,14 +8,16 @@ import {
   Webhook,
   Image,
   Database,
+  ArrowRight,
   Copy,
   Plus,
   MoreHorizontal,
   Eye,
   EyeOff,
   Trash2,
-  ChevronRight,
 } from "lucide-react";
+import Link from "../../adapters/next-link";
+import { resolveStudioHref, useBasePath } from "../../adapters/next-navigation";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Badge } from "../../components/ui/badge";
@@ -30,14 +32,6 @@ import {
   SelectValue,
 } from "../../components/ui/select";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../../components/ui/table";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -45,10 +39,14 @@ import {
   DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "../../components/ui/collapsible";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/ui/table";
+import { useCanReadSchema } from "./capabilities-context.js";
 import { PageHeader } from "../../components/layout/page-header";
 import { mockEnvironments, currentProject } from "../../lib/mock-data";
 import { cn } from "../../lib/utils";
@@ -110,75 +108,16 @@ const mockWebhooks = [
   },
 ];
 
-const mockSchemaTypes = [
-  {
-    name: "BlogPost",
-    directory: "content/blog",
-    localized: true,
-    fields: [
-      {
-        name: "title",
-        type: "string",
-        required: true,
-        constraints: "min(1) max(200)",
-      },
-      {
-        name: "slug",
-        type: "string",
-        required: true,
-        constraints: "regex pattern",
-      },
-      {
-        name: "excerpt",
-        type: "string",
-        required: false,
-        constraints: "max(500)",
-      },
-      {
-        name: "author",
-        type: "reference",
-        required: true,
-        constraints: "→ Author",
-      },
-      {
-        name: "tags",
-        type: "string[]",
-        required: false,
-        constraints: "default: []",
-      },
-      {
-        name: "featured",
-        type: "boolean",
-        required: false,
-        constraints: "staging only",
-      },
-    ],
-  },
-  {
-    name: "Page",
-    directory: "content/pages",
-    localized: true,
-    fields: [
-      { name: "title", type: "string", required: true, constraints: "min(1)" },
-      { name: "slug", type: "string", required: true, constraints: "" },
-      { name: "content", type: "markdown", required: true, constraints: "" },
-    ],
-  },
-  {
-    name: "Author",
-    directory: "content/authors",
-    localized: false,
-    fields: [
-      { name: "name", type: "string", required: true, constraints: "" },
-      { name: "email", type: "string", required: true, constraints: "email" },
-      { name: "bio", type: "string", required: false, constraints: "max(500)" },
-    ],
-  },
-];
-
-export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState("general");
+export default function SettingsPage({
+  initialTab = "general",
+}: {
+  initialTab?: string;
+}) {
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [showSecret, setShowSecret] = useState(false);
+  const canReadSchema = useCanReadSchema();
+  const basePath = useBasePath();
+  const schemaBrowserHref = resolveStudioHref(basePath, "/schema");
 
   return (
     <div className="min-h-screen">
@@ -512,75 +451,42 @@ export default function SettingsPage() {
           )}
 
           {/* Schema */}
-          {activeTab === "schema" && (
+          {activeTab === "schema" && canReadSchema && (
             <div className="space-y-6">
               <div>
-                <h2 className="text-xl font-semibold">Schema Viewer</h2>
+                <h2 className="text-xl font-semibold">Schema</h2>
                 <p className="text-sm text-foreground-muted">
-                  View your content type definitions. Use the CLI to sync schema
-                  changes.
+                  Studio exposes the current content model through the live
+                  read-only schema browser. Schema changes stay code-first and
+                  sync through explicit recovery actions only.
                 </p>
               </div>
 
-              <div className="space-y-4">
-                {mockSchemaTypes.map((type) => (
-                  <Collapsible
-                    key={type.name}
-                    defaultOpen={type.name === "BlogPost"}
+              <section
+                data-mdcms-settings-schema-state="linked"
+                className="rounded-lg border border-border bg-background-subtle p-6"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="max-w-2xl space-y-2">
+                    <Badge variant="outline">Read-only</Badge>
+                    <p className="text-sm text-foreground-muted">
+                      Open the live schema browser to inspect synced types,
+                      fields, validation metadata, and any active schema
+                      mismatch recovery banner for this project/environment.
+                    </p>
+                  </div>
+
+                  <Button
+                    asChild
+                    className="bg-accent text-white hover:bg-accent-hover"
                   >
-                    <div className="rounded-lg border border-border">
-                      <CollapsibleTrigger asChild>
-                        <button className="flex w-full items-center justify-between p-4 text-left hover:bg-background-subtle">
-                          <div className="flex items-center gap-3">
-                            <ChevronRight className="h-4 w-4 transition-transform [[data-state=open]_&]:rotate-90" />
-                            <span className="font-semibold">{type.name}</span>
-                            {type.localized && (
-                              <Badge variant="outline" className="text-xs">
-                                Localized
-                              </Badge>
-                            )}
-                          </div>
-                          <span className="text-sm text-foreground-muted">
-                            {type.directory}
-                          </span>
-                        </button>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <div className="border-t border-border p-4">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Name</TableHead>
-                                <TableHead>Type</TableHead>
-                                <TableHead>Required</TableHead>
-                                <TableHead>Constraints</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {type.fields.map((field) => (
-                                <TableRow key={field.name}>
-                                  <TableCell className="font-mono text-sm">
-                                    {field.name}
-                                  </TableCell>
-                                  <TableCell className="text-sm">
-                                    {field.type}
-                                  </TableCell>
-                                  <TableCell>
-                                    {field.required ? "Yes" : "No"}
-                                  </TableCell>
-                                  <TableCell className="text-sm text-foreground-muted">
-                                    {field.constraints || "—"}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      </CollapsibleContent>
-                    </div>
-                  </Collapsible>
-                ))}
-              </div>
+                    <Link href={schemaBrowserHref}>
+                      Open schema browser
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                </div>
+              </section>
             </div>
           )}
         </main>

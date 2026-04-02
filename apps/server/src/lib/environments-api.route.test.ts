@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "bun:test";
 
 import { createServerRequestHandler } from "./server.js";
 import { mountEnvironmentApiRoutes } from "./environments-api.js";

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "bun:test";
 
 import {
   assertOwnerInvariant,
@@ -151,7 +151,7 @@ test("RBAC permission evaluation respects role capability mapping", () => {
   assert.equal(manageUsers.effectiveRole, "editor");
 });
 
-test("RBAC permission evaluation maps schema read/write to viewer/editor capabilities", () => {
+test("RBAC permission evaluation keeps schema write restricted to admin and owner", () => {
   const viewerGrants: RbacGrant[] = [
     grant({
       role: "viewer",
@@ -162,6 +162,12 @@ test("RBAC permission evaluation maps schema read/write to viewer/editor capabil
     grant({
       role: "editor",
       scope: { kind: "project", project: "marketing-site" },
+    }),
+  ];
+  const adminGrants: RbacGrant[] = [
+    grant({
+      role: "admin",
+      scope: { kind: "global" },
     }),
   ];
 
@@ -189,13 +195,23 @@ test("RBAC permission evaluation maps schema read/write to viewer/editor capabil
     },
     action: "schema:write",
   });
+  const adminSchemaWrite = evaluatePermission({
+    grants: adminGrants,
+    target: {
+      project: "marketing-site",
+      environment: "production",
+    },
+    action: "schema:write",
+  });
 
   assert.equal(viewerSchemaRead.allowed, true);
   assert.equal(viewerSchemaRead.effectiveRole, "viewer");
   assert.equal(viewerSchemaWrite.allowed, false);
   assert.equal(viewerSchemaWrite.effectiveRole, "viewer");
-  assert.equal(editorSchemaWrite.allowed, true);
+  assert.equal(editorSchemaWrite.allowed, false);
   assert.equal(editorSchemaWrite.effectiveRole, "editor");
+  assert.equal(adminSchemaWrite.allowed, true);
+  assert.equal(adminSchemaWrite.effectiveRole, "admin");
 });
 
 test("RBAC rejects non-global Owner/Admin grants", () => {

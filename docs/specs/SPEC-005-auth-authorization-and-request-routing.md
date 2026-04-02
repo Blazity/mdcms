@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-23
+last_updated: 2026-03-31
 ---
 
 # SPEC-005 Auth, Authorization, and Request Routing
@@ -476,9 +476,9 @@ Studio traffic uses session authentication by default and may use bearer API key
 | Role       | Capabilities                                                                                                                        |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | **Owner**  | Full access. Cannot be removed. Manages instance-level settings, billing (future SaaS), and can assign all roles. One per instance. |
-| **Admin**  | User management, settings, schema viewing, all content operations. Can assign Editor and Viewer roles.                              |
-| **Editor** | Create, edit, publish, unpublish, and delete content. Limited to assigned folders.                                                  |
-| **Viewer** | Read-only access to CMS dashboard. Can view content but not modify. Limited to assigned folders.                                    |
+| **Admin**  | User management, settings, read-only schema browsing, schema sync, and all content operations. Can assign Editor and Viewer roles.  |
+| **Editor** | Create, edit, publish, unpublish, and delete content. Can browse schema read-only. Limited to assigned folders.                     |
+| **Viewer** | Read-only access to CMS dashboard and schema. Can view content but not modify. Limited to assigned folders.                         |
 
 **Folder-level assignment:**
 
@@ -503,6 +503,14 @@ API keys follow the same project/environment scoping model through tuple allowli
 - a restricted key contains only explicitly granted tuples
 - request routing remains explicit; keys authorize access but do not select the route target
 
+Schema authorization semantics:
+
+- `schema:read` authorizes read-only schema browsing for the target `(project, environment)`.
+- `schema:write` authorizes explicit schema sync for the target `(project, environment)`.
+- `schema:write` is reserved to `admin` and `owner`.
+- `editor` and `viewer` may receive `schema:read`, but never `schema:write`.
+- API key issuance rejects reserved scopes that the authorizing session may not grant. In particular, non-admin and non-owner sessions cannot mint or authorize API keys with `schema:write`.
+
 ---
 
 ## Authentication, Session, and API Key Endpoints
@@ -513,24 +521,25 @@ API keys follow the same project/environment scoping model through tuple allowli
 - API-key authenticated routes in this endpoint family are exempt from CSRF validation.
 - CSRF validation failures return `FORBIDDEN` (`403`).
 
-| Method | Path                                             | Auth Mode             | Required Scope | Target Routing | Request                                                                                 | Success                                                 | Deterministic Errors                                                                                                                                                                            |
-| ------ | ------------------------------------------------ | --------------------- | -------------- | -------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/api/v1/auth/login`                             | public                | none           | none           | JSON: `{ email, password }`                                                             | `200` `{ data: { session, csrfToken } }` + `set-cookie` | `INVALID_INPUT` (`400`), `AUTH_INVALID_CREDENTIALS` (`401`), `AUTH_BACKOFF_ACTIVE` (`429`), `INTERNAL_ERROR` (`500`), `FORBIDDEN_ORIGIN` (`403`)                                                |
-| GET    | `/api/v1/auth/session`                           | session               | none           | none           | session cookie                                                                          | `200` `{ data: { session, csrfToken } }`                | `UNAUTHORIZED` (`401`), `FORBIDDEN_ORIGIN` (`403`)                                                                                                                                              |
-| GET    | `/api/v1/auth/get-session`                       | session               | none           | none           | session cookie                                                                          | `200` `{ data: { session, csrfToken } }`                | `UNAUTHORIZED` (`401`), `FORBIDDEN_ORIGIN` (`403`)                                                                                                                                              |
-| POST   | `/api/v1/auth/logout`                            | session               | none           | none           | session cookie                                                                          | `200` `{ data: { revoked: boolean } }`                  | `INTERNAL_ERROR` (`500`)                                                                                                                                                                        |
-| POST   | `/api/v1/auth/users/:userId/sessions/revoke-all` | session (admin/owner) | none           | none           | `userId` path param                                                                     | `200` `{ data: { userId, revokedSessions } }`           | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                                                                                                |
-| GET    | `/api/v1/auth/api-keys`                          | session               | none           | none           | session cookie                                                                          | `200` `{ data: ApiKeyMetadata[] }`                      | `UNAUTHORIZED` (`401`)                                                                                                                                                                          |
-| POST   | `/api/v1/auth/api-keys`                          | session               | none           | none           | JSON: `{ label, scopes[], contextAllowlist[], expiresAt? }`                             | `200` `{ data: { key, ...metadata } }` (key shown once) | `UNAUTHORIZED` (`401`), `INVALID_INPUT` (`400`), `INTERNAL_ERROR` (`500`)                                                                                                                       |
-| POST   | `/api/v1/auth/api-keys/:keyId/revoke`            | session               | none           | none           | `keyId` path param                                                                      | `200` `{ data: ApiKeyMetadata }`                        | `UNAUTHORIZED` (`401`), `NOT_FOUND` (`404`)                                                                                                                                                     |
-| POST   | `/api/v1/auth/api-keys/self/revoke`              | api_key               | none           | none           | `Authorization: Bearer <mdcms_key_...>`                                                 | `200` `{ data: { revoked: true, keyId } }`              | `UNAUTHORIZED` (`401`)                                                                                                                                                                          |
-| POST   | `/api/v1/auth/sign-up/email`                     | public                | none           | none           | better-auth sign-up payload                                                             | better-auth success payload                             | better-auth deterministic auth/provider errors                                                                                                                                                  |
-| POST   | `/api/v1/auth/sign-in/email`                     | public                | none           | none           | better-auth sign-in payload                                                             | better-auth success payload                             | better-auth deterministic auth/provider errors                                                                                                                                                  |
-| POST   | `/api/v1/auth/sign-out`                          | session               | none           | none           | better-auth sign-out payload                                                            | better-auth sign-out payload                            | better-auth deterministic auth/provider errors                                                                                                                                                  |
-| POST   | `/api/v1/auth/sign-in/sso`                       | public                | none           | none           | JSON: `{ providerId, callbackURL, errorCallbackURL?, newUserCallbackURL?, loginHint? }` | `302` redirect to configured provider sign-in URL       | `INVALID_INPUT` (`400`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`), `INTERNAL_ERROR` (`500`)                                                                                                        |
-| GET    | `/api/v1/auth/sso/callback/:providerId`          | public                | none           | none           | OIDC callback query per Better Auth SSO flow                                            | `302` redirect to validated callback URL + `set-cookie` | `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `AUTH_OIDC_REQUIRED_CLAIM_MISSING` (`401`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`), `AUTH_PROVIDER_ERROR` (`502`), `INTERNAL_ERROR` (`500`)     |
-| POST   | `/api/v1/auth/sso/saml2/sp/acs/:providerId`      | public                | none           | none           | form or body: `SAMLResponse`, optional `RelayState`                                     | `302` redirect to validated callback URL + `set-cookie` | `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `AUTH_SAML_REQUIRED_ATTRIBUTE_MISSING` (`401`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`), `AUTH_PROVIDER_ERROR` (`502`), `INTERNAL_ERROR` (`500`) |
-| GET    | `/api/v1/auth/sso/saml2/sp/metadata`             | public                | none           | none           | query: `providerId`, optional `format` enum (`xml` or `json`)                           | `200` provider-specific SP metadata                     | `INVALID_INPUT` (`400`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`)                                                                                                                                  |
+| Method | Path                                             | Auth Mode             | Required Scope | Target Routing      | Request                                                                                 | Success                                                  | Deterministic Errors                                                                                                                                                                            |
+| ------ | ------------------------------------------------ | --------------------- | -------------- | ------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/v1/auth/login`                             | public                | none           | none                | JSON: `{ email, password }`                                                             | `200` `{ data: { session, csrfToken } }` + `set-cookie`  | `INVALID_INPUT` (`400`), `AUTH_INVALID_CREDENTIALS` (`401`), `AUTH_BACKOFF_ACTIVE` (`429`), `INTERNAL_ERROR` (`500`), `FORBIDDEN_ORIGIN` (`403`)                                                |
+| GET    | `/api/v1/auth/session`                           | session               | none           | none                | session cookie                                                                          | `200` `{ data: { session, csrfToken } }`                 | `UNAUTHORIZED` (`401`), `FORBIDDEN_ORIGIN` (`403`)                                                                                                                                              |
+| GET    | `/api/v1/auth/get-session`                       | session               | none           | none                | session cookie                                                                          | `200` `{ data: { session, csrfToken } }`                 | `UNAUTHORIZED` (`401`), `FORBIDDEN_ORIGIN` (`403`)                                                                                                                                              |
+| GET    | `/api/v1/me/capabilities`                        | session_or_api_key    | none           | project+environment | session cookie or `Authorization: Bearer <mdcms_key_...>` plus explicit target routing  | `200` `{ data: { project, environment, capabilities } }` | `UNAUTHORIZED` (`401`), `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `FORBIDDEN_ORIGIN` (`403`)                                                                         |
+| POST   | `/api/v1/auth/logout`                            | session               | none           | none                | session cookie                                                                          | `200` `{ data: { revoked: boolean } }`                   | `FORBIDDEN` (`403`), `INTERNAL_ERROR` (`500`)                                                                                                                                                   |
+| POST   | `/api/v1/auth/users/:userId/sessions/revoke-all` | session (admin/owner) | none           | none                | `userId` path param                                                                     | `200` `{ data: { userId, revokedSessions } }`            | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                                                                                                |
+| GET    | `/api/v1/auth/api-keys`                          | session               | none           | none                | session cookie                                                                          | `200` `{ data: ApiKeyMetadata[] }`                       | `UNAUTHORIZED` (`401`)                                                                                                                                                                          |
+| POST   | `/api/v1/auth/api-keys`                          | session               | none           | none                | JSON: `{ label, scopes[], contextAllowlist[], expiresAt? }`                             | `200` `{ data: { key, ...metadata } }` (key shown once)  | `UNAUTHORIZED` (`401`), `INVALID_INPUT` (`400`), `FORBIDDEN` (`403`), `INTERNAL_ERROR` (`500`)                                                                                                  |
+| POST   | `/api/v1/auth/api-keys/:keyId/revoke`            | session               | none           | none                | `keyId` path param                                                                      | `200` `{ data: ApiKeyMetadata }`                         | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                                                                                                |
+| POST   | `/api/v1/auth/api-keys/self/revoke`              | api_key               | none           | none                | `Authorization: Bearer <mdcms_key_...>`                                                 | `200` `{ data: { revoked: true, keyId } }`               | `UNAUTHORIZED` (`401`)                                                                                                                                                                          |
+| POST   | `/api/v1/auth/sign-up/email`                     | public                | none           | none                | better-auth sign-up payload                                                             | better-auth success payload                              | better-auth deterministic auth/provider errors                                                                                                                                                  |
+| POST   | `/api/v1/auth/sign-in/email`                     | public                | none           | none                | better-auth sign-in payload                                                             | better-auth success payload                              | better-auth deterministic auth/provider errors                                                                                                                                                  |
+| POST   | `/api/v1/auth/sign-out`                          | session               | none           | none                | better-auth sign-out payload                                                            | better-auth sign-out payload                             | better-auth deterministic auth/provider errors                                                                                                                                                  |
+| POST   | `/api/v1/auth/sign-in/sso`                       | public                | none           | none                | JSON: `{ providerId, callbackURL, errorCallbackURL?, newUserCallbackURL?, loginHint? }` | `302` redirect to configured provider sign-in URL        | `INVALID_INPUT` (`400`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`), `INTERNAL_ERROR` (`500`)                                                                                                        |
+| GET    | `/api/v1/auth/sso/callback/:providerId`          | public                | none           | none                | OIDC callback query per Better Auth SSO flow                                            | `302` redirect to validated callback URL + `set-cookie`  | `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `AUTH_OIDC_REQUIRED_CLAIM_MISSING` (`401`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`), `AUTH_PROVIDER_ERROR` (`502`), `INTERNAL_ERROR` (`500`)     |
+| POST   | `/api/v1/auth/sso/saml2/sp/acs/:providerId`      | public                | none           | none                | form or body: `SAMLResponse`, optional `RelayState`                                     | `302` redirect to validated callback URL + `set-cookie`  | `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `AUTH_SAML_REQUIRED_ATTRIBUTE_MISSING` (`401`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`), `AUTH_PROVIDER_ERROR` (`502`), `INTERNAL_ERROR` (`500`) |
+| GET    | `/api/v1/auth/sso/saml2/sp/metadata`             | public                | none           | none                | query: `providerId`, optional `format` enum (`xml` or `json`)                           | `200` provider-specific SP metadata                      | `INVALID_INPUT` (`400`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`)                                                                                                                                  |
 
 ## OIDC Sign-In Semantics
 
@@ -579,12 +588,12 @@ API keys follow the same project/environment scoping model through tuple allowli
 
 ## CLI Browser Login Endpoints
 
-| Method | Path                               | Auth Mode              | Required Scope | Target Routing | Request                                                                                     | Success                                                                                                                                   | Deterministic Errors                                                                                                                                                                        |
-| ------ | ---------------------------------- | ---------------------- | -------------- | -------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/api/v1/auth/cli/login/start`     | public                 | none           | none           | JSON: `{ project, environment, redirectUri, state, scopes? }`                               | `200` `{ data: { challengeId, authorizeUrl, expiresAt } }`                                                                                | `INVALID_INPUT` (`400`), `INTERNAL_ERROR` (`500`)                                                                                                                                           |
-| GET    | `/api/v1/auth/cli/login/authorize` | public (session-aware) | none           | none           | query: `challenge`, `state`                                                                 | `200` HTML login form when session missing; or `302` JSON `{ data: { redirectTo } }` + `Location` when authorization succeeds immediately | `NOT_FOUND` (`404`), `LOGIN_CHALLENGE_EXPIRED` (`410`), `LOGIN_CHALLENGE_USED` (`409`), `INVALID_LOGIN_EXCHANGE` (`400`)                                                                    |
-| POST   | `/api/v1/auth/cli/login/authorize` | public (session-aware) | none           | none           | query: `challenge`, `state`; credentials via form or JSON `{ email, password }` when needed | `302` JSON `{ data: { redirectTo } }` + `Location`; may also set session cookie                                                           | `AUTH_INVALID_CREDENTIALS` (`401`), `AUTH_BACKOFF_ACTIVE` (`429`), `NOT_FOUND` (`404`), `LOGIN_CHALLENGE_EXPIRED` (`410`), `LOGIN_CHALLENGE_USED` (`409`), `INVALID_LOGIN_EXCHANGE` (`400`) |
-| POST   | `/api/v1/auth/cli/login/exchange`  | public                 | none           | none           | JSON: `{ challengeId, state, code }`                                                        | `200` `{ data: { key, ...ApiKeyMetadata } }`                                                                                              | `INVALID_INPUT` (`400`), `NOT_FOUND` (`404`), `LOGIN_CHALLENGE_EXPIRED` (`410`), `LOGIN_CHALLENGE_USED` (`409`), `INVALID_LOGIN_EXCHANGE` (`400`)                                           |
+| Method | Path                               | Auth Mode              | Required Scope | Target Routing | Request                                                                                     | Success                                                                                                                                   | Deterministic Errors                                                                                                                                                                                             |
+| ------ | ---------------------------------- | ---------------------- | -------------- | -------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/v1/auth/cli/login/start`     | public                 | none           | none           | JSON: `{ project, environment, redirectUri, state, scopes? }`                               | `200` `{ data: { challengeId, authorizeUrl, expiresAt } }`                                                                                | `INVALID_INPUT` (`400`), `INTERNAL_ERROR` (`500`)                                                                                                                                                                |
+| GET    | `/api/v1/auth/cli/login/authorize` | public (session-aware) | none           | none           | query: `challenge`, `state`                                                                 | `200` HTML login form when session missing; or `302` JSON `{ data: { redirectTo } }` + `Location` when authorization succeeds immediately | `NOT_FOUND` (`404`), `LOGIN_CHALLENGE_EXPIRED` (`410`), `LOGIN_CHALLENGE_USED` (`409`), `INVALID_LOGIN_EXCHANGE` (`400`)                                                                                         |
+| POST   | `/api/v1/auth/cli/login/authorize` | public (session-aware) | none           | none           | query: `challenge`, `state`; credentials via form or JSON `{ email, password }` when needed | `302` JSON `{ data: { redirectTo } }` + `Location`; may also set session cookie                                                           | `AUTH_INVALID_CREDENTIALS` (`401`), `AUTH_BACKOFF_ACTIVE` (`429`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `LOGIN_CHALLENGE_EXPIRED` (`410`), `LOGIN_CHALLENGE_USED` (`409`), `INVALID_LOGIN_EXCHANGE` (`400`) |
+| POST   | `/api/v1/auth/cli/login/exchange`  | public                 | none           | none           | JSON: `{ challengeId, state, code }`                                                        | `200` `{ data: { key, ...ApiKeyMetadata } }`                                                                                              | `INVALID_INPUT` (`400`), `NOT_FOUND` (`404`), `LOGIN_CHALLENGE_EXPIRED` (`410`), `LOGIN_CHALLENGE_USED` (`409`), `INVALID_LOGIN_EXCHANGE` (`400`)                                                                |
 
 **One-time semantics (normative):**
 
@@ -592,3 +601,59 @@ API keys follow the same project/environment scoping model through tuple allowli
 - `state` is validated against stored hash.
 - Authorization code is single-use.
 - Exchange succeeds only for `authorized` challenge state and then transitions challenge to `exchanged`.
+
+## Current Principal Capabilities Endpoint
+
+`GET /api/v1/me/capabilities` returns the effective capabilities of the current caller for the explicitly routed target `(project, environment)`.
+
+This endpoint is an introspection surface:
+
+- it does not mutate state
+- it does not require a separate operation scope of its own
+- it evaluates the same authorization model used by content, schema, settings, and user-management routes
+- insufficient privileges resolve to `false` capability values instead of a `FORBIDDEN` response
+
+Request routing follows the shared target-routing contract and must provide both:
+
+- `X-MDCMS-Project` (or `?project=...`)
+- `X-MDCMS-Environment` (or `?environment=...`)
+
+Success response:
+
+```json
+{
+  "data": {
+    "project": "marketing-site",
+    "environment": "staging",
+    "capabilities": {
+      "schema": {
+        "read": true,
+        "write": false
+      },
+      "content": {
+        "read": true,
+        "readDraft": true,
+        "write": true,
+        "publish": true,
+        "unpublish": true,
+        "delete": true
+      },
+      "users": {
+        "manage": false
+      },
+      "settings": {
+        "manage": false
+      }
+    }
+  }
+}
+```
+
+Normative semantics:
+
+- `project` and `environment` in the response echo the resolved explicit routing target; they are target identifiers, not database row IDs.
+- Session callers receive capabilities derived from their effective grants for the target project/environment.
+- API-key callers receive capabilities derived from the key's operation scopes plus tuple allowlist.
+- For API-key callers, explicit routing outside the key allowlist fails with `TARGET_ROUTING_MISMATCH` (`400`) instead of returning a capability payload.
+- `schema.write` corresponds to the same authorization required by `PUT /api/v1/schema`.
+- `schema.read` corresponds to the same authorization required by `GET /api/v1/schema`.

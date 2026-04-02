@@ -15,7 +15,7 @@ import MediaPage from "./runtime-ui/app/admin/media-page.js";
 import ContentDocumentPage from "./runtime-ui/pages/content-document-page.js";
 import ContentPage from "./runtime-ui/pages/content-page.js";
 import ContentTypePage from "./runtime-ui/pages/content-type-page.js";
-import SchemaBuilderPage from "./runtime-ui/app/admin/schema-page.js";
+import SchemaPage from "./runtime-ui/app/admin/schema-page.js";
 import SettingsPage from "./runtime-ui/app/admin/settings-page.js";
 import TrashPage from "./runtime-ui/app/admin/trash-page.js";
 import UsersPage from "./runtime-ui/app/admin/users-page.js";
@@ -66,7 +66,7 @@ const RUNTIME_ROUTES: readonly StudioRuntimeRouteDefinition[] = [
   {
     id: "schema",
     path: "/schema",
-    render: () => <SchemaBuilderPage />,
+    render: (context) => <SchemaPage context={context} />,
   },
   {
     id: "users",
@@ -491,6 +491,7 @@ export function RemoteStudioApp({
         value={{
           pathname,
           params: routeParams,
+          basePath: context.basePath,
           push: (href) => updatePathname(href, "push"),
           replace: (href) => updatePathname(href, "replace"),
           back: () => {
@@ -507,7 +508,7 @@ export function RemoteStudioApp({
           data-mdcms-active-route={activeRoute?.id ?? "unknown"}
           className="mdcms-studio-runtime"
         >
-          <AdminLayout>
+          <AdminLayout context={context}>
             {renderRouteContent(activeRoute, context)}
             {activeRoute?.id === "content.document" ? (
               <RuntimeDocumentDiagnostics

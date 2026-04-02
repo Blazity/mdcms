@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { test } from "node:test";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { test } from "bun:test";
 
 import { and, eq } from "drizzle-orm";
 import postgres from "postgres";
@@ -19,6 +20,13 @@ import {
   ensureDemoScopeProvisioned,
   ensureDemoSchemaSynced,
 } from "./demo-seed.js";
+
+const workspaceRoot = fileURLToPath(new URL("../../../../", import.meta.url));
+const studioExampleConfigPath = join(
+  workspaceRoot,
+  "apps/studio-example/mdcms.config.ts",
+);
+const serverWorkspacePath = join(workspaceRoot, "apps/server");
 
 const env = {
   NODE_ENV: "test",
@@ -72,8 +80,8 @@ async function runDemoSeed(overrides: NodeJS.ProcessEnv): Promise<{
   stderr: string;
 }> {
   return new Promise((resolveResult, reject) => {
-    const child = spawn("bun", ["run", "--cwd", "apps/server", "demo:seed"], {
-      cwd: resolve("."),
+    const child = spawn("bun", ["run", "demo:seed"], {
+      cwd: serverWorkspacePath,
       env: {
         ...process.env,
         ...env,
@@ -200,7 +208,7 @@ testWithDatabase(
         await writeFile(
           configPath,
           [
-            `import baseConfig from ${JSON.stringify(resolve("apps/studio-example/mdcms.config.ts"))};`,
+            `import baseConfig from ${JSON.stringify(studioExampleConfigPath)};`,
             "export default {",
             "  ...baseConfig,",
             `  project: ${JSON.stringify(project)},`,
