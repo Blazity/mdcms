@@ -98,7 +98,10 @@ export function inferSchema(
     const fileCount = dirFiles.length;
 
     // Collect all field keys and their sample values
-    const fieldSamples = new Map<string, { values: unknown[]; count: number }>();
+    const fieldSamples = new Map<
+      string,
+      { values: unknown[]; count: number }
+    >();
 
     for (const file of dirFiles) {
       for (const [key, value] of Object.entries(file.frontmatter)) {
@@ -117,7 +120,8 @@ export function inferSchema(
     const fields: Record<string, InferredField> = {};
     for (const [key, { values, count }] of fieldSamples) {
       // Use the first non-null/undefined value to infer type
-      const sampleValue = values.find((v) => v !== null && v !== undefined) ?? values[0];
+      const sampleValue =
+        values.find((v) => v !== null && v !== undefined) ?? values[0];
 
       let zodType: string;
       // Reference detection: field name matches another type name AND value is a string

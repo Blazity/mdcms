@@ -6,9 +6,7 @@ import { test } from "node:test";
 
 import { scanContentFiles } from "./scan.js";
 
-async function withTempDir(
-  run: (cwd: string) => Promise<void>,
-): Promise<void> {
+async function withTempDir(run: (cwd: string) => Promise<void>): Promise<void> {
   const cwd = await mkdtemp(join(tmpdir(), "mdcms-cli-scan-"));
   try {
     await run(cwd);
@@ -115,10 +113,7 @@ test("detects locale hint from folder segment (e.g., content/fr/about.md)", asyn
 
 test("frontmatter locale takes precedence over suffix", async () => {
   await withTempDir(async (cwd) => {
-    await writeFile(
-      join(cwd, "page.de.md"),
-      "---\nlang: fr\n---\nBody\n",
-    );
+    await writeFile(join(cwd, "page.de.md"), "---\nlang: fr\n---\nBody\n");
 
     const files = await scanContentFiles(cwd);
 

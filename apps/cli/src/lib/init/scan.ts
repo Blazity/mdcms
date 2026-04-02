@@ -110,9 +110,7 @@ async function walkDirectory(
   }
 }
 
-export async function scanContentFiles(
-  cwd: string,
-): Promise<DiscoveredFile[]> {
+export async function scanContentFiles(cwd: string): Promise<DiscoveredFile[]> {
   const results: DiscoveredFile[] = [];
   await walkDirectory(cwd, cwd, results);
   results.sort((a, b) => a.relativePath.localeCompare(b.relativePath));

@@ -788,4 +788,3 @@ export function toRawConfigSnapshot(config: ParsedMdcmsConfig): JsonObject {
         }),
   };
 }
-

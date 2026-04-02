@@ -22,7 +22,10 @@ function hasZodFields(types: InferredType[]): boolean {
   );
 }
 
-function renderFieldValue(field: { zodType: string; optional: boolean }): string {
+function renderFieldValue(field: {
+  zodType: string;
+  optional: boolean;
+}): string {
   const base = field.zodType;
   if (field.optional) {
     return `${base}.optional()`;
@@ -59,9 +62,7 @@ export function generateConfigSource(input: GenerateConfigInput): string {
   if (hasReferences(input.types)) {
     sharedImports.push("reference");
   }
-  lines.push(
-    `import { ${sharedImports.join(", ")} } from "@mdcms/cli";`,
-  );
+  lines.push(`import { ${sharedImports.join(", ")} } from "@mdcms/cli";`);
 
   if (hasZodFields(input.types)) {
     lines.push('import { z } from "zod";');

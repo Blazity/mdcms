@@ -446,7 +446,11 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
 
       // ── Step 5-6: Infer Schema + Detect Locales ─────────────────────
       const inferredTypes = inferSchema(allFiles, selectedDirectories);
-      const localeConfig = await detectLocaleConfig(allFiles, inferredTypes, prompter);
+      const localeConfig = await detectLocaleConfig(
+        allFiles,
+        inferredTypes,
+        prompter,
+      );
 
       if (localeConfig) {
         const confirmDefault = await prompter.confirm(

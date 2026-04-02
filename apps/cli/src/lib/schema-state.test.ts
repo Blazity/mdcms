@@ -31,7 +31,11 @@ test("resolveSchemaStatePath returns .mdcms/schema/<project>.<environment>.json"
 
 test("readSchemaState returns undefined when file does not exist", async () => {
   await withTempDir(async (cwd) => {
-    const result = await readSchemaState({ cwd, project: "p", environment: "e" });
+    const result = await readSchemaState({
+      cwd,
+      project: "p",
+      environment: "e",
+    });
     assert.equal(result, undefined);
   });
 });
@@ -44,7 +48,11 @@ test("writeSchemaState + readSchemaState round-trip", async () => {
       serverUrl: "http://localhost:4000",
     };
     await writeSchemaState({ cwd, project: "p", environment: "e" }, state);
-    const loaded = await readSchemaState({ cwd, project: "p", environment: "e" });
+    const loaded = await readSchemaState({
+      cwd,
+      project: "p",
+      environment: "e",
+    });
     assert.deepEqual(loaded, state);
   });
 });
@@ -85,10 +93,18 @@ test("writeSchemaState overwrites existing state", async () => {
 
 test("readSchemaState returns undefined for corrupted file", async () => {
   await withTempDir(async (cwd) => {
-    const path = resolveSchemaStatePath({ cwd, project: "p", environment: "e" });
+    const path = resolveSchemaStatePath({
+      cwd,
+      project: "p",
+      environment: "e",
+    });
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, "NOT JSON", "utf8");
-    const result = await readSchemaState({ cwd, project: "p", environment: "e" });
+    const result = await readSchemaState({
+      cwd,
+      project: "p",
+      environment: "e",
+    });
     assert.equal(result, undefined);
   });
 });

@@ -3707,17 +3707,21 @@ export function createAuthService(
         });
       }
 
+      const authContextAllowlist: ApiKeyScopeTuple[] = challenge.project
+        ? [
+            {
+              project: challenge.project,
+              environment: challenge.environment ?? "*",
+            },
+          ]
+        : [];
+
       await assertSessionCanIssueApiKeyScopes(
         session,
         normalizeRequestedCliScopes(
           challenge.requestedScopes as ApiKeyOperationScope[],
         ),
-        [
-          {
-            project: challenge.project,
-            environment: challenge.environment,
-          },
-        ],
+        authContextAllowlist,
       );
 
       const code = randomBytes(24).toString("base64url");

@@ -5,8 +5,17 @@ import type { CliCommand, CliCommandContext } from "./framework.js";
 import { writeSchemaState } from "./schema-state.js";
 
 async function runSchemaSync(context: CliCommandContext): Promise<number> {
-  const { config, serverUrl, project, environment, apiKey, fetcher, stdout, stderr, cwd } =
-    context;
+  const {
+    config,
+    serverUrl,
+    project,
+    environment,
+    apiKey,
+    fetcher,
+    stdout,
+    stderr,
+    cwd,
+  } = context;
 
   const payload = buildSchemaSyncPayload(
     config as ParsedMdcmsConfig,
@@ -46,7 +55,9 @@ async function runSchemaSync(context: CliCommandContext): Promise<number> {
   }
 
   const result = (await response.json().catch(() => undefined)) as
-    | { data: { schemaHash: string; syncedAt: string; affectedTypes: string[] } }
+    | {
+        data: { schemaHash: string; syncedAt: string; affectedTypes: string[] };
+      }
     | undefined;
 
   if (!result?.data) {
@@ -54,20 +65,21 @@ async function runSchemaSync(context: CliCommandContext): Promise<number> {
     return 1;
   }
 
-  await writeSchemaState({ cwd, project, environment }, {
-    schemaHash: result.data.schemaHash,
-    syncedAt: result.data.syncedAt,
-    serverUrl,
-  });
+  await writeSchemaState(
+    { cwd, project, environment },
+    {
+      schemaHash: result.data.schemaHash,
+      syncedAt: result.data.syncedAt,
+      serverUrl,
+    },
+  );
 
   stdout.write(
     `Schema synced (hash: ${result.data.schemaHash.slice(0, 12)})\n`,
   );
 
   if (result.data.affectedTypes.length > 0) {
-    stdout.write(
-      `Affected types: ${result.data.affectedTypes.join(", ")}\n`,
-    );
+    stdout.write(`Affected types: ${result.data.affectedTypes.join(", ")}\n`);
   }
 
   return 0;

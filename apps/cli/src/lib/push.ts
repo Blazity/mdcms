@@ -508,7 +508,10 @@ async function createDocumentFromLocalFile(
   if (!response.ok) {
     const remoteError = parseRemoteError(body, response.status);
 
-    if (response.status === 409 && remoteError.code === "SCHEMA_HASH_MISMATCH") {
+    if (
+      response.status === 409 &&
+      remoteError.code === "SCHEMA_HASH_MISMATCH"
+    ) {
       return {
         kind: "schema_mismatch",
         code: remoteError.code,
@@ -692,7 +695,11 @@ async function applyPush(
 
   for (const candidate of candidates) {
     try {
-      const updateResult = await updateExistingDocument(context, candidate, schemaHash);
+      const updateResult = await updateExistingDocument(
+        context,
+        candidate,
+        schemaHash,
+      );
 
       if (updateResult.kind === "updated") {
         nextManifest[candidate.documentId] = {
@@ -737,7 +744,11 @@ async function applyPush(
         continue;
       }
 
-      const createResult = await createDocumentFromLocalFile(context, candidate, schemaHash);
+      const createResult = await createDocumentFromLocalFile(
+        context,
+        candidate,
+        schemaHash,
+      );
 
       if (createResult.kind === "schema_mismatch") {
         failures += 1;

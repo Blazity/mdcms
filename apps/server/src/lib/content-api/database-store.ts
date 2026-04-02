@@ -1039,12 +1039,7 @@ export function createDatabaseContentStore(
                 eq(documents.environmentId, scopeIds.environmentId),
                 eq(documents.documentId, normalizedDocumentId),
                 ...(options?.expectedDraftRevision !== undefined
-                  ? [
-                      eq(
-                        documents.draftRevision,
-                        BigInt(options.expectedDraftRevision),
-                      ),
-                    ]
+                  ? [eq(documents.draftRevision, options.expectedDraftRevision)]
                   : []),
               ),
             )

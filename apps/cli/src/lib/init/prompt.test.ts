@@ -62,10 +62,9 @@ test("mock prompter returns canned confirm responses in order", async () => {
 test("mock prompter throws when text responses exhausted", async () => {
   const prompter = createMockPrompter({ text: [] });
 
-  await assert.rejects(
-    () => prompter.text("name?"),
-    { message: "No more canned text responses" },
-  );
+  await assert.rejects(() => prompter.text("name?"), {
+    message: "No more canned text responses",
+  });
 });
 
 test("mock prompter throws when select responses exhausted", async () => {
@@ -89,8 +88,7 @@ test("mock prompter throws when multiSelect responses exhausted", async () => {
 test("mock prompter throws when confirm responses exhausted", async () => {
   const prompter = createMockPrompter({ confirm: [] });
 
-  await assert.rejects(
-    () => prompter.confirm("sure?"),
-    { message: "No more canned confirm responses" },
-  );
+  await assert.rejects(() => prompter.confirm("sure?"), {
+    message: "No more canned confirm responses",
+  });
 });

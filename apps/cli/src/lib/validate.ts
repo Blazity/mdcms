@@ -1,4 +1,7 @@
-import type { SchemaRegistryFieldSnapshot, SchemaRegistryTypeSnapshot } from "@mdcms/shared";
+import type {
+  SchemaRegistryFieldSnapshot,
+  SchemaRegistryTypeSnapshot,
+} from "@mdcms/shared";
 
 export type ValidationResult = {
   errors: string[];
@@ -32,7 +35,9 @@ export function validateFrontmatter(
 
   for (const key of Object.keys(frontmatter)) {
     if (!(key in typeSnapshot.fields)) {
-      warnings.push(`Unknown field "${key}" is not defined in schema for type "${typeSnapshot.type}".`);
+      warnings.push(
+        `Unknown field "${key}" is not defined in schema for type "${typeSnapshot.type}".`,
+      );
     }
   }
 
@@ -49,7 +54,9 @@ export function validateCandidates(
     if (!typeSnapshot) {
       return {
         path: candidate.path,
-        errors: [`Content type "${candidate.typeName}" not found in resolved schema.`],
+        errors: [
+          `Content type "${candidate.typeName}" not found in resolved schema.`,
+        ],
         warnings: [],
       };
     }
@@ -77,7 +84,11 @@ function validateField(
       return [`Field "${path}" is null but schema does not allow nullable.`];
     }
 
-    if (value === undefined && schema.required && schema.default === undefined) {
+    if (
+      value === undefined &&
+      schema.required &&
+      schema.default === undefined
+    ) {
       return [`Missing required field "${path}" (kind: ${schema.kind}).`];
     }
 
@@ -112,14 +123,18 @@ function validateKind(
     case "date":
       return typeof value === "string" || value instanceof Date
         ? []
-        : [`Field "${path}" expected kind "date" (ISO string), got ${typeof value}.`];
+        : [
+            `Field "${path}" expected kind "date" (ISO string), got ${typeof value}.`,
+          ];
 
     case "enum":
     case "literal": {
       const options = schema.options ?? [];
       return options.includes(value as string | number | boolean)
         ? []
-        : [`Field "${path}" value ${JSON.stringify(value)} is not in allowed options: ${JSON.stringify(options)}.`];
+        : [
+            `Field "${path}" value ${JSON.stringify(value)} is not in allowed options: ${JSON.stringify(options)}.`,
+          ];
     }
 
     case "array":
@@ -159,7 +174,9 @@ function validateObjectField(
   path: string,
 ): string[] {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return [`Field "${path}" expected kind "object", got ${Array.isArray(value) ? "array" : typeof value}.`];
+    return [
+      `Field "${path}" expected kind "object", got ${Array.isArray(value) ? "array" : typeof value}.`,
+    ];
   }
 
   if (!schema.fields) {
@@ -170,7 +187,9 @@ function validateObjectField(
   const record = value as Record<string, unknown>;
 
   for (const [fieldName, fieldSchema] of Object.entries(schema.fields)) {
-    errors.push(...validateField(record[fieldName], fieldSchema, `${path}.${fieldName}`));
+    errors.push(
+      ...validateField(record[fieldName], fieldSchema, `${path}.${fieldName}`),
+    );
   }
 
   return errors;

@@ -45,7 +45,10 @@ export async function detectLocaleConfig(
   files: DiscoveredFile[],
   types: InferredType[],
   prompter?: {
-    select: (message: string, choices: { label: string; value: string }[]) => Promise<string>;
+    select: (
+      message: string,
+      choices: { label: string; value: string }[],
+    ) => Promise<string>;
   },
 ): Promise<LocaleConfig | null> {
   const allLocales: string[] = [];

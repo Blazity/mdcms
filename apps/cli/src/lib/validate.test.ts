@@ -3,11 +3,7 @@ import { test } from "node:test";
 
 import type { SchemaRegistryTypeSnapshot } from "@mdcms/shared";
 
-import {
-  validateFrontmatter,
-  validateCandidates,
-  type DocumentValidationResult,
-} from "./validate.js";
+import { validateFrontmatter, validateCandidates } from "./validate.js";
 
 test("validateFrontmatter returns error for missing required field", () => {
   const schema: SchemaRegistryTypeSnapshot = {
@@ -49,7 +45,12 @@ test("validateFrontmatter skips missing field when it has a default", () => {
     directory: "content/posts",
     localized: false,
     fields: {
-      status: { kind: "string", required: true, nullable: false, default: "draft" },
+      status: {
+        kind: "string",
+        required: true,
+        nullable: false,
+        default: "draft",
+      },
     },
   };
 
@@ -112,7 +113,12 @@ test("validateFrontmatter returns error for enum value not in options", () => {
     directory: "content/posts",
     localized: false,
     fields: {
-      status: { kind: "enum", required: true, nullable: false, options: ["draft", "published"] },
+      status: {
+        kind: "enum",
+        required: true,
+        nullable: false,
+        options: ["draft", "published"],
+      },
     },
   };
 
@@ -133,7 +139,10 @@ test("validateFrontmatter returns warning for unknown frontmatter field", () => 
     },
   };
 
-  const result = validateFrontmatter({ title: "Hello", extra: "stuff" }, schema);
+  const result = validateFrontmatter(
+    { title: "Hello", extra: "stuff" },
+    schema,
+  );
 
   assert.equal(result.errors.length, 0);
   assert.equal(result.warnings.length, 1);

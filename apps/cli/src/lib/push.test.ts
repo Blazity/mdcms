@@ -114,7 +114,7 @@ test("push updates an existing manifest-tracked document via PUT", async () => {
         assert.equal(String(input).endsWith("/api/v1/content/doc-1"), true);
         assert.equal(init?.method, "PUT");
 
-        const headers = new Headers(init?.headers as HeadersInit);
+        const headers = new Headers(init?.headers as Record<string, string>);
         assert.ok(
           headers.get("x-mdcms-schema-hash"),
           "x-mdcms-schema-hash header must be present",
@@ -769,9 +769,10 @@ test("push reports stale document as failed and continues pushing remaining docu
     assert.ok(output.includes("cms pull"));
 
     // Manifest updated for fresh doc, stale doc unchanged
-    const manifest = JSON.parse(
-      await readFile(manifestPath, "utf8"),
-    ) as Record<string, { draftRevision: number; hash: string }>;
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+      string,
+      { draftRevision: number; hash: string }
+    >;
     assert.equal(manifest["doc-fresh"]?.draftRevision, 4);
     assert.equal(manifest["doc-stale"]?.draftRevision, 1);
     assert.equal(manifest["doc-stale"]?.hash, "old-hash-1");
@@ -900,9 +901,10 @@ test("push reports schema-mismatch document as failed and continues pushing rema
     assert.ok(output.includes("cms schema sync"));
 
     // Manifest updated for ok doc, mismatch doc unchanged
-    const manifest = JSON.parse(
-      await readFile(manifestPath, "utf8"),
-    ) as Record<string, { draftRevision: number; hash: string }>;
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+      string,
+      { draftRevision: number; hash: string }
+    >;
     assert.equal(manifest["doc-ok"]?.draftRevision, 4);
     assert.equal(manifest["doc-mismatch"]?.draftRevision, 1);
     assert.equal(manifest["doc-mismatch"]?.hash, "old-hash-1");
@@ -1005,7 +1007,12 @@ test("push --validate --dry-run passes valid documents without API calls", async
       }),
     );
 
-    const manifestPath = join(cwd, ".mdcms", "manifests", "test-project.staging.json");
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "test-project.staging.json",
+    );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
     await writeFile(
       manifestPath,
@@ -1038,8 +1045,15 @@ test("push --validate --dry-run passes valid documents without API calls", async
         requestCount += 1;
         throw new Error("fetch should not be called");
       },
-      loadConfig: async () => ({ config, configPath: join(cwd, "mdcms.config.ts") }),
-      stdout: { write: (chunk: string) => { stdout += chunk; } },
+      loadConfig: async () => ({
+        config,
+        configPath: join(cwd, "mdcms.config.ts"),
+      }),
+      stdout: {
+        write: (chunk: string) => {
+          stdout += chunk;
+        },
+      },
       stderr: { write: () => undefined },
       confirm: async () => true,
     });
@@ -1073,7 +1087,12 @@ test("push --validate --dry-run exits 1 on validation errors", async () => {
       }),
     );
 
-    const manifestPath = join(cwd, ".mdcms", "manifests", "test-project.staging.json");
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "test-project.staging.json",
+    );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
     await writeFile(
       manifestPath,
@@ -1106,9 +1125,16 @@ test("push --validate --dry-run exits 1 on validation errors", async () => {
         requestCount += 1;
         throw new Error("fetch should not be called");
       },
-      loadConfig: async () => ({ config, configPath: join(cwd, "mdcms.config.ts") }),
+      loadConfig: async () => ({
+        config,
+        configPath: join(cwd, "mdcms.config.ts"),
+      }),
       stdout: { write: () => undefined },
-      stderr: { write: (chunk: string) => { stderr += chunk; } },
+      stderr: {
+        write: (chunk: string) => {
+          stderr += chunk;
+        },
+      },
       confirm: async () => true,
     });
 
@@ -1143,7 +1169,12 @@ test("push --validate blocks push on errors even without --dry-run", async () =>
       }),
     );
 
-    const manifestPath = join(cwd, ".mdcms", "manifests", "test-project.staging.json");
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "test-project.staging.json",
+    );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
     await writeFile(
       manifestPath,
@@ -1175,7 +1206,10 @@ test("push --validate blocks push on errors even without --dry-run", async () =>
         requestCount += 1;
         throw new Error("fetch should not be called");
       },
-      loadConfig: async () => ({ config, configPath: join(cwd, "mdcms.config.ts") }),
+      loadConfig: async () => ({
+        config,
+        configPath: join(cwd, "mdcms.config.ts"),
+      }),
       stdout: { write: () => undefined },
       stderr: { write: () => undefined },
       confirm: async () => true,

@@ -28,9 +28,7 @@ export type ProjectDetail = {
 export type ProjectStore = {
   list: () => Promise<ProjectSummary[]>;
   create: (input: { name: string }) => Promise<ProjectDetail>;
-  listEnvironments: (
-    slug: string,
-  ) => Promise<{ id: string; name: string }[]>;
+  listEnvironments: (slug: string) => Promise<{ id: string; name: string }[]>;
   createEnvironment: (
     slug: string,
     input: { name: string },
@@ -107,8 +105,7 @@ export function createDatabaseProjectStore(options: {
           slug: projects.slug,
           name: projects.name,
           createdAt: projects.createdAt,
-          environmentCount:
-            sql<number>`coalesce(${environmentCountSubquery.count}, 0)::int`,
+          environmentCount: sql<number>`coalesce(${environmentCountSubquery.count}, 0)::int`,
         })
         .from(projects)
         .leftJoin(

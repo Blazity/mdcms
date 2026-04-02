@@ -6,11 +6,7 @@ import { test } from "node:test";
 
 import { z } from "zod";
 
-import {
-  defineConfig,
-  defineType,
-  parseMdcmsConfig,
-} from "@mdcms/shared";
+import { defineConfig, defineType, parseMdcmsConfig } from "@mdcms/shared";
 
 import { runMdcmsCli } from "./framework.js";
 import { createSchemaSyncCommand } from "./schema-sync.js";
@@ -75,8 +71,13 @@ test("schema sync sends PUT /api/v1/schema with correct payload and headers", as
       fetcher: async (input, init) => {
         capturedUrl = String(input);
         capturedInit = init;
-        capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return createSyncSuccessResponse({ schemaHash: capturedBody.schemaHash as string });
+        capturedBody = JSON.parse(String(init?.body)) as Record<
+          string,
+          unknown
+        >;
+        return createSyncSuccessResponse({
+          schemaHash: capturedBody.schemaHash as string,
+        });
       },
       stdout: { write: () => undefined },
       stderr: { write: () => undefined },
@@ -144,7 +145,11 @@ test("schema sync prints summary to stdout", async () => {
         const body = JSON.parse(String(init?.body)) as { schemaHash: string };
         return createSyncSuccessResponse({ schemaHash: body.schemaHash });
       },
-      stdout: { write: (chunk: string) => { output += chunk; } },
+      stdout: {
+        write: (chunk: string) => {
+          output += chunk;
+        },
+      },
       stderr: { write: () => undefined },
     });
 
@@ -176,7 +181,11 @@ test("schema sync returns 1 on SCHEMA_INCOMPATIBLE", async () => {
         );
       },
       stdout: { write: () => undefined },
-      stderr: { write: (chunk: string) => { stderrOutput += chunk; } },
+      stderr: {
+        write: (chunk: string) => {
+          stderrOutput += chunk;
+        },
+      },
     });
 
     assert.equal(exitCode, 1);

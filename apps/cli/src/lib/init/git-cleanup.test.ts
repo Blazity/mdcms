@@ -11,9 +11,7 @@ import {
   updateGitignore,
 } from "./git-cleanup.js";
 
-async function withTempDir(
-  run: (cwd: string) => Promise<void>,
-): Promise<void> {
+async function withTempDir(run: (cwd: string) => Promise<void>): Promise<void> {
   const cwd = await mkdtemp(join(tmpdir(), "mdcms-cli-git-cleanup-"));
 
   try {
