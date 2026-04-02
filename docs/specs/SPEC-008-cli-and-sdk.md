@@ -209,17 +209,39 @@ Project: marketing-site
 
 ### `cms push`
 
-- Uploads only changed manifest-tracked `.md`/`.mdx` files to the CMS server as draft updates (publish is explicit and separate).
+- Uploads changed, new, and deleted local `.md`/`.mdx` files to the CMS server as draft updates (publish is explicit and separate).
 - `cms push` derives `content_format` from file extension (`.md` => `md`, `.mdx` => `mdx`) and rejects unsupported extensions with a deterministic error.
 - For known documents, identity is resolved from manifest `document_id`; file path is treated as mutable state that can rename/move without changing document identity.
 - Sends the base draft revision token and latest published version (from the manifest) with each document.
 - Change detection is hash-based against `.mdcms/manifests/<project>.<environment>.json`; unchanged documents are skipped and not sent.
 - If a manifest entry has a missing/empty hash, that document is treated as changed and the hash is repaired on successful push.
-- **Schema hash requirement:** Before sending any content write request, `cms push` reads the schema hash from `.mdcms/schema/<project>.<environment>.json` (see SPEC-004 "Local Schema State File"). If the file does not exist, push fails immediately: `"No synced schema found for <project>/<environment>. Run 'cms schema sync' before pushing."` (exit code 1). The hash is sent as `x-mdcms-schema-hash` on every `POST` and `PUT` content request.
+
+#### New file detection
+
+- After processing manifest entries, `cms push` scans all `contentDirectories` (from `mdcms.config.ts`) recursively for `.md`/`.mdx` files whose relative paths are not present in the manifest.
+- Each untracked file is mapped to a content type via the type directory config (`pickTypeConfigForPath`). Files that cannot be mapped are skipped with a warning.
+- In interactive mode, untracked files are presented as a checkbox selection ("Select new files to upload:"). Only selected files are created on the server via `POST /api/v1/content`.
+- On successful creation, a new manifest entry is added keyed by the server-returned `documentId`.
+
+#### Deleted file detection
+
+- During manifest iteration, if a tracked file is missing on disk (ENOENT), it is collected as a deletion candidate instead of causing a hard error.
+- In interactive mode, deletion candidates are presented as a checkbox selection ("Select files to delete from server:"). Only selected files are soft-deleted on the server via `DELETE /api/v1/content/:documentId`.
+- On successful deletion (or if the server returns 404, meaning it was already deleted), the manifest entry is removed.
+
+#### Interactive selection and `--force`
+
+- Without `--force`, two separate checkbox prompts are shown (if applicable): one for new files, one for deletions. A final confirmation prompt summarizes the total action ("Push N changed, N new, N to delete?").
+- With `--force`, all new files are auto-selected for upload, all deletions are auto-selected for removal, and all confirmation prompts are skipped. This is the recommended mode for CI/scripted usage.
+- In non-TTY environments without `--force`, checkbox prompts return empty selections (no new files uploaded, no deletions performed). Changed manifest-tracked files are still pushed normally. A hint is printed: "Run with --force to include new/deleted files in non-interactive mode."
+
+#### Schema and validation
+
+- **Schema hash requirement:** Before sending any content write request, `cms push` reads the schema hash from `.mdcms/schema/<project>.<environment>.json` (see SPEC-004 "Local Schema State File"). If the file does not exist, push fails immediately: `"No synced schema found for <project>/<environment>. Run 'cms schema sync' before pushing."` (exit code 1). The hash is sent as `x-mdcms-schema-hash` on every `POST`, `PUT`, and `DELETE` content request.
 - **Schema mismatch handling:** If the server returns `SCHEMA_HASH_MISMATCH` (`409`) for a document, that document is reported as failed with reason code `schema_hash_mismatch`. Other documents in the same push run continue (partial success). The exit summary directs the developer to run `cms schema sync` before retrying.
 - **Draft optimistic concurrency:** If the server's current `draft_revision` differs from the base draft revision in the manifest, the push is **rejected** for that document with reason code `stale_draft_revision`. The developer must `cms pull` first, then re-apply their changes.
 - On success, the server updates `documents`, increments `draft_revision`, and does not create new `document_versions` rows.
-- Optional `--validate` flag runs schema validation locally before pushing.
+- Optional `--validate` flag runs schema validation locally before pushing. Validation covers both changed and selected new documents.
 
 ### `cms schema sync`
 

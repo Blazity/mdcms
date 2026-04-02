@@ -82,6 +82,8 @@ const CLI_LOGIN_DEFAULT_SCOPES: readonly ApiKeyOperationScope[] = [
   "content:read",
   "content:read:draft",
   "content:write",
+  "content:write:draft",
+  "content:delete",
   "schema:read",
   "schema:write",
 ];

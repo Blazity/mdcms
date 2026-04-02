@@ -2,6 +2,7 @@ import { stdin as processStdin, stdout as processStdout } from "node:process";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 
+import { checkbox } from "@inquirer/prompts";
 import { RuntimeError, type CliPreflightHook } from "@mdcms/shared";
 
 import { formatCliErrorEnvelope } from "./cli.js";
@@ -24,6 +25,11 @@ export type Writer = {
 };
 
 type ConfirmPrompt = (message: string) => Promise<boolean>;
+
+export type MultiSelectPrompt = <T extends string>(
+  message: string,
+  choices: Array<{ label: string; value: T }>,
+) => Promise<T[]>;
 
 export type CliGlobalOptions = {
   help: boolean;
@@ -53,6 +59,7 @@ export type CliCommandContext = {
   args: string[];
   fetcher: typeof fetch;
   confirm: ConfirmPrompt;
+  multiSelect: MultiSelectPrompt;
   stdout: Writer;
   stderr: Writer;
 };
@@ -87,6 +94,7 @@ export type RunMdcmsCliOptions = {
   credentialStore?: CredentialStore;
   fetcher?: typeof fetch;
   confirm?: ConfirmPrompt;
+  multiSelect?: MultiSelectPrompt;
   runtimeWithModules?: CliRuntimeContextWithModules;
 };
 
@@ -374,6 +382,20 @@ async function defaultConfirmPrompt(message: string): Promise<boolean> {
   }
 }
 
+async function defaultMultiSelectPrompt<T extends string>(
+  message: string,
+  choices: Array<{ label: string; value: T }>,
+): Promise<T[]> {
+  if (!processStdin.isTTY) {
+    return [];
+  }
+
+  return checkbox({
+    message,
+    choices: choices.map((c) => ({ name: c.label, value: c.value })),
+  });
+}
+
 async function runPreflightHooks(
   hooks: readonly CliPreflightHook[],
   context: { actionId: string; input: unknown },
@@ -415,6 +437,7 @@ export async function runMdcmsCli(
   const commands = options.commands ?? DEFAULT_COMMANDS;
   const fetcher = options.fetcher ?? fetch;
   const confirm = options.confirm ?? defaultConfirmPrompt;
+  const multiSelect = options.multiSelect ?? defaultMultiSelectPrompt;
   const runtimeWithModules =
     options.runtimeWithModules ?? createCliRuntimeContextWithModules(env);
   const credentialStore =
@@ -530,6 +553,7 @@ export async function runMdcmsCli(
       args: commandArgs,
       fetcher,
       confirm,
+      multiSelect,
       stdout,
       stderr,
     });

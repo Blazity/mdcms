@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 
+import { discoverUntrackedFiles } from "./discover.js";
+
 import type { ContentDocumentResponse } from "@mdcms/shared";
 import {
   RuntimeError,
@@ -27,7 +29,6 @@ import {
 } from "./manifest.js";
 
 type PushOptions = {
-  dryRun: boolean;
   force: boolean;
   published: boolean;
   validate: boolean;
@@ -42,14 +43,35 @@ type PushCandidate = {
   hash: string;
 };
 
+type DeletionCandidate = {
+  documentId: string;
+  path: string;
+  format: "md" | "mdx";
+  draftRevision: number;
+  publishedVersion: number | null;
+};
+
+type NewFileCandidate = {
+  path: string;
+  format: "md" | "mdx";
+  frontmatter: Record<string, unknown>;
+  body: string;
+  hash: string;
+  resolvedType: string;
+  resolvedLocale: string;
+  resolvedPath: string;
+};
+
 type PushPlan = {
   changedCandidates: PushCandidate[];
+  newCandidates: NewFileCandidate[];
+  deletionCandidates: DeletionCandidate[];
   trackedCount: number;
   unchangedCount: number;
 };
 
 type PushResult = {
-  status: "updated" | "created" | "failed";
+  status: "updated" | "created" | "deleted" | "failed";
   documentId: string;
   nextDocumentId?: string;
   path: string;
@@ -73,7 +95,6 @@ function parsePushOptions(args: string[]): PushOptions {
     if (
       token === "--published" ||
       token === "--force" ||
-      token === "--dry-run" ||
       token === "--validate"
     ) {
       continue;
@@ -91,7 +112,6 @@ function parsePushOptions(args: string[]): PushOptions {
   }
 
   return {
-    dryRun: args.includes("--dry-run"),
     force: args.includes("--force"),
     published: args.includes("--published"),
     validate: args.includes("--validate"),
@@ -100,16 +120,19 @@ function parsePushOptions(args: string[]): PushOptions {
 
 function renderPushHelp(): string {
   return [
-    "Usage: mdcms push [--force] [--dry-run] [--validate] [--published]",
+    "Usage: mdcms push [--force] [--validate] [--published]",
     "",
-    "Upload changed local markdown files to CMS as draft content.",
-    "Each document is sent with its base draftRevision from the local manifest.",
-    "If the server draft has been modified since your last pull, that document",
-    "is rejected (stale) while the remaining documents continue normally.",
+    "Upload local markdown files to CMS as draft content.",
+    "",
+    "Behavior:",
+    "  - Changed manifest-tracked files are updated on the server.",
+    "  - New local files (in content directories, not yet tracked) are",
+    "    detected and offered for upload via interactive selection.",
+    "  - Locally-deleted files (in manifest but missing on disk) are",
+    "    detected and offered for server-side deletion via interactive selection.",
     "",
     "Options:",
-    "  --force       Skip confirmation prompt before applying push",
-    "  --dry-run     Show push plan only (no API writes)",
+    "  --force       Skip all prompts; auto-select all new/deleted files",
     "  --validate    Validate frontmatter against local schema before pushing",
     "  --published   Reserved for future behavior (unsupported in demo mode)",
     "",
@@ -529,9 +552,92 @@ async function createDocumentFromLocalFile(
   return { kind: "created", remote: parseRemoteDocument(body) };
 }
 
+async function createNewDocument(
+  context: CliCommandContext,
+  candidate: NewFileCandidate,
+  schemaHash: string,
+): Promise<
+  | { kind: "created"; remote: ContentDocumentPayload }
+  | { kind: "schema_mismatch"; code: string; message: string }
+> {
+  const response = await context.fetcher(
+    `${context.serverUrl}/api/v1/content`,
+    {
+      method: "POST",
+      headers: toRequestHeaders(context, schemaHash),
+      body: JSON.stringify({
+        type: candidate.resolvedType,
+        path: candidate.resolvedPath,
+        locale: candidate.resolvedLocale,
+        format: candidate.format,
+        frontmatter: candidate.frontmatter,
+        body: candidate.body,
+      }),
+    },
+  );
+
+  const body = (await response.json().catch(() => undefined)) as unknown;
+
+  if (!response.ok) {
+    const remoteError = parseRemoteError(body, response.status);
+
+    if (
+      response.status === 409 &&
+      remoteError.code === "SCHEMA_HASH_MISMATCH"
+    ) {
+      return {
+        kind: "schema_mismatch",
+        code: remoteError.code,
+        message: remoteError.message,
+      };
+    }
+
+    throw new RuntimeError({
+      code: remoteError.code,
+      message: remoteError.message,
+      statusCode: remoteError.statusCode,
+    });
+  }
+
+  return { kind: "created", remote: parseRemoteDocument(body) };
+}
+
+async function deleteDocument(
+  context: CliCommandContext,
+  documentId: string,
+  schemaHash: string,
+): Promise<{ kind: "deleted" } | { kind: "already_gone" }> {
+  const response = await context.fetcher(
+    `${context.serverUrl}/api/v1/content/${documentId}`,
+    {
+      method: "DELETE",
+      headers: toRequestHeaders(context, schemaHash),
+    },
+  );
+
+  if (response.ok) {
+    return { kind: "deleted" };
+  }
+
+  if (response.status === 404) {
+    return { kind: "already_gone" };
+  }
+
+  const body = (await response.json().catch(() => undefined)) as unknown;
+  const remoteError = parseRemoteError(body, response.status);
+
+  throw new RuntimeError({
+    code: remoteError.code,
+    message: remoteError.message,
+    statusCode: remoteError.statusCode,
+  });
+}
+
 function printPushPlan(
   context: CliCommandContext,
   candidates: PushCandidate[],
+  newCandidates: NewFileCandidate[],
+  deletionCandidates: DeletionCandidate[],
   summary: {
     trackedCount: number;
     unchangedCount: number;
@@ -541,10 +647,31 @@ function printPushPlan(
     `Push plan for ${context.project}/${context.environment} (${candidates.length} changed / ${summary.trackedCount} tracked document(s)):\n`,
   );
 
-  for (const candidate of candidates) {
-    context.stdout.write(
-      `  - ${candidate.documentId} -> ${candidate.manifestEntry.path} (${candidate.format})\n`,
-    );
+  if (candidates.length > 0) {
+    context.stdout.write("  Changed:\n");
+    for (const candidate of candidates) {
+      context.stdout.write(
+        `    - ${candidate.documentId} -> ${candidate.manifestEntry.path} (${candidate.format})\n`,
+      );
+    }
+  }
+
+  if (newCandidates.length > 0) {
+    context.stdout.write("  New (untracked):\n");
+    for (const candidate of newCandidates) {
+      context.stdout.write(
+        `    - ${candidate.path} (${candidate.resolvedType})\n`,
+      );
+    }
+  }
+
+  if (deletionCandidates.length > 0) {
+    context.stdout.write("  Deleted (missing locally):\n");
+    for (const candidate of deletionCandidates) {
+      context.stdout.write(
+        `    - ${candidate.documentId} -> ${candidate.path}\n`,
+      );
+    }
   }
 
   context.stdout.write(`Unchanged (skipped): ${summary.unchangedCount}\n`);
@@ -622,6 +749,7 @@ async function buildPushPlan(
   manifest: ScopedManifest,
 ): Promise<PushPlan> {
   const changedCandidates: PushCandidate[] = [];
+  const deletionCandidates: DeletionCandidate[] = [];
   let trackedCount = 0;
   let unchangedCount = 0;
   const orderedDocumentIds = Object.keys(manifest).sort((left, right) =>
@@ -640,19 +768,22 @@ async function buildPushPlan(
     const absolutePath = join(context.cwd, manifestEntry.path);
     const raw = await readFile(absolutePath, "utf8").catch((error) => {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new RuntimeError({
-          code: "LOCAL_FILE_MISSING",
-          message: `Manifest-tracked file is missing: "${manifestEntry.path}".`,
-          statusCode: 400,
-          details: {
-            documentId,
-            path: manifestEntry.path,
-          },
-        });
+        return null;
       }
 
       throw error;
     });
+
+    if (raw === null) {
+      deletionCandidates.push({
+        documentId,
+        path: manifestEntry.path,
+        format: manifestEntry.format,
+        draftRevision: manifestEntry.draftRevision,
+        publishedVersion: manifestEntry.publishedVersion,
+      });
+      continue;
+    }
 
     const currentHash = hashContent(raw);
     const manifestHash = manifestEntry.hash.trim();
@@ -675,8 +806,54 @@ async function buildPushPlan(
     });
   }
 
+  const contentDirectories = context.config.contentDirectories ?? [];
+  const newCandidates: NewFileCandidate[] = [];
+
+  if (contentDirectories.length > 0) {
+    const untrackedFiles = await discoverUntrackedFiles({
+      cwd: context.cwd,
+      contentDirectories,
+      manifest,
+    });
+
+    const types = context.config.types ?? [];
+
+    for (const file of untrackedFiles) {
+      const format = parseFileFormat(file.path);
+      const absolutePath = join(context.cwd, file.path);
+      const raw = await readFile(absolutePath, "utf8");
+      const currentHash = hashContent(raw);
+      const parsed = parseMarkdownDocument(raw);
+
+      try {
+        const resolved = resolveCreatePayload({
+          path: file.path,
+          format,
+          types,
+        });
+
+        newCandidates.push({
+          path: file.path,
+          format,
+          frontmatter: parsed.frontmatter,
+          body: parsed.body,
+          hash: currentHash,
+          resolvedType: resolved.type,
+          resolvedLocale: resolved.locale,
+          resolvedPath: resolved.path,
+        });
+      } catch {
+        context.stderr.write(
+          `Warning: skipping "${file.path}" — cannot map to a configured content type.\n`,
+        );
+      }
+    }
+  }
+
   return {
     changedCandidates,
+    newCandidates,
+    deletionCandidates,
     trackedCount,
     unchangedCount,
   };
@@ -687,12 +864,15 @@ async function applyPush(
   manifestPath: string,
   manifest: ScopedManifest,
   candidates: PushCandidate[],
+  newCandidates: NewFileCandidate[],
+  deletionCandidates: DeletionCandidate[],
   schemaHash: string,
 ): Promise<{ results: PushResult[]; failures: number }> {
   const nextManifest: ScopedManifest = { ...manifest };
   const results: PushResult[] = [];
   let failures = 0;
 
+  // Phase 1: Update changed documents
   for (const candidate of candidates) {
     try {
       const updateResult = await updateExistingDocument(
@@ -802,6 +982,108 @@ async function applyPush(
     }
   }
 
+  // Phase 2: Create new documents
+  for (const candidate of newCandidates) {
+    try {
+      const createResult = await createNewDocument(
+        context,
+        candidate,
+        schemaHash,
+      );
+
+      if (createResult.kind === "schema_mismatch") {
+        failures += 1;
+        results.push({
+          status: "failed",
+          documentId: "(new)",
+          path: candidate.path,
+          message: `${createResult.code}: ${createResult.message}`,
+          reasonCode: createResult.code.toLowerCase(),
+        });
+        continue;
+      }
+
+      const created = createResult.remote;
+      nextManifest[created.documentId] = {
+        path: candidate.path,
+        format: candidate.format,
+        draftRevision: created.draftRevision,
+        publishedVersion: created.publishedVersion,
+        hash: candidate.hash,
+      };
+
+      results.push({
+        status: "created",
+        documentId: created.documentId,
+        path: candidate.path,
+        message: `(draft=${created.draftRevision}, published=${created.publishedVersion ?? "-"})`,
+      });
+    } catch (error) {
+      failures += 1;
+      const runtimeError =
+        error instanceof RuntimeError
+          ? error
+          : new RuntimeError({
+              code: "INTERNAL_ERROR",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Unexpected create failure.",
+              statusCode: 500,
+            });
+
+      results.push({
+        status: "failed",
+        documentId: "(new)",
+        path: candidate.path,
+        message: `${runtimeError.code}: ${runtimeError.message}`,
+      });
+    }
+  }
+
+  // Phase 3: Delete documents
+  for (const candidate of deletionCandidates) {
+    try {
+      const deleteResult = await deleteDocument(
+        context,
+        candidate.documentId,
+        schemaHash,
+      );
+
+      delete nextManifest[candidate.documentId];
+
+      results.push({
+        status: "deleted",
+        documentId: candidate.documentId,
+        path: candidate.path,
+        message:
+          deleteResult.kind === "already_gone"
+            ? "(already deleted on server)"
+            : "(soft-deleted)",
+      });
+    } catch (error) {
+      failures += 1;
+      const runtimeError =
+        error instanceof RuntimeError
+          ? error
+          : new RuntimeError({
+              code: "INTERNAL_ERROR",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Unexpected delete failure.",
+              statusCode: 500,
+            });
+
+      results.push({
+        status: "failed",
+        documentId: candidate.documentId,
+        path: candidate.path,
+        message: `${runtimeError.code}: ${runtimeError.message}`,
+      });
+    }
+  }
+
   await writeScopedManifestAtomic(manifestPath, nextManifest);
 
   return {
@@ -851,17 +1133,59 @@ export async function runPushCommand(
   const manifest = await loadScopedManifest(manifestPath);
   const pushPlan = await buildPushPlan(context, manifest);
 
-  if (pushPlan.trackedCount === 0) {
+  const hasAnything =
+    pushPlan.trackedCount > 0 ||
+    pushPlan.newCandidates.length > 0;
+
+  if (!hasAnything) {
     context.stdout.write(
-      `No manifest-tracked documents found for ${context.project}/${context.environment}.\n`,
+      `No documents found for ${context.project}/${context.environment}.\n`,
     );
     return 0;
   }
 
-  printPushPlan(context, pushPlan.changedCandidates, {
+  printPushPlan(context, pushPlan.changedCandidates, pushPlan.newCandidates, pushPlan.deletionCandidates, {
     trackedCount: pushPlan.trackedCount,
     unchangedCount: pushPlan.unchangedCount,
   });
+
+  // Interactive selection for new files
+  let selectedNewCandidates: NewFileCandidate[] = [];
+  if (pushPlan.newCandidates.length > 0) {
+    if (options.force) {
+      selectedNewCandidates = pushPlan.newCandidates;
+    } else {
+      const selectedPaths = await context.multiSelect(
+        "Select new files to upload:",
+        pushPlan.newCandidates.map((c) => ({
+          label: `${c.path} (${c.resolvedType})`,
+          value: c.path,
+        })),
+      );
+      selectedNewCandidates = pushPlan.newCandidates.filter((c) =>
+        selectedPaths.includes(c.path),
+      );
+    }
+  }
+
+  // Interactive selection for deletions
+  let selectedDeletionCandidates: DeletionCandidate[] = [];
+  if (pushPlan.deletionCandidates.length > 0) {
+    if (options.force) {
+      selectedDeletionCandidates = pushPlan.deletionCandidates;
+    } else {
+      const selectedIds = await context.multiSelect(
+        "Select files to delete from server:",
+        pushPlan.deletionCandidates.map((c) => ({
+          label: `${c.path} (${c.documentId})`,
+          value: c.documentId,
+        })),
+      );
+      selectedDeletionCandidates = pushPlan.deletionCandidates.filter((c) =>
+        selectedIds.includes(c.documentId),
+      );
+    }
+  }
 
   if (options.validate) {
     const resolvedSchema = serializeResolvedEnvironmentSchema(
@@ -887,24 +1211,32 @@ export async function runPushCommand(
       }
     }
 
-    const validationCandidates = pushPlan.changedCandidates.map((candidate) => {
-      const pathWithoutExtension = candidate.manifestEntry.path.replace(
-        /\.(md|mdx)$/i,
-        "",
-      );
-      const typeConfig = pickTypeConfigForPath(
-        context.config.types ?? [],
-        pathWithoutExtension,
-      );
-      return {
-        path: candidate.manifestEntry.path,
-        typeName: typeConfig.name,
-        frontmatter: candidate.frontmatter,
-      };
-    });
+    const changedValidationCandidates = pushPlan.changedCandidates.map(
+      (candidate) => {
+        const pathWithoutExtension = candidate.manifestEntry.path.replace(
+          /\.(md|mdx)$/i,
+          "",
+        );
+        const typeConfig = pickTypeConfigForPath(
+          context.config.types ?? [],
+          pathWithoutExtension,
+        );
+        return {
+          path: candidate.manifestEntry.path,
+          typeName: typeConfig.name,
+          frontmatter: candidate.frontmatter,
+        };
+      },
+    );
+
+    const newValidationCandidates = selectedNewCandidates.map((candidate) => ({
+      path: candidate.path,
+      typeName: candidate.resolvedType,
+      frontmatter: candidate.frontmatter,
+    }));
 
     const validationResults = validateCandidates(
-      validationCandidates,
+      [...changedValidationCandidates, ...newValidationCandidates],
       resolvedSchema,
     );
     printValidationResults(context, validationResults);
@@ -927,20 +1259,31 @@ export async function runPushCommand(
     context.stdout.write("Validation passed.\n");
   }
 
-  if (options.dryRun) {
-    return 0;
-  }
+  const hasWork =
+    pushPlan.changedCandidates.length > 0 ||
+    selectedNewCandidates.length > 0 ||
+    selectedDeletionCandidates.length > 0;
 
-  if (pushPlan.changedCandidates.length === 0) {
+  if (!hasWork) {
     context.stdout.write(
-      `No changed manifest-tracked documents to push for ${context.project}/${context.environment}.\n`,
+      `No changes to push for ${context.project}/${context.environment}.\n`,
     );
     return 0;
   }
 
   if (!options.force) {
+    const parts: string[] = [];
+    if (pushPlan.changedCandidates.length > 0) {
+      parts.push(`${pushPlan.changedCandidates.length} changed`);
+    }
+    if (selectedNewCandidates.length > 0) {
+      parts.push(`${selectedNewCandidates.length} new`);
+    }
+    if (selectedDeletionCandidates.length > 0) {
+      parts.push(`${selectedDeletionCandidates.length} to delete`);
+    }
     const confirmed = await context.confirm(
-      `Push ${pushPlan.changedCandidates.length} changed document(s) to ${context.project}/${context.environment}?`,
+      `Push ${parts.join(", ")} document(s) to ${context.project}/${context.environment}?`,
     );
 
     if (!confirmed) {
@@ -957,6 +1300,8 @@ export async function runPushCommand(
     manifestPath,
     manifest,
     pushPlan.changedCandidates,
+    selectedNewCandidates,
+    selectedDeletionCandidates,
     schemaState.schemaHash,
   );
   printPushResults(context, results);

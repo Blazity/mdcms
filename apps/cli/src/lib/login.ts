@@ -317,6 +317,8 @@ export function createLoginCommand(options: LoginOptions = {}): CliCommand {
                 "content:read",
                 "content:read:draft",
                 "content:write",
+                "content:write:draft",
+                "content:delete",
               ],
             }),
           },
