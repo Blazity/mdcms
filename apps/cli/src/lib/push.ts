@@ -403,6 +403,11 @@ async function updateExistingDocument(
       code: string;
       message: string;
     }
+  | {
+      kind: "schema_mismatch";
+      code: string;
+      message: string;
+    }
 > {
   const response = await context.fetcher(
     `${context.serverUrl}/api/v1/content/${candidate.documentId}`,
@@ -442,6 +447,14 @@ async function updateExistingDocument(
     };
   }
 
+  if (response.status === 409 && remoteError.code === "SCHEMA_HASH_MISMATCH") {
+    return {
+      kind: "schema_mismatch",
+      code: remoteError.code,
+      message: remoteError.message,
+    };
+  }
+
   throw new RuntimeError({
     code: remoteError.code,
     message: remoteError.message,
@@ -453,7 +466,10 @@ async function createDocumentFromLocalFile(
   context: CliCommandContext,
   candidate: PushCandidate,
   schemaHash: string,
-): Promise<ContentDocumentPayload> {
+): Promise<
+  | { kind: "created"; remote: ContentDocumentPayload }
+  | { kind: "schema_mismatch"; code: string; message: string }
+> {
   const types = context.config.types ?? [];
 
   if (types.length === 0) {
@@ -491,6 +507,15 @@ async function createDocumentFromLocalFile(
 
   if (!response.ok) {
     const remoteError = parseRemoteError(body, response.status);
+
+    if (response.status === 409 && remoteError.code === "SCHEMA_HASH_MISMATCH") {
+      return {
+        kind: "schema_mismatch",
+        code: remoteError.code,
+        message: remoteError.message,
+      };
+    }
+
     throw new RuntimeError({
       code: remoteError.code,
       message: remoteError.message,
@@ -498,7 +523,7 @@ async function createDocumentFromLocalFile(
     });
   }
 
-  return parseRemoteDocument(body);
+  return { kind: "created", remote: parseRemoteDocument(body) };
 }
 
 function printPushPlan(
@@ -575,6 +600,16 @@ function printPushResults(
   if (staleCount > 0) {
     context.stdout.write(
       `\nSome documents were rejected as stale. Run 'cms pull' to get the latest drafts, then re-apply your local changes.\n`,
+    );
+  }
+
+  const schemaMismatchCount = results.filter(
+    (r) => r.reasonCode === "schema_hash_mismatch",
+  ).length;
+
+  if (schemaMismatchCount > 0) {
+    context.stdout.write(
+      `\nSome documents were rejected due to schema mismatch. Run 'cms schema sync' to update the server schema, then retry.\n`,
     );
   }
 }
@@ -690,7 +725,33 @@ async function applyPush(
         continue;
       }
 
-      const created = await createDocumentFromLocalFile(context, candidate, schemaHash);
+      if (updateResult.kind === "schema_mismatch") {
+        failures += 1;
+        results.push({
+          status: "failed",
+          documentId: candidate.documentId,
+          path: candidate.manifestEntry.path,
+          message: `${updateResult.code}: ${updateResult.message}`,
+          reasonCode: updateResult.code.toLowerCase(),
+        });
+        continue;
+      }
+
+      const createResult = await createDocumentFromLocalFile(context, candidate, schemaHash);
+
+      if (createResult.kind === "schema_mismatch") {
+        failures += 1;
+        results.push({
+          status: "failed",
+          documentId: candidate.documentId,
+          path: candidate.manifestEntry.path,
+          message: `${createResult.code}: ${createResult.message}`,
+          reasonCode: createResult.code.toLowerCase(),
+        });
+        continue;
+      }
+
+      const created = createResult.remote;
       delete nextManifest[candidate.documentId];
       nextManifest[created.documentId] = {
         path: candidate.manifestEntry.path,

@@ -778,6 +778,137 @@ test("push reports stale document as failed and continues pushing remaining docu
   });
 });
 
+test("push reports schema-mismatch document as failed and continues pushing remaining documents", async () => {
+  await withTempDir(async (cwd) => {
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "marketing-site.staging.json",
+    );
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
+    await writeFile(
+      manifestPath,
+      JSON.stringify(
+        {
+          "doc-mismatch": {
+            path: "content/blog/mismatch-post.en.md",
+            format: "md",
+            draftRevision: 1,
+            publishedVersion: null,
+            hash: "old-hash-1",
+          },
+          "doc-ok": {
+            path: "content/blog/ok-post.en.md",
+            format: "md",
+            draftRevision: 3,
+            publishedVersion: 2,
+            hash: "old-hash-2",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await mkdir(join(cwd, "content", "blog"), { recursive: true });
+    await writeFile(
+      join(cwd, "content/blog/mismatch-post.en.md"),
+      '---\ntitle: "Mismatch"\n---\nmismatch body\n',
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, "content/blog/ok-post.en.md"),
+      '---\ntitle: "OK"\n---\nok body\n',
+      "utf8",
+    );
+
+    const stdoutChunks: string[] = [];
+    let requestCount = 0;
+
+    const exitCode = await runMdcmsCli(["push", "--force"], {
+      cwd,
+      env: {} as NodeJS.ProcessEnv,
+      fetcher: async (input) => {
+        requestCount += 1;
+        const url = String(input);
+
+        if (url.endsWith("/api/v1/content/doc-mismatch")) {
+          return new Response(
+            JSON.stringify({
+              code: "SCHEMA_HASH_MISMATCH",
+              message: "Schema hash does not match the server schema.",
+              statusCode: 409,
+            }),
+            { status: 409, headers: { "content-type": "application/json" } },
+          );
+        }
+
+        return createSuccessResponse({
+          documentId: "doc-ok",
+          type: "BlogPost",
+          locale: "en",
+          path: "content/blog/ok-post",
+          format: "md",
+          draftRevision: 4,
+          publishedVersion: 2,
+        });
+      },
+      loadConfig: async () => ({
+        config: {
+          serverUrl: "http://localhost:4000",
+          project: "marketing-site",
+          environment: "staging",
+          types: [
+            {
+              name: "BlogPost",
+              directory: "content/blog",
+              localized: true,
+            },
+          ],
+        },
+        configPath: join(cwd, "mdcms.config.ts"),
+      }),
+      stdout: {
+        write: (chunk: string) => {
+          stdoutChunks.push(chunk);
+        },
+      },
+      stderr: { write: () => undefined },
+      confirm: async () => true,
+    });
+
+    // Exit code 1 because there is at least one failure
+    assert.equal(exitCode, 1);
+    // Both documents were sent
+    assert.equal(requestCount, 2);
+
+    const output = stdoutChunks.join("");
+
+    // Mismatch doc reported as failed
+    assert.ok(output.includes("[FAILED]"));
+    assert.ok(output.includes("doc-mismatch"));
+    assert.ok(output.includes("SCHEMA_HASH_MISMATCH"));
+
+    // OK doc reported as updated
+    assert.ok(output.includes("[UPDATED]"));
+    assert.ok(output.includes("doc-ok"));
+
+    // Actionable summary printed
+    assert.ok(output.includes("cms schema sync"));
+
+    // Manifest updated for ok doc, mismatch doc unchanged
+    const manifest = JSON.parse(
+      await readFile(manifestPath, "utf8"),
+    ) as Record<string, { draftRevision: number; hash: string }>;
+    assert.equal(manifest["doc-ok"]?.draftRevision, 4);
+    assert.equal(manifest["doc-mismatch"]?.draftRevision, 1);
+    assert.equal(manifest["doc-mismatch"]?.hash, "old-hash-1");
+  });
+});
+
 test("push --dry-run prints plan without performing API calls", async () => {
   await withTempDir(async (cwd) => {
     const manifestPath = join(

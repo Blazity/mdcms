@@ -41,10 +41,13 @@ function filesBelongToDirectory(
   );
 }
 
-export function detectLocaleConfig(
+export async function detectLocaleConfig(
   files: DiscoveredFile[],
   types: InferredType[],
-): LocaleConfig | null {
+  prompter?: {
+    select: (message: string, choices: { label: string; value: string }[]) => Promise<string>;
+  },
+): Promise<LocaleConfig | null> {
   const allLocales: string[] = [];
   const rawToNormalized: Record<string, string> = {};
   let hasMultiLocaleType = false;
@@ -62,7 +65,26 @@ export function detectLocaleConfig(
       if (RESERVED_TOKENS.has(raw)) continue;
 
       const normalized = normalizeLocale(raw);
-      if (!normalized) continue;
+      if (!normalized) {
+        if (!prompter) continue;
+
+        const currentSupported = [...new Set(allLocales)];
+        const choices = [
+          ...currentSupported.map((l) => ({ label: l, value: l })),
+          { label: "Skip this file", value: "__skip__" },
+        ];
+        const selection = await prompter.select(
+          `Cannot normalize locale "${raw}" from ${file.relativePath}. Map to:`,
+          choices,
+        );
+
+        if (selection === "__skip__") continue;
+
+        typeLocales.add(selection);
+        allLocales.push(selection);
+        rawToNormalized[raw] = selection;
+        continue;
+      }
 
       typeLocales.add(normalized);
       allLocales.push(normalized);

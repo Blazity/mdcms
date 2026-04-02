@@ -45,18 +45,18 @@ test("normalizeLocale: returns null for invalid tags", () => {
   assert.equal(normalizeLocale("123"), null);
 });
 
-test("returns null when no locale evidence found", () => {
+test("returns null when no locale evidence found", async () => {
   const files = [
     makeFile("content/posts/a.md", null),
     makeFile("content/posts/b.md", null),
   ];
   const types = [makeType("post", "content/posts")];
 
-  const result = detectLocaleConfig(files, types);
+  const result = await detectLocaleConfig(files, types);
   assert.equal(result, null);
 });
 
-test("detects single locale — non-localized", () => {
+test("detects single locale — non-localized", async () => {
   const files = [
     makeFile("content/posts/a.md", {
       source: "frontmatter",
@@ -69,11 +69,11 @@ test("detects single locale — non-localized", () => {
   ];
   const types = [makeType("post", "content/posts")];
 
-  const result = detectLocaleConfig(files, types);
+  const result = await detectLocaleConfig(files, types);
   assert.equal(result, null);
 });
 
-test("detects multi-locale from suffix — marks type localized", () => {
+test("detects multi-locale from suffix — marks type localized", async () => {
   const files = [
     makeFile("content/posts/hello.en.md", {
       source: "suffix",
@@ -86,14 +86,14 @@ test("detects multi-locale from suffix — marks type localized", () => {
   ];
   const types = [makeType("post", "content/posts")];
 
-  const result = detectLocaleConfig(files, types)!;
+  const result = (await detectLocaleConfig(files, types))!;
   assert.ok(result);
   assert.equal(result.defaultLocale, "en");
   assert.deepEqual(result.supported.sort(), ["en", "fr"]);
   assert.equal(types[0]!.localized, true);
 });
 
-test("detects multi-locale from folder segments", () => {
+test("detects multi-locale from folder segments", async () => {
   const files = [
     makeFile("content/pages/en/about.md", {
       source: "folder",
@@ -106,13 +106,13 @@ test("detects multi-locale from folder segments", () => {
   ];
   const types = [makeType("page", "content/pages")];
 
-  const result = detectLocaleConfig(files, types)!;
+  const result = (await detectLocaleConfig(files, types))!;
   assert.ok(result);
   assert.deepEqual(result.supported.sort(), ["en", "fr"]);
   assert.equal(types[0]!.localized, true);
 });
 
-test("normalizes non-canonical tags and populates aliases", () => {
+test("normalizes non-canonical tags and populates aliases", async () => {
   const files = [
     makeFile("content/posts/a.en_us.md", {
       source: "suffix",
@@ -125,13 +125,13 @@ test("normalizes non-canonical tags and populates aliases", () => {
   ];
   const types = [makeType("post", "content/posts")];
 
-  const result = detectLocaleConfig(files, types)!;
+  const result = (await detectLocaleConfig(files, types))!;
   assert.ok(result);
   assert.ok(result.supported.includes("en-US"));
   assert.equal(result.aliases["en_us"], "en-US");
 });
 
-test("default locale is the most frequent", () => {
+test("default locale is the most frequent", async () => {
   const files = [
     makeFile("content/posts/a.en.md", { source: "suffix", rawValue: "en" }),
     makeFile("content/posts/b.en.md", { source: "suffix", rawValue: "en" }),
@@ -140,11 +140,11 @@ test("default locale is the most frequent", () => {
   ];
   const types = [makeType("post", "content/posts")];
 
-  const result = detectLocaleConfig(files, types)!;
+  const result = (await detectLocaleConfig(files, types))!;
   assert.equal(result.defaultLocale, "en");
 });
 
-test("rejects __mdcms_default__ as locale tag", () => {
+test("rejects __mdcms_default__ as locale tag", async () => {
   const files = [
     makeFile("content/posts/a.md", {
       source: "frontmatter",
@@ -157,12 +157,12 @@ test("rejects __mdcms_default__ as locale tag", () => {
   ];
   const types = [makeType("post", "content/posts")];
 
-  const result = detectLocaleConfig(files, types);
+  const result = await detectLocaleConfig(files, types);
   // Should ignore the reserved token, only en detected = single locale = null
   assert.equal(result, null);
 });
 
-test("mixed localized and non-localized types", () => {
+test("mixed localized and non-localized types", async () => {
   const files = [
     makeFile("content/posts/a.en.md", { source: "suffix", rawValue: "en" }),
     makeFile("content/posts/a.fr.md", { source: "suffix", rawValue: "fr" }),
@@ -173,7 +173,7 @@ test("mixed localized and non-localized types", () => {
     makeType("author", "content/authors"),
   ];
 
-  const result = detectLocaleConfig(files, types)!;
+  const result = (await detectLocaleConfig(files, types))!;
   assert.ok(result);
   assert.equal(types[0]!.localized, true);
   assert.equal(types[1]!.localized, false);

@@ -171,6 +171,25 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
     requiresConfig: false,
     requiresTarget: false,
     run: async (context: CliCommandContext): Promise<number> => {
+      if (context.args.includes("--help") || context.args.includes("-h")) {
+        context.stdout.write(
+          [
+            "Usage: mdcms init",
+            "",
+            "Interactive wizard to set up MDCMS in an existing project.",
+            "",
+            "Steps: server URL, login, project/environment selection,",
+            "directory scan, schema inference, config generation,",
+            "schema sync, content import, and git cleanup.",
+            "",
+            "Options:",
+            "  -h, --help   Show this help text",
+            "",
+          ].join("\n"),
+        );
+        return 0;
+      }
+
       const prompter = options?.prompter ?? createClackPrompter();
       const fetcher = options?.fetcher ?? context.fetcher;
       const { cwd, stdout, stderr } = context;
@@ -427,7 +446,23 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
 
       // ── Step 5-6: Infer Schema + Detect Locales ─────────────────────
       const inferredTypes = inferSchema(allFiles, selectedDirectories);
-      const localeConfig = detectLocaleConfig(allFiles, inferredTypes);
+      const localeConfig = await detectLocaleConfig(allFiles, inferredTypes, prompter);
+
+      if (localeConfig) {
+        const confirmDefault = await prompter.confirm(
+          `Use "${localeConfig.defaultLocale}" as the default locale?`,
+        );
+        if (!confirmDefault) {
+          const choices = localeConfig.supported.map((l) => ({
+            label: l,
+            value: l,
+          }));
+          localeConfig.defaultLocale = await prompter.select(
+            "Select default locale",
+            choices,
+          );
+        }
+      }
 
       if (inferredTypes.length > 0) {
         stdout.write("Inferred content types:\n");
@@ -557,6 +592,17 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
               if (lastDot > 0) {
                 path = path.slice(0, lastDot);
               }
+            }
+
+            // For localized types with folder locale, strip the locale folder segment
+            if (type?.localized && file.localeHint?.source === "folder") {
+              const rawLocale = file.localeHint.rawValue;
+              const normalized = normalizeLocale(rawLocale);
+              const segments = path.split("/");
+              const filtered = segments.filter(
+                (s) => s !== rawLocale && s !== normalized,
+              );
+              path = filtered.join("/");
             }
 
             // Determine locale: normalize raw hint, or use default for localized types
@@ -714,7 +760,13 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
 
           if (shouldUntrack) {
             const removed = await untrackFiles(cwd, selectedDirectories);
-            stdout.write(`Untracked ${removed.length} file(s).\n`);
+            stdout.write(`Untracked ${removed.length} file(s):\n`);
+            for (const file of removed) {
+              stdout.write(`  rm '${file}'\n`);
+            }
+            stdout.write(
+              `\nRun \`git commit -m "chore: untrack mdcms managed content"\` to save these changes.\n`,
+            );
           }
         }
       }
