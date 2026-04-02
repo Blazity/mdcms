@@ -19,6 +19,7 @@ import {
   prepareResolvePlan,
 } from "./resolve.js";
 import {
+  stripUnknownFrontmatterFields,
   toDocumentResponse,
   toVersionDocumentResponse,
   toVersionSummaryResponse,
@@ -104,9 +105,26 @@ export function mountContentApiRoutes(
       });
 
       const result = await options.store.list(scope, typedQuery);
+      const schemaCache = new Map<
+        string,
+        Awaited<ReturnType<typeof options.store.getSchema>>
+      >();
       const response = toPaginatedResponse(result, (row) =>
         toDocumentResponse(row),
       );
+
+      for (const doc of response.data) {
+        if (!schemaCache.has(doc.type)) {
+          schemaCache.set(
+            doc.type,
+            await options.store.getSchema(scope, doc.type),
+          );
+        }
+        doc.frontmatter = stripUnknownFrontmatterFields(
+          doc.frontmatter,
+          schemaCache.get(doc.type),
+        );
+      }
 
       if (resolvePaths.length === 0) {
         return response;
@@ -183,6 +201,11 @@ export function mountContentApiRoutes(
         });
 
         const responseDocument = toDocumentResponse(document);
+        const typeSchema = await options.store.getSchema(scope, document.type);
+        responseDocument.frontmatter = stripUnknownFrontmatterFields(
+          responseDocument.frontmatter,
+          typeSchema,
+        );
         const resolvePlan = await prepareResolvePlan({
           scope,
           store: options.store,
