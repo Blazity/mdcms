@@ -1733,6 +1733,14 @@ function toRbacAction(requiredScope: ApiKeyOperationScope): RbacAction | null {
     return "schema:write";
   }
 
+  if (requiredScope === "projects:read") {
+    return "projects:read";
+  }
+
+  if (requiredScope === "projects:write") {
+    return "projects:write";
+  }
+
   return null;
 }
 

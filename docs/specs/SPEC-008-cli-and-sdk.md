@@ -99,7 +99,7 @@ CLI extensibility in v1 is intentionally action-based: aliases, formatters, and 
 
 ### `cms init` — Interactive Wizard
 
-The setup wizard uses `@clack/prompts` for the interactive TUI and walks through:
+The setup wizard uses `@inquirer/prompts` for the interactive TUI and walks through:
 
 1. **Server URL** — Prompt for the MDCMS server URL + health check.
 2. **Authentication** — Open browser for login via OAuth flow. The login is **not** scoped to a specific project or environment. Scopes: `projects:read`, `projects:write`, `schema:read`, `schema:write`, `content:read`, `content:write`.

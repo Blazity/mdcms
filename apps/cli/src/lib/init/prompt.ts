@@ -1,4 +1,9 @@
-import * as clack from "@clack/prompts";
+import { input, select, checkbox, confirm } from "@inquirer/prompts";
+import ora from "ora";
+
+function isExitPromptError(error: unknown): boolean {
+  return error instanceof Error && error.name === "ExitPromptError";
+}
 
 export type PromptChoice<T extends string = string> = {
   label: string;
@@ -21,65 +26,72 @@ export type Prompter = {
   spinner(): { start(msg: string): void; stop(msg: string): void };
 };
 
-export function createClackPrompter(): Prompter {
+export function createInquirerPrompter(): Prompter {
   return {
     intro(message) {
-      clack.intro(message);
+      console.log(`\n  ${message}\n`);
     },
     outro(message) {
-      clack.outro(message);
+      console.log(`\n  ${message}\n`);
     },
     async text(message, defaultValue) {
-      const result = await clack.text({
-        message,
-        defaultValue,
-        placeholder: defaultValue,
-      });
-      if (clack.isCancel(result)) process.exit(0);
-      return result as string;
+      try {
+        return await input({ message, default: defaultValue });
+      } catch (error) {
+        if (isExitPromptError(error)) process.exit(0);
+        throw error;
+      }
     },
     async select<T extends string>(
       message: string,
       choices: PromptChoice<T>[],
     ): Promise<T> {
-      const result = await clack.select({
-        message,
-        options: choices.map((c) => ({
-          label: c.label,
-          value: c.value as string,
-        })),
-      });
-      if (clack.isCancel(result)) process.exit(0);
-      return result as T;
+      try {
+        return await select({
+          message,
+          choices: choices.map((c) => ({
+            name: c.label,
+            value: c.value,
+          })),
+        });
+      } catch (error) {
+        if (isExitPromptError(error)) process.exit(0);
+        throw error;
+      }
     },
     async multiSelect<T extends string>(
       message: string,
       choices: PromptChoice<T>[],
     ): Promise<T[]> {
-      const result = await clack.multiselect({
-        message,
-        options: choices.map((c) => ({
-          label: c.label,
-          value: c.value as string,
-        })),
-        required: false,
-      });
-      if (clack.isCancel(result)) process.exit(0);
-      return result as T[];
+      try {
+        return await checkbox({
+          message,
+          choices: choices.map((c) => ({
+            name: c.label,
+            value: c.value,
+          })),
+        });
+      } catch (error) {
+        if (isExitPromptError(error)) process.exit(0);
+        throw error;
+      }
     },
     async confirm(message) {
-      const result = await clack.confirm({ message });
-      if (clack.isCancel(result)) process.exit(0);
-      return result as boolean;
+      try {
+        return await confirm({ message });
+      } catch (error) {
+        if (isExitPromptError(error)) process.exit(0);
+        throw error;
+      }
     },
     spinner() {
-      const s = clack.spinner();
+      const s = ora();
       return {
         start(msg: string) {
           s.start(msg);
         },
         stop(msg: string) {
-          s.stop(msg);
+          s.succeed(msg);
         },
       };
     },

@@ -37,7 +37,7 @@ import {
   updateGitignore,
 } from "./init/git-cleanup.js";
 import { inferSchema, type InferredType } from "./init/infer-schema.js";
-import { createClackPrompter, type Prompter } from "./init/prompt.js";
+import { createInquirerPrompter, type Prompter } from "./init/prompt.js";
 import { scanContentFiles, type DiscoveredFile } from "./init/scan.js";
 
 export type InitCommandOptions = {
@@ -190,7 +190,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
         return 0;
       }
 
-      const prompter = options?.prompter ?? createClackPrompter();
+      const prompter = options?.prompter ?? createInquirerPrompter();
       const fetcher = options?.fetcher ?? context.fetcher;
       const { cwd, stdout, stderr } = context;
 
