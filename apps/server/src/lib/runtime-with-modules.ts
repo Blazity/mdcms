@@ -180,9 +180,13 @@ export function createServerRequestHandlerWithModules(
       });
       mountProjectApiRoutes(app, {
         store: projectStore,
-        authorize: (request) =>
+        authorizeRead: (request) =>
           authService
             .authorizeRequest(request, { requiredScope: "projects:read" })
+            .then(() => undefined),
+        authorizeWrite: (request) =>
+          authService
+            .authorizeRequest(request, { requiredScope: "projects:write" })
             .then(() => undefined),
       });
       mountCollaborationRoutes(app, {

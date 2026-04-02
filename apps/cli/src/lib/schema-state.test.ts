@@ -26,7 +26,10 @@ test("resolveSchemaStatePath returns .mdcms/schema/<project>.<environment>.json"
     project: "marketing",
     environment: "staging",
   });
-  assert.equal(path, "/home/user/project/.mdcms/schema/marketing.staging.json");
+  assert.equal(
+    path,
+    join("/home/user/project", ".mdcms", "schema", "marketing.staging.json"),
+  );
 });
 
 test("readSchemaState returns undefined when file does not exist", async () => {

@@ -7,8 +7,6 @@ slug: "hello-mdcms"
 
 This is seeded demo content for local pull/push verification.
 
-edit
-
 - created by `demo:seed`
 - project: marketing-site
 - environment: staging

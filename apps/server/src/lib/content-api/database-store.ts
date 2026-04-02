@@ -1038,6 +1038,7 @@ export function createDatabaseContentStore(
                 eq(documents.projectId, scopeIds.projectId),
                 eq(documents.environmentId, scopeIds.environmentId),
                 eq(documents.documentId, normalizedDocumentId),
+                eq(documents.isDeleted, false),
                 ...(options?.expectedDraftRevision !== undefined
                   ? [eq(documents.draftRevision, options.expectedDraftRevision)]
                   : []),

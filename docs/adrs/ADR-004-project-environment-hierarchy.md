@@ -2,7 +2,7 @@
 status: accepted
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-11
+last_updated: 2026-04-01
 ---
 
 # ADR-004 Project and Environment Hierarchy

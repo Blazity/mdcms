@@ -89,7 +89,7 @@ export function generateConfigSource(input: GenerateConfigInput): string {
     if (Object.keys(lc.aliases).length > 0) {
       lines.push("    aliases: {");
       for (const [raw, normalized] of Object.entries(lc.aliases)) {
-        lines.push(`      ${raw}: "${normalized}",`);
+        lines.push(`      ${JSON.stringify(raw)}: "${normalized}",`);
       }
       lines.push("    },");
     }

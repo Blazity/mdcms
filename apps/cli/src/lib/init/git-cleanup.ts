@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { join } from "node:path";
 
 const HEADER = "# mdcms managed content";
@@ -78,7 +78,7 @@ export async function detectTrackedFiles(
 
   for (const dir of managedDirectories) {
     try {
-      const output = execSync(`git ls-files "${dir}"`, {
+      const output = execFileSync("git", ["ls-files", dir], {
         cwd,
         encoding: "utf8",
       });
@@ -105,7 +105,7 @@ export async function untrackFiles(
 
   for (const dir of directories) {
     try {
-      const output = execSync(`git rm -r --cached "${dir}"`, {
+      const output = execFileSync("git", ["rm", "-r", "--cached", dir], {
         cwd,
         encoding: "utf8",
       });

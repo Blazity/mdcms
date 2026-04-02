@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
 
@@ -91,7 +91,7 @@ async function writeLocalFile(
   content: string,
 ): Promise<void> {
   const absolutePath = join(cwd, relativePath);
-  const dir = absolutePath.substring(0, absolutePath.lastIndexOf("/"));
+  const dir = dirname(absolutePath);
   await mkdir(dir, { recursive: true });
   await writeFile(absolutePath, content, "utf8");
 }

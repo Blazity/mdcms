@@ -1,5 +1,5 @@
 import { RuntimeError } from "@mdcms/shared";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import type { DrizzleDatabase } from "./db.js";
 import { environments, projects } from "./db/schema.js";
@@ -37,7 +37,8 @@ export type ProjectStore = {
 
 export type MountProjectApiRoutesOptions = {
   store: ProjectStore;
-  authorize: (request: Request) => Promise<void>;
+  authorizeRead: (request: Request) => Promise<void>;
+  authorizeWrite: (request: Request) => Promise<void>;
 };
 
 type ProjectRouteApp = {
@@ -69,10 +70,11 @@ function assertRequiredString(value: unknown, field: string): string {
   return value.trim();
 }
 
-function toIsoString(value: unknown): string {
-  return value instanceof Date
-    ? value.toISOString()
-    : new Date(value as any).toISOString();
+function toIsoString(value: unknown): string | null {
+  if (value == null) return null;
+  const date = value instanceof Date ? value : new Date(value as any);
+  if (isNaN(date.getTime())) return null;
+  return date.toISOString();
 }
 
 function slugify(name: string): string {
@@ -118,7 +120,7 @@ export function createDatabaseProjectStore(options: {
         slug: row.slug,
         name: row.name,
         environmentCount: row.environmentCount,
-        createdAt: toIsoString(row.createdAt),
+        createdAt: toIsoString(row.createdAt) ?? new Date(0).toISOString(),
       }));
     },
 
@@ -207,6 +209,25 @@ export function createDatabaseProjectStore(options: {
         });
       }
 
+      const existing = await db
+        .select({ id: environments.id })
+        .from(environments)
+        .where(
+          and(
+            eq(environments.projectId, projectRow.id),
+            eq(environments.name, name),
+          ),
+        );
+
+      if (existing.length > 0) {
+        throw new RuntimeError({
+          code: "INVALID_INPUT",
+          message: `Environment with name "${name}" already exists for project "${normalizedSlug}".`,
+          statusCode: 400,
+          details: { project: normalizedSlug, name },
+        });
+      }
+
       const [created] = await db
         .insert(environments)
         .values({
@@ -241,7 +262,7 @@ export function mountProjectApiRoutes(
 
   projectApp.get?.("/api/v1/projects", ({ request }: any) => {
     return executeWithRuntimeErrorsHandled(request, async () => {
-      await options.authorize(request);
+      await options.authorizeRead(request);
 
       return {
         data: await options.store.list(),
@@ -251,7 +272,7 @@ export function mountProjectApiRoutes(
 
   projectApp.post?.("/api/v1/projects", ({ request, body }: any) => {
     return executeWithRuntimeErrorsHandled(request, async () => {
-      await options.authorize(request);
+      await options.authorizeWrite(request);
 
       const payload = (body ?? {}) as Record<string, unknown>;
       assertRequiredString(payload.name, "name");
@@ -266,7 +287,7 @@ export function mountProjectApiRoutes(
     "/api/v1/projects/:slug/environments",
     ({ request, params }: any) => {
       return executeWithRuntimeErrorsHandled(request, async () => {
-        await options.authorize(request);
+        await options.authorizeRead(request);
         const slug = assertRequiredString(params.slug, "slug");
 
         return {
@@ -280,7 +301,7 @@ export function mountProjectApiRoutes(
     "/api/v1/projects/:slug/environments",
     ({ request, params, body }: any) => {
       return executeWithRuntimeErrorsHandled(request, async () => {
-        await options.authorize(request);
+        await options.authorizeWrite(request);
         const slug = assertRequiredString(params.slug, "slug");
 
         const payload = (body ?? {}) as Record<string, unknown>;
