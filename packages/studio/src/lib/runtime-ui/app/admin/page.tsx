@@ -80,7 +80,9 @@ export default function DashboardPage() {
       <div className="p-6 space-y-6">
         {/* Page Title */}
         <div>
-          <h1 className="text-2xl font-bold font-heading tracking-tight">Dashboard</h1>
+          <h1 className="text-2xl font-bold font-heading tracking-tight">
+            Dashboard
+          </h1>
           <p className="text-sm text-foreground-muted">
             Welcome back, {currentUser.name}
           </p>
@@ -131,11 +133,7 @@ export default function DashboardPage() {
         {/* Quick Actions */}
         <div className="flex flex-wrap gap-3">
           {quickActions.map((action) => (
-            <Button
-              key={action.label}
-              variant={action.variant}
-              asChild
-            >
+            <Button key={action.label} variant={action.variant} asChild>
               <Link href={action.href}>
                 <action.icon className="mr-2 h-4 w-4" />
                 {action.label}

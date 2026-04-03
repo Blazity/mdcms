@@ -7,16 +7,16 @@
 
 :root {
   /* Primary & Accent */
-  --background: #FCF9F8;
-  --background-subtle: #F6F3F2;
-  --foreground: #1C1B1B;
+  --background: #fcf9f8;
+  --background-subtle: #f6f3f2;
+  --foreground: #1c1b1b;
   --foreground-muted: #444655;
-  --accent: #2F49E5;
-  --accent-hover: #4D65FF;
-  --accent-subtle: #EAEDFF;
+  --accent: #2f49e5;
+  --accent-hover: #4d65ff;
+  --accent-subtle: #eaedff;
   --border: rgba(197, 197, 216, 0.3);
-  --border-solid: #C5C5D8;
-  --border-focus: #2F49E5;
+  --border-solid: #c5c5d8;
+  --border-focus: #2f49e5;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
   --success: #22c55e;
@@ -25,9 +25,9 @@
   --warning-subtle: #fffbeb;
 
   /* Semantic aliases */
-  --card: #FFFFFF;
+  --card: #ffffff;
   --card-foreground: var(--foreground);
-  --popover: #FFFFFF;
+  --popover: #ffffff;
   --popover-foreground: var(--foreground);
   --primary: var(--accent);
   --primary-foreground: #ffffff;
@@ -40,15 +40,15 @@
   --ring: var(--accent);
 
   /* Extended palette */
-  --olive: #D6FF4D;
+  --olive: #d6ff4d;
   --olive-dark: #516600;
-  --vibrant-green: #CAF240;
-  --light-blue: #E2E2F1;
-  --neutral-grey: #E5E2E1;
-  --code-bg: #F0EDEC;
+  --vibrant-green: #caf240;
+  --light-blue: #e2e2f1;
+  --neutral-grey: #e5e2e1;
+  --code-bg: #f0edec;
 
   /* Chart colors */
-  --chart-1: #2F49E5;
+  --chart-1: #2f49e5;
   --chart-2: #22c55e;
   --chart-3: #f59e0b;
   --chart-4: #6366f1;
@@ -61,7 +61,7 @@
   --shadow-primary-button: 0px 25px 50px -12px rgba(47, 73, 229, 0.3);
 
   /* Sidebar */
-  --sidebar: #FFFFFF;
+  --sidebar: #ffffff;
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--accent);
   --sidebar-primary-foreground: #ffffff;
@@ -76,12 +76,12 @@
   --background-subtle: #1e2028;
   --foreground: #f9fafb;
   --foreground-muted: #9ca3af;
-  --accent: #4D65FF;
-  --accent-hover: #6B7FFF;
+  --accent: #4d65ff;
+  --accent-hover: #6b7fff;
   --accent-subtle: #1a1f3a;
   --border: rgba(197, 197, 216, 0.15);
   --border-solid: #3d3f52;
-  --border-focus: #4D65FF;
+  --border-focus: #4d65ff;
   --destructive: #f87171;
   --destructive-foreground: #191b20;
   --success: #4ade80;
@@ -101,9 +101,9 @@
   --accent-foreground: var(--foreground);
   --input: var(--border-solid);
   --ring: var(--accent);
-  --olive: #D6FF4D;
-  --olive-dark: #8FA800;
-  --vibrant-green: #CAF240;
+  --olive: #d6ff4d;
+  --olive-dark: #8fa800;
+  --vibrant-green: #caf240;
   --light-blue: #2a2a3d;
   --neutral-grey: #2d3039;
   --code-bg: #252730;
@@ -119,7 +119,8 @@
 
 @theme inline {
   --font-sans: "Inter", "Inter Fallback", system-ui, sans-serif;
-  --font-heading: "Space Grotesk", "Space Grotesk Fallback", system-ui, sans-serif;
+  --font-heading:
+    "Space Grotesk", "Space Grotesk Fallback", system-ui, sans-serif;
   --font-mono: "Geist Mono", "Geist Mono Fallback", monospace;
   --color-background: var(--background);
   --color-background-subtle: var(--background-subtle);

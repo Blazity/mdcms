@@ -32,7 +32,9 @@ export default function ContentPage() {
       <div className="p-6 space-y-6">
         {/* Page Title */}
         <div>
-          <h1 className="text-2xl font-bold font-heading tracking-tight">Content</h1>
+          <h1 className="text-2xl font-bold font-heading tracking-tight">
+            Content
+          </h1>
           <p className="text-sm text-foreground-muted">
             Browse and manage your content by type
           </p>

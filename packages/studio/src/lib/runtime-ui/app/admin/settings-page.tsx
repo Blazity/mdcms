@@ -202,9 +202,7 @@ export default function SettingsPage({
                   </Select>
                 </div>
 
-                <Button>
-                  Save changes
-                </Button>
+                <Button>Save changes</Button>
               </div>
             </div>
           )}
@@ -443,9 +441,7 @@ export default function SettingsPage({
                   image/* MIME types.
                 </p>
 
-                <Button>
-                  Save
-                </Button>
+                <Button>Save</Button>
               </div>
             </div>
           )}
@@ -476,9 +472,7 @@ export default function SettingsPage({
                     </p>
                   </div>
 
-                  <Button
-                    asChild
-                  >
+                  <Button asChild>
                     <Link href={schemaBrowserHref}>
                       Open schema browser
                       <ArrowRight className="ml-2 h-4 w-4" />

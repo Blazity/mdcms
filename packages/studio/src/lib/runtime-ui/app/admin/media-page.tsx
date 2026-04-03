@@ -65,7 +65,9 @@ export default function MediaPage() {
           </div>
 
           <div className="flex items-center justify-center gap-3 mb-4">
-            <h1 className="text-2xl font-bold font-heading tracking-tight">Media Library</h1>
+            <h1 className="text-2xl font-bold font-heading tracking-tight">
+              Media Library
+            </h1>
             <Badge variant="outline" className="border-accent text-accent">
               Coming Soon
             </Badge>

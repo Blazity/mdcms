@@ -86,7 +86,9 @@ export default function UsersPage() {
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold font-heading tracking-tight">Users</h1>
+          <h1 className="text-2xl font-bold font-heading tracking-tight">
+            Users
+          </h1>
           <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -163,9 +165,7 @@ export default function UsersPage() {
                 >
                   Cancel
                 </Button>
-                <Button
-                  onClick={() => setInviteDialogOpen(false)}
-                >
+                <Button onClick={() => setInviteDialogOpen(false)}>
                   Send Invitation
                 </Button>
               </DialogFooter>
