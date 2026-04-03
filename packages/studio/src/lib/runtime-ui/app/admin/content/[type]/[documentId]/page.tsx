@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -63,10 +62,10 @@ const statusConfig = {
 };
 
 export default function DocumentEditorPage() {
-  const params = useParams();
+  const params = useParams<{ type: string; documentId: string }>();
   const router = useRouter();
-  const typeId = params.type as string;
-  const documentId = params.documentId as string;
+  const typeId = params.type;
+  const documentId = params.documentId;
 
   const contentType = mockContentTypes.find((t) => t.id === typeId);
   const document = mockDocuments.find(
@@ -148,7 +147,11 @@ export default function DocumentEditorPage() {
             />
 
             {/* Auto-save indicator */}
-            <div className="flex shrink-0 items-center gap-1.5 text-sm">
+            <div
+              className="flex shrink-0 items-center gap-1.5 text-sm"
+              role="status"
+              aria-live="polite"
+            >
               {saveStatus === "saved" && (
                 <>
                   <Check className="h-4 w-4 text-success" />
@@ -181,6 +184,7 @@ export default function DocumentEditorPage() {
                   <TabsTrigger
                     key={locale}
                     value={locale}
+                    disabled={locale !== document.locale}
                     className={cn(
                       "data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-accent rounded-none",
                       locale !== document.locale && "border-dashed opacity-60",

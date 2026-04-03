@@ -202,9 +202,7 @@ export default function SettingsPage({
                   </Select>
                 </div>
 
-                <Button>
-                  Save changes
-                </Button>
+                <Button>Save changes</Button>
               </div>
             </div>
           )}
@@ -443,9 +441,7 @@ export default function SettingsPage({
                   image/* MIME types.
                 </p>
 
-                <Button>
-                  Save
-                </Button>
+                <Button>Save</Button>
               </div>
             </div>
           )}

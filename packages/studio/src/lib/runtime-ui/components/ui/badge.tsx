@@ -20,8 +20,7 @@ const badgeVariants = cva(
           "text-foreground border-[var(--color-purple-grey)] [a&]:hover:bg-background-subtle",
         accent:
           "border-transparent bg-[var(--color-vibrant-green)] text-foreground rounded-[var(--radius-sm)] px-4 py-2 text-[12px]",
-        blue:
-          "border-transparent bg-[var(--color-light-blue)] text-primary",
+        blue: "border-transparent bg-[var(--color-light-blue)] text-primary",
       },
     },
     defaultVariants: {

@@ -163,9 +163,7 @@ export default function UsersPage() {
                 >
                   Cancel
                 </Button>
-                <Button
-                  onClick={() => setInviteDialogOpen(false)}
-                >
+                <Button onClick={() => setInviteDialogOpen(false)}>
                   Send Invitation
                 </Button>
               </DialogFooter>

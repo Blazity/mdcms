@@ -9,39 +9,39 @@
 
 :root {
   /* Primary & Accent */
-  --color-blue-500: #2F49E5;
-  --color-blue-500-display: #4D65FF;
+  --color-blue-500: #2f49e5;
+  --color-blue-500-display: #4d65ff;
   --color-olive-500: #516600;
-  --color-olive-500-accent: #D6FF4D;
-  --color-vibrant-green: #CAF240;
+  --color-olive-500-accent: #d6ff4d;
+  --color-vibrant-green: #caf240;
 
   /* Neutral */
-  --color-dark: #1C1B1B;
+  --color-dark: #1c1b1b;
   --color-dark-80: rgba(28, 27, 27, 0.8);
   --color-dark-20: rgba(28, 27, 27, 0.2);
-  --color-offwhite: #FCF9F8;
-  --color-pure-white: #FFFFFF;
+  --color-offwhite: #fcf9f8;
+  --color-pure-white: #ffffff;
 
   /* Surface */
-  --color-blue-100: #EAEDFF;
-  --color-light-grey: #F6F3F2;
-  --color-purple-grey: #C5C5D8;
-  --color-light-blue: #E2E2F1;
-  --color-neutral-grey: #E5E2E1;
+  --color-blue-100: #eaedff;
+  --color-light-grey: #f6f3f2;
+  --color-purple-grey: #c5c5d8;
+  --color-light-blue: #e2e2f1;
+  --color-neutral-grey: #e5e2e1;
   --color-muted-text: #444655;
-  --color-code-bg: #F0EDEC;
+  --color-code-bg: #f0edec;
 
   /* Semantic mapping */
-  --background: #FCF9F8;
-  --background-subtle: #F6F3F2;
-  --foreground: #1C1B1B;
+  --background: #fcf9f8;
+  --background-subtle: #f6f3f2;
+  --foreground: #1c1b1b;
   --foreground-muted: #444655;
-  --accent: #2F49E5;
+  --accent: #2f49e5;
   --accent-hover: #2840cc;
-  --accent-subtle: #EAEDFF;
-  --accent-display: #4D65FF;
+  --accent-subtle: #eaedff;
+  --accent-display: #4d65ff;
   --border: rgba(197, 197, 216, 0.3);
-  --border-focus: #2F49E5;
+  --border-focus: #2f49e5;
   --border-card: rgba(197, 197, 216, 0.2);
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
@@ -62,7 +62,7 @@
   --accent-foreground: var(--foreground);
   --input: var(--color-purple-grey);
   --ring: var(--accent);
-  --chart-1: #2F49E5;
+  --chart-1: #2f49e5;
   --chart-2: #22c55e;
   --chart-3: #f59e0b;
   --chart-4: #6366f1;
@@ -90,12 +90,12 @@
   --background-subtle: #1e2028;
   --foreground: #f9fafb;
   --foreground-muted: #9ca3af;
-  --accent: #4D65FF;
-  --accent-hover: #6B7FFF;
+  --accent: #4d65ff;
+  --accent-hover: #6b7fff;
   --accent-subtle: #1e2040;
-  --accent-display: #4D65FF;
+  --accent-display: #4d65ff;
   --border: #2d3039;
-  --border-focus: #4D65FF;
+  --border-focus: #4d65ff;
   --border-card: #2d3039;
   --destructive: #f87171;
   --destructive-foreground: #191b20;
@@ -130,7 +130,8 @@
 
 @theme inline {
   --font-sans: "Inter", "Inter Fallback", system-ui, sans-serif;
-  --font-heading: "Space Grotesk", "Space Grotesk Fallback", system-ui, sans-serif;
+  --font-heading:
+    "Space Grotesk", "Space Grotesk Fallback", system-ui, sans-serif;
   --font-mono: "Geist Mono", "JetBrains Mono", "Fira Code", monospace;
   --color-background: var(--background);
   --color-background-subtle: var(--background-subtle);
