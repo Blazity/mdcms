@@ -319,6 +319,44 @@ export function AdminStudioClient({ config }: { config: MdcmsConfig }) {
   remain available as explicit runtime helpers without widening the client root
   entry.
 
+## Font Loading
+
+The Studio UI references three font families via CSS custom properties with
+system font fallbacks:
+
+- **Space Grotesk** (`--font-heading`) — headings
+- **Inter** (default sans-serif) — body text, button labels
+- **Geist Mono** (`--font-mono`) — code blocks, tags, technical text
+
+Font loading must be handled by the host application. The studio package does
+not bundle font files or `@font-face` declarations.
+
+### Next.js (recommended)
+
+```ts
+// app/layout.tsx
+import { Space_Grotesk, Inter } from "next/font/google";
+import localFont from "next/font/local";
+
+const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-heading" });
+const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
+const geistMono = localFont({ src: "./fonts/GeistMono-Variable.woff2", variable: "--font-mono" });
+
+export default function RootLayout({ children }) {
+  return (
+    <html className={`${spaceGrotesk.variable} ${inter.variable} ${geistMono.variable}`}>
+      <body>{children}</body>
+    </html>
+  );
+}
+```
+
+### Google Fonts / self-hosted
+
+Add `<link>` tags or `@font-face` declarations that load the three families.
+The CSS variables will pick them up automatically; without explicit loading the
+fonts fall back to system equivalents.
+
 ## Build
 
 - `bun nx build studio`
