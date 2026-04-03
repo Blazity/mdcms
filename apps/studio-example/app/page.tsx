@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 export default function HomePage() {
+  console.log("kuba");
   return (
     <main>
       <h1>Sample Host App</h1>
