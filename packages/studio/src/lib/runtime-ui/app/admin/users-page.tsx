@@ -55,7 +55,7 @@ import { cn } from "../../lib/utils";
 const roleConfig = {
   owner: {
     label: "Owner",
-    className: "bg-accent/10 text-accent border-accent/20",
+    className: "bg-accent-subtle text-accent border-accent/20",
   },
   admin: {
     label: "Admin",
@@ -86,10 +86,10 @@ export default function UsersPage() {
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Users</h1>
+          <h1 className="text-2xl font-bold font-heading tracking-tight">Users</h1>
           <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-accent hover:bg-accent-hover text-white">
+              <Button>
                 <Plus className="mr-2 h-4 w-4" />
                 Invite User
               </Button>
@@ -164,7 +164,6 @@ export default function UsersPage() {
                   Cancel
                 </Button>
                 <Button
-                  className="bg-accent hover:bg-accent-hover text-white"
                   onClick={() => setInviteDialogOpen(false)}
                 >
                   Send Invitation

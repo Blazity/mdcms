@@ -32,7 +32,7 @@ export default function ContentPage() {
       <div className="p-6 space-y-6">
         {/* Page Title */}
         <div>
-          <h1 className="text-2xl font-semibold">Content</h1>
+          <h1 className="text-2xl font-bold font-heading tracking-tight">Content</h1>
           <p className="text-sm text-foreground-muted">
             Browse and manage your content by type
           </p>
@@ -47,7 +47,7 @@ export default function ContentPage() {
                 <Card className="border-border h-full transition-all hover:border-accent/50 hover:shadow-sm">
                   <CardContent className="p-5">
                     <div className="flex items-start gap-4">
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-accent/10">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-accent-subtle">
                         <IconComponent className="h-6 w-6 text-accent" />
                       </div>
                       <div className="flex-1 min-w-0 space-y-1">

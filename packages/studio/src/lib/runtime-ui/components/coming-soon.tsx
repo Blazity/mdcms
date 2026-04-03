@@ -29,7 +29,7 @@ export function ComingSoon({
           <Badge variant="secondary" className="mb-4">
             Coming Soon
           </Badge>
-          <h2 className="mb-2 text-2xl font-semibold tracking-tight">
+          <h2 className="mb-2 text-2xl font-bold font-heading tracking-tight">
             {title}
           </h2>
           <p className="mb-6 max-w-sm text-muted-foreground">{description}</p>

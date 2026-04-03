@@ -449,7 +449,7 @@ export function EditorSidebar({ document, mdxPropsPanel }: EditorSidebarProps) {
           {/* SEO Tab (Coming Soon) */}
           <TabsContent value="seo" className="flex-1 mt-0">
             <div className="flex flex-col items-center justify-center h-full p-6 text-center">
-              <div className="mb-4 rounded-full bg-accent/10 p-3">
+              <div className="mb-4 rounded-full bg-accent-subtle p-3">
                 <Sparkles className="h-6 w-6 text-accent" />
               </div>
               <h3 className="mb-2 font-semibold">SEO Analysis</h3>

@@ -1547,7 +1547,6 @@ export function ContentDocumentPageView({
 
             {state.status === "ready" ? (
               <Button
-                className="bg-accent text-white hover:bg-accent-hover"
                 disabled={!canPublish}
                 onClick={() => onPublishDialogOpenChange?.(true)}
               >
@@ -1686,7 +1685,6 @@ export function ContentDocumentPageView({
                   Cancel
                 </Button>
                 <Button
-                  className="bg-accent text-white hover:bg-accent-hover"
                   disabled={state.publishState === "publishing"}
                   onClick={onPublishSubmit}
                 >

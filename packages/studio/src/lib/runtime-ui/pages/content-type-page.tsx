@@ -187,8 +187,8 @@ export default function ContentTypePage() {
 
       <div className="space-y-6 p-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">{contentType.name}</h1>
-          <Button className="bg-accent text-white hover:bg-accent-hover">
+          <h1 className="text-2xl font-bold font-heading tracking-tight">{contentType.name}</h1>
+          <Button>
             <Plus className="mr-2 h-4 w-4" />
             New Document
           </Button>
@@ -496,7 +496,7 @@ export default function ContentTypePage() {
             <p className="mb-4 text-sm text-foreground-muted">
               Create your first {contentType.name} document to get started.
             </p>
-            <Button className="bg-accent text-white hover:bg-accent-hover">
+            <Button>
               <Plus className="mr-2 h-4 w-4" />
               New Document
             </Button>

@@ -6,41 +6,62 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: #ffffff;
-  --background-subtle: #f9fafb;
-  --foreground: #191b20;
-  --foreground-muted: #6b7280;
-  --accent: #fd6127;
-  --accent-hover: #e5571f;
-  --accent-subtle: #fff3ee;
-  --border: #e5e7eb;
-  --border-focus: #fd6127;
+  /* Primary & Accent */
+  --background: #FCF9F8;
+  --background-subtle: #F6F3F2;
+  --foreground: #1C1B1B;
+  --foreground-muted: #444655;
+  --accent: #2F49E5;
+  --accent-hover: #4D65FF;
+  --accent-subtle: #EAEDFF;
+  --border: rgba(197, 197, 216, 0.3);
+  --border-solid: #C5C5D8;
+  --border-focus: #2F49E5;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
   --success: #22c55e;
   --success-subtle: #f0fdf4;
   --warning: #f59e0b;
   --warning-subtle: #fffbeb;
-  --card: var(--background);
+
+  /* Semantic aliases */
+  --card: #FFFFFF;
   --card-foreground: var(--foreground);
-  --popover: var(--background);
+  --popover: #FFFFFF;
   --popover-foreground: var(--foreground);
   --primary: var(--accent);
   --primary-foreground: #ffffff;
-  --secondary: var(--background-subtle);
-  --secondary-foreground: var(--foreground);
+  --secondary: var(--foreground);
+  --secondary-foreground: #ffffff;
   --muted: var(--background-subtle);
   --muted-foreground: var(--foreground-muted);
   --accent-foreground: var(--foreground);
-  --input: var(--border);
+  --input: var(--border-solid);
   --ring: var(--accent);
-  --chart-1: #fd6127;
+
+  /* Extended palette */
+  --olive: #D6FF4D;
+  --olive-dark: #516600;
+  --vibrant-green: #CAF240;
+  --light-blue: #E2E2F1;
+  --neutral-grey: #E5E2E1;
+  --code-bg: #F0EDEC;
+
+  /* Chart colors */
+  --chart-1: #2F49E5;
   --chart-2: #22c55e;
   --chart-3: #f59e0b;
   --chart-4: #6366f1;
   --chart-5: #ec4899;
+
+  /* Radius */
   --radius: 0.5rem;
-  --sidebar: var(--background);
+
+  /* Shadows */
+  --shadow-primary-button: 0px 25px 50px -12px rgba(47, 73, 229, 0.3);
+
+  /* Sidebar */
+  --sidebar: #FFFFFF;
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--accent);
   --sidebar-primary-foreground: #ffffff;
@@ -55,31 +76,38 @@
   --background-subtle: #1e2028;
   --foreground: #f9fafb;
   --foreground-muted: #9ca3af;
-  --accent: #fd6127;
-  --accent-hover: #ff7a45;
-  --accent-subtle: #2a1f1a;
-  --border: #2d3039;
-  --border-focus: #fd6127;
+  --accent: #4D65FF;
+  --accent-hover: #6B7FFF;
+  --accent-subtle: #1a1f3a;
+  --border: rgba(197, 197, 216, 0.15);
+  --border-solid: #3d3f52;
+  --border-focus: #4D65FF;
   --destructive: #f87171;
   --destructive-foreground: #191b20;
   --success: #4ade80;
   --success-subtle: #14532d;
   --warning: #fbbf24;
   --warning-subtle: #422006;
-  --card: var(--background);
+  --card: #1e2028;
   --card-foreground: var(--foreground);
-  --popover: var(--background);
+  --popover: #1e2028;
   --popover-foreground: var(--foreground);
   --primary: var(--accent);
   --primary-foreground: #ffffff;
-  --secondary: var(--background-subtle);
-  --secondary-foreground: var(--foreground);
+  --secondary: var(--foreground);
+  --secondary-foreground: #191b20;
   --muted: var(--background-subtle);
   --muted-foreground: var(--foreground-muted);
   --accent-foreground: var(--foreground);
-  --input: var(--border);
+  --input: var(--border-solid);
   --ring: var(--accent);
-  --sidebar: var(--background);
+  --olive: #D6FF4D;
+  --olive-dark: #8FA800;
+  --vibrant-green: #CAF240;
+  --light-blue: #2a2a3d;
+  --neutral-grey: #2d3039;
+  --code-bg: #252730;
+  --sidebar: #191b20;
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--accent);
   --sidebar-primary-foreground: #ffffff;
@@ -91,7 +119,8 @@
 
 @theme inline {
   --font-sans: "Inter", "Inter Fallback", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --font-heading: "Space Grotesk", "Space Grotesk Fallback", system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", monospace;
   --color-background: var(--background);
   --color-background-subtle: var(--background-subtle);
   --color-foreground: var(--foreground);
@@ -117,18 +146,26 @@
   --color-warning: var(--warning);
   --color-warning-subtle: var(--warning-subtle);
   --color-border: var(--border);
+  --color-border-solid: var(--border-solid);
   --color-border-focus: var(--border-focus);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-olive: var(--olive);
+  --color-olive-dark: var(--olive-dark);
+  --color-vibrant-green: var(--vibrant-green);
+  --color-light-blue: var(--light-blue);
+  --color-neutral-grey: var(--neutral-grey);
+  --color-code-bg: var(--code-bg);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --radius-xl: 16px;
+  --radius-pill: 12px;
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -152,13 +189,11 @@
     overflow-x: hidden;
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
-    background:
-      radial-gradient(
-        circle at top left,
-        rgba(253, 97, 39, 0.08),
-        transparent 24rem
-      ),
-      linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    background: var(--background);
+  }
+
+  .mdcms-studio-runtime :is(.dark) {
+    background: var(--background);
   }
 
   .mdcms-studio-runtime a {
@@ -168,6 +203,15 @@
 
   .mdcms-studio-runtime :is(button, input, textarea, select) {
     font: inherit;
+  }
+
+  .mdcms-studio-runtime h1,
+  .mdcms-studio-runtime h2,
+  .mdcms-studio-runtime h3,
+  .mdcms-studio-runtime h4,
+  .mdcms-studio-runtime h5,
+  .mdcms-studio-runtime h6 {
+    font-family: var(--font-heading);
   }
 }
 
@@ -181,7 +225,7 @@
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--border-solid);
   border-radius: 3px;
 }
 

@@ -202,7 +202,7 @@ export default function SettingsPage({
                   </Select>
                 </div>
 
-                <Button className="bg-accent hover:bg-accent-hover text-white">
+                <Button>
                   Save changes
                 </Button>
               </div>
@@ -219,7 +219,7 @@ export default function SettingsPage({
                     Manage API keys for external integrations
                   </p>
                 </div>
-                <Button className="bg-accent hover:bg-accent-hover text-white">
+                <Button>
                   <Plus className="mr-2 h-4 w-4" />
                   Create API Key
                 </Button>
@@ -325,7 +325,7 @@ export default function SettingsPage({
                     Configure webhook endpoints for content events
                   </p>
                 </div>
-                <Button className="bg-accent hover:bg-accent-hover text-white">
+                <Button>
                   <Plus className="mr-2 h-4 w-4" />
                   Create Webhook
                 </Button>
@@ -443,7 +443,7 @@ export default function SettingsPage({
                   image/* MIME types.
                 </p>
 
-                <Button className="bg-accent hover:bg-accent-hover text-white">
+                <Button>
                   Save
                 </Button>
               </div>
@@ -478,7 +478,6 @@ export default function SettingsPage({
 
                   <Button
                     asChild
-                    className="bg-accent text-white hover:bg-accent-hover"
                   >
                     <Link href={schemaBrowserHref}>
                       Open schema browser

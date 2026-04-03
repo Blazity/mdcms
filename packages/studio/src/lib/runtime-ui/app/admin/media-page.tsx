@@ -59,13 +59,13 @@ export default function MediaPage() {
         {/* Coming Soon Content */}
         <div className="text-center max-w-lg mx-auto mb-12">
           <div className="mb-6 flex justify-center">
-            <div className="rounded-full bg-accent/10 p-4">
+            <div className="rounded-full bg-accent-subtle p-4">
               <Image className="h-16 w-16 text-foreground-muted" />
             </div>
           </div>
 
           <div className="flex items-center justify-center gap-3 mb-4">
-            <h1 className="text-2xl font-semibold">Media Library</h1>
+            <h1 className="text-2xl font-bold font-heading tracking-tight">Media Library</h1>
             <Badge variant="outline" className="border-accent text-accent">
               Coming Soon
             </Badge>

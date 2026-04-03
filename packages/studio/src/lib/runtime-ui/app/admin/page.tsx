@@ -80,7 +80,7 @@ export default function DashboardPage() {
       <div className="p-6 space-y-6">
         {/* Page Title */}
         <div>
-          <h1 className="text-2xl font-semibold">Dashboard</h1>
+          <h1 className="text-2xl font-bold font-heading tracking-tight">Dashboard</h1>
           <p className="text-sm text-foreground-muted">
             Welcome back, {currentUser.name}
           </p>
@@ -119,7 +119,7 @@ export default function DashboardPage() {
                       </p>
                     )}
                   </div>
-                  <div className="rounded-md bg-accent/10 p-2">
+                  <div className="rounded-md bg-accent-subtle p-2">
                     <stat.icon className="h-5 w-5 text-accent" />
                   </div>
                 </div>
@@ -135,11 +135,6 @@ export default function DashboardPage() {
               key={action.label}
               variant={action.variant}
               asChild
-              className={
-                action.variant === "default"
-                  ? "bg-accent hover:bg-accent-hover text-white"
-                  : ""
-              }
             >
               <Link href={action.href}>
                 <action.icon className="mr-2 h-4 w-4" />
@@ -159,7 +154,7 @@ export default function DashboardPage() {
               </CardTitle>
               <Link
                 href="/admin/content"
-                className="text-sm text-foreground-muted hover:text-accent flex items-center gap-1"
+                className="text-sm text-foreground-muted hover:text-foreground flex items-center gap-1"
               >
                 View all <ChevronRight className="h-4 w-4" />
               </Link>
@@ -174,7 +169,7 @@ export default function DashboardPage() {
                     href={`/admin/content/${type.id}`}
                     className="flex items-center gap-4 rounded-lg p-3 transition-colors hover:bg-background-subtle"
                   >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent/10">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent-subtle">
                       <FileText className="h-5 w-5 text-accent" />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -220,7 +215,7 @@ export default function DashboardPage() {
               </CardTitle>
               <Link
                 href="#"
-                className="text-sm text-foreground-muted hover:text-accent flex items-center gap-1"
+                className="text-sm text-foreground-muted hover:text-foreground flex items-center gap-1"
               >
                 View all <ChevronRight className="h-4 w-4" />
               </Link>
