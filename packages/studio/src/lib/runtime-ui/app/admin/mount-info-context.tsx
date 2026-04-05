@@ -2,12 +2,17 @@
 
 import { createContext, useContext, type PropsWithChildren } from "react";
 
-import type { EnvironmentSummary, HostBridgeV1 } from "@mdcms/shared";
+import type {
+  EnvironmentSummary,
+  HostBridgeV1,
+  StudioMountContext,
+} from "@mdcms/shared";
 
 export type StudioMountInfo = {
   project: string | null;
   environment: string | null;
   apiBaseUrl: string;
+  auth: StudioMountContext["auth"];
   environments: EnvironmentSummary[];
   hostBridge: HostBridgeV1 | null;
 };
@@ -16,6 +21,7 @@ const DEFAULT_MOUNT_INFO: StudioMountInfo = {
   project: null,
   environment: null,
   apiBaseUrl: "",
+  auth: { mode: "cookie" },
   environments: [],
   hostBridge: null,
 };

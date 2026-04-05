@@ -221,6 +221,7 @@ export default function AdminLayout({
     project: context.documentRoute?.project ?? null,
     environment: context.documentRoute?.environment ?? null,
     apiBaseUrl: context.apiBaseUrl,
+    auth: context.auth,
     environments,
     hostBridge: context.hostBridge,
   };

@@ -69,7 +69,7 @@ export default function DashboardPage() {
   const [state, setState] = useState<DashboardState>({ status: "loading" });
 
   useEffect(() => {
-    const { project, environment, apiBaseUrl } = mountInfo;
+    const { project, environment, apiBaseUrl, auth } = mountInfo;
 
     if (!project || !environment || !apiBaseUrl) {
       setState({ status: "loading" });
@@ -80,7 +80,7 @@ export default function DashboardPage() {
 
     let cancelled = false;
     const config = { project, environment, serverUrl: apiBaseUrl };
-    const authOpts = { auth: { mode: "cookie" as const } };
+    const authOpts = { auth };
 
     const schemaApi = createStudioSchemaRouteApi(config, authOpts);
     const contentApi = createStudioContentListApi(config, authOpts);
@@ -106,7 +106,12 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [mountInfo.project, mountInfo.environment, mountInfo.apiBaseUrl]);
+  }, [
+    mountInfo.project,
+    mountInfo.environment,
+    mountInfo.apiBaseUrl,
+    mountInfo.auth,
+  ]);
 
   const userLabel =
     session.status === "authenticated"
