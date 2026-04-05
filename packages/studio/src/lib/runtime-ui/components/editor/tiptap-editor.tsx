@@ -305,15 +305,7 @@ export function TipTapEditor({
     editor.setEditable(!isEditorReadOnly);
     publishSelectedMdxComponent(editor);
     syncSlashTrigger(editor);
-  }, [
-    catalogComponents,
-    editor,
-    forbidden,
-    isEditorReadOnly,
-    publishSelectedMdxComponent,
-    readOnly,
-    syncSlashTrigger,
-  ]);
+  }, [catalogComponents, editor, forbidden, isEditorReadOnly, readOnly]);
 
   const isActive = (name: string, attributes?: Record<string, unknown>) =>
     editor?.isActive(name, attributes) ?? false;

@@ -227,6 +227,93 @@ test("token-authenticated sync does not bootstrap csrf", async () => {
   assert.equal(result.affectedTypes.length, 0);
 });
 
+test("cookie-authenticated sync preserves a path-prefixed studio serverUrl", async () => {
+  const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
+    [];
+  const api = createStudioSchemaRouteApi(
+    {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000/review-api/editor",
+    },
+    {
+      auth: { mode: "cookie" },
+      fetcher: async (input, init) => {
+        calls.push({ input, init });
+
+        if (
+          String(input) ===
+          "http://localhost:4000/review-api/editor/api/v1/auth/session"
+        ) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                csrfToken: "csrf-cookie-token",
+              },
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        assert.equal(
+          String(input),
+          "http://localhost:4000/review-api/editor/api/v1/schema",
+        );
+        assert.equal(
+          readHeader(init, "x-mdcms-csrf-token"),
+          "csrf-cookie-token",
+        );
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              schemaHash: "schema-hash-123",
+              syncedAt: "2026-03-31T12:34:56.000Z",
+              affectedTypes: [],
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      },
+    },
+  );
+
+  await api.sync({
+    rawConfigSnapshot: {
+      project: "marketing-site",
+      environment: "staging",
+      contentDirectories: ["content/blog"],
+    },
+    resolvedSchema: {
+      BlogPost: {
+        type: "BlogPost",
+        directory: "content/blog",
+        localized: true,
+        fields: {},
+      },
+    },
+    schemaHash: "schema-hash-123",
+  });
+
+  assert.deepEqual(
+    calls.map((call) => String(call.input)),
+    [
+      "http://localhost:4000/review-api/editor/api/v1/auth/session",
+      "http://localhost:4000/review-api/editor/api/v1/schema",
+    ],
+  );
+});
+
 test("sync surfaces forbidden responses as runtime errors", async () => {
   const api = createSchemaRouteApi({
     fetcher: async () =>

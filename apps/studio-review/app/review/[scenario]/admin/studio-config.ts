@@ -5,6 +5,7 @@ import {
   studioReviewEnvironment,
   studioReviewMdxComponents,
   studioReviewProject,
+  studioReviewServerUrl,
 } from "../../../../lib/review-studio-config";
 
 type PreparedStudioConfig = Awaited<ReturnType<typeof prepareStudioConfig>>;
@@ -28,17 +29,46 @@ export function extractPreparedStudioComponentMetadata(
   );
 }
 
-export function createReviewScenarioServerUrl(scenario: string): string {
-  const origin =
-    typeof window === "undefined"
-      ? "http://127.0.0.1:4273"
-      : window.location.origin;
+type HeaderReader = Pick<Headers, "get">;
 
-  return new URL(`/review-api/${scenario}`, origin).href;
+function readRequestHeader(
+  headers: HeaderReader,
+  name: string,
+): string | undefined {
+  const value = headers.get(name);
+
+  if (value === null) {
+    return undefined;
+  }
+
+  const firstValue = value.split(",")[0]?.trim();
+
+  return firstValue && firstValue.length > 0 ? firstValue : undefined;
+}
+
+export function resolveReviewRequestOrigin(headers: HeaderReader): string {
+  const proto = readRequestHeader(headers, "x-forwarded-proto") ?? "http";
+  const host =
+    readRequestHeader(headers, "x-forwarded-host") ??
+    readRequestHeader(headers, "host");
+
+  if (!host) {
+    return studioReviewServerUrl;
+  }
+
+  return `${proto}://${host}`;
+}
+
+export function createReviewScenarioServerUrl(input: {
+  scenario: string;
+  origin: string;
+}): string {
+  return new URL(`/review-api/${input.scenario}`, input.origin).href;
 }
 
 export function createClientStudioConfig(input: {
   scenario: string;
+  serverUrl: string;
   preparedComponents: PreparedStudioComponentMetadata[];
 }): MdcmsConfig {
   const extractedPropsByName = new Map(
@@ -54,7 +84,7 @@ export function createClientStudioConfig(input: {
   return {
     project: studioReviewProject,
     environment: studioReviewEnvironment,
-    serverUrl: createReviewScenarioServerUrl(input.scenario),
+    serverUrl: input.serverUrl,
     components: clientComponents.map((component) => {
       const extractedProps = extractedPropsByName.get(component.name);
 

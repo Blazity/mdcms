@@ -2034,7 +2034,7 @@ export default function ContentDocumentPage({
 
   useEffect(() => {
     void loadDocument();
-  }, [context, documentId, loadDocument, route, typeId, typeLabel]);
+  }, [context, documentId, route, typeId, typeLabel]);
 
   const readyDraftBody = state.status === "ready" ? state.draftBody : undefined;
   const readyDocumentBody =
@@ -2069,7 +2069,6 @@ export default function ContentDocumentPage({
       clearTimeout(timeout);
     };
   }, [
-    saveDraft,
     readyCanWrite,
     readyDocumentBody,
     readyDraftBody,
@@ -2107,7 +2106,6 @@ export default function ContentDocumentPage({
 
     void loadSelectedVersionDiff();
   }, [
-    loadSelectedVersionDiff,
     readyLeftComparisonVersion,
     readyRightComparisonVersion,
     state.status,

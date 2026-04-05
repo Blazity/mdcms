@@ -17,7 +17,10 @@ export function resolveStudioReviewAppRoot(
     return currentWorkingDirectory;
   }
 
-  const nestedCandidate = resolve(currentWorkingDirectory, REVIEW_APP_PATH_SEGMENT);
+  const nestedCandidate = resolve(
+    currentWorkingDirectory,
+    REVIEW_APP_PATH_SEGMENT,
+  );
 
   if (looksLikeStudioReviewAppRoot(nestedCandidate)) {
     return nestedCandidate;

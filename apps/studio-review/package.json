@@ -7,8 +7,9 @@
     "name": "studio-review"
   },
   "scripts": {
-    "dev": "NEXT_TELEMETRY_DISABLED=1 bun x next dev --hostname ${MDCMS_STUDIO_REVIEW_HOST:-127.0.0.1} --port ${MDCMS_STUDIO_REVIEW_PORT:-4273}",
-    "vercel-build": "bun --conditions @mdcms/source scripts/build-review-runtime.ts && next build"
+    "build:workspace-deps": "bun x --bun tsc --build ../../packages/shared/tsconfig.lib.json ../../apps/cli/tsconfig.lib.json ../../packages/studio/tsconfig.lib.json",
+    "dev": "bun run build:workspace-deps && NEXT_TELEMETRY_DISABLED=1 bun x next dev --hostname ${MDCMS_STUDIO_REVIEW_HOST:-127.0.0.1} --port ${MDCMS_STUDIO_REVIEW_PORT:-4273}",
+    "vercel-build": "bun run build:workspace-deps && bun --conditions @mdcms/source scripts/build-review-runtime.ts && next build"
   },
   "dependencies": {
     "@mdcms/cli": "workspace:*",

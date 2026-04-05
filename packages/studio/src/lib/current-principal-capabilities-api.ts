@@ -8,6 +8,7 @@ import {
   applyStudioAuthToRequestInit,
   type StudioRuntimeAuth,
 } from "./request-auth.js";
+import { resolveStudioRelativeUrl } from "./url-resolution.js";
 
 export type StudioCurrentPrincipalCapabilitiesConfig = Pick<
   MdcmsConfig,
@@ -65,7 +66,7 @@ function buildUrl(
   config: StudioCurrentPrincipalCapabilitiesConfig,
   path: string,
 ): URL {
-  return new URL(path, config.serverUrl);
+  return resolveStudioRelativeUrl(path, config.serverUrl);
 }
 
 async function readResponsePayload(response: Response): Promise<unknown> {

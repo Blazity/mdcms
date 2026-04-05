@@ -12,6 +12,7 @@ import {
   isStudioCookieAuth,
   type StudioRuntimeAuth,
 } from "./request-auth.js";
+import { resolveStudioRelativeUrl } from "./url-resolution.js";
 
 export type StudioDocumentRouteConfig = Pick<
   MdcmsConfig,
@@ -172,7 +173,7 @@ function buildUrl(
   path: string,
   query?: Record<string, string | number | string[] | undefined>,
 ): URL {
-  const url = new URL(path, config.serverUrl);
+  const url = resolveStudioRelativeUrl(path, config.serverUrl);
 
   if (!query) {
     return url;

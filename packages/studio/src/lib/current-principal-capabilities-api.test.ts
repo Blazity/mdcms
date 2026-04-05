@@ -136,6 +136,46 @@ test("token-authenticated get attaches the bearer token", async () => {
   assert.equal(result.capabilities.schema.write, true);
 });
 
+test("get preserves a path-prefixed studio serverUrl", async () => {
+  const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
+    [];
+  const api = createStudioCurrentPrincipalCapabilitiesApi(
+    {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000/review-api/editor",
+    },
+    {
+      fetcher: async (input, init) => {
+        calls.push({ input, init });
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              project: "marketing-site",
+              environment: "staging",
+              capabilities: createEmptyCurrentPrincipalCapabilities(),
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      },
+    },
+  );
+
+  await api.get();
+
+  assert.equal(
+    String(calls[0]?.input),
+    "http://localhost:4000/review-api/editor/api/v1/me/capabilities",
+  );
+});
+
 test("get surfaces invalid responses as runtime errors", async () => {
   const api = createCapabilitiesApi({
     fetcher: async () =>

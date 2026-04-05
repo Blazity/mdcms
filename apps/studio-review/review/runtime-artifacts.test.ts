@@ -29,7 +29,10 @@ test("resolveStudioReviewAppRoot accepts a direct app root", async () => {
   const tempRoot = await mkdtemp(resolve(tmpdir(), "studio-review-root-"));
   await mkdir(resolve(tempRoot, "app"));
   await writeFile(resolve(tempRoot, "mdcms.config.ts"), "export default {};\n");
-  await writeFile(resolve(tempRoot, "package.json"), "{\n  \"name\": \"test\"\n}\n");
+  await writeFile(
+    resolve(tempRoot, "package.json"),
+    '{\n  "name": "test"\n}\n',
+  );
 
   assert.equal(resolveStudioReviewAppRoot(tempRoot), tempRoot);
 });

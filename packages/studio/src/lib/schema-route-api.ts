@@ -12,6 +12,7 @@ import {
   isStudioCookieAuth,
   type StudioRuntimeAuth,
 } from "./request-auth.js";
+import { resolveStudioRelativeUrl } from "./url-resolution.js";
 
 export type StudioSchemaRouteConfig = Pick<
   MdcmsConfig,
@@ -81,7 +82,7 @@ function mergeHeaders(
 }
 
 function buildUrl(config: StudioSchemaRouteConfig, path: string): URL {
-  return new URL(path, config.serverUrl);
+  return resolveStudioRelativeUrl(path, config.serverUrl);
 }
 
 async function readResponsePayload(response: Response): Promise<unknown> {

@@ -255,6 +255,102 @@ test("token-authenticated mutations do not bootstrap CSRF", async () => {
   assert.equal(result.body, "# Published");
 });
 
+test("cookie-authenticated mutations preserve a path-prefixed studio serverUrl", async () => {
+  const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
+    [];
+  const api = createStudioDocumentRouteApi(
+    {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000/review-api/editor",
+    },
+    {
+      auth: { mode: "cookie" },
+      fetcher: async (input, init) => {
+        calls.push({ input, init });
+
+        if (
+          String(input) ===
+          "http://localhost:4000/review-api/editor/api/v1/auth/session"
+        ) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                csrfToken: "csrf-cookie-token",
+              },
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        assert.equal(
+          String(input),
+          "http://localhost:4000/review-api/editor/api/v1/content/11111111-1111-4111-8111-111111111111",
+        );
+        assert.equal(
+          readHeader(init, "x-mdcms-csrf-token"),
+          "csrf-cookie-token",
+        );
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              documentId: "11111111-1111-4111-8111-111111111111",
+              translationGroupId: "22222222-2222-4222-8222-222222222222",
+              project: "marketing-site",
+              environment: "staging",
+              type: "BlogPost",
+              locale: "en",
+              path: "blog/launch-notes",
+              format: "md",
+              isDeleted: false,
+              hasUnpublishedChanges: true,
+              version: 5,
+              publishedVersion: 5,
+              draftRevision: 13,
+              frontmatter: {},
+              body: "# Updated",
+              createdBy: "44444444-4444-4444-8444-444444444444",
+              createdAt: "2026-03-04T09:00:00.000Z",
+              updatedAt: "2026-03-05T10:00:00.000Z",
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        );
+      },
+    },
+  );
+
+  await api.updateDraft({
+    documentId: "11111111-1111-4111-8111-111111111111",
+    payload: {
+      type: "BlogPost",
+      locale: "en",
+      format: "md",
+      frontmatter: {},
+      body: "# Updated",
+    },
+  });
+
+  assert.deepEqual(
+    calls.map((call) => String(call.input)),
+    [
+      "http://localhost:4000/review-api/editor/api/v1/auth/session",
+      "http://localhost:4000/review-api/editor/api/v1/content/11111111-1111-4111-8111-111111111111",
+    ],
+  );
+});
+
 test("version summary helper validates required fields and rejects malformed payloads", async () => {
   const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
     [];

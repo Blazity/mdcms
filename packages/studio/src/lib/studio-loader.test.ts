@@ -251,6 +251,85 @@ test("loadStudioRuntime fetches bootstrap, verifies runtime, and mounts the remo
   });
 });
 
+test("loadStudioRuntime preserves a path-prefixed studio serverUrl for bootstrap and runtime asset fetches", async () => {
+  await withTempDir("studio-loader-prefixed-", async (directory) => {
+    const fixture = await createRuntimeFixture(directory);
+    const fetchLog: string[] = [];
+    const container = { textContent: "" };
+    const contexts: unknown[] = [];
+    const prefixedEntryUrl = "/review-api/editor" + fixture.manifest.entryUrl;
+
+    const unmount = await loadStudioRuntime({
+      config: {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000/review-api/editor",
+      },
+      basePath: "/review/editor/admin",
+      container,
+      hostBridge: validHostBridge,
+      fetcher: async (input) => {
+        const url = String(input);
+        fetchLog.push(url);
+
+        if (
+          url ===
+          "http://localhost:4000/review-api/editor/api/v1/studio/bootstrap"
+        ) {
+          return new Response(
+            JSON.stringify(
+              createReadyBootstrapPayload({
+                manifest: {
+                  ...fixture.manifest,
+                  entryUrl: prefixedEntryUrl,
+                },
+              }),
+            ),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        if (url === "http://localhost:4000" + prefixedEntryUrl) {
+          return new Response(new Uint8Array(fixture.runtimeBytes), {
+            status: 200,
+            headers: {
+              "content-type": "text/javascript; charset=utf-8",
+            },
+          });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+      },
+      loadRemoteModule: async (entryUrl) => {
+        assert.equal(entryUrl, "http://localhost:4000" + prefixedEntryUrl);
+
+        return {
+          mount: (_target: unknown, context: unknown) => {
+            contexts.push(context);
+            return () => {};
+          },
+        };
+      },
+    });
+
+    assert.deepEqual(fetchLog, [
+      "http://localhost:4000/review-api/editor/api/v1/studio/bootstrap",
+      "http://localhost:4000" + prefixedEntryUrl,
+    ]);
+    assert.equal(
+      (contexts[0] as { apiBaseUrl: string }).apiBaseUrl,
+      "http://localhost:4000/review-api/editor",
+    );
+
+    unmount();
+  });
+});
+
 test("loadStudioRuntime derives a local mdx catalog and editor resolver from config components", async () => {
   await withTempDir("studio-loader-mdx-", async (directory) => {
     const fixture = await createRuntimeFixture(directory);
