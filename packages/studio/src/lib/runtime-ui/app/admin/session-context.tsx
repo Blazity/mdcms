@@ -12,8 +12,9 @@ export type StudioSessionState =
 
 const DEFAULT_SESSION_STATE: StudioSessionState = { status: "loading" };
 
-const StudioSessionContext =
-  createContext<StudioSessionState>(DEFAULT_SESSION_STATE);
+const StudioSessionContext = createContext<StudioSessionState>(
+  DEFAULT_SESSION_STATE,
+);
 
 export function StudioSessionProvider({
   value,

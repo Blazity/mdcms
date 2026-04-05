@@ -4,14 +4,7 @@
 import * as React from "react";
 import { useTheme } from "../../adapters/next-themes";
 import Link from "../../adapters/next-link";
-import {
-  Sun,
-  Moon,
-  ChevronRight,
-  LogOut,
-  User,
-  Settings,
-} from "lucide-react";
+import { Sun, Moon, ChevronRight, LogOut, User, Settings } from "lucide-react";
 import { Button } from "../ui/button";
 import { Avatar, AvatarFallback } from "../ui/avatar";
 import {
