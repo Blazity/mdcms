@@ -1,10 +1,17 @@
+import { existsSync } from "node:fs";
 import { buildStudioRuntimeArtifacts } from "@mdcms/studio/build-runtime";
 import { resolve } from "node:path";
 
 import { getReviewRuntimeBuildPaths } from "../review/runtime-artifacts";
 
 const { appRoot, outDir } = getReviewRuntimeBuildPaths();
-const studioProjectRoot = resolve(process.cwd(), "packages/studio");
+const studioProjectRootCandidates = [
+  resolve(process.cwd(), "packages/studio"),
+  resolve(appRoot, "../../packages/studio"),
+];
+const studioProjectRoot =
+  studioProjectRootCandidates.find((candidate) => existsSync(candidate)) ??
+  studioProjectRootCandidates[0];
 
 buildStudioRuntimeArtifacts({
   projectRoot: studioProjectRoot,

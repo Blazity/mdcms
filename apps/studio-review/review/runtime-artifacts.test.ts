@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { test } from "node:test";
 
 import { resolveStudioReviewAppRoot } from "./app-root";
@@ -21,6 +23,15 @@ test("resolveStudioReviewAppRoot expands from the workspace root", () => {
     resolveStudioReviewAppRoot("/workspace"),
     resolve("/workspace", "apps/studio-review"),
   );
+});
+
+test("resolveStudioReviewAppRoot accepts a direct app root", async () => {
+  const tempRoot = await mkdtemp(resolve(tmpdir(), "studio-review-root-"));
+  await mkdir(resolve(tempRoot, "app"));
+  await writeFile(resolve(tempRoot, "mdcms.config.ts"), "export default {};\n");
+  await writeFile(resolve(tempRoot, "package.json"), "{\n  \"name\": \"test\"\n}\n");
+
+  assert.equal(resolveStudioReviewAppRoot(tempRoot), tempRoot);
 });
 
 test("review runtime paths stay scoped under the review app", () => {
