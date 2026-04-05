@@ -20,7 +20,9 @@ bun run studio:review:dev
 This command:
 
 1. builds review runtime artifacts into `apps/studio-review/.generated/runtime`
-2. starts the review app on `http://127.0.0.1:4273`
+2. starts a workspace package watch for `@mdcms/shared`, `@mdcms/cli`, and `@mdcms/studio`
+3. keeps review runtime artifacts in sync while Studio runtime sources change
+4. starts the review app on `http://127.0.0.1:3000`
 
 ## Scenario Routes
 

@@ -8,7 +8,8 @@
   },
   "scripts": {
     "build:workspace-deps": "bun x --bun tsc --build ../../packages/shared/tsconfig.lib.json ../../apps/cli/tsconfig.lib.json ../../packages/studio/tsconfig.lib.json",
-    "dev": "bun run build:workspace-deps && NEXT_TELEMETRY_DISABLED=1 bun x next dev --hostname ${MDCMS_STUDIO_REVIEW_HOST:-127.0.0.1} --port ${MDCMS_STUDIO_REVIEW_PORT:-4273}",
+    "build:workspace-deps:watch": "bun x --bun tsc --build ../../packages/shared/tsconfig.lib.json ../../apps/cli/tsconfig.lib.json ../../packages/studio/tsconfig.lib.json --watch --preserveWatchOutput",
+    "dev": "bun run build:workspace-deps && bun --conditions @mdcms/source scripts/build-review-runtime.ts && sh -lc 'trap \"kill 0\" INT TERM EXIT; bun run build:workspace-deps:watch & bun --conditions @mdcms/source scripts/dev-runtime-watch.ts & NEXT_TELEMETRY_DISABLED=1 bun x next dev --hostname ${MDCMS_STUDIO_REVIEW_HOST:-127.0.0.1} & wait'",
     "vercel-build": "bun run build:workspace-deps && bun --conditions @mdcms/source scripts/build-review-runtime.ts && next build"
   },
   "dependencies": {

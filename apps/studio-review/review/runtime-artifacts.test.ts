@@ -10,6 +10,10 @@ import {
   resolveReviewRuntimeAssetPath,
   scopeReviewRuntimeManifestToScenario,
 } from "./runtime-artifacts";
+import {
+  getReviewRuntimeWatchRoots,
+  resolveStudioProjectRoot,
+} from "./runtime-build";
 
 test("resolveStudioReviewAppRoot does not duplicate the app path", () => {
   assert.equal(
@@ -68,5 +72,24 @@ test("scopeReviewRuntimeManifestToScenario prefixes root entry urls", () => {
   assert.equal(
     manifest.entryUrl,
     "/review-api/editor/api/v1/studio/assets/build-1/main.mjs",
+  );
+});
+
+test("review runtime watch roots stay limited to review and shared runtime sources", () => {
+  const watchRoots = getReviewRuntimeWatchRoots(
+    "/workspace/apps/studio-review",
+  );
+
+  assert.deepEqual(watchRoots, [
+    "/workspace/apps/studio-review/review",
+    "/workspace/packages/studio/src",
+    "/workspace/packages/shared/src",
+  ]);
+});
+
+test("resolveStudioProjectRoot prefers the workspace studio package", () => {
+  assert.equal(
+    resolveStudioProjectRoot("/workspace/apps/studio-review"),
+    resolve(process.cwd(), "packages/studio"),
   );
 });

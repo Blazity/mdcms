@@ -79,7 +79,7 @@ Service endpoints:
 - Mailhog SMTP: `localhost:1025`
 - Mailhog UI: `http://localhost:8025`
 - Studio example app: `http://127.0.0.1:4173`
-- Studio review app: `http://127.0.0.1:4273`
+- Studio review app: `http://127.0.0.1:3000`
 
 Stop stack:
 
@@ -124,10 +124,10 @@ bun run studio:review:dev
 
 Useful routes:
 
-- `http://127.0.0.1:4273/`
-- `http://127.0.0.1:4273/review/editor/admin`
-- `http://127.0.0.1:4273/review/editor/admin/content/post/11111111-1111-4111-8111-111111111111`
-- `http://127.0.0.1:4273/review/owner/admin/schema`
+- `http://127.0.0.1:3000/`
+- `http://127.0.0.1:3000/review/editor/admin`
+- `http://127.0.0.1:3000/review/editor/admin/content/post/11111111-1111-4111-8111-111111111111`
+- `http://127.0.0.1:3000/review/owner/admin/schema`
 
 ## Demo Runbook (Pull + Push + Raw Content Page)
 

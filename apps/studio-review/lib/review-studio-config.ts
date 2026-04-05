@@ -1,6 +1,6 @@
 export const studioReviewProject = "marketing-site";
 export const studioReviewEnvironment = "staging";
-export const studioReviewServerUrl = "http://127.0.0.1:4273";
+export const studioReviewServerUrl = "http://127.0.0.1:3000";
 
 export const studioReviewMdxComponents = [
   {
