@@ -45,7 +45,7 @@ export default function ContentPage() {
             return (
               <Link key={type.id} href={`/admin/content/${type.id}`}>
                 <Card className="border-border h-full transition-all hover:border-accent/50 hover:shadow-sm">
-                  <CardContent className="p-5">
+                  <CardContent className="p-6">
                     <div className="flex items-start gap-4">
                       <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-accent/10">
                         <IconComponent className="h-6 w-6 text-accent" />
