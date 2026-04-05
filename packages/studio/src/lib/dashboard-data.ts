@@ -37,9 +37,11 @@ export async function loadDashboardData(
   contentApi: StudioContentListApi,
 ): Promise<DashboardLoadResult> {
   try {
+    // Fetch schema and content in parallel, but isolate schema failures so
+    // a 403 from the schema API does not block content-backed widgets.
     const [schemaTypes, totalResult, publishedResult, recentResult] =
       await Promise.all([
-        schemaApi.list(),
+        schemaApi.list().catch((): SchemaRegistryEntry[] => []),
         contentApi.list({ limit: 1 }),
         contentApi.list({ published: true, limit: 1 }),
         contentApi.list({ sort: "updatedAt", order: "desc", limit: 5 }),
@@ -49,9 +51,13 @@ export async function loadDashboardData(
     const publishedDocuments = publishedResult.pagination.total;
     const draftDocuments = Math.max(0, totalDocuments - publishedDocuments);
     if (totalDocuments - publishedDocuments < 0) {
-      console.warn(`Dashboard data inconsistency: published (${publishedDocuments}) exceeds total (${totalDocuments})`);
+      console.warn(
+        `Dashboard data inconsistency: published (${publishedDocuments}) exceeds total (${totalDocuments})`,
+      );
     }
 
+    // Per-type counts also degrade gracefully — if schema came back empty
+    // due to a permission error the loop simply produces no entries.
     const typesToShow = schemaTypes.slice(0, 5);
     const typeStats = await Promise.all(
       typesToShow.map(async (entry: SchemaRegistryEntry) => {

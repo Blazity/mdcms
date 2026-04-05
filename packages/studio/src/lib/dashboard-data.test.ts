@@ -170,7 +170,39 @@ test("returns loaded state when schema types exist but no documents", async () =
   assert.equal(result.data.contentTypes[0]?.totalCount, 0);
 });
 
-test("returns forbidden on 401 error", async () => {
+test("schema 403 degrades gracefully — content widgets still load", async () => {
+  const schemaApi: StudioSchemaRouteApi = {
+    list: async () => {
+      throw new RuntimeError({
+        code: "FORBIDDEN_ORIGIN",
+        message: "Forbidden",
+        statusCode: 403,
+      });
+    },
+    sync: async () => ({ schemaHash: "", syncedAt: "", affectedTypes: [] }),
+  };
+
+  const contentApi: StudioContentListApi = {
+    list: async (query = {}) => {
+      if (query.sort === "updatedAt") {
+        return paginatedResponse(10, [makeDoc()]);
+      }
+      if (query.published === true) return paginatedResponse(8);
+      return paginatedResponse(10);
+    },
+  };
+
+  const result = await loadDashboardData(schemaApi, contentApi);
+
+  assert.equal(result.status, "loaded");
+  if (result.status !== "loaded") return;
+  assert.equal(result.data.totalDocuments, 10);
+  assert.equal(result.data.publishedDocuments, 8);
+  assert.equal(result.data.contentTypes.length, 0);
+  assert.equal(result.data.recentDocuments.length, 1);
+});
+
+test("schema 401 degrades gracefully — content widgets still load", async () => {
   const schemaApi: StudioSchemaRouteApi = {
     list: async () => {
       throw new RuntimeError({
@@ -183,15 +215,18 @@ test("returns forbidden on 401 error", async () => {
   };
 
   const contentApi: StudioContentListApi = {
-    list: async () => paginatedResponse(0),
+    list: async () => paginatedResponse(5),
   };
 
   const result = await loadDashboardData(schemaApi, contentApi);
 
-  assert.equal(result.status, "forbidden");
+  assert.equal(result.status, "loaded");
+  if (result.status !== "loaded") return;
+  assert.equal(result.data.totalDocuments, 5);
+  assert.equal(result.data.contentTypes.length, 0);
 });
 
-test("returns forbidden on 403 error", async () => {
+test("returns forbidden when content API returns 403", async () => {
   const schemaApi: StudioSchemaRouteApi = {
     list: async () => [],
     sync: async () => ({ schemaHash: "", syncedAt: "", affectedTypes: [] }),
@@ -212,8 +247,34 @@ test("returns forbidden on 403 error", async () => {
   assert.equal(result.status, "forbidden");
 });
 
-test("returns error state on 500 error", async () => {
+test("returns forbidden when content API returns 401", async () => {
   const schemaApi: StudioSchemaRouteApi = {
+    list: async () => [],
+    sync: async () => ({ schemaHash: "", syncedAt: "", affectedTypes: [] }),
+  };
+
+  const contentApi: StudioContentListApi = {
+    list: async () => {
+      throw new RuntimeError({
+        code: "UNAUTHORIZED",
+        message: "Unauthorized",
+        statusCode: 401,
+      });
+    },
+  };
+
+  const result = await loadDashboardData(schemaApi, contentApi);
+
+  assert.equal(result.status, "forbidden");
+});
+
+test("returns error state when content API returns 500", async () => {
+  const schemaApi: StudioSchemaRouteApi = {
+    list: async () => [],
+    sync: async () => ({ schemaHash: "", syncedAt: "", affectedTypes: [] }),
+  };
+
+  const contentApi: StudioContentListApi = {
     list: async () => {
       throw new RuntimeError({
         code: "INTERNAL_ERROR",
@@ -221,11 +282,6 @@ test("returns error state on 500 error", async () => {
         statusCode: 500,
       });
     },
-    sync: async () => ({ schemaHash: "", syncedAt: "", affectedTypes: [] }),
-  };
-
-  const contentApi: StudioContentListApi = {
-    list: async () => paginatedResponse(0),
   };
 
   const result = await loadDashboardData(schemaApi, contentApi);
@@ -235,16 +291,16 @@ test("returns error state on 500 error", async () => {
   assert.equal(result.message, "Something broke");
 });
 
-test("returns error state on generic Error", async () => {
+test("returns error state on generic content Error", async () => {
   const schemaApi: StudioSchemaRouteApi = {
-    list: async () => {
-      throw new Error("Network failure");
-    },
+    list: async () => [],
     sync: async () => ({ schemaHash: "", syncedAt: "", affectedTypes: [] }),
   };
 
   const contentApi: StudioContentListApi = {
-    list: async () => paginatedResponse(0),
+    list: async () => {
+      throw new Error("Network failure");
+    },
   };
 
   const result = await loadDashboardData(schemaApi, contentApi);
