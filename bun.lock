@@ -67,6 +67,23 @@
         "@types/react-dom": "^19.0.5",
       },
     },
+    "apps/studio-review": {
+      "name": "@mdcms/studio-review",
+      "version": "0.0.1",
+      "dependencies": {
+        "@mdcms/cli": "workspace:*",
+        "@mdcms/shared": "workspace:*",
+        "@mdcms/studio": "workspace:*",
+        "next": "^15.2.2",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
+        "zod": "^4.3.6",
+      },
+      "devDependencies": {
+        "@types/react": "^19.0.12",
+        "@types/react-dom": "^19.0.5",
+      },
+    },
     "packages/modules": {
       "name": "@mdcms/modules",
       "version": "0.0.1",
@@ -547,6 +564,8 @@
     "@mdcms/studio": ["@mdcms/studio@workspace:packages/studio"],
 
     "@mdcms/studio-example": ["@mdcms/studio-example@workspace:apps/studio-example"],
+
+    "@mdcms/studio-review": ["@mdcms/studio-review@workspace:apps/studio-review"],
 
     "@mongodb-js/saslprep": ["@mongodb-js/saslprep@1.4.6", "", { "dependencies": { "sparse-bitfield": "^3.0.3" } }, "sha512-y+x3H1xBZd38n10NZF/rEBlvDOOMQ6LKUTHqr8R9VkJ+mmQOYtJFxIlkkK8fZrtOiL6VixbOBWMbZGBdal3Z1g=="],
 

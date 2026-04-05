@@ -14,6 +14,8 @@
     "hooks:install": "bash scripts/setup-git-hooks.sh",
     "prepare": "sh -c 'if [ -f scripts/setup-git-hooks.sh ]; then bash scripts/setup-git-hooks.sh; fi'",
     "dev": "bun nx run-many -t dev --projects studio,server,studio-example",
+    "studio:review:runtime": "bun --conditions @mdcms/source apps/studio-review/scripts/build-review-runtime.ts",
+    "studio:review:dev": "sh -lc 'bun run studio:review:runtime && bun --cwd apps/studio-review dev'",
     "compose:dev": "docker compose -f docker-compose.dev.yml up",
     "compose:dev:down": "docker compose -f docker-compose.dev.yml down",
     "studio:embed:smoke": "bash scripts/studio-embed-smoke-check.sh",
