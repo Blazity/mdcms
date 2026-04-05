@@ -8,7 +8,7 @@ const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ["@mdcms/cli", "@mdcms/shared", "@mdcms/studio"],
   outputFileTracingIncludes: {
-    "/*": ["./.generated/runtime/**/*"],
+    "/*": ["./.generated/runtime/**/*", "./tsconfig.json", "./mdcms.config.ts"],
   },
   turbopack: {
     root: rootDir,
