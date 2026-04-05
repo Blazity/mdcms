@@ -33,8 +33,9 @@ export async function GET(
       buildId,
       fileName: file,
     });
+    const payload = Buffer.from(body);
 
-    return new Response(body, {
+    return new Response(payload, {
       status: 200,
       headers: {
         "content-type": getContentType(file),

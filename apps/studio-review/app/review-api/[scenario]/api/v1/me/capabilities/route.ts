@@ -1,4 +1,4 @@
-import { getReviewScenario } from "../../../../../../review/scenarios";
+import { getReviewScenario } from "../../../../../../../review/scenarios";
 
 export async function GET(
   _request: Request,
