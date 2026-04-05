@@ -60,3 +60,79 @@ test("AppSidebar keeps review deployment links scoped to the active scenario bas
   assert.doesNotMatch(markup, /href="\/admin\/schema"/);
   assert.match(markup, /bg-accent-subtle/);
 });
+
+function renderSidebarWithCapabilities(caps: {
+  canReadSchema: boolean;
+  canManageUsers: boolean;
+  canManageSettings: boolean;
+}): string {
+  return renderToStaticMarkup(
+    createElement(
+      StudioNavigationProvider,
+      {
+        value: {
+          pathname: "/admin",
+          params: {},
+          push: () => {},
+          replace: () => {},
+          back: () => {},
+        },
+      },
+      createElement(AppSidebar, {
+        ...caps,
+        collapsed: false,
+        onToggle: () => {},
+      }),
+    ),
+  );
+}
+
+test("AppSidebar shows Users route when users.manage is allowed", () => {
+  const markup = renderSidebarWithCapabilities({
+    canReadSchema: true,
+    canManageUsers: true,
+    canManageSettings: true,
+  });
+
+  assert.match(markup, /href="\/admin\/users"/);
+});
+
+test("AppSidebar hides Users route when users.manage is not allowed", () => {
+  const markup = renderSidebarWithCapabilities({
+    canReadSchema: true,
+    canManageUsers: false,
+    canManageSettings: true,
+  });
+
+  assert.doesNotMatch(markup, /href="\/admin\/users"/);
+});
+
+test("AppSidebar shows Settings route when settings.manage is allowed", () => {
+  const markup = renderSidebarWithCapabilities({
+    canReadSchema: true,
+    canManageUsers: true,
+    canManageSettings: true,
+  });
+
+  assert.match(markup, /href="\/admin\/settings"/);
+});
+
+test("AppSidebar hides Settings route when settings.manage is not allowed", () => {
+  const markup = renderSidebarWithCapabilities({
+    canReadSchema: true,
+    canManageUsers: true,
+    canManageSettings: false,
+  });
+
+  assert.doesNotMatch(markup, /href="\/admin\/settings"/);
+});
+
+test("AppSidebar does not render online presence section", () => {
+  const markup = renderSidebarWithCapabilities({
+    canReadSchema: true,
+    canManageUsers: true,
+    canManageSettings: true,
+  });
+
+  assert.doesNotMatch(markup, /Online now/i);
+});
