@@ -57,7 +57,8 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 function deriveUserLabel(email: string): string {
-  const local = email.split("@")[0] ?? email;
+  const local = (email || "").split("@")[0];
+  if (!local) return "";
   return local.charAt(0).toUpperCase() + local.slice(1);
 }
 
@@ -84,11 +85,23 @@ export default function DashboardPage() {
     const schemaApi = createStudioSchemaRouteApi(config, authOpts);
     const contentApi = createStudioContentListApi(config, authOpts);
 
-    loadDashboardData(schemaApi, contentApi).then((result) => {
-      if (!cancelled) {
-        setState(result);
-      }
-    });
+    loadDashboardData(schemaApi, contentApi)
+      .then((result) => {
+        if (!cancelled) {
+          setState(result);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setState({
+            status: "error",
+            message:
+              err instanceof Error
+                ? err.message
+                : "Failed to load dashboard data.",
+          });
+        }
+      });
 
     return () => {
       cancelled = true;

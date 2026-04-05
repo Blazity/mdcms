@@ -42,7 +42,16 @@ export async function loadDashboardData(
     // a 403 from the schema API does not block content-backed widgets.
     const [schemaTypes, totalResult, publishedResult, recentResult] =
       await Promise.all([
-        schemaApi.list().catch((): SchemaRegistryEntry[] => []),
+        schemaApi.list().catch((err: unknown): SchemaRegistryEntry[] => {
+          const code =
+            err && typeof err === "object" && "statusCode" in err
+              ? (err as { statusCode: number }).statusCode
+              : undefined;
+          if (code === 401 || code === 403) {
+            return [];
+          }
+          throw err;
+        }),
         contentApi.list({ limit: 1 }),
         contentApi.list({ published: true, limit: 1 }),
         contentApi.list({ sort: "updatedAt", order: "desc", limit: 5 }),

@@ -310,6 +310,48 @@ test("returns error state on generic content Error", async () => {
   assert.equal(result.message, "Network failure");
 });
 
+test("schema 500 propagates as error — not swallowed", async () => {
+  const schemaApi: StudioSchemaRouteApi = {
+    list: async () => {
+      throw new RuntimeError({
+        code: "INTERNAL_ERROR",
+        message: "Schema service down",
+        statusCode: 500,
+      });
+    },
+    sync: async () => ({ schemaHash: "", syncedAt: "", affectedTypes: [] }),
+  };
+
+  const contentApi: StudioContentListApi = {
+    list: async () => paginatedResponse(10),
+  };
+
+  const result = await loadDashboardData(schemaApi, contentApi);
+
+  assert.equal(result.status, "error");
+  if (result.status !== "error") return;
+  assert.equal(result.message, "Schema service down");
+});
+
+test("schema network error propagates as error — not swallowed", async () => {
+  const schemaApi: StudioSchemaRouteApi = {
+    list: async () => {
+      throw new Error("fetch failed");
+    },
+    sync: async () => ({ schemaHash: "", syncedAt: "", affectedTypes: [] }),
+  };
+
+  const contentApi: StudioContentListApi = {
+    list: async () => paginatedResponse(10),
+  };
+
+  const result = await loadDashboardData(schemaApi, contentApi);
+
+  assert.equal(result.status, "error");
+  if (result.status !== "error") return;
+  assert.equal(result.message, "fetch failed");
+});
+
 test("caps content types at 5", async () => {
   const types = Array.from({ length: 8 }, (_, i) =>
     makeSchemaEntry(`Type${i}`),
