@@ -2,7 +2,11 @@
 "use client";
 
 import Link from "../../adapters/next-link";
-import { usePathname } from "../../adapters/next-navigation";
+import {
+  resolveStudioHref,
+  useBasePath,
+  usePathname,
+} from "../../adapters/next-navigation";
 import { useCanReadSchema } from "../../app/admin/capabilities-context";
 import {
   LayoutDashboard,
@@ -77,6 +81,7 @@ export function AppSidebar({
   onToggle,
 }: AppSidebarProps) {
   const pathname = usePathname();
+  const basePath = useBasePath();
   const contextCanReadSchema = useCanReadSchema();
   const effectiveCanReadSchema = canReadSchema ?? contextCanReadSchema;
   const [comingSoonOpen, setComingSoonOpen] = useState(false);
@@ -106,13 +111,15 @@ export function AppSidebar({
         <nav className="flex-1 overflow-y-auto p-2">
           <ul className="space-y-1">
             {getMainNavItems(effectiveCanReadSchema).map((item) => {
+              const resolvedHref = resolveStudioHref(basePath, item.href);
               const isActive =
-                pathname === item.href ||
-                (item.href !== "/admin" && pathname.startsWith(item.href));
+                pathname === resolvedHref ||
+                (resolvedHref !== basePath &&
+                  pathname.startsWith(`${resolvedHref}/`));
 
               const NavLink = (
                 <Link
-                  href={item.href}
+                  href={resolvedHref}
                   className={cn(
                     "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
                     isActive

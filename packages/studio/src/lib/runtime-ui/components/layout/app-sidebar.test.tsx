@@ -6,21 +6,26 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { StudioNavigationProvider } from "../../navigation.js";
 import { AppSidebar } from "./app-sidebar.js";
 
-function renderSidebar(canReadSchema: boolean): string {
+function renderSidebar(input?: {
+  canReadSchema?: boolean;
+  pathname?: string;
+  basePath?: string;
+}): string {
   return renderToStaticMarkup(
     createElement(
       StudioNavigationProvider,
       {
         value: {
-          pathname: "/admin",
+          pathname: input?.pathname ?? "/admin",
           params: {},
+          basePath: input?.basePath,
           push: () => {},
           replace: () => {},
           back: () => {},
         },
       },
       createElement(AppSidebar, {
-        canReadSchema,
+        canReadSchema: input?.canReadSchema ?? true,
         collapsed: false,
         onToggle: () => {},
       }),
@@ -29,13 +34,29 @@ function renderSidebar(canReadSchema: boolean): string {
 }
 
 test("AppSidebar shows the Schema route when schema.read is allowed", () => {
-  const markup = renderSidebar(true);
+  const markup = renderSidebar({
+    canReadSchema: true,
+  });
 
   assert.match(markup, /href="\/admin\/schema"/);
 });
 
 test("AppSidebar hides the Schema route when schema.read is not allowed", () => {
-  const markup = renderSidebar(false);
+  const markup = renderSidebar({
+    canReadSchema: false,
+  });
 
   assert.doesNotMatch(markup, /href="\/admin\/schema"/);
+});
+
+test("AppSidebar keeps review deployment links scoped to the active scenario base path", () => {
+  const markup = renderSidebar({
+    canReadSchema: true,
+    pathname: "/review/editor/admin/schema",
+    basePath: "/review/editor/admin",
+  });
+
+  assert.match(markup, /href="\/review\/editor\/admin\/schema"/);
+  assert.doesNotMatch(markup, /href="\/admin\/schema"/);
+  assert.match(markup, /bg-accent-subtle/);
 });

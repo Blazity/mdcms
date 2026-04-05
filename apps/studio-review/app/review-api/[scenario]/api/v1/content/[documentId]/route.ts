@@ -1,4 +1,4 @@
-import { getReviewScenario } from "../../../../../../../review/scenarios";
+import { getReviewContentDocumentRecord } from "../../../../../../../review/content-documents";
 
 function notFoundResponse() {
   const envelope = {
@@ -19,9 +19,9 @@ export async function GET(
   context: { params: Promise<{ scenario: string; documentId: string }> },
 ) {
   const { scenario, documentId } = await context.params;
-  const selected = getReviewScenario(scenario);
+  const selected = getReviewContentDocumentRecord(scenario, documentId);
 
-  if (selected.document.documentId !== documentId) {
+  if (!selected) {
     return notFoundResponse();
   }
 
@@ -35,9 +35,9 @@ export async function PUT(
   context: { params: Promise<{ scenario: string; documentId: string }> },
 ) {
   const { scenario, documentId } = await context.params;
-  const selected = getReviewScenario(scenario);
+  const selected = getReviewContentDocumentRecord(scenario, documentId);
 
-  if (selected.document.documentId !== documentId) {
+  if (!selected) {
     return notFoundResponse();
   }
 

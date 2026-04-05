@@ -1,4 +1,4 @@
-import { getReviewScenario } from "../../../../../../../../../review/scenarios";
+import { getReviewContentDocumentRecord } from "../../../../../../../../../review/content-documents";
 
 export async function GET(
   _request: Request,
@@ -7,9 +7,9 @@ export async function GET(
   },
 ) {
   const { scenario, documentId, version } = await context.params;
-  const selected = getReviewScenario(scenario);
+  const selected = getReviewContentDocumentRecord(scenario, documentId);
 
-  if (selected.document.documentId !== documentId) {
+  if (!selected) {
     const envelope = {
       status: "error" as const,
       code: "NOT_FOUND",
