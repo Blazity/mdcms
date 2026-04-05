@@ -37,6 +37,8 @@ function renderSettingsPage(input: {
           {
             value: {
               canReadSchema: true,
+              canManageUsers: false,
+              canManageSettings: false,
               ...input.capabilities,
             },
           },
