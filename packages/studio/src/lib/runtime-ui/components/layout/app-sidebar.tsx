@@ -28,7 +28,6 @@ import {
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
-import { Avatar, AvatarFallback } from "../ui/avatar";
 import {
   Tooltip,
   TooltipContent,
@@ -41,7 +40,6 @@ import {
   CollapsibleTrigger,
 } from "../ui/collapsible";
 import { MDCMSLogo } from "../mdcms-logo";
-import { mockUsers } from "../../lib/mock-data";
 import { useState } from "react";
 
 interface AppSidebarProps {
@@ -85,7 +83,6 @@ export function AppSidebar({
   const contextCanReadSchema = useCanReadSchema();
   const effectiveCanReadSchema = canReadSchema ?? contextCanReadSchema;
   const [comingSoonOpen, setComingSoonOpen] = useState(false);
-  const onlineUsers = mockUsers.filter((u) => u.isOnline).slice(0, 5);
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -214,35 +211,6 @@ export function AppSidebar({
 
         {/* Bottom Section */}
         <div className="border-t border-border p-2">
-          {/* Online Users */}
-          {!collapsed && onlineUsers.length > 0 && (
-            <div className="mb-2 px-3 py-2">
-              <div className="mb-2 text-xs font-medium text-foreground-muted">
-                Online now
-              </div>
-              <div className="flex -space-x-2">
-                {onlineUsers.map((user) => (
-                  <Tooltip key={user.id}>
-                    <TooltipTrigger asChild>
-                      <div className="relative">
-                        <Avatar className="h-7 w-7 border-2 border-background">
-                          <AvatarFallback className="text-xs">
-                            {user.name
-                              .split(" ")
-                              .map((n) => n[0])
-                              .join("")}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-success ring-2 ring-background" />
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent>{user.name}</TooltipContent>
-                  </Tooltip>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Collapse Toggle */}
           <Tooltip>
             <TooltipTrigger asChild>
