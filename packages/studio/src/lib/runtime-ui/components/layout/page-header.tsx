@@ -4,16 +4,7 @@
 import * as React from "react";
 import { useTheme } from "../../adapters/next-themes";
 import Link from "../../adapters/next-link";
-import {
-  Sun,
-  Moon,
-  Bell,
-  ChevronRight,
-  LogOut,
-  User,
-  Settings,
-  Search,
-} from "lucide-react";
+import { Sun, Moon, ChevronRight, LogOut, User, Settings } from "lucide-react";
 import { Button } from "../ui/button";
 import { Avatar, AvatarFallback } from "../ui/avatar";
 import {
@@ -38,13 +29,9 @@ import {
   TooltipTrigger,
 } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
-import {
-  currentUser,
-  mockEnvironments,
-  mockProjects,
-  currentProject,
-} from "../../lib/mock-data";
-import { useState } from "react";
+import { useStudioSession } from "../../app/admin/session-context";
+import { useStudioMountInfo } from "../../app/admin/mount-info-context";
+import { createStudioSessionApi } from "../../../session-api.js";
 
 export type BreadcrumbItem = { label: string; href?: string };
 
@@ -151,19 +138,36 @@ export function BreadcrumbTrail({
   );
 }
 
+function deriveInitials(email: string): string {
+  const local = email.split("@")[0] ?? "";
+  const parts = local.split(/[._-]/).filter(Boolean);
+  if (parts.length >= 2) {
+    return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
+  }
+  return local.slice(0, 2).toUpperCase();
+}
+
 export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
   const { theme, setTheme } = useTheme();
-  const [currentEnv, setCurrentEnv] = useState(mockEnvironments[0]);
-  const [hasNotifications] = useState(true);
+  const sessionState = useStudioSession();
+  const mountInfo = useStudioMountInfo();
 
-  const getEnvDotColor = (color: string) => {
-    const colors: Record<string, string> = {
-      green: "bg-success",
-      yellow: "bg-warning",
-      blue: "bg-blue-500",
-      gray: "bg-foreground-muted",
-    };
-    return colors[color] || colors.gray;
+  const handleSignOut = async () => {
+    if (sessionState.status !== "authenticated") return;
+
+    try {
+      const api = createStudioSessionApi(
+        { serverUrl: mountInfo.apiBaseUrl },
+        { auth: { mode: "cookie" } },
+      );
+      await api.signOut(sessionState.csrfToken);
+    } finally {
+      window.location.reload();
+    }
+  };
+
+  const handleEnvironmentChange = (environmentName: string) => {
+    mountInfo.hostBridge?.onNavigate?.({ environment: environmentName });
   };
 
   return (
@@ -174,69 +178,35 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
 
         {/* Right side - Controls */}
         <div className="flex items-center gap-3">
-          {/* Search trigger */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-foreground-muted"
-              >
-                <Search className="h-5 w-5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Search (Cmd+K)</TooltipContent>
-          </Tooltip>
-
           {/* Environment selector */}
-          <Select
-            value={currentEnv.id}
-            onValueChange={(value) => {
-              const env = mockEnvironments.find((e) => e.id === value);
-              if (env) setCurrentEnv(env);
-            }}
-          >
-            <SelectTrigger className="w-36 h-9">
-              <div className="flex items-center gap-2">
-                <span
-                  className={cn(
-                    "h-2 w-2 rounded-full",
-                    getEnvDotColor(currentEnv.color),
-                  )}
-                />
+          {mountInfo.environments.length > 0 ? (
+            <Select
+              value={mountInfo.environment ?? undefined}
+              onValueChange={handleEnvironmentChange}
+            >
+              <SelectTrigger className="w-36 h-9">
                 <SelectValue />
-              </div>
-            </SelectTrigger>
-            <SelectContent>
-              {mockEnvironments.map((env) => (
-                <SelectItem key={env.id} value={env.id}>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={cn(
-                        "h-2 w-2 rounded-full",
-                        getEnvDotColor(env.color),
-                      )}
-                    />
-                    <span>{env.name}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+              </SelectTrigger>
+              <SelectContent>
+                {mountInfo.environments.map((env) => (
+                  <SelectItem key={env.id} value={env.name}>
+                    {env.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : mountInfo.environment ? (
+            <div className="flex items-center gap-2 h-9 px-3 rounded-md border border-border text-sm text-foreground-muted">
+              {mountInfo.environment}
+            </div>
+          ) : null}
 
-          {/* Project switcher */}
-          <Select defaultValue={currentProject.id}>
-            <SelectTrigger className="w-40 h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {mockProjects.map((project) => (
-                <SelectItem key={project.id} value={project.id}>
-                  {project.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Project badge (read-only) */}
+          {mountInfo.project && (
+            <div className="flex items-center h-9 px-3 rounded-md border border-border text-sm text-foreground-muted">
+              {mountInfo.project}
+            </div>
+          )}
 
           {/* Dark mode toggle */}
           <Tooltip>
@@ -255,62 +225,50 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
             <TooltipContent>Toggle theme</TooltipContent>
           </Tooltip>
 
-          {/* Notifications */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="relative text-foreground-muted"
-              >
-                <Bell className="h-5 w-5" />
-                {hasNotifications && (
-                  <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Notifications</TooltipContent>
-          </Tooltip>
-
           {/* User menu */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="rounded-full">
-                <Avatar className="h-8 w-8">
-                  <AvatarFallback className="text-sm">
-                    {currentUser.name
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")}
-                  </AvatarFallback>
-                </Avatar>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel className="font-normal">
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium">{currentUser.name}</p>
-                  <p className="text-xs text-foreground-muted">
-                    {currentUser.email}
-                  </p>
-                </div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>
-                <User className="mr-2 h-4 w-4" />
-                Profile
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Settings className="mr-2 h-4 w-4" />
-                Preferences
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive focus:text-destructive">
-                <LogOut className="mr-2 h-4 w-4" />
-                Sign out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {sessionState.status === "authenticated" ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-full">
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback className="text-sm">
+                      {deriveInitials(sessionState.session.email)}
+                    </AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium">
+                      {sessionState.session.email}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>
+                  <User className="mr-2 h-4 w-4" />
+                  Profile
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <Settings className="mr-2 h-4 w-4" />
+                  Preferences
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={handleSignOut}
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Avatar className="h-8 w-8">
+              <AvatarFallback className="text-sm">?</AvatarFallback>
+            </Avatar>
+          )}
         </div>
       </header>
     </TooltipProvider>

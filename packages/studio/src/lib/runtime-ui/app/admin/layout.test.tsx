@@ -3,7 +3,10 @@ import { test } from "bun:test";
 
 import type { StudioMountContext } from "@mdcms/shared";
 
-import { createAdminLayoutCapabilitiesLoadInput } from "./layout.js";
+import {
+  createAdminLayoutCapabilitiesLoadInput,
+  createAdminLayoutSessionLoadInput,
+} from "./layout.js";
 
 function createContext(): StudioMountContext {
   return {
@@ -42,4 +45,11 @@ test("createAdminLayoutCapabilitiesLoadInput returns null without an active docu
   delete context.documentRoute;
 
   assert.equal(createAdminLayoutCapabilitiesLoadInput(context), null);
+});
+
+test("createAdminLayoutSessionLoadInput maps the server URL and auth", () => {
+  assert.deepEqual(createAdminLayoutSessionLoadInput(createContext()), {
+    config: { serverUrl: "http://localhost:4000" },
+    auth: { mode: "cookie" },
+  });
 });

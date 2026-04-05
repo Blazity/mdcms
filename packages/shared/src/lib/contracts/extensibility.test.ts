@@ -750,6 +750,26 @@ test("assertStudioMountContext rejects invalid extracted mdx prop shapes", () =>
   );
 });
 
+test("assertHostBridgeV1 accepts a bridge with onNavigate callback", () => {
+  assert.doesNotThrow(() =>
+    assertHostBridgeV1({
+      ...validHostBridge,
+      onNavigate: () => {},
+    }),
+  );
+});
+
+test("assertHostBridgeV1 rejects a bridge with non-function onNavigate", () => {
+  assert.throws(
+    () =>
+      assertHostBridgeV1({
+        ...validHostBridge,
+        onNavigate: "not-a-function",
+      }),
+    /onNavigate/,
+  );
+});
+
 test("isModuleManifest and isStudioBootstrapManifest return booleans without throwing", () => {
   assert.equal(isModuleManifest(validModuleManifest), true);
   assert.equal(isModuleManifest({}), false);
