@@ -47,7 +47,10 @@ export async function loadDashboardData(
 
     const totalDocuments = totalResult.pagination.total;
     const publishedDocuments = publishedResult.pagination.total;
-    const draftDocuments = totalDocuments - publishedDocuments;
+    const draftDocuments = Math.max(0, totalDocuments - publishedDocuments);
+    if (totalDocuments - publishedDocuments < 0) {
+      console.warn(`Dashboard data inconsistency: published (${publishedDocuments}) exceeds total (${totalDocuments})`);
+    }
 
     const typesToShow = schemaTypes.slice(0, 5);
     const typeStats = await Promise.all(
