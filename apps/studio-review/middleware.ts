@@ -30,12 +30,10 @@ function createCorsHeaders(origin: string): Record<string, string> {
 export function middleware(request: NextRequest) {
   const origin = request.headers.get("origin");
 
-  // Only handle CORS for review-api routes with an Origin header
   if (!origin || !request.nextUrl.pathname.startsWith("/review-api/")) {
     return NextResponse.next();
   }
 
-  // Handle preflight OPTIONS requests
   if (request.method === "OPTIONS") {
     return new NextResponse(null, {
       status: 204,
@@ -43,7 +41,6 @@ export function middleware(request: NextRequest) {
     });
   }
 
-  // For other requests, add CORS headers to the response
   const response = NextResponse.next();
   const corsHeaders = createCorsHeaders(origin);
 
