@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-/**
- * CORS middleware for studio-review API routes.
- * Allows cross-origin requests from Studio iframe to the review API.
- */
 const STUDIO_CORS_ALLOW_METHODS =
   "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS";
 const STUDIO_CORS_ALLOW_HEADERS = [
