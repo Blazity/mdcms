@@ -7,6 +7,9 @@ const rootDir = dirname(fileURLToPath(import.meta.url));
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ["@mdcms/cli", "@mdcms/shared", "@mdcms/studio"],
+  outputFileTracingIncludes: {
+    "/*": ["./.generated/runtime/**/*"],
+  },
   turbopack: {
     root: rootDir,
   },

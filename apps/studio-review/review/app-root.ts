@@ -6,7 +6,6 @@ const REVIEW_APP_PATH_SEGMENT = "apps/studio-review";
 function looksLikeStudioReviewAppRoot(candidatePath: string): boolean {
   return (
     existsSync(resolve(candidatePath, "app")) &&
-    existsSync(resolve(candidatePath, "mdcms.config.ts")) &&
     existsSync(resolve(candidatePath, "package.json"))
   );
 }
