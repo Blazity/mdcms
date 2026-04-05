@@ -75,6 +75,8 @@ export default function DashboardPage() {
       return;
     }
 
+    setState({ status: "loading" });
+
     let cancelled = false;
     const config = { project, environment, serverUrl: apiBaseUrl };
     const authOpts = { auth: { mode: "cookie" as const } };
@@ -181,8 +183,8 @@ export default function DashboardPage() {
       value: data.totalDocuments,
       icon: FileText,
       detail:
-        data.contentTypes.length > 0
-          ? `${data.contentTypes.length} content type${data.contentTypes.length !== 1 ? "s" : ""}`
+        data.totalContentTypes > 0
+          ? `${data.totalContentTypes} content type${data.totalContentTypes !== 1 ? "s" : ""}`
           : undefined,
     },
     {

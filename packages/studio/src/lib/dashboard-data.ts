@@ -16,6 +16,7 @@ export type DashboardData = {
   publishedDocuments: number;
   draftDocuments: number;
   contentTypes: ContentTypeStat[];
+  totalContentTypes: number;
   recentDocuments: Array<{
     documentId: string;
     path: string;
@@ -66,12 +67,18 @@ export async function loadDashboardData(
           contentApi.list({ type: entry.type, published: true, limit: 1 }),
         ]);
 
+        const totalCount = typeTotal.pagination.total;
+        const publishedCount = Math.min(
+          typePublished.pagination.total,
+          totalCount,
+        );
+
         return {
           type: entry.type,
           directory: entry.directory,
           localized: entry.localized,
-          totalCount: typeTotal.pagination.total,
-          publishedCount: typePublished.pagination.total,
+          totalCount,
+          publishedCount,
         };
       }),
     );
@@ -87,6 +94,7 @@ export async function loadDashboardData(
         publishedDocuments,
         draftDocuments,
         contentTypes: typeStats,
+        totalContentTypes: schemaTypes.length,
         recentDocuments: recentResult.data.map((doc) => ({
           documentId: doc.documentId,
           path: doc.path,
