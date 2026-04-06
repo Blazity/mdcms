@@ -9,7 +9,6 @@ import {
   extractDocumentTitle,
   mapFiltersToQuery,
   PAGE_SIZE,
-  type ContentTypeListFilters,
 } from "./use-content-type-list.js";
 
 const baseDoc: ContentDocumentResponse = {

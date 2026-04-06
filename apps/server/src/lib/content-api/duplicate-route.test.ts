@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 
-import { RuntimeError } from "@mdcms/shared";
 import { test } from "bun:test";
 
 import { mountContentApiRoutes } from "./routes.js";
@@ -8,7 +7,6 @@ import type {
   ContentDocument,
   ContentRouteApp,
   ContentStore,
-  MountContentApiRoutesOptions,
 } from "./types.js";
 
 type RouteHandler = (ctx: any) => unknown;
