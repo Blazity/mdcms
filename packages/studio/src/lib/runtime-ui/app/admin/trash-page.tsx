@@ -1,12 +1,11 @@
-// @ts-nocheck
 import { Trash2 } from "lucide-react";
 
-import { ComingSoon } from "../../components/coming-soon";
+import { ComingSoon } from "../../components/coming-soon.js";
 import {
   PageHeader,
   PageHeaderDescription,
   PageHeaderHeading,
-} from "../../components/layout/page-header";
+} from "../../components/layout/page-header.js";
 
 export default function TrashPage() {
   return (

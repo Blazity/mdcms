@@ -1,9 +1,8 @@
-// @ts-nocheck
 "use client";
 
 import type { ElementType } from "react";
 
-import Link from "../adapters/next-link";
+import Link from "../adapters/next-link.js";
 import {
   ChevronRight,
   File,
@@ -13,10 +12,10 @@ import {
   Tag,
   User,
 } from "lucide-react";
-import { PageHeader } from "../components/layout/page-header";
-import { Badge } from "../components/ui/badge";
-import { Card, CardContent } from "../components/ui/card";
-import { mockContentTypes } from "../lib/mock-data";
+import { PageHeader } from "../components/layout/page-header.js";
+import { Badge } from "../components/ui/badge.js";
+import { Card, CardContent } from "../components/ui/card.js";
+import { mockContentTypes } from "../lib/mock-data.js";
 
 const iconMap: Record<string, ElementType> = {
   FileText,

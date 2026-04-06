@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 
 import { useState, useEffect } from "react";
@@ -30,7 +29,6 @@ import { createStudioSchemaRouteApi } from "../../../schema-route-api.js";
 import { createStudioContentListApi } from "../../../content-list-api.js";
 import {
   loadDashboardData,
-  type DashboardData,
   type DashboardLoadResult,
 } from "../../../dashboard-data.js";
 

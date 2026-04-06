@@ -1,12 +1,11 @@
-// @ts-nocheck
 "use client";
 
 import * as React from "react";
-import { useTheme } from "../../adapters/next-themes";
-import Link from "../../adapters/next-link";
+import { useTheme } from "../../adapters/next-themes.js";
+import Link from "../../adapters/next-link.js";
 import { Sun, Moon, ChevronRight, LogOut, User, Settings } from "lucide-react";
-import { Button } from "../ui/button";
-import { Avatar, AvatarFallback } from "../ui/avatar";
+import { Button } from "../ui/button.js";
+import { Avatar, AvatarFallback } from "../ui/avatar.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,30 +13,30 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
+} from "../ui/dropdown-menu.js";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "../ui/select";
+} from "../ui/select.js";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "../ui/tooltip";
-import { cn } from "../../lib/utils";
-import { useStudioSession } from "../../app/admin/session-context";
-import { useStudioMountInfo } from "../../app/admin/mount-info-context";
+} from "../ui/tooltip.js";
+import { cn } from "../../lib/utils.js";
+import { useStudioSession } from "../../app/admin/session-context.js";
+import { useStudioMountInfo } from "../../app/admin/mount-info-context.js";
 import { createStudioSessionApi } from "../../../session-api.js";
 
 export type BreadcrumbItem = { label: string; href?: string };
 
 // Page Title Section Components
 interface PageTitleSectionProps extends React.HTMLAttributes<HTMLDivElement> {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   breadcrumbs?: BreadcrumbItem[];
 }
 

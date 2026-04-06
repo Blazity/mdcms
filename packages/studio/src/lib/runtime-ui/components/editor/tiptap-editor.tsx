@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 
 import {
@@ -10,7 +9,12 @@ import {
 } from "react";
 
 import type { StudioMountContext } from "@mdcms/shared";
-import { EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
+import {
+  EditorContent,
+  ReactNodeViewRenderer,
+  type ReactNodeViewProps,
+  useEditor,
+} from "@tiptap/react";
 
 import {
   Bold,
@@ -37,10 +41,7 @@ import { extractMarkdownFromEditor } from "../../../markdown-pipeline.js";
 import { MdxComponentExtension } from "../../../mdx-component-extension.js";
 import { createEditorToolbarLayout } from "./editor-toolbar.js";
 import { MdxComponentNodeView } from "./mdx-component-node-view.js";
-import {
-  createMdxComponentInsertContent,
-  type MdxComponentKind,
-} from "./mdx-component-catalog.js";
+import { createMdxComponentInsertContent } from "./mdx-component-catalog.js";
 import { MdxComponentPicker } from "./mdx-component-picker.js";
 import { type MdxPropsPanelSelection } from "./mdx-props-panel.js";
 import {
@@ -58,10 +59,10 @@ import {
   replaceSlashTriggerWithMdxComponent,
   type MdxComponentSlashTrigger,
 } from "./mdx-component-slash.js";
-import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
-import { Separator } from "../ui/separator";
-import { cn } from "../../lib/utils";
+import { Badge } from "../ui/badge.js";
+import { Button } from "../ui/button.js";
+import { Separator } from "../ui/separator.js";
+import { cn } from "../../lib/utils.js";
 
 interface TipTapEditorProps {
   content?: string;
@@ -99,6 +100,8 @@ type ToolbarButtonProps = {
   disabled?: boolean;
   className?: string;
 };
+
+type TipTapEditorInstance = NonNullable<ReturnType<typeof useEditor>>;
 
 function ToolbarButton({
   children,
@@ -158,82 +161,88 @@ export function TipTapEditor({
     useState<MdxComponentSlashTrigger | null>(null);
   const lastPublishedSelectionRef =
     useRef<PublishedMdxComponentSelectionSnapshot | null>(null);
-  const handleEditorUpdate = useEffectEvent((nextEditor) => {
-    onChange?.(extractMarkdownFromEditor(nextEditor));
-  });
-  const syncSlashTrigger = useEffectEvent((nextEditor) => {
-    const nextTrigger = getMdxComponentSlashTrigger(nextEditor);
+  const handleEditorUpdate = useEffectEvent(
+    (nextEditor: TipTapEditorInstance) => {
+      onChange?.(extractMarkdownFromEditor(nextEditor));
+    },
+  );
+  const syncSlashTrigger = useEffectEvent(
+    (nextEditor: TipTapEditorInstance) => {
+      const nextTrigger = getMdxComponentSlashTrigger(nextEditor);
 
-    setSlashTrigger(nextTrigger);
-    setPickerSource((currentSource) => {
-      if (currentSource === "toolbar") {
-        return currentSource;
-      }
+      setSlashTrigger(nextTrigger);
+      setPickerSource((currentSource) => {
+        if (currentSource === "toolbar") {
+          return currentSource;
+        }
 
-      if (nextTrigger) {
-        return "slash";
-      }
+        if (nextTrigger) {
+          return "slash";
+        }
 
-      return currentSource === "slash" ? null : currentSource;
-    });
-  });
-  const publishSelectedMdxComponent = useEffectEvent((nextEditor) => {
-    if (!onActiveMdxComponentChange) {
-      lastPublishedSelectionRef.current = null;
-      return;
-    }
-
-    const selected = getSelectedMdxComponent(nextEditor, catalogComponents);
-
-    if (!selected) {
-      if (lastPublishedSelectionRef.current === null) {
+        return currentSource === "slash" ? null : currentSource;
+      });
+    },
+  );
+  const publishSelectedMdxComponent = useEffectEvent(
+    (nextEditor: TipTapEditorInstance) => {
+      if (!onActiveMdxComponentChange) {
+        lastPublishedSelectionRef.current = null;
         return;
       }
 
-      lastPublishedSelectionRef.current = null;
-      onActiveMdxComponentChange(null);
-      return;
-    }
+      const selected = getSelectedMdxComponent(nextEditor, catalogComponents);
 
-    const nextSnapshot = createPublishedMdxComponentSelectionSnapshot({
-      selected,
-      readOnly,
-      forbidden,
-    });
-
-    if (
-      !hasPublishedMdxComponentSelectionChanged(
-        lastPublishedSelectionRef.current,
-        nextSnapshot,
-      )
-    ) {
-      return;
-    }
-
-    lastPublishedSelectionRef.current = nextSnapshot;
-
-    onActiveMdxComponentChange({
-      ...selected,
-      readOnly,
-      forbidden,
-      onPropsChange: (patch) => {
-        if (
-          updateSelectedMdxComponentProps(
-            nextEditor,
-            catalogComponents,
-            patch,
-            {
-              readOnly,
-              forbidden,
-            },
-          )
-        ) {
-          publishSelectedMdxComponent(nextEditor);
-          handleEditorUpdate(nextEditor);
+      if (!selected) {
+        if (lastPublishedSelectionRef.current === null) {
+          return;
         }
-      },
-    });
-  });
+
+        lastPublishedSelectionRef.current = null;
+        onActiveMdxComponentChange(null);
+        return;
+      }
+
+      const nextSnapshot = createPublishedMdxComponentSelectionSnapshot({
+        selected,
+        readOnly,
+        forbidden,
+      });
+
+      if (
+        !hasPublishedMdxComponentSelectionChanged(
+          lastPublishedSelectionRef.current,
+          nextSnapshot,
+        )
+      ) {
+        return;
+      }
+
+      lastPublishedSelectionRef.current = nextSnapshot;
+
+      onActiveMdxComponentChange({
+        ...selected,
+        readOnly,
+        forbidden,
+        onPropsChange: (patch) => {
+          if (
+            updateSelectedMdxComponentProps(
+              nextEditor,
+              catalogComponents,
+              patch,
+              {
+                readOnly,
+                forbidden,
+              },
+            )
+          ) {
+            publishSelectedMdxComponent(nextEditor);
+            handleEditorUpdate(nextEditor);
+          }
+        },
+      });
+    },
+  );
   const editor = useEditor(
     {
       content,
@@ -243,7 +252,7 @@ export function TipTapEditor({
       extensions: createEditorExtensions({
         mdxComponent: MdxComponentExtension.extend({
           addNodeView() {
-            const NodeView = (props) => (
+            const NodeView = (props: ReactNodeViewProps) => (
               <MdxComponentNodeView
                 {...props}
                 context={context}
