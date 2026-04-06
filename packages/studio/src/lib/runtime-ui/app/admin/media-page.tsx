@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 
 import {
@@ -11,8 +10,8 @@ import {
   FileAudio,
   File,
 } from "lucide-react";
-import { Badge } from "../../components/ui/badge";
-import { PageHeader } from "../../components/layout/page-header";
+import { Badge } from "../../components/ui/badge.js";
+import { PageHeader } from "../../components/layout/page-header.js";
 
 // Mock media items for the ghosted preview
 const mockMediaItems = [

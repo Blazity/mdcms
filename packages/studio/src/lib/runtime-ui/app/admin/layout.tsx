@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 
 import { useState, useEffect } from "react";
@@ -14,8 +13,8 @@ import {
 } from "./session-context.js";
 import { StudioMountInfoProvider } from "./mount-info-context.js";
 import { usePathname, useRouter } from "../../navigation.js";
-import { AppSidebar } from "../../components/layout/app-sidebar";
-import { cn } from "../../lib/utils";
+import { AppSidebar } from "../../components/layout/app-sidebar.js";
+import { cn } from "../../lib/utils.js";
 
 type AdminLayoutCapabilitiesLoadInput = {
   config: {

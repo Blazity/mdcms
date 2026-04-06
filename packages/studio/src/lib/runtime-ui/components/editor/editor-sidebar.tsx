@@ -1,36 +1,35 @@
-// @ts-nocheck
 "use client";
 
 import { useState } from "react";
 import { Copy, Globe, Sparkles } from "lucide-react";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { Textarea } from "../ui/textarea";
-import { Label } from "../ui/label";
-import { Switch } from "../ui/switch";
-import { Badge } from "../ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
-import { Calendar } from "../ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-import { Avatar, AvatarFallback } from "../ui/avatar";
-import { ScrollArea } from "../ui/scroll-area";
-import { Separator } from "../ui/separator";
+import { Button } from "../ui/button.js";
+import { Input } from "../ui/input.js";
+import { Textarea } from "../ui/textarea.js";
+import { Label } from "../ui/label.js";
+import { Switch } from "../ui/switch.js";
+import { Badge } from "../ui/badge.js";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs.js";
+import { Calendar } from "../ui/calendar.js";
+import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover.js";
+import { Avatar, AvatarFallback } from "../ui/avatar.js";
+import { ScrollArea } from "../ui/scroll-area.js";
+import { Separator } from "../ui/separator.js";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "../ui/tooltip";
+} from "../ui/tooltip.js";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "../ui/select";
+} from "../ui/select.js";
 import { format } from "date-fns";
-import { cn } from "../../lib/utils";
-import { mockUsers, type Document } from "../../lib/mock-data";
+import { cn } from "../../lib/utils.js";
+import { mockUsers, type Document } from "../../lib/mock-data.js";
 
 interface EditorSidebarProps {
   document: Document;

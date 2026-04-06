@@ -1,9 +1,8 @@
-// @ts-nocheck
 "use client";
 
 import { useMemo, useState } from "react";
 
-import { useParams, useRouter } from "../adapters/next-navigation";
+import { useParams, useRouter } from "../adapters/next-navigation.js";
 import {
   Copy,
   Edit,
@@ -19,19 +18,19 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { PageHeader } from "../components/layout/page-header";
-import { Avatar, AvatarFallback } from "../components/ui/avatar";
-import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
-import { Checkbox } from "../components/ui/checkbox";
+import { PageHeader } from "../components/layout/page-header.js";
+import { Avatar, AvatarFallback } from "../components/ui/avatar.js";
+import { Badge } from "../components/ui/badge.js";
+import { Button } from "../components/ui/button.js";
+import { Checkbox } from "../components/ui/checkbox.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "../components/ui/dropdown-menu";
-import { Input } from "../components/ui/input";
+} from "../components/ui/dropdown-menu.js";
+import { Input } from "../components/ui/input.js";
 import {
   Pagination,
   PaginationContent,
@@ -39,14 +38,14 @@ import {
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
-} from "../components/ui/pagination";
+} from "../components/ui/pagination.js";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "../components/ui/select";
+} from "../components/ui/select.js";
 import {
   Table,
   TableBody,
@@ -54,13 +53,13 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "../components/ui/table";
+} from "../components/ui/table.js";
 import {
   formatRelativeTime,
   mockContentTypes,
   mockDocuments,
-} from "../lib/mock-data";
-import { cn } from "../lib/utils";
+} from "../lib/mock-data.js";
+import { cn } from "../lib/utils.js";
 
 const statusConfig = {
   published: {

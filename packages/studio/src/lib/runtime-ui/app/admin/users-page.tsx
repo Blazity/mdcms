@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 
 import { useState } from "react";
@@ -11,10 +10,10 @@ import {
   Trash2,
   LogOut,
 } from "lucide-react";
-import { Button } from "../../components/ui/button";
-import { Badge } from "../../components/ui/badge";
-import { Avatar, AvatarFallback } from "../../components/ui/avatar";
-import { Input } from "../../components/ui/input";
+import { Button } from "../../components/ui/button.js";
+import { Badge } from "../../components/ui/badge.js";
+import { Avatar, AvatarFallback } from "../../components/ui/avatar.js";
+import { Input } from "../../components/ui/input.js";
 import {
   Table,
   TableBody,
@@ -22,14 +21,14 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "../../components/ui/table";
+} from "../../components/ui/table.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu";
+} from "../../components/ui/dropdown-menu.js";
 import {
   Dialog,
   DialogContent,
@@ -38,19 +37,19 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "../../components/ui/dialog";
+} from "../../components/ui/dialog.js";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "../../components/ui/select";
-import { Switch } from "../../components/ui/switch";
-import { Label } from "../../components/ui/label";
-import { PageHeader } from "../../components/layout/page-header";
-import { mockUsers, formatRelativeTime } from "../../lib/mock-data";
-import { cn } from "../../lib/utils";
+} from "../../components/ui/select.js";
+import { Switch } from "../../components/ui/switch.js";
+import { Label } from "../../components/ui/label.js";
+import { PageHeader } from "../../components/layout/page-header.js";
+import { mockUsers, formatRelativeTime } from "../../lib/mock-data.js";
+import { cn } from "../../lib/utils.js";
 
 const roleConfig = {
   owner: {

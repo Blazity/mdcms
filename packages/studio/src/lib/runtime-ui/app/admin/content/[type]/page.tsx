@@ -1,9 +1,7 @@
-// @ts-nocheck
 "use client";
 
 import { useState, useMemo } from "react";
-import Link from "../../../../adapters/next-link";
-import { useParams, useRouter } from "../../../../adapters/next-navigation";
+import { useParams, useRouter } from "../../../../adapters/next-navigation.js";
 import {
   Search,
   Plus,
@@ -19,18 +17,18 @@ import {
   X,
   FileText,
 } from "lucide-react";
-import { Button } from "../../../../components/ui/button";
-import { Input } from "../../../../components/ui/input";
-import { Badge } from "../../../../components/ui/badge";
-import { Checkbox } from "../../../../components/ui/checkbox";
-import { Avatar, AvatarFallback } from "../../../../components/ui/avatar";
+import { Button } from "../../../../components/ui/button.js";
+import { Input } from "../../../../components/ui/input.js";
+import { Badge } from "../../../../components/ui/badge.js";
+import { Checkbox } from "../../../../components/ui/checkbox.js";
+import { Avatar, AvatarFallback } from "../../../../components/ui/avatar.js";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "../../../../components/ui/select";
+} from "../../../../components/ui/select.js";
 import {
   Table,
   TableBody,
@@ -38,14 +36,14 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "../../../../components/ui/table";
+} from "../../../../components/ui/table.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "../../../../components/ui/dropdown-menu";
+} from "../../../../components/ui/dropdown-menu.js";
 import {
   Pagination,
   PaginationContent,
@@ -53,15 +51,14 @@ import {
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
-} from "../../../../components/ui/pagination";
-import { PageHeader } from "../../../../components/layout/page-header";
+} from "../../../../components/ui/pagination.js";
+import { PageHeader } from "../../../../components/layout/page-header.js";
 import {
   mockDocuments,
   mockContentTypes,
   formatRelativeTime,
-  type Document,
-} from "../../../../lib/mock-data";
-import { cn } from "../../../../lib/utils";
+} from "../../../../lib/mock-data.js";
+import { cn } from "../../../../lib/utils.js";
 
 const statusConfig = {
   published: {

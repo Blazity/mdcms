@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 
 import { useState } from "react";
@@ -12,32 +11,32 @@ import {
   Copy,
   Plus,
   MoreHorizontal,
-  Eye,
-  EyeOff,
-  Trash2,
 } from "lucide-react";
-import Link from "../../adapters/next-link";
-import { resolveStudioHref, useBasePath } from "../../adapters/next-navigation";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Badge } from "../../components/ui/badge";
-import { Switch } from "../../components/ui/switch";
-import { Label } from "../../components/ui/label";
-import { Separator } from "../../components/ui/separator";
+import Link from "../../adapters/next-link.js";
+import {
+  resolveStudioHref,
+  useBasePath,
+} from "../../adapters/next-navigation.js";
+import { Button } from "../../components/ui/button.js";
+import { Input } from "../../components/ui/input.js";
+import { Badge } from "../../components/ui/badge.js";
+import { Switch } from "../../components/ui/switch.js";
+import { Label } from "../../components/ui/label.js";
+import { Separator } from "../../components/ui/separator.js";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "../../components/ui/select";
+} from "../../components/ui/select.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu";
+} from "../../components/ui/dropdown-menu.js";
 import {
   Table,
   TableBody,
@@ -45,11 +44,11 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "../../components/ui/table";
+} from "../../components/ui/table.js";
 import { useCanReadSchema } from "./capabilities-context.js";
-import { PageHeader } from "../../components/layout/page-header";
-import { mockEnvironments, currentProject } from "../../lib/mock-data";
-import { cn } from "../../lib/utils";
+import { PageHeader } from "../../components/layout/page-header.js";
+import { mockEnvironments, currentProject } from "../../lib/mock-data.js";
+import { cn } from "../../lib/utils.js";
 
 const settingsTabs = [
   { id: "general", label: "General", icon: Settings },
@@ -114,7 +113,6 @@ export default function SettingsPage({
   initialTab?: string;
 }) {
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [showSecret, setShowSecret] = useState(false);
   const canReadSchema = useCanReadSchema();
   const basePath = useBasePath();
   const schemaBrowserHref = resolveStudioHref(basePath, "/schema");
