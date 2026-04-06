@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { RuntimeError } from "@mdcms/shared";
-
 import { createAuthService } from "../lib/auth.js";
 import { createDatabaseContentStore } from "../lib/content-api.js";
 import { createDatabaseConnection } from "../lib/db.js";
@@ -291,6 +290,34 @@ async function ensureDemoApiKey(input: {
   });
 }
 
+async function ensureDemoRbacGrant(input: {
+  db: ReturnType<typeof createDatabaseConnection>["db"];
+  userId: string;
+  project: string;
+}): Promise<void> {
+  const existing = await input.db.query.rbacGrants.findFirst({
+    where: and(
+      eq(rbacGrants.userId, input.userId),
+      eq(rbacGrants.scopeKind, "project"),
+      eq(rbacGrants.project, input.project),
+      isNull(rbacGrants.revokedAt),
+    ),
+  });
+
+  if (existing) {
+    return;
+  }
+
+  await input.db.insert(rbacGrants).values({
+    userId: input.userId,
+    role: "editor",
+    scopeKind: "project",
+    project: input.project,
+    source: "demo-seed",
+    createdByUserId: input.userId,
+  });
+}
+
 async function ensureDemoContent(input: {
   db: ReturnType<typeof createDatabaseConnection>["db"];
   actorId: string;
@@ -433,6 +460,12 @@ async function main(): Promise<void> {
       apiKey,
       project,
       environment,
+    });
+
+    await ensureDemoRbacGrant({
+      db: connection.db,
+      userId,
+      project,
     });
 
     const seededDocuments = await ensureDemoContent({
