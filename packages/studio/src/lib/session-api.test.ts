@@ -35,6 +35,13 @@ function createSessionApi(options: StudioSessionApiOptions = {}) {
   );
 }
 
+function createPrefixedSessionApi(options: StudioSessionApiOptions = {}) {
+  return createStudioSessionApi(
+    { serverUrl: "http://localhost:4000/review-api/editor" },
+    options,
+  );
+}
+
 function createSessionResponse(
   overrides: Record<string, unknown> = {},
 ): Response {
@@ -100,6 +107,29 @@ test("get attaches bearer token in token auth mode", async () => {
   );
   assert.equal(calls[0]?.init?.credentials, undefined);
   assert.equal(result.session.email, "alice@company.com");
+});
+
+test("get preserves a path-prefixed serverUrl for scenario-scoped auth/session routes", async () => {
+  const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
+    [];
+  const api = createPrefixedSessionApi({
+    auth: { mode: "token", token: "mdcms_key_test" },
+    fetcher: async (input, init) => {
+      calls.push({ input, init });
+      return createSessionResponse();
+    },
+  });
+
+  await api.get();
+
+  assert.equal(
+    String(calls[0]?.input),
+    "http://localhost:4000/review-api/editor/api/v1/auth/session",
+  );
+  assert.equal(
+    readHeader(calls[0]?.init, "authorization"),
+    "Bearer mdcms_key_test",
+  );
 });
 
 test("get throws UNAUTHORIZED on 401 response", async () => {
@@ -168,4 +198,30 @@ test("signOut posts to logout with CSRF token", async () => {
     "csrf-test-token",
   );
   assert.equal(calls[0]?.init?.credentials, "include");
+});
+
+test("signOut preserves a path-prefixed serverUrl for scenario-scoped auth/logout routes", async () => {
+  const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
+    [];
+  const api = createPrefixedSessionApi({
+    auth: { mode: "cookie" },
+    fetcher: async (input, init) => {
+      calls.push({ input, init });
+      return new Response(JSON.stringify({ data: { revoked: true } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  await api.signOut("csrf-test-token");
+
+  assert.equal(
+    String(calls[0]?.input),
+    "http://localhost:4000/review-api/editor/api/v1/auth/logout",
+  );
+  assert.equal(
+    readHeader(calls[0]?.init, "x-mdcms-csrf-token"),
+    "csrf-test-token",
+  );
 });
