@@ -23,6 +23,7 @@ export type StudioContentListApiOptions = {
 
 export type StudioContentListQuery = {
   type?: string;
+  q?: string;
   draft?: boolean;
   published?: boolean;
   hasUnpublishedChanges?: boolean;
@@ -70,6 +71,7 @@ export function createStudioContentListApi(
       const url = resolveStudioRelativeUrl("/api/v1/content", config.serverUrl);
 
       if (query.type) url.searchParams.set("type", query.type);
+      if (query.q) url.searchParams.set("q", query.q);
       if (query.draft !== undefined)
         url.searchParams.set("draft", String(query.draft));
       if (query.published !== undefined)
