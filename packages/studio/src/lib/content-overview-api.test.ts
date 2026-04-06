@@ -75,17 +75,19 @@ test("get fetches overview counts with repeated type params and routed headers",
   ]);
 });
 
-test("get returns zero-count rows for malformed success payloads", async () => {
+test("get throws RuntimeError when a success response payload is malformed", async () => {
   const api = createApi({
     fetcher: async () =>
       new Response(JSON.stringify({ unexpected: true }), { status: 200 }),
   });
 
-  const result = await api.get({ types: ["BlogPost"] });
-
-  assert.deepEqual(result, [
-    { type: "BlogPost", total: 0, published: 0, drafts: 0 },
-  ]);
+  await assert.rejects(
+    () => api.get({ types: ["BlogPost"] }),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "CONTENT_OVERVIEW_RESPONSE_INVALID" &&
+      error.statusCode === 502,
+  );
 });
 
 test("get throws RuntimeError on forbidden responses", async () => {

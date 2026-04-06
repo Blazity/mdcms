@@ -44,6 +44,15 @@ async function readResponsePayload(response: Response): Promise<unknown> {
   }
 }
 
+function createInvalidOverviewPayloadError(payload: unknown): RuntimeError {
+  return new RuntimeError({
+    code: "CONTENT_OVERVIEW_RESPONSE_INVALID",
+    message: "Content overview response payload had an unexpected shape.",
+    statusCode: 502,
+    details: { payload },
+  });
+}
+
 export function createStudioContentOverviewApi(
   config: StudioContentOverviewConfig,
   options: StudioContentOverviewApiOptions = {},
@@ -98,40 +107,38 @@ export function createStudioContentOverviewApi(
       }
 
       if (!isRecord(payload) || !Array.isArray(payload.data)) {
-        return input.types.map((type) => ({
-          type,
-          total: 0,
-          published: 0,
-          drafts: 0,
-        }));
+        throw createInvalidOverviewPayloadError(payload);
       }
 
       const countsByType = new Map<string, ContentOverviewCountsResponse>();
 
       for (const row of payload.data) {
-        if (!isRecord(row) || !isNonEmptyString(row.type)) {
-          continue;
+        if (
+          !isRecord(row) ||
+          !isNonEmptyString(row.type) ||
+          !isFiniteNumber(row.total) ||
+          !isFiniteNumber(row.published) ||
+          !isFiniteNumber(row.drafts)
+        ) {
+          throw createInvalidOverviewPayloadError(payload);
         }
 
         countsByType.set(row.type, {
           type: row.type,
-          total: isFiniteNumber(row.total) ? row.total : 0,
-          published: isFiniteNumber(row.published) ? row.published : 0,
-          drafts: isFiniteNumber(row.drafts) ? row.drafts : 0,
+          total: row.total,
+          published: row.published,
+          drafts: row.drafts,
         });
       }
 
       return input.types.map((type) => {
         const counts = countsByType.get(type);
 
-        return (
-          counts ?? {
-            type,
-            total: 0,
-            published: 0,
-            drafts: 0,
-          }
-        );
+        if (!counts) {
+          throw createInvalidOverviewPayloadError(payload);
+        }
+
+        return counts;
       });
     },
   };

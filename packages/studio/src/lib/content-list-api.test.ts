@@ -141,6 +141,23 @@ test("list passes draft and hasUnpublishedChanges filters as query params", asyn
   assert.equal(url.searchParams.get("limit"), "1");
 });
 
+test("list serializes an explicit false draft filter", async () => {
+  const calls: Array<{ input: string | URL | Request }> = [];
+  const api = createApi({
+    fetcher: async (input) => {
+      calls.push({ input });
+      return new Response(JSON.stringify(validPaginatedResponse), {
+        status: 200,
+      });
+    },
+  });
+
+  await api.list({ type: "BlogPost", draft: false, limit: 1 });
+
+  const url = new URL(String(calls[0]?.input));
+  assert.equal(url.searchParams.get("draft"), "false");
+});
+
 test("list passes sort and order query params", async () => {
   const calls: Array<{ input: string | URL | Request }> = [];
   const api = createApi({

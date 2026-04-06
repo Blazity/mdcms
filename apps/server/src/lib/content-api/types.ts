@@ -1,5 +1,6 @@
 import type {
   ContentDocumentResponse,
+  ContentOverviewCountsResponse,
   ContentVersionDocumentResponse,
   ContentVersionSummaryResponse,
   SchemaRegistryTypeSnapshot,
@@ -120,12 +121,7 @@ export type ContentListResult<Row> = {
   offset: number;
 };
 
-export type ContentOverviewCounts = {
-  type: string;
-  total: number;
-  published: number;
-  drafts: number;
-};
+export type ContentOverviewCounts = ContentOverviewCountsResponse;
 
 export type ContentStore = {
   getSchema: (

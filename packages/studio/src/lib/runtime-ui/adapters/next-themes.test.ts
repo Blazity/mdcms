@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "bun:test";
 
 import {
+  applyThemePreferencePersistence,
   STUDIO_THEME_STORAGE_KEY,
   persistStoredThemePreference,
   readStoredThemePreference,
@@ -34,6 +35,27 @@ test("persistStoredThemePreference writes to the Studio localStorage key", () =>
   const storage = createStorage();
 
   persistStoredThemePreference(storage, "dark");
+
+  assert.equal(storage.getItem(STUDIO_THEME_STORAGE_KEY), "dark");
+});
+
+test("applyThemePreferencePersistence skips the initial mount and persists subsequent theme changes", () => {
+  const storage = createStorage();
+
+  const hasMounted = applyThemePreferencePersistence({
+    storage,
+    theme: "dark",
+    hasMounted: false,
+  });
+
+  assert.equal(storage.getItem(STUDIO_THEME_STORAGE_KEY), null);
+  assert.equal(hasMounted, true);
+
+  applyThemePreferencePersistence({
+    storage,
+    theme: "dark",
+    hasMounted,
+  });
 
   assert.equal(storage.getItem(STUDIO_THEME_STORAGE_KEY), "dark");
 });

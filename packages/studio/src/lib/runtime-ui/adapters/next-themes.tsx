@@ -3,6 +3,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from "react";
@@ -59,6 +60,19 @@ export function persistStoredThemePreference(
   } catch {
     // Ignore browser storage failures and keep the in-memory preference active.
   }
+}
+
+export function applyThemePreferencePersistence(input: {
+  storage: ThemeStorage | null | undefined;
+  theme: Theme;
+  hasMounted: boolean;
+}): boolean {
+  if (!input.hasMounted) {
+    return true;
+  }
+
+  persistStoredThemePreference(input.storage, input.theme);
+  return true;
 }
 
 function readSystemPrefersDark(): boolean {
@@ -139,6 +153,7 @@ export function ThemeProvider({
   const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() =>
     readSystemPrefersDark(),
   );
+  const hasMountedThemePersistence = useRef(false);
 
   useEffect(() => {
     if (
@@ -191,7 +206,11 @@ export function ThemeProvider({
       return;
     }
 
-    persistStoredThemePreference(window.localStorage ?? null, theme);
+    hasMountedThemePersistence.current = applyThemePreferencePersistence({
+      storage: window.localStorage ?? null,
+      theme,
+      hasMounted: hasMountedThemePersistence.current,
+    });
   }, [theme]);
 
   const value = useMemo(

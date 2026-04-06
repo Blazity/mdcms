@@ -477,26 +477,39 @@ export function createInMemoryContentStore(
       const requestedTypes = [
         ...new Set(input.types.map((type) => type.trim())),
       ];
-      const scopedDocuments = [...getScopeStore(scope).values()].filter(
-        (document) => !document.isDeleted,
+      const countsByType = new Map(
+        requestedTypes.map((type) => [
+          type,
+          {
+            type,
+            total: 0,
+            published: 0,
+            drafts: 0,
+          },
+        ]),
       );
 
-      return requestedTypes.map((type) => {
-        const matchingDocuments = scopedDocuments.filter(
-          (document) => document.type === type,
-        );
+      for (const document of getScopeStore(scope).values()) {
+        if (document.isDeleted) {
+          continue;
+        }
 
-        return {
-          type,
-          total: matchingDocuments.length,
-          published: matchingDocuments.filter(
-            (document) => document.publishedVersion !== null,
-          ).length,
-          drafts: matchingDocuments.filter(
-            (document) => document.publishedVersion === null,
-          ).length,
-        };
-      });
+        const counts = countsByType.get(document.type);
+
+        if (!counts) {
+          continue;
+        }
+
+        counts.total += 1;
+
+        if (document.publishedVersion === null) {
+          counts.drafts += 1;
+        } else {
+          counts.published += 1;
+        }
+      }
+
+      return requestedTypes.map((type) => countsByType.get(type)!);
     },
 
     async getById(scope, documentId, options) {

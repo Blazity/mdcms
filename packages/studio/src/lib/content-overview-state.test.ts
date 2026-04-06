@@ -205,6 +205,69 @@ test("loadStudioContentOverviewState uses overview counts for callers without dr
   assert.equal(listCalls, 0);
 });
 
+test("loadStudioContentOverviewState keeps the draft-only fallback in draft mode", async () => {
+  const queries: Array<Parameters<StudioContentListApi["list"]>[0]> = [];
+  const state = await loadStudioContentOverviewState(
+    createLoadInput({
+      capabilitiesApi: createCapabilitiesApi({
+        schemaRead: true,
+        contentRead: false,
+        contentReadDraft: true,
+      }),
+      schemaApi: createSchemaApi([
+        { type: "BlogPost", directory: "content/blog", localized: true },
+      ]),
+      contentApi: {
+        list: async (query = {}) => {
+          queries.push(query);
+
+          if (query.published === true && query.draft !== true) {
+            throw new RuntimeError({
+              code: "FORBIDDEN",
+              message: "Published-only reads are not allowed for draft access.",
+              statusCode: 403,
+            });
+          }
+
+          const total =
+            query.draft === true && query.published === true
+              ? 2
+              : query.draft === true && query.published === false
+                ? 4
+                : 6;
+
+          return {
+            data: [],
+            pagination: {
+              total,
+              limit: 1,
+              offset: 0,
+              hasMore: false,
+            },
+          };
+        },
+      },
+    }),
+  );
+
+  assert.equal(state.status, "ready");
+  if (state.status !== "ready") return;
+
+  assert.deepEqual(
+    state.entries[0]?.metrics.map((metric) => [metric.id, metric.value]),
+    [
+      ["documents", 6],
+      ["published", 2],
+      ["withDrafts", 4],
+    ],
+  );
+  assert.deepEqual(queries, [
+    { type: "BlogPost", draft: true, limit: 1 },
+    { type: "BlogPost", draft: true, published: true, limit: 1 },
+    { type: "BlogPost", draft: true, published: false, limit: 1 },
+  ]);
+});
+
 test("loadStudioContentOverviewState returns permission-constrained state when schema is readable but content is not", async () => {
   let contentCalls = 0;
   const state = await loadStudioContentOverviewState(

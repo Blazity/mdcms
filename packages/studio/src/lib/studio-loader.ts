@@ -245,8 +245,12 @@ async function createDocumentRouteMountContext(
     supportedLocales = parsedConfig.locales.implicit
       ? undefined
       : [...parsedConfig.locales.supported];
-  } catch {
-    supportedLocales = undefined;
+  } catch (error) {
+    if (error instanceof RuntimeError && error.code === "INVALID_CONFIG") {
+      supportedLocales = undefined;
+    } else {
+      throw error;
+    }
   }
 
   return {

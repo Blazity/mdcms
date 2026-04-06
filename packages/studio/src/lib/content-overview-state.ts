@@ -294,6 +294,7 @@ async function loadEntryMetrics(input: {
     }),
     input.contentApi.list({
       type: input.type,
+      draft: true,
       published: true,
       limit: 1,
     }),
