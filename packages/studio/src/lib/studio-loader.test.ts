@@ -6,6 +6,8 @@ import { test } from "bun:test";
 
 import {
   RuntimeError,
+  defineConfig,
+  defineType,
   type MdxExtractedProps,
   type HostBridgeV1,
   type StudioBootstrapManifest,
@@ -19,6 +21,14 @@ const validHostBridge: HostBridgeV1 = {
   version: "1",
   resolveComponent: () => null,
   renderMdxPreview: () => () => {},
+};
+
+const stringSchema = {
+  "~standard": {
+    version: 1 as const,
+    vendor: "test",
+    validate: (value: unknown) => ({ value }),
+  },
 };
 
 async function withTempDir<T>(
@@ -436,6 +446,231 @@ test("loadStudioRuntime derives a local mdx catalog and editor resolver from con
     assert.ok(chartEditorResult instanceof Promise);
     assert.equal(await chartEditorResult, ChartEditor);
     assert.equal(await context.mdx?.resolvePropsEditor("Missing"), null);
+  });
+});
+
+test("loadStudioRuntime carries supported locales into the document route mount context", async () => {
+  await withTempDir("studio-loader-locales-", async (directory) => {
+    const fixture = await createRuntimeFixture(directory);
+    const contexts: unknown[] = [];
+
+    await loadStudioRuntime({
+      config: {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+        contentDirectories: [],
+        locales: {
+          default: "en-US",
+          supported: ["en-US", "fr", "de", "ja"],
+        },
+        environments: {
+          production: {},
+          staging: {
+            extends: "production",
+          },
+        },
+        types: [],
+      },
+      basePath: "/admin",
+      container: {},
+      hostBridge: validHostBridge,
+      fetcher: async (input) => {
+        const url = String(input);
+
+        if (url === "http://localhost:4000/api/v1/studio/bootstrap") {
+          return new Response(
+            JSON.stringify(
+              createReadyBootstrapPayload({
+                manifest: fixture.manifest,
+              }),
+            ),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        if (url === "http://localhost:4000" + fixture.manifest.entryUrl) {
+          return new Response(new Uint8Array(fixture.runtimeBytes), {
+            status: 200,
+            headers: {
+              "content-type": "text/javascript; charset=utf-8",
+            },
+          });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+      },
+      loadRemoteModule: async () => ({
+        mount: (_target: unknown, context: unknown) => {
+          contexts.push(context);
+          return () => {};
+        },
+      }),
+    });
+
+    const mountedContext = contexts[0] as {
+      documentRoute?: {
+        supportedLocales?: string[];
+      };
+    };
+
+    assert.deepEqual(mountedContext.documentRoute?.supportedLocales, [
+      "en-US",
+      "fr",
+      "de",
+      "ja",
+    ]);
+  });
+});
+
+test("loadStudioRuntime swallows expected config validation failures when deriving supported locales", async () => {
+  await withTempDir("studio-loader-invalid-locales-", async (directory) => {
+    const fixture = await createRuntimeFixture(directory);
+    const contexts: unknown[] = [];
+
+    await loadStudioRuntime({
+      config: defineConfig({
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+        contentDirectories: ["content/blog"],
+        types: [
+          defineType("BlogPost", {
+            directory: "content/blog",
+            localized: true,
+            fields: {
+              title: stringSchema,
+            },
+          }),
+        ],
+      }),
+      basePath: "/admin",
+      container: {},
+      fetcher: async (input) => {
+        const url = String(input);
+
+        if (url === "http://localhost:4000/api/v1/studio/bootstrap") {
+          return new Response(
+            JSON.stringify(
+              createReadyBootstrapPayload({
+                manifest: fixture.manifest,
+              }),
+            ),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        if (url === "http://localhost:4000" + fixture.manifest.entryUrl) {
+          return new Response(new Uint8Array(fixture.runtimeBytes), {
+            status: 200,
+            headers: {
+              "content-type": "text/javascript; charset=utf-8",
+            },
+          });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+      },
+      loadRemoteModule: async () => ({
+        mount: (_target: unknown, context: unknown) => {
+          contexts.push(context);
+          return () => {};
+        },
+      }),
+    });
+
+    const mountedContext = contexts[0] as {
+      documentRoute?: {
+        supportedLocales?: string[];
+      };
+    };
+
+    assert.equal(mountedContext.documentRoute?.supportedLocales, undefined);
+  });
+});
+
+test("loadStudioRuntime rethrows unexpected config parse failures when deriving supported locales", async () => {
+  await withTempDir("studio-loader-unexpected-config-", async (directory) => {
+    const fixture = await createRuntimeFixture(directory);
+    const validTypes = [
+      defineType("BlogPost", {
+        directory: "content/blog",
+        fields: {
+          title: stringSchema,
+        },
+      }),
+    ];
+    let typeAccessCount = 0;
+    const config = {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+      contentDirectories: ["content/blog"],
+      get types() {
+        typeAccessCount += 1;
+
+        if (typeAccessCount === 1) {
+          return validTypes;
+        }
+
+        throw new Error("types getter exploded");
+      },
+    } as unknown as MdcmsConfig;
+
+    await assert.rejects(
+      () =>
+        loadStudioRuntime({
+          config,
+          basePath: "/admin",
+          container: {},
+          fetcher: async (input) => {
+            const url = String(input);
+
+            if (url === "http://localhost:4000/api/v1/studio/bootstrap") {
+              return new Response(
+                JSON.stringify(
+                  createReadyBootstrapPayload({
+                    manifest: fixture.manifest,
+                  }),
+                ),
+                {
+                  status: 200,
+                  headers: {
+                    "content-type": "application/json",
+                  },
+                },
+              );
+            }
+
+            if (url === "http://localhost:4000" + fixture.manifest.entryUrl) {
+              return new Response(new Uint8Array(fixture.runtimeBytes), {
+                status: 200,
+                headers: {
+                  "content-type": "text/javascript; charset=utf-8",
+                },
+              });
+            }
+
+            throw new Error(`Unexpected fetch URL: ${url}`);
+          },
+          loadRemoteModule: async () => {
+            throw new Error("loadRemoteModule should not be called");
+          },
+        }),
+      (error: unknown) =>
+        error instanceof Error &&
+        error.message.includes("types getter exploded"),
+    );
   });
 });
 

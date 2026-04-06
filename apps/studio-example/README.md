@@ -105,16 +105,22 @@ Notes:
   - email: `demo@mdcms.local`
   - password: `Demo12345!`
 - `apps/studio-example/mdcms.config.ts` includes ready `types` mappings for
-  `post`, `author`, and `page`, and uses the shared `defineConfig(...)`
-  contract from `@mdcms/cli`, so `pull/push` path mapping works out of the box.
+  `post`, `author`, `page`, and localized `campaign`, and uses the shared
+  `defineConfig(...)` contract from `@mdcms/cli`, so `pull/push` path mapping
+  works out of the box.
+- `apps/studio-example/mdcms.config.ts` also declares explicit demo locales
+  (`en`, `fr`) so localized Studio and API flows can be exercised in the
+  embedded app.
 - `apps/studio-example/mdcms.config.ts` also registers example local MDX
   components (`Chart`, `Callout`, `PricingTable`) for Studio insertion,
   preview, and props-panel testing.
 - `/admin/*` prepares the full Studio config through
   `prepareStudioConfig(...)`, so the embedded Studio runtime receives local MDX
   component metadata, extracted props, and custom props editor loaders.
-- `compose:dev` seeds example content in `marketing-site/staging` (posts/pages),
-  so first `mdcms pull` returns real files immediately.
+- `compose:dev` seeds example content in `marketing-site/staging`
+  (posts/pages/localized campaigns), including an `en` + `fr` campaign
+  translation group for `/admin/content` and `/demo/content*` checks, so first
+  `mdcms pull` returns real files immediately.
 - `/demo/content*` remains a raw-content inspection surface and does not render
   those MDX components.
 - `/demo/sdk-content*` demonstrates the same seeded scope through

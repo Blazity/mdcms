@@ -4,6 +4,7 @@ import {
   applyStudioAuthToRequestInit,
   type StudioRuntimeAuth,
 } from "./request-auth.js";
+import { resolveStudioRelativeUrl } from "./url-resolution.js";
 
 export type StudioSessionInfo = {
   id: string;
@@ -137,7 +138,10 @@ export function createStudioSessionApi(
 
   return {
     async get() {
-      const url = new URL("/api/v1/auth/session", config.serverUrl);
+      const url = resolveStudioRelativeUrl(
+        "/api/v1/auth/session",
+        config.serverUrl,
+      );
       const response = await fetcher(
         url,
         applyStudioAuthToRequestInit(options.auth, { method: "GET" }),
@@ -157,7 +161,10 @@ export function createStudioSessionApi(
     },
 
     async signOut(csrfToken: string) {
-      const url = new URL("/api/v1/auth/logout", config.serverUrl);
+      const url = resolveStudioRelativeUrl(
+        "/api/v1/auth/logout",
+        config.serverUrl,
+      );
       const response = await fetcher(
         url,
         applyStudioAuthToRequestInit(options.auth, {

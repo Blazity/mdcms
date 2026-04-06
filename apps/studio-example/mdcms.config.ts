@@ -31,11 +31,25 @@ const page = defineType("page", {
   },
 });
 
+const campaign = defineType("campaign", {
+  directory: "content/campaigns",
+  localized: true,
+  fields: {
+    title: z.string().min(1),
+    slug: z.string().min(1),
+    summary: z.string().min(1),
+  },
+});
+
 export default defineConfig({
   project: studioExampleProject,
   environment: studioExampleEnvironment,
   serverUrl: studioExampleServerUrl,
   contentDirectories: ["content"],
+  locales: {
+    default: "en",
+    supported: ["en", "fr"],
+  },
   environments: {
     production: {},
     staging: {
@@ -43,5 +57,5 @@ export default defineConfig({
     },
   },
   components: [...studioExampleMdxComponents],
-  types: [post, author, page],
+  types: [post, author, page, campaign],
 });

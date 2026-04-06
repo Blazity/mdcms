@@ -357,6 +357,166 @@ testWithDatabase(
 );
 
 testWithDatabase(
+  "content API overview returns metadata counts without exposing draft rows",
+  async () => {
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-overview-counts");
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": stableFixtureName("content-overview-counts"),
+      "x-mdcms-environment": "production",
+    };
+
+    try {
+      const publishedCreateResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            path: stableFixturePath("blog", "overview-published"),
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "overview-published" },
+            body: "published body",
+          }),
+        }),
+      );
+      const publishedCreated = (await publishedCreateResponse.json()) as {
+        data: { documentId: string };
+      };
+      assert.equal(publishedCreateResponse.status, 200);
+
+      const publishResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${publishedCreated.data.documentId}/publish`,
+          {
+            method: "POST",
+            headers: csrfHeaders({
+              ...testScopeHeaders,
+              "content-type": "application/json",
+            }),
+            body: JSON.stringify({
+              change_summary: "publish overview baseline",
+            }),
+          },
+        ),
+      );
+      assert.equal(publishResponse.status, 200);
+
+      const publishedUpdateResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${publishedCreated.data.documentId}`,
+          {
+            method: "PUT",
+            headers: csrfHeaders({
+              ...testScopeHeaders,
+              "content-type": "application/json",
+            }),
+            body: JSON.stringify({
+              body: "published document with newer draft changes",
+            }),
+          },
+        ),
+      );
+      assert.equal(publishedUpdateResponse.status, 200);
+
+      const draftOnlyCreateResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            path: stableFixturePath("blog", "overview-draft-only"),
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "overview-draft-only" },
+            body: "draft only body",
+          }),
+        }),
+      );
+      assert.equal(draftOnlyCreateResponse.status, 200);
+
+      const deletedCreateResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...testScopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            path: stableFixturePath("blog", "overview-deleted"),
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "overview-deleted" },
+            body: "deleted body",
+          }),
+        }),
+      );
+      const deletedCreated = (await deletedCreateResponse.json()) as {
+        data: { documentId: string };
+      };
+      assert.equal(deletedCreateResponse.status, 200);
+
+      const deletedResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${deletedCreated.data.documentId}`,
+          {
+            method: "DELETE",
+            headers: csrfHeaders(testScopeHeaders),
+          },
+        ),
+      );
+      assert.equal(deletedResponse.status, 200);
+
+      const overviewResponse = await handler(
+        new Request(
+          "http://localhost/api/v1/content/overview?type=BlogPost&type=Page",
+          {
+            headers: testScopeHeaders,
+          },
+        ),
+      );
+      const overviewBody = (await overviewResponse.json()) as {
+        data: Array<{
+          type: string;
+          total: number;
+          published: number;
+          drafts: number;
+          documentId?: string;
+          body?: string;
+        }>;
+      };
+
+      assert.equal(overviewResponse.status, 200);
+      assert.deepEqual(overviewBody.data, [
+        {
+          type: "BlogPost",
+          total: 2,
+          published: 1,
+          drafts: 1,
+        },
+        {
+          type: "Page",
+          total: 0,
+          published: 0,
+          drafts: 0,
+        },
+      ]);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
   "content API publish persists change_summary to immutable document_versions row",
   async () => {
     const { handler, dbConnection, csrfHeaders } =

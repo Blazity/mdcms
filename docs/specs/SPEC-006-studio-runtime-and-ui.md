@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-31
+last_updated: 2026-04-06
 ---
 
 # SPEC-006 Studio Runtime and UI
@@ -203,6 +203,74 @@ changes in the UI.
 The primary navigation model is **schema-first**: users navigate by content type (BlogPost, Page, Author) rather than folder structure. Each type shows a sortable, filterable list of documents.
 
 Secondary navigation by folder path is available as an alternative view.
+
+### Content Overview (`/admin/content`)
+
+The `/admin/content` route is a live schema-first overview for the active
+`(project, environment)` target. It is backed by:
+
+- `GET /api/v1/me/capabilities` for target-scoped capability gating
+- `GET /api/v1/schema` for the canonical list of schema types
+- `GET /api/v1/content/overview` for metadata-only per-type counts
+
+Normative behavior:
+
+- Overview cards are keyed by live schema registry entries. Studio must not use
+  mock content-type fixtures to decide which types appear.
+- Each card links to `/admin/content/:type` only when the current caller can
+  read content for that target. When the caller cannot read content, Studio
+  keeps the card visible for schema discovery but disables list navigation.
+- Studio must not present a count or label that the current route contracts
+  cannot prove. Unsupported metrics are omitted instead of estimated.
+- When `capabilities.content.read` is `true`, Studio may show a per-type
+  `total`, `published`, and `drafts` counts derived from
+  `GET /api/v1/content/overview`.
+- On `/admin/content`, `drafts` means non-deleted documents whose current head
+  has no published version. It does not include published documents that also
+  have newer unpublished changes.
+- The overview count contract is metadata-only. Showing these counts does not
+  grant access to draft document rows, draft document bodies, or any broader
+  draft list access outside the overview itself.
+- Localization presentation on `/admin/content` is schema-derived in MVP:
+  localized types may show a `Localized` badge from the schema contract and
+  non-localized types may show `Single locale`.
+- When the embedded runtime has explicit locale configuration for the active
+  project, `/admin/content` may show that configured locale-code list next to a
+  localized type badge. This list is config-derived only and must not be
+  presented as translation coverage.
+
+Deterministic states:
+
+- If `GET /api/v1/schema` returns `401` or `403`, the route renders a forbidden
+  state because Studio cannot determine which schema types exist.
+- If schema loading succeeds but both `capabilities.content.read` and
+  `capabilities.content.readDraft` are `false`, the route renders a
+  permission-constrained overview: schema cards stay visible, all content
+  counts are omitted, list navigation is disabled, and the page shows a clear
+  permission banner instead of a full route-level forbidden state.
+- If schema loading succeeds and returns zero types, the route renders a
+  deterministic empty state for the active target.
+- Non-auth, non-forbidden failures from the live schema or content overview
+  requests render a deterministic error state. Partial metric failures must not
+  fall back to mock values.
+
+### Theme Preference Persistence
+
+Studio-owned theme preference persists in browser-local storage.
+
+Normative behavior:
+
+- The runtime stores the selected theme in `localStorage`; it is not persisted
+  through the backend and is not host-bridge-owned in MVP.
+- Preference precedence is:
+  1. persisted Studio preference
+  2. explicit runtime `defaultTheme`
+  3. system theme when `enableSystem` is enabled
+  4. `light`
+- Persistence scope is browser-local across full page reloads and Studio
+  remounts for the same browser profile.
+- The theme toggle must continue to support both light and dark rendering even
+  when the persisted preference was set by an earlier Studio runtime version.
 
 ### Project Scope and Switching
 

@@ -71,3 +71,10 @@ export type ContentVersionDocumentResponse = ContentVersionSummaryResponse & {
   body: string;
   resolveErrors?: ResolveErrorsMap;
 };
+
+export type ContentOverviewCountsResponse = {
+  type: string;
+  total: number;
+  published: number;
+  drafts: number;
+};

@@ -473,6 +473,45 @@ export function createInMemoryContentStore(
       };
     },
 
+    async getOverviewCounts(scope, input) {
+      const requestedTypes = [
+        ...new Set(input.types.map((type) => type.trim())),
+      ];
+      const countsByType = new Map(
+        requestedTypes.map((type) => [
+          type,
+          {
+            type,
+            total: 0,
+            published: 0,
+            drafts: 0,
+          },
+        ]),
+      );
+
+      for (const document of getScopeStore(scope).values()) {
+        if (document.isDeleted) {
+          continue;
+        }
+
+        const counts = countsByType.get(document.type);
+
+        if (!counts) {
+          continue;
+        }
+
+        counts.total += 1;
+
+        if (document.publishedVersion === null) {
+          counts.drafts += 1;
+        } else {
+          counts.published += 1;
+        }
+      }
+
+      return requestedTypes.map((type) => countsByType.get(type)!);
+    },
+
     async getById(scope, documentId, options) {
       const store = getScopeStore(scope);
       const publishedSnapshots = getScopePublishedSnapshots(scope);

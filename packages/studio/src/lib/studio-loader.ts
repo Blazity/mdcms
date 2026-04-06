@@ -8,6 +8,7 @@ import {
   assertStudioBootstrapReadyResponse,
   assertStudioMountContext,
   isRuntimeErrorLike,
+  parseMdcmsConfig,
   type ErrorEnvelope,
   type HostBridgeV1,
   type MdxComponentCatalog,
@@ -237,10 +238,27 @@ async function createDocumentRouteMountContext(
   }
 
   const capability = await resolveStudioDocumentRouteSchemaCapability(config);
+  let supportedLocales: string[] | undefined;
+
+  try {
+    const parsedConfig = parseMdcmsConfig(config);
+    supportedLocales = parsedConfig.locales.implicit
+      ? undefined
+      : [...parsedConfig.locales.supported];
+  } catch (error) {
+    if (error instanceof RuntimeError && error.code === "INVALID_CONFIG") {
+      supportedLocales = undefined;
+    } else {
+      throw error;
+    }
+  }
 
   return {
     project,
     environment,
+    ...(supportedLocales && supportedLocales.length > 0
+      ? { supportedLocales }
+      : {}),
     write: capability.canWrite
       ? {
           canWrite: true,

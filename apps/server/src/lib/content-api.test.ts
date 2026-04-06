@@ -250,6 +250,135 @@ test("content API supports create/list filters/sort/pagination", async () => {
   assert.equal(body.data[0]?.type, "BlogPost");
 });
 
+test("content API overview returns metadata-only counts per type using content:read scope", async () => {
+  const authorizeCalls: Array<Record<string, unknown>> = [];
+  const store = createInMemoryContentStore({
+    schemaScopes: [
+      {
+        project: scopeHeaders["x-mdcms-project"],
+        environment: scopeHeaders["x-mdcms-environment"],
+        schemas: createCms26ResolvedSchemas(),
+      },
+    ],
+  });
+  const rawHandler = createServerRequestHandler({
+    env: baseEnv,
+    configureApp: (app) => {
+      mountContentApiRoutes(app, {
+        store,
+        authorize: async (_request, requirement) => {
+          authorizeCalls.push(requirement as Record<string, unknown>);
+        },
+        requireCsrf: async () => undefined,
+        getWriteSchemaSyncState: async () => ({
+          schemaHash: inMemorySchemaHash,
+        }),
+      });
+    },
+    now: () => new Date("2026-03-02T10:00:00.000Z"),
+  });
+  const handler = wrapHandlerWithAutoSchemaHash(
+    rawHandler,
+    () => inMemorySchemaHash,
+  );
+
+  const publishedCreateResponse = await handler(
+    new Request("http://localhost/api/v1/content", {
+      method: "POST",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "blog/overview-published",
+        type: "BlogPost",
+        locale: "en",
+        format: "md",
+        frontmatter: { slug: "overview-published" },
+        body: "published body",
+      }),
+    }),
+  );
+  const publishedCreated = (await publishedCreateResponse.json()) as {
+    data: { documentId: string };
+  };
+  assert.equal(publishedCreateResponse.status, 200);
+
+  const publishResponse = await handler(
+    new Request(
+      `http://localhost/api/v1/content/${publishedCreated.data.documentId}/publish`,
+      {
+        method: "POST",
+        headers: {
+          ...scopeHeaders,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      },
+    ),
+  );
+  assert.equal(publishResponse.status, 200);
+
+  const draftCreateResponse = await handler(
+    new Request("http://localhost/api/v1/content", {
+      method: "POST",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "blog/overview-draft",
+        type: "BlogPost",
+        locale: "en",
+        format: "md",
+        frontmatter: { slug: "overview-draft" },
+        body: "draft body",
+      }),
+    }),
+  );
+  assert.equal(draftCreateResponse.status, 200);
+
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/content/overview?type=BlogPost&type=Page",
+      {
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const body = (await response.json()) as {
+    data: Array<{
+      type: string;
+      total: number;
+      published: number;
+      drafts: number;
+      documentId?: string;
+      path?: string;
+    }>;
+  };
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(authorizeCalls.at(-1), {
+    requiredScope: "content:read",
+    project: scopeHeaders["x-mdcms-project"],
+    environment: scopeHeaders["x-mdcms-environment"],
+  });
+  assert.deepEqual(body.data, [
+    {
+      type: "BlogPost",
+      total: 2,
+      published: 1,
+      drafts: 1,
+    },
+    {
+      type: "Page",
+      total: 0,
+      published: 0,
+      drafts: 0,
+    },
+  ]);
+});
+
 test("content API creates a locale variant from sourceDocumentId with a fresh documentId", async () => {
   const handler = createHandler();
 
