@@ -26,6 +26,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function isSsoProvider(value: unknown): value is SsoProvider {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string"
+  );
+}
+
 export function createLoginApi(
   config: LoginApiConfig,
   options: LoginApiOptions = {},
@@ -91,7 +99,7 @@ export function createLoginApi(
         if (!response.ok) return [];
         const payload = await response.json();
         if (isRecord(payload) && Array.isArray(payload.data)) {
-          return payload.data as SsoProvider[];
+          return payload.data.filter(isSsoProvider);
         }
         return [];
       } catch {

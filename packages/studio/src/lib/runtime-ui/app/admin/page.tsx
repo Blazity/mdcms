@@ -25,6 +25,7 @@ import { Badge } from "../../components/ui/badge.js";
 import { PageHeader } from "../../components/layout/page-header.js";
 import { useStudioSession } from "./session-context.js";
 import { useStudioMountInfo } from "./mount-info-context.js";
+import { useAdminCapabilities } from "./capabilities-context.js";
 import { createStudioSchemaRouteApi } from "../../../schema-route-api.js";
 import { createStudioContentListApi } from "../../../content-list-api.js";
 import {
@@ -64,6 +65,7 @@ function deriveUserLabel(email: string): string {
 export default function DashboardPage() {
   const session = useStudioSession();
   const mountInfo = useStudioMountInfo();
+  const { canCreateContent } = useAdminCapabilities();
   const [state, setState] = useState<DashboardState>({ status: "loading" });
 
   useEffect(() => {
@@ -229,18 +231,20 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Actions */}
-        <div className="flex flex-wrap gap-3">
-          <Button
-            variant="default"
-            asChild
-            className="bg-accent hover:bg-accent-hover text-white"
-          >
-            <Link href="/admin/content">
-              <Plus className="mr-2 h-4 w-4" />
-              New Document
-            </Link>
-          </Button>
-        </div>
+        {canCreateContent && (
+          <div className="flex flex-wrap gap-3">
+            <Button
+              variant="default"
+              asChild
+              className="bg-accent hover:bg-accent-hover text-white"
+            >
+              <Link href="/admin/content">
+                <Plus className="mr-2 h-4 w-4" />
+                New Document
+              </Link>
+            </Button>
+          </div>
+        )}
 
         {/* Content Types & Recent Documents */}
         <div className="grid gap-6 lg:grid-cols-2">

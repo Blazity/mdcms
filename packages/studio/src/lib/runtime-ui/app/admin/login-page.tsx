@@ -101,12 +101,20 @@ export default function LoginPage() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ providerId, callbackURL }),
       redirect: "manual",
-    }).then((response) => {
-      const redirectUrl = response.headers.get("location");
-      if (redirectUrl) {
-        window.location.href = redirectUrl;
-      }
-    });
+    })
+      .then(async (response) => {
+        const body = await response.json().catch(() => undefined);
+        const redirectUrl =
+          body && typeof body === "object" && typeof body.url === "string"
+            ? body.url
+            : null;
+        if (redirectUrl) {
+          window.location.href = redirectUrl;
+        }
+      })
+      .catch(() => {
+        setError("SSO sign-in failed. Please try again.");
+      });
   };
 
   if (sessionState.status === "authenticated") {

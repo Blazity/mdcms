@@ -4,12 +4,14 @@ import { createContext, useContext, type PropsWithChildren } from "react";
 
 export type AdminCapabilitiesValue = {
   canReadSchema: boolean;
+  canCreateContent: boolean;
   canManageUsers: boolean;
   canManageSettings: boolean;
 };
 
 const DEFAULT_ADMIN_CAPABILITIES: AdminCapabilitiesValue = {
   canReadSchema: false,
+  canCreateContent: false,
   canManageUsers: false,
   canManageSettings: false,
 };

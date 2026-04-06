@@ -68,6 +68,7 @@ export default function AdminLayout({
 }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [canReadSchema, setCanReadSchema] = useState(false);
+  const [canCreateContent, setCanCreateContent] = useState(false);
   const [canManageUsers, setCanManageUsers] = useState(false);
   const [canManageSettings, setCanManageSettings] = useState(false);
   const [sessionState, setSessionState] = useState<StudioSessionState>({
@@ -89,6 +90,7 @@ export default function AdminLayout({
 
     if (!loadInput) {
       setCanReadSchema(false);
+      setCanCreateContent(false);
       setCanManageUsers(false);
       setCanManageSettings(false);
       return;
@@ -105,6 +107,7 @@ export default function AdminLayout({
       .then((response) => {
         if (!cancelled) {
           setCanReadSchema(response.capabilities.schema.read);
+          setCanCreateContent(response.capabilities.content.write);
           setCanManageUsers(response.capabilities.users.manage);
           setCanManageSettings(response.capabilities.settings.manage);
         }
@@ -112,6 +115,7 @@ export default function AdminLayout({
       .catch(() => {
         if (!cancelled) {
           setCanReadSchema(false);
+          setCanCreateContent(false);
           setCanManageUsers(false);
           setCanManageSettings(false);
         }
@@ -262,7 +266,12 @@ export default function AdminLayout({
   return (
     <div className="min-h-screen overflow-x-hidden bg-background">
       <AdminCapabilitiesProvider
-        value={{ canReadSchema, canManageUsers, canManageSettings }}
+        value={{
+          canReadSchema,
+          canCreateContent,
+          canManageUsers,
+          canManageSettings,
+        }}
       >
         <StudioSessionProvider value={sessionState}>
           <StudioMountInfoProvider value={mountInfo}>

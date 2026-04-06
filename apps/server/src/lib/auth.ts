@@ -2652,10 +2652,10 @@ export function createAuthService(
 
   function toRedirectResponse(response: Response, location: string): Response {
     const headers = new Headers(response.headers);
-    headers.delete("content-type");
+    headers.set("content-type", "application/json");
     headers.set("location", location);
 
-    return new Response(null, {
+    return new Response(JSON.stringify({ url: location }), {
       status: 302,
       headers,
     });
