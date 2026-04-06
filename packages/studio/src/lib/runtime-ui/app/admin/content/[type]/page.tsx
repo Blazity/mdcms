@@ -592,6 +592,7 @@ export default function ContentTypePage() {
         error={create.error}
         typeDirectory={schemaEntry?.directory ?? typeId}
         localized={schemaEntry?.localized ?? false}
+        locales={mountInfo.supportedLocales}
         onClose={create.close}
         onSubmit={(input) => {
           void create.submit(input);

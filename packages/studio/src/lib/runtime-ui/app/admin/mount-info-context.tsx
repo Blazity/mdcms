@@ -15,6 +15,7 @@ export type StudioMountInfo = {
   auth: StudioMountContext["auth"];
   environments: EnvironmentSummary[];
   hostBridge: HostBridgeV1 | null;
+  supportedLocales?: string[];
 };
 
 const DEFAULT_MOUNT_INFO: StudioMountInfo = {

@@ -286,6 +286,7 @@ export default function AdminLayout({
     auth: context.auth,
     environments,
     hostBridge: context.hostBridge,
+    supportedLocales: context.documentRoute?.supportedLocales,
   };
 
   return (
