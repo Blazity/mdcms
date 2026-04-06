@@ -25,7 +25,6 @@ import { Badge } from "../../components/ui/badge.js";
 import { PageHeader } from "../../components/layout/page-header.js";
 import { useStudioSession } from "./session-context.js";
 import { useStudioMountInfo } from "./mount-info-context.js";
-import { useAdminCapabilities } from "./capabilities-context.js";
 import { createStudioSchemaRouteApi } from "../../../schema-route-api.js";
 import { createStudioContentListApi } from "../../../content-list-api.js";
 import {
@@ -65,7 +64,6 @@ function deriveUserLabel(email: string): string {
 export default function DashboardPage() {
   const session = useStudioSession();
   const mountInfo = useStudioMountInfo();
-  const capabilities = useAdminCapabilities();
   const [state, setState] = useState<DashboardState>({ status: "loading" });
 
   useEffect(() => {
@@ -155,39 +153,6 @@ export default function DashboardPage() {
           <p className="text-sm text-foreground-muted max-w-md">
             {state.message}
           </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (state.status === "empty") {
-    return (
-      <div className="min-h-screen">
-        <PageHeader breadcrumbs={[{ label: "Dashboard" }]} />
-        <div className="p-6 space-y-6">
-          <div>
-            <h1 className="text-2xl font-semibold">Dashboard</h1>
-            {userLabel && (
-              <p className="text-sm text-foreground-muted">
-                Welcome back, {userLabel}
-              </p>
-            )}
-          </div>
-          <Card className="border-border">
-            <CardContent className="flex flex-col items-center justify-center gap-3 p-12 text-center">
-              <FileText className="h-8 w-8 text-foreground-muted" />
-              <h2 className="text-lg font-semibold">No content yet</h2>
-              <p className="text-sm text-foreground-muted max-w-md">
-                This project has no schema types or documents. Sync a schema and
-                create your first document to get started.
-              </p>
-              {capabilities.canReadSchema && (
-                <Button asChild variant="default" className="mt-2">
-                  <Link href="/admin/schema">View Schema</Link>
-                </Button>
-              )}
-            </CardContent>
-          </Card>
         </div>
       </div>
     );

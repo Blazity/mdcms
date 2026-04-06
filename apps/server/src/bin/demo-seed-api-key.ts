@@ -310,7 +310,7 @@ async function ensureDemoRbacGrant(input: {
 
   await input.db.insert(rbacGrants).values({
     userId: input.userId,
-    role: "editor",
+    role: "viewer",
     scopeKind: "project",
     project: input.project,
     source: "demo-seed",
