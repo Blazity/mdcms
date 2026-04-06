@@ -112,6 +112,7 @@ export default function ContentTypePage() {
   const queryClient = useQueryClient();
 
   const [searchInput, setSearchInput] = useState("");
+  const [rowActionError, setRowActionError] = useState<string | null>(null);
 
   const list = useContentTypeList(typeId);
   const create = useCreateDocument(typeId);
@@ -177,9 +178,14 @@ export default function ContentTypePage() {
     mountInfo.auth,
   ]);
 
+  const onRowActionError = (error: Error) => {
+    setRowActionError(error.message || "Action failed.");
+  };
+
   const publishMutation = useMutation({
     mutationFn: (documentId: string) => {
       if (!documentApi) throw new Error("Document API not available.");
+      setRowActionError(null);
       return documentApi.publish({ documentId });
     },
     onSuccess: () => {
@@ -187,11 +193,13 @@ export default function ContentTypePage() {
         queryKey: ["content-list", typeId],
       });
     },
+    onError: onRowActionError,
   });
 
   const unpublishMutation = useMutation({
     mutationFn: (documentId: string) => {
       if (!documentApi) throw new Error("Document API not available.");
+      setRowActionError(null);
       return documentApi.unpublish({ documentId });
     },
     onSuccess: () => {
@@ -199,11 +207,13 @@ export default function ContentTypePage() {
         queryKey: ["content-list", typeId],
       });
     },
+    onError: onRowActionError,
   });
 
   const duplicateMutation = useMutation({
     mutationFn: (documentId: string) => {
       if (!documentApi) throw new Error("Document API not available.");
+      setRowActionError(null);
       return documentApi.duplicate({ documentId });
     },
     onSuccess: (data) => {
@@ -212,11 +222,13 @@ export default function ContentTypePage() {
       });
       router.push(`/admin/content/${typeId}/${data.documentId}`);
     },
+    onError: onRowActionError,
   });
 
   const deleteMutation = useMutation({
     mutationFn: (documentId: string) => {
       if (!documentApi) throw new Error("Document API not available.");
+      setRowActionError(null);
       return documentApi.softDelete({ documentId });
     },
     onSuccess: () => {
@@ -224,6 +236,7 @@ export default function ContentTypePage() {
         queryKey: ["content-list", typeId],
       });
     },
+    onError: onRowActionError,
   });
 
   // Pagination
@@ -363,6 +376,21 @@ export default function ContentTypePage() {
             </SelectContent>
           </Select>
         </div>
+
+        {/* Row action error banner */}
+        {rowActionError && (
+          <div className="flex items-center justify-between rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3">
+            <p className="text-sm text-destructive">{rowActionError}</p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setRowActionError(null)}
+              className="text-destructive hover:text-destructive"
+            >
+              Dismiss
+            </Button>
+          </div>
+        )}
 
         {/* Content area */}
         {list.status === "loading" && (

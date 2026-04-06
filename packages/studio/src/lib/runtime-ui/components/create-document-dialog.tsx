@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -40,9 +40,10 @@ export function CreateDocumentDialog({
   onClose,
   onSubmit,
 }: CreateDocumentDialogProps) {
-  const prefix = typeDirectory.endsWith("/")
-    ? typeDirectory
-    : `${typeDirectory}/`;
+  const prefix = useMemo(
+    () => (typeDirectory.endsWith("/") ? typeDirectory : `${typeDirectory}/`),
+    [typeDirectory],
+  );
   const [path, setPath] = useState(prefix);
   const [locale, setLocale] = useState<string | undefined>(locales?.[0]);
 
@@ -53,10 +54,9 @@ export function CreateDocumentDialog({
     }
   }, [isOpen, prefix, locales]);
 
+  const needsLocale = localized && locales && locales.length > 0;
   const canSubmit =
-    path.trim().length > 0 &&
-    !isSubmitting &&
-    (!localized || (locales && locales.length > 0 && !!locale));
+    path.trim().length > 0 && !isSubmitting && (!needsLocale || !!locale);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

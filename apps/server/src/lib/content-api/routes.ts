@@ -755,9 +755,12 @@ export function mountContentApiRoutes(
         while (attempt < 100) {
           const existing = await options.store.list(scope, {
             path: candidatePath,
-            limit: "1",
+            limit: "100",
           });
-          if (existing.total === 0) {
+          const exactMatch = existing.rows.some(
+            (row) => row.path === candidatePath,
+          );
+          if (!exactMatch) {
             pathAvailable = true;
             break;
           }
