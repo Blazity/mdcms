@@ -714,6 +714,83 @@ export function mountContentApiRoutes(
     },
   );
 
+  contentApp.post?.(
+    "/api/v1/content/:documentId/duplicate",
+    ({ request, params, body }: any) => {
+      return executeWithRuntimeErrorsHandled(request, async () => {
+        const scope = pickScope(request);
+        await options.requireCsrf(request);
+        await options.authorize(request, {
+          requiredScope: "content:write",
+          project: scope.project,
+          environment: scope.environment,
+        });
+
+        const source = await options.store.getById(scope, params.documentId, {
+          draft: true,
+        });
+
+        if (!source || source.isDeleted) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+            details: {
+              documentId: params.documentId,
+            },
+          });
+        }
+
+        await options.authorize(request, {
+          requiredScope: "content:write",
+          project: scope.project,
+          environment: scope.environment,
+          documentPath: source.path,
+        });
+
+        const basePath = source.path.replace(/\/$/, "");
+        let candidatePath = `${basePath}-copy`;
+        let attempt = 1;
+        while (attempt < 100) {
+          const existing = await options.store.list(scope, {
+            path: candidatePath,
+            limit: "1",
+          });
+          if (existing.total === 0) break;
+          attempt++;
+          candidatePath = `${basePath}-copy-${attempt}`;
+        }
+
+        const schemaHash = await (async () => {
+          try {
+            return (
+              await options.getWriteSchemaSyncState(scope)
+            )?.schemaHash;
+          } catch {
+            return undefined;
+          }
+        })();
+
+        const document = await options.store.create(
+          scope,
+          {
+            path: candidatePath,
+            type: source.type,
+            locale: source.locale,
+            format: source.format,
+            frontmatter: source.frontmatter,
+            body: source.body,
+          },
+          schemaHash ? { expectedSchemaHash: schemaHash } : undefined,
+        );
+
+        return {
+          data: toDocumentResponse(document),
+        };
+      });
+    },
+  );
+
   contentApp.delete?.(
     "/api/v1/content/:documentId",
     ({ request, params }: any) => {
