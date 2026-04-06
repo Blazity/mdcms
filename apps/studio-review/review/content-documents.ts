@@ -199,6 +199,19 @@ const legacyContentDocumentRecords = new Map(
   legacyContentDocumentSeeds.map((seed) => [seed.id, createLegacyRecord(seed)]),
 );
 
+export function listReviewContentDocuments(
+  scenarioId: string,
+): ContentDocumentResponse[] {
+  const scenario = getReviewScenario(scenarioId);
+  const docs: ContentDocumentResponse[] = [scenario.document];
+
+  for (const record of legacyContentDocumentRecords.values()) {
+    docs.push(record.document);
+  }
+
+  return docs;
+}
+
 export function getReviewContentDocumentRecord(
   scenarioId: string,
   documentId: string,
