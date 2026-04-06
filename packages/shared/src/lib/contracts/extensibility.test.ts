@@ -375,6 +375,7 @@ test("runtime contract validators cover positive and negative shapes", () => {
       documentRoute: {
         project: "marketing-site",
         environment: "staging",
+        supportedLocales: ["en-US", "fr"],
         write: {
           canWrite: true,
           schemaHash: "schema-hash",

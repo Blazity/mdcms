@@ -49,7 +49,7 @@ const RUNTIME_ROUTES: readonly StudioRuntimeRouteDefinition[] = [
   {
     id: "content.index",
     path: "/content",
-    render: () => <ContentPage />,
+    render: (context) => <ContentPage context={context} />,
   },
   {
     id: "content.type",

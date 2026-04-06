@@ -473,6 +473,32 @@ export function createInMemoryContentStore(
       };
     },
 
+    async getOverviewCounts(scope, input) {
+      const requestedTypes = [
+        ...new Set(input.types.map((type) => type.trim())),
+      ];
+      const scopedDocuments = [...getScopeStore(scope).values()].filter(
+        (document) => !document.isDeleted,
+      );
+
+      return requestedTypes.map((type) => {
+        const matchingDocuments = scopedDocuments.filter(
+          (document) => document.type === type,
+        );
+
+        return {
+          type,
+          total: matchingDocuments.length,
+          published: matchingDocuments.filter(
+            (document) => document.publishedVersion !== null,
+          ).length,
+          drafts: matchingDocuments.filter(
+            (document) => document.publishedVersion === null,
+          ).length,
+        };
+      });
+    },
+
     async getById(scope, documentId, options) {
       const store = getScopeStore(scope);
       const publishedSnapshots = getScopePublishedSnapshots(scope);

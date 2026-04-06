@@ -11,6 +11,7 @@ import postgres from "postgres";
 
 import { createDatabaseConnection } from "./db.js";
 import {
+  documents,
   environments,
   projects,
   schemaRegistryEntries,
@@ -269,6 +270,7 @@ testWithDatabase(
 
       assert.deepEqual(schemaRows.map((row) => row.schemaType).sort(), [
         "author",
+        "campaign",
         "page",
         "post",
       ]);
@@ -296,5 +298,54 @@ testWithDatabase(
       0,
       `demo:seed failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
     );
+
+    const connection = createDatabaseConnection({ env });
+
+    try {
+      const projectRow = await connection.db.query.projects.findFirst({
+        where: eq(projects.slug, project),
+      });
+      assert.ok(projectRow);
+
+      const environmentRow = await connection.db.query.environments.findFirst({
+        where: and(
+          eq(environments.projectId, projectRow.id),
+          eq(environments.name, "staging"),
+        ),
+      });
+      assert.ok(environmentRow);
+
+      const campaignRows = await connection.db
+        .select({
+          documentId: documents.documentId,
+          translationGroupId: documents.translationGroupId,
+          locale: documents.locale,
+          path: documents.path,
+          schemaType: documents.schemaType,
+          publishedVersion: documents.publishedVersion,
+        })
+        .from(documents)
+        .where(
+          and(
+            eq(documents.projectId, projectRow.id),
+            eq(documents.environmentId, environmentRow.id),
+            eq(documents.schemaType, "campaign"),
+            eq(documents.path, "content/campaigns/global-launch"),
+          ),
+        );
+
+      assert.equal(campaignRows.length, 2);
+      assert.deepEqual(campaignRows.map((row) => row.locale).sort(), [
+        "en",
+        "fr",
+      ]);
+      assert.equal(
+        new Set(campaignRows.map((row) => row.translationGroupId)).size,
+        1,
+      );
+      assert.ok(campaignRows.every((row) => row.publishedVersion !== null));
+    } finally {
+      await connection.close();
+    }
   },
 );

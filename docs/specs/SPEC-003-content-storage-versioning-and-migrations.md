@@ -272,6 +272,51 @@ Reference fields persist plain env-local `document_id` UUID strings in
 | `sort`                  | string   | Sort field (e.g., `createdAt`, `updatedAt`, `path`)                                                                                                                                                                                                              |
 | `order`                 | string   | Sort direction (`asc` or `desc`)                                                                                                                                                                                                                                 |
 
+## Content Overview Counts
+
+`GET /api/v1/content/overview` is a metadata-only endpoint for schema-first UI
+surfaces such as Studio's `/admin/content` overview. It exposes truthful
+aggregate counts without granting draft list or draft body access.
+
+Contract:
+
+- Required scope is `content:read`.
+- Explicit target routing for `project` and `environment` is required with the
+  same rules as the rest of `/api/v1/content*`.
+- The request accepts one or more `type` query parameters. Repeating `type`
+  requests counts for multiple schema types in a single round trip.
+- The response is metadata only:
+
+```json
+{
+  "data": [
+    {
+      "type": "BlogPost",
+      "total": 12,
+      "published": 9,
+      "drafts": 3
+    }
+  ]
+}
+```
+
+Count semantics:
+
+- `total`: all non-deleted documents of the type
+- `published`: non-deleted documents with `published_version IS NOT NULL`
+- `drafts`: non-deleted documents with `published_version IS NULL`
+
+Additional rules:
+
+- The endpoint must not return document IDs, paths, locales, frontmatter, body,
+  or any other document-row payload.
+- If a requested type has zero matching documents, the response still includes a
+  row for that type with zero counts.
+- Unknown types return a zero-count row so overview consumers can render
+  deterministic schema cards when the backend has no documents yet.
+- This endpoint does not change the meaning of `GET /api/v1/content?draft=true`;
+  mutable draft list and detail reads still require `content:read:draft`.
+
 ## Version History
 
 ### How It Works
@@ -386,6 +431,7 @@ All `/api/v1/content*` endpoints require explicit target routing for `project` a
 
 | Method | Path                                                    | Auth Mode          | Required Scope                                                                           | Target Routing                  | Request                                                                                                                                                                                               | Success                                                                                   | Deterministic Errors                                                                                                                                                                                                                                                                                                                                                             |
 | ------ | ------------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/v1/content/overview`                              | session_or_api_key | `content:read`                                                                           | required: `project_environment` | Query supports repeated `type` values plus `project`, `environment`                                                                                                                                   | `200` `{ data: { type, total, published, drafts }[] }`                                    | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_QUERY_PARAM` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`)                                                                                                                                                                                                                                  |
 | GET    | `/api/v1/content`                                       | session_or_api_key | `content:read` (published mode), `content:read:draft` when `draft=true`                  | required: `project_environment` | Query supports: `type`, `path`, `locale`, `slug`, `published`, `isDeleted`, `hasUnpublishedChanges`, `draft`, `resolve` (type required), `project`, `environment`, `limit`, `offset`, `sort`, `order` | `200` `{ data: ContentDocument[], pagination: { total, limit, offset, hasMore } }`        | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_QUERY_PARAM` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`)                                                                                                                                                                                                                                  |
 | GET    | `/api/v1/content/:documentId`                           | session_or_api_key | `content:read` (published mode), `content:read:draft` when `draft=true`                  | required: `project_environment` | path `documentId`, optional `draft=true`, optional `resolve`                                                                                                                                          | `200` `{ data: ContentDocument }`                                                         | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_QUERY_PARAM` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                                                                                                                                                                             |
 | GET    | `/api/v1/content/:documentId/versions`                  | session_or_api_key | `content:read`                                                                           | required: `project_environment` | path `documentId`, optional `limit`, optional `offset`                                                                                                                                                | `200` `{ data: DocumentVersionSummary[], pagination: { total, limit, offset, hasMore } }` | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_QUERY_PARAM` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                                                                                                                                                                             |

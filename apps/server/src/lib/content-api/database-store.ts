@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { RuntimeError, type SchemaRegistryTypeSnapshot } from "@mdcms/shared";
-import { and, eq, ne, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
 
 import type { DrizzleDatabase } from "../db.js";
 import {
@@ -840,6 +840,65 @@ export function createDatabaseContentStore(
         limit,
         offset,
       };
+    },
+
+    async getOverviewCounts(scope, input) {
+      const requestedTypes = [
+        ...new Set(input.types.map((type) => type.trim())),
+      ];
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        return requestedTypes.map((type) => ({
+          type,
+          total: 0,
+          published: 0,
+          drafts: 0,
+        }));
+      }
+
+      const rows =
+        requestedTypes.length === 0
+          ? []
+          : await db
+              .select({
+                type: documents.schemaType,
+                total: sql<number>`cast(count(*) as integer)`,
+                published: sql<number>`cast(count(*) filter (where ${documents.publishedVersion} is not null) as integer)`,
+                drafts: sql<number>`cast(count(*) filter (where ${documents.publishedVersion} is null) as integer)`,
+              })
+              .from(documents)
+              .where(
+                and(
+                  eq(documents.projectId, scopeIds.projectId),
+                  eq(documents.environmentId, scopeIds.environmentId),
+                  eq(documents.isDeleted, false),
+                  inArray(documents.schemaType, requestedTypes),
+                ),
+              )
+              .groupBy(documents.schemaType);
+
+      const countsByType = new Map(
+        rows.map((row) => [
+          row.type,
+          {
+            total: row.total,
+            published: row.published,
+            drafts: row.drafts,
+          },
+        ]),
+      );
+
+      return requestedTypes.map((type) => {
+        const counts = countsByType.get(type);
+
+        return {
+          type,
+          total: counts?.total ?? 0,
+          published: counts?.published ?? 0,
+          drafts: counts?.drafts ?? 0,
+        };
+      });
     },
 
     async getById(scope, documentId, options) {

@@ -37,7 +37,7 @@ export type BreadcrumbItem = { label: string; href?: string };
 
 // Page Title Section Components
 interface PageTitleSectionProps extends React.HTMLAttributes<HTMLDivElement> {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   breadcrumbs?: BreadcrumbItem[];
 }
 

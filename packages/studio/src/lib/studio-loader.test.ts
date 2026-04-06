@@ -439,6 +439,85 @@ test("loadStudioRuntime derives a local mdx catalog and editor resolver from con
   });
 });
 
+test("loadStudioRuntime carries supported locales into the document route mount context", async () => {
+  await withTempDir("studio-loader-locales-", async (directory) => {
+    const fixture = await createRuntimeFixture(directory);
+    const contexts: unknown[] = [];
+
+    await loadStudioRuntime({
+      config: {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+        contentDirectories: [],
+        locales: {
+          default: "en-US",
+          supported: ["en-US", "fr", "de", "ja"],
+        },
+        environments: {
+          production: {},
+          staging: {
+            extends: "production",
+          },
+        },
+        types: [],
+      },
+      basePath: "/admin",
+      container: {},
+      hostBridge: validHostBridge,
+      fetcher: async (input) => {
+        const url = String(input);
+
+        if (url === "http://localhost:4000/api/v1/studio/bootstrap") {
+          return new Response(
+            JSON.stringify(
+              createReadyBootstrapPayload({
+                manifest: fixture.manifest,
+              }),
+            ),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        if (url === "http://localhost:4000" + fixture.manifest.entryUrl) {
+          return new Response(new Uint8Array(fixture.runtimeBytes), {
+            status: 200,
+            headers: {
+              "content-type": "text/javascript; charset=utf-8",
+            },
+          });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+      },
+      loadRemoteModule: async () => ({
+        mount: (_target: unknown, context: unknown) => {
+          contexts.push(context);
+          return () => {};
+        },
+      }),
+    });
+
+    const mountedContext = contexts[0] as {
+      documentRoute?: {
+        supportedLocales?: string[];
+      };
+    };
+
+    assert.deepEqual(mountedContext.documentRoute?.supportedLocales, [
+      "en-US",
+      "fr",
+      "de",
+      "ja",
+    ]);
+  });
+});
+
 test("loadStudioRuntime resolves props editors lazily and preserves loader rejections", async () => {
   await withTempDir("studio-loader-mdx-lazy-", async (directory) => {
     const fixture = await createRuntimeFixture(directory);

@@ -116,6 +116,31 @@ test("list passes type and published filters as query params", async () => {
   assert.equal(url.searchParams.get("limit"), "1");
 });
 
+test("list passes draft and hasUnpublishedChanges filters as query params", async () => {
+  const calls: Array<{ input: string | URL | Request }> = [];
+  const api = createApi({
+    fetcher: async (input) => {
+      calls.push({ input });
+      return new Response(JSON.stringify(validPaginatedResponse), {
+        status: 200,
+      });
+    },
+  });
+
+  await api.list({
+    type: "BlogPost",
+    draft: true,
+    hasUnpublishedChanges: true,
+    limit: 1,
+  });
+
+  const url = new URL(String(calls[0]?.input));
+  assert.equal(url.searchParams.get("type"), "BlogPost");
+  assert.equal(url.searchParams.get("draft"), "true");
+  assert.equal(url.searchParams.get("hasUnpublishedChanges"), "true");
+  assert.equal(url.searchParams.get("limit"), "1");
+});
+
 test("list passes sort and order query params", async () => {
   const calls: Array<{ input: string | URL | Request }> = [];
   const api = createApi({

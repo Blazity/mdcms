@@ -120,6 +120,13 @@ export type ContentListResult<Row> = {
   offset: number;
 };
 
+export type ContentOverviewCounts = {
+  type: string;
+  total: number;
+  published: number;
+  drafts: number;
+};
+
 export type ContentStore = {
   getSchema: (
     scope: ContentScope,
@@ -134,6 +141,10 @@ export type ContentStore = {
     scope: ContentScope,
     query: ContentListQuery,
   ) => Promise<ContentListResult<ContentDocument>>;
+  getOverviewCounts: (
+    scope: ContentScope,
+    input: { types: string[] },
+  ) => Promise<ContentOverviewCounts[]>;
   getById: (
     scope: ContentScope,
     documentId: string,

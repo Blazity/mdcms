@@ -74,11 +74,56 @@ function getResolveQueryValue(
   return values.length === 1 ? values[0] : values;
 }
 
+function parseOverviewTypes(request: Request): string[] {
+  const types = new URL(request.url).searchParams.getAll("type");
+
+  if (types.length === 0) {
+    throw new RuntimeError({
+      code: "INVALID_QUERY_PARAM",
+      message: 'Query parameter "type" is required.',
+      statusCode: 400,
+      details: { field: "type" },
+    });
+  }
+
+  return types.map((type) => {
+    const normalized = type.trim();
+
+    if (normalized.length === 0) {
+      throw new RuntimeError({
+        code: "INVALID_QUERY_PARAM",
+        message: 'Query parameter "type" is required.',
+        statusCode: 400,
+        details: { field: "type", value: type },
+      });
+    }
+
+    return normalized;
+  });
+}
+
 export function mountContentApiRoutes(
   app: unknown,
   options: MountContentApiRoutesOptions,
 ): void {
   const contentApp = app as ContentRouteApp;
+
+  contentApp.get?.("/api/v1/content/overview", ({ request }: any) => {
+    return executeWithRuntimeErrorsHandled(request, async () => {
+      const scope = pickScope(request);
+      const types = parseOverviewTypes(request);
+
+      await options.authorize(request, {
+        requiredScope: "content:read",
+        project: scope.project,
+        environment: scope.environment,
+      });
+
+      return {
+        data: await options.store.getOverviewCounts(scope, { types }),
+      };
+    });
+  });
 
   contentApp.get?.("/api/v1/content", ({ request, query }: any) => {
     return executeWithRuntimeErrorsHandled(request, async () => {
