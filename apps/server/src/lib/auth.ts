@@ -240,6 +240,7 @@ export type AuthService = {
   handleSamlAcs: (request: Request) => Promise<Response>;
   handleSamlMetadata: (request: Request) => Promise<Response>;
   handleAuthRequest: (request: Request) => Promise<Response>;
+  listSsoProviders: () => Array<{ id: string; name: string }>;
 };
 
 type BetterAuthLikeSession = {
@@ -1895,6 +1896,16 @@ function createAuthBackoffError(retryAfterSeconds: number): RuntimeError {
       retryAfterSeconds,
     },
   });
+}
+
+function formatSsoProviderName(providerId: string): string {
+  const names: Record<string, string> = {
+    okta: "Okta",
+    "azure-ad": "Azure AD",
+    "google-workspace": "Google Workspace",
+    auth0: "Auth0",
+  };
+  return names[providerId] ?? providerId;
 }
 
 function createAuthBackoffResponse(
@@ -4060,6 +4071,21 @@ export function createAuthService(
     handleAuthRequest(request) {
       return auth.handler(request);
     },
+    listSsoProviders() {
+      const providers: Array<{ id: string; name: string }> = [];
+
+      for (const [id] of oidcProviderConfigById) {
+        providers.push({ id, name: formatSsoProviderName(id) });
+      }
+
+      for (const [id] of samlProviderConfigById) {
+        if (!providers.some((p) => p.id === id)) {
+          providers.push({ id, name: formatSsoProviderName(id) });
+        }
+      }
+
+      return providers;
+    },
   };
 }
 
@@ -4414,6 +4440,12 @@ export function mountAuthRoutes(
     executeWithRuntimeErrorsHandled(request, async () =>
       options.authService.startSsoSignIn(request),
     ),
+  );
+  authApp.get?.("/api/v1/auth/sso/providers", ({ request }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () => {
+      const providers = options.authService.listSsoProviders();
+      return { data: providers };
+    }),
   );
   authApp.get?.("/api/v1/auth/sso/callback/:providerId", ({ request }: any) =>
     executeWithRuntimeErrorsHandled(request, async () =>
