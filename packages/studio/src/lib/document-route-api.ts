@@ -60,6 +60,26 @@ export type StudioDocumentRouteVersionDetailInput =
     resolve?: string | string[];
   };
 
+export type StudioDocumentRouteCreateInput = {
+  type: string;
+  path: string;
+  locale?: string;
+  format?: "md" | "mdx";
+  signal?: AbortSignal;
+};
+
+export type StudioDocumentRouteDuplicateInput = {
+  documentId: string;
+  locale?: string;
+  signal?: AbortSignal;
+};
+
+export type StudioDocumentRouteSoftDeleteInput = {
+  documentId: string;
+  locale?: string;
+  signal?: AbortSignal;
+};
+
 export type StudioDocumentRouteApiOptions = {
   auth?: StudioRuntimeAuth;
   fetcher?: typeof fetch;
@@ -88,6 +108,10 @@ export type StudioDocumentRouteApi = {
   getVersion: (
     input: StudioDocumentRouteVersionDetailInput,
   ) => Promise<ContentVersionDocumentResponse>;
+  create: (input: StudioDocumentRouteCreateInput) => Promise<ContentDocumentResponse>;
+  duplicate: (input: StudioDocumentRouteDuplicateInput) => Promise<ContentDocumentResponse>;
+  unpublish: (input: StudioDocumentRouteMutationInput & { actorId?: string }) => Promise<ContentDocumentResponse>;
+  softDelete: (input: StudioDocumentRouteSoftDeleteInput) => Promise<ContentDocumentResponse>;
 };
 
 type StudioDocumentRoutePayload = {
@@ -598,6 +622,42 @@ async function requestContentMutation(
   return payload;
 }
 
+async function requestContentDeletion(
+  config: StudioDocumentRouteConfig,
+  options: StudioDocumentRouteApiOptions,
+  input: {
+    path: string;
+    locale?: string;
+    signal?: AbortSignal;
+  },
+): Promise<unknown> {
+  const csrfToken = await bootstrapStudioSessionCsrfToken(config, options);
+  const headers: Record<string, string> = {};
+
+  if (csrfToken) {
+    headers["x-mdcms-csrf-token"] = csrfToken;
+  }
+
+  const payload = await requestContentRouteJson(
+    options,
+    buildUrl(config, input.path),
+    {
+      method: "DELETE",
+      signal: input.signal,
+      headers: withContentRouteHeaders(
+        mergeHeaders({
+          ...headers,
+          "x-mdcms-project": config.project,
+          "x-mdcms-environment": config.environment,
+        }),
+        { locale: input.locale },
+      ),
+    },
+  );
+
+  return payload;
+}
+
 /**
  * createStudioDocumentRouteApi centralizes Studio document route requests for
  * draft reads, draft writes, publish actions, and version history reads.
@@ -735,6 +795,69 @@ export function createStudioDocumentRouteApi(
         "GET /api/v1/content/:documentId/versions/:version",
         payload,
         "Failed to load document version.",
+      );
+    },
+    async create(input) {
+      const payload = await requestContentMutation(config, options, {
+        method: "POST",
+        path: "/api/v1/content",
+        locale: input.locale,
+        signal: input.signal,
+        payload: {
+          type: input.type,
+          path: input.path,
+          locale: input.locale,
+          format: input.format ?? "mdx",
+        },
+      });
+
+      return toContentDocumentResponse(
+        "POST /api/v1/content",
+        payload,
+        "Failed to create document.",
+      );
+    },
+    async duplicate(input) {
+      const payload = await requestContentMutation(config, options, {
+        method: "POST",
+        path: `/api/v1/content/${encodeURIComponent(input.documentId)}/duplicate`,
+        locale: input.locale,
+        signal: input.signal,
+        payload: {},
+      });
+
+      return toContentDocumentResponse(
+        "POST /api/v1/content/:documentId/duplicate",
+        payload,
+        "Failed to duplicate document.",
+      );
+    },
+    async unpublish(input) {
+      const payload = await requestContentMutation(config, options, {
+        method: "POST",
+        path: `/api/v1/content/${encodeURIComponent(input.documentId)}/unpublish`,
+        locale: input.locale,
+        signal: input.signal,
+        payload: { actorId: input.actorId },
+      });
+
+      return toContentDocumentResponse(
+        "POST /api/v1/content/:documentId/unpublish",
+        payload,
+        "Failed to unpublish document.",
+      );
+    },
+    async softDelete(input) {
+      const payload = await requestContentDeletion(config, options, {
+        path: `/api/v1/content/${encodeURIComponent(input.documentId)}`,
+        locale: input.locale,
+        signal: input.signal,
+      });
+
+      return toContentDocumentResponse(
+        "DELETE /api/v1/content/:documentId",
+        payload,
+        "Failed to delete document.",
       );
     },
   };

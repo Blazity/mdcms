@@ -448,6 +448,143 @@ test("version summary helper validates required fields and rejects malformed pay
   );
 });
 
+const newMethodsConfig = {
+  project: "marketing-site",
+  environment: "production",
+  serverUrl: "http://localhost:4000",
+};
+
+const validDocumentResponse = {
+  data: {
+    documentId: "doc-1",
+    translationGroupId: "tg-1",
+    project: "marketing-site",
+    environment: "production",
+    path: "blog/hello",
+    type: "BlogPost",
+    locale: "en",
+    format: "md",
+    isDeleted: false,
+    hasUnpublishedChanges: false,
+    version: 1,
+    publishedVersion: 1,
+    draftRevision: 0,
+    frontmatter: { title: "Hello" },
+    body: "# Hello",
+    createdBy: "user-1",
+    createdAt: "2026-03-01T00:00:00.000Z",
+    updatedAt: "2026-03-20T00:00:00.000Z",
+  },
+};
+
+function createNewMethodsApi(options: StudioDocumentRouteApiOptions = {}) {
+  return createStudioDocumentRouteApi(newMethodsConfig, options);
+}
+
+function createMockFetcher(responses: Response[]) {
+  let callIndex = 0;
+  const calls: Array<{ input: string | URL | Request; init?: RequestInit }> = [];
+  const fetcher = async (input: any, init?: any) => {
+    calls.push({ input, init });
+    return responses[callIndex++] ?? new Response(null, { status: 500 });
+  };
+  return { fetcher, calls };
+}
+
+function sessionResponse(csrfToken: string) {
+  return new Response(
+    JSON.stringify({ data: { csrfToken, email: "test@test.com" } }),
+    { status: 200 },
+  );
+}
+
+test("create sends POST /api/v1/content with payload and CSRF token", async () => {
+  const { fetcher, calls } = createMockFetcher([
+    sessionResponse("csrf-abc"),
+    new Response(JSON.stringify(validDocumentResponse), { status: 201 }),
+  ]);
+  const api = createNewMethodsApi({ auth: { mode: "cookie" }, fetcher });
+
+  const result = await api.create({
+    type: "BlogPost",
+    path: "blog/new-post",
+    locale: "en",
+    format: "mdx",
+  });
+
+  assert.equal(result.documentId, "doc-1");
+  assert.equal(calls.length, 2);
+  const createCall = calls[1];
+  assert.ok(String(createCall?.input).endsWith("/api/v1/content"));
+  assert.equal(createCall?.init?.method, "POST");
+  const body = JSON.parse(createCall?.init?.body as string);
+  assert.equal(body.type, "BlogPost");
+  assert.equal(body.path, "blog/new-post");
+});
+
+test("duplicate sends POST /api/v1/content/:documentId/duplicate", async () => {
+  const { fetcher, calls } = createMockFetcher([
+    sessionResponse("csrf-abc"),
+    new Response(JSON.stringify(validDocumentResponse), { status: 201 }),
+  ]);
+  const api = createNewMethodsApi({ auth: { mode: "cookie" }, fetcher });
+
+  const result = await api.duplicate({ documentId: "doc-1" });
+
+  assert.equal(result.documentId, "doc-1");
+  assert.equal(calls.length, 2);
+  const dupCall = calls[1];
+  assert.ok(String(dupCall?.input).includes("/api/v1/content/doc-1/duplicate"));
+  assert.equal(dupCall?.init?.method, "POST");
+});
+
+test("unpublish sends POST /api/v1/content/:documentId/unpublish", async () => {
+  const { fetcher, calls } = createMockFetcher([
+    sessionResponse("csrf-abc"),
+    new Response(JSON.stringify(validDocumentResponse), { status: 200 }),
+  ]);
+  const api = createNewMethodsApi({ auth: { mode: "cookie" }, fetcher });
+
+  const result = await api.unpublish({ documentId: "doc-1" });
+
+  assert.equal(result.documentId, "doc-1");
+  const unpubCall = calls[1];
+  assert.ok(String(unpubCall?.input).includes("/api/v1/content/doc-1/unpublish"));
+  assert.equal(unpubCall?.init?.method, "POST");
+});
+
+test("softDelete sends DELETE /api/v1/content/:documentId", async () => {
+  const { fetcher, calls } = createMockFetcher([
+    sessionResponse("csrf-abc"),
+    new Response(JSON.stringify(validDocumentResponse), { status: 200 }),
+  ]);
+  const api = createNewMethodsApi({ auth: { mode: "cookie" }, fetcher });
+
+  const result = await api.softDelete({ documentId: "doc-1" });
+
+  assert.equal(result.documentId, "doc-1");
+  const deleteCall = calls[1];
+  assert.ok(String(deleteCall?.input).endsWith("/api/v1/content/doc-1"));
+  assert.equal(deleteCall?.init?.method, "DELETE");
+});
+
+test("create throws RuntimeError on 403", async () => {
+  const { fetcher } = createMockFetcher([
+    sessionResponse("csrf-abc"),
+    new Response(
+      JSON.stringify({ code: "FORBIDDEN", message: "Forbidden" }),
+      { status: 403 },
+    ),
+  ]);
+  const api = createNewMethodsApi({ auth: { mode: "cookie" }, fetcher });
+
+  await assert.rejects(
+    () => api.create({ type: "BlogPost", path: "blog/test" }),
+    (error: unknown) =>
+      error instanceof RuntimeError && error.statusCode === 403,
+  );
+});
+
 test("version detail helper validates required fields and rejects malformed payloads", async () => {
   const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
     [];
