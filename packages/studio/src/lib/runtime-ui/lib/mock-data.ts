@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Mock data for MDCMS Studio
 
 export type ContentType = {
@@ -419,6 +418,7 @@ export const mockDeletedDocuments: (Document & {
     path: "blog/old-draft",
     type: "BlogPost",
     locale: "en-US",
+    body: createMockDocumentBody("Old Draft Post"),
     status: "draft",
     updatedAt: new Date(Date.now() - 86400000 * 5),
     createdAt: new Date(Date.now() - 86400000 * 30),
@@ -432,6 +432,7 @@ export const mockDeletedDocuments: (Document & {
     path: "pages/deprecated-guide",
     type: "Page",
     locale: "en-US",
+    body: createMockDocumentBody("Deprecated Guide"),
     status: "published",
     updatedAt: new Date(Date.now() - 86400000 * 15),
     createdAt: new Date(Date.now() - 86400000 * 120),

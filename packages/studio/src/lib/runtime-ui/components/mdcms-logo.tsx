@@ -1,7 +1,6 @@
-// @ts-nocheck
 "use client";
 
-import { cn } from "../lib/utils";
+import { cn } from "../lib/utils.js";
 
 interface MDCMSLogoProps {
   collapsed?: boolean;

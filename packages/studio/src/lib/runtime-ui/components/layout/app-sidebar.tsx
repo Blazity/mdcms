@@ -1,13 +1,12 @@
-// @ts-nocheck
 "use client";
 
-import Link from "../../adapters/next-link";
+import Link from "../../adapters/next-link.js";
 import {
   resolveStudioHref,
   useBasePath,
   usePathname,
-} from "../../adapters/next-navigation";
-import { useCanReadSchema } from "../../app/admin/capabilities-context";
+} from "../../adapters/next-navigation.js";
+import { useCanReadSchema } from "../../app/admin/capabilities-context.js";
 import {
   LayoutDashboard,
   FileText,
@@ -25,21 +24,21 @@ import {
   ChevronsRight,
   ChevronDown,
 } from "lucide-react";
-import { cn } from "../../lib/utils";
-import { Button } from "../ui/button";
-import { Badge } from "../ui/badge";
+import { cn } from "../../lib/utils.js";
+import { Button } from "../ui/button.js";
+import { Badge } from "../ui/badge.js";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "../ui/tooltip";
+} from "../ui/tooltip.js";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "../ui/collapsible";
-import { MDCMSLogo } from "../mdcms-logo";
+} from "../ui/collapsible.js";
+import { MDCMSLogo } from "../mdcms-logo.js";
 import { useState } from "react";
 
 interface AppSidebarProps {
@@ -203,7 +202,7 @@ export function AppSidebar({
               <CollapsibleContent>
                 <ul className="space-y-1 pt-1">
                   {comingSoonItems.map((item) => (
-                    <li key={item.href}>
+                    <li key={item.label}>
                       <Link
                         href="#"
                         className="flex h-10 items-center gap-3 rounded-md px-3 text-sm text-foreground-muted/60 hover:bg-background-subtle hover:text-foreground-muted"

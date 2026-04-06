@@ -1,11 +1,10 @@
-// @ts-nocheck
 "use client";
 
 import { useState, useEffect } from "react";
 import { useRouter, useBasePath } from "../../navigation.js";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { MDCMSLogo } from "../../components/mdcms-logo";
+import { Button } from "../../components/ui/button.js";
+import { Input } from "../../components/ui/input.js";
+import { MDCMSLogo } from "../../components/mdcms-logo.js";
 import { createLoginApi, type SsoProvider } from "../../../login-api.js";
 import { useStudioSession } from "./session-context.js";
 import { useStudioMountInfo } from "./mount-info-context.js";
