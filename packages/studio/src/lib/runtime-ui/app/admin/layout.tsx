@@ -219,12 +219,11 @@ export default function AdminLayout({
   const pathname = usePathname();
   const router = useRouter();
 
-  // Auth gate: redirect unauthenticated users to login
+  // Auth gate: redirect only truly unauthenticated users to login.
+  // Transient errors (e.g. network blip) should not kick an
+  // authenticated user out — show an inline error instead.
   useEffect(() => {
-    if (
-      sessionState.status === "unauthenticated" ||
-      sessionState.status === "error"
-    ) {
+    if (sessionState.status === "unauthenticated") {
       const returnTo = encodeURIComponent(
         pathname.includes("/admin") ? pathname : "/admin",
       );
@@ -232,7 +231,6 @@ export default function AdminLayout({
     }
   }, [sessionState.status, pathname, router]);
 
-  // Show nothing while loading or redirecting (client-side only)
   if (sessionState.status === "loading" && typeof window !== "undefined") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -241,11 +239,23 @@ export default function AdminLayout({
     );
   }
 
-  if (
-    sessionState.status === "unauthenticated" ||
-    sessionState.status === "error"
-  ) {
+  if (sessionState.status === "unauthenticated") {
     return null;
+  }
+
+  if (sessionState.status === "error") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="max-w-md text-center space-y-2">
+          <p className="text-sm font-medium text-foreground">
+            Session could not be verified
+          </p>
+          <p className="text-sm text-foreground-muted">
+            {sessionState.message}
+          </p>
+        </div>
+      </div>
+    );
   }
 
   const handleToggle = () => {

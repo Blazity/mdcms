@@ -19,6 +19,10 @@ function useReturnTo(): string {
   return returnTo.startsWith("/admin") ? returnTo : "/admin";
 }
 
+function stripAdminPrefix(path: string): string {
+  return path.startsWith("/admin") ? path.slice("/admin".length) : path;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const basePath = useBasePath();
@@ -48,12 +52,20 @@ export default function LoginPage() {
     let cancelled = false;
     const api = createLoginApi({ serverUrl: mountInfo.apiBaseUrl });
 
-    void api.getSsoProviders().then((providers) => {
-      if (!cancelled) {
-        setSsoProviders(providers);
-        setSsoLoading(false);
-      }
-    });
+    void api
+      .getSsoProviders()
+      .then((providers) => {
+        if (!cancelled) {
+          setSsoProviders(providers);
+          setSsoLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSsoProviders([]);
+          setSsoLoading(false);
+        }
+      });
 
     return () => {
       cancelled = true;
@@ -73,7 +85,7 @@ export default function LoginPage() {
     switch (result.outcome) {
       case "success":
         window.location.href = basePath
-          ? `${basePath}${returnTo.replace("/admin", "")}`
+          ? `${basePath}${stripAdminPrefix(returnTo)}`
           : returnTo;
         break;
       case "invalid_credentials":
@@ -92,7 +104,7 @@ export default function LoginPage() {
 
   const handleSsoClick = (providerId: string) => {
     const callbackURL = basePath
-      ? `${basePath}${returnTo.replace("/admin", "")}`
+      ? `${basePath}${stripAdminPrefix(returnTo)}`
       : returnTo;
 
     void fetch(`${mountInfo.apiBaseUrl}/api/v1/auth/sign-in/sso`, {
@@ -110,6 +122,8 @@ export default function LoginPage() {
             : null;
         if (redirectUrl) {
           window.location.href = redirectUrl;
+        } else {
+          setError("SSO provider did not return a redirect. Please try again.");
         }
       })
       .catch(() => {

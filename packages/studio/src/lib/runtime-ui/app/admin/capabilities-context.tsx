@@ -41,6 +41,10 @@ export function useCanReadSchema(): boolean {
   return useAdminCapabilities().canReadSchema;
 }
 
+export function useCanCreateContent(): boolean {
+  return useAdminCapabilities().canCreateContent;
+}
+
 export function useCanManageUsers(): boolean {
   return useAdminCapabilities().canManageUsers;
 }
