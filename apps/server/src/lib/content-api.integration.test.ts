@@ -359,7 +359,7 @@ testWithDatabase(
 testWithDatabase(
   "content API overview returns metadata counts without exposing draft rows",
   async () => {
-    const { handler, dbConnection, csrfHeaders } =
+    const { handler, dbConnection, cookie, csrfHeaders } =
       await createDatabaseTestContext("test:content-api-overview-counts");
     const testScopeHeaders = {
       ...scopeHeaders,
@@ -480,7 +480,10 @@ testWithDatabase(
         new Request(
           "http://localhost/api/v1/content/overview?type=BlogPost&type=Page",
           {
-            headers: testScopeHeaders,
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
           },
         ),
       );
