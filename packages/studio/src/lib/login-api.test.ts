@@ -4,19 +4,6 @@ import { test } from "bun:test";
 
 import { createLoginApi, type LoginApiOptions } from "./login-api.js";
 
-function readHeader(
-  init: RequestInit | undefined,
-  name: string,
-): string | null {
-  const headers = init?.headers;
-  if (headers instanceof Headers) return headers.get(name);
-  if (headers && !Array.isArray(headers)) {
-    const value = (headers as Record<string, string>)[name];
-    if (typeof value === "string") return value;
-  }
-  return null;
-}
-
 function createApi(options: LoginApiOptions = {}) {
   return createLoginApi({ serverUrl: "http://localhost:4000" }, options);
 }

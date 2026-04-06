@@ -13,6 +13,7 @@ import {
   type StudioSessionState,
 } from "./session-context.js";
 import { StudioMountInfoProvider } from "./mount-info-context.js";
+import { usePathname, useRouter } from "../../navigation.js";
 import { AppSidebar } from "../../components/layout/app-sidebar";
 import { cn } from "../../lib/utils";
 
@@ -210,6 +211,38 @@ export default function AdminLayout({
     context.documentRoute?.environment,
     context.documentRoute?.project,
   ]);
+
+  const pathname = usePathname();
+  const router = useRouter();
+
+  // Auth gate: redirect unauthenticated users to login
+  useEffect(() => {
+    if (
+      sessionState.status === "unauthenticated" ||
+      sessionState.status === "error"
+    ) {
+      const returnTo = encodeURIComponent(
+        pathname.includes("/admin") ? pathname : "/admin",
+      );
+      router.replace(`/admin/login?returnTo=${returnTo}`);
+    }
+  }, [sessionState.status, pathname, router]);
+
+  // Show nothing while loading or redirecting (client-side only)
+  if (sessionState.status === "loading" && typeof window !== "undefined") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-foreground-muted text-sm">Loading...</div>
+      </div>
+    );
+  }
+
+  if (
+    sessionState.status === "unauthenticated" ||
+    sessionState.status === "error"
+  ) {
+    return null;
+  }
 
   const handleToggle = () => {
     const newState = !sidebarCollapsed;
