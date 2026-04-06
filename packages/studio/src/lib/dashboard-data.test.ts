@@ -226,7 +226,7 @@ test("schema 401 degrades gracefully — content widgets still load", async () =
   assert.equal(result.data.contentTypes.length, 0);
 });
 
-test("returns forbidden when content API returns 403", async () => {
+test("content 403 degrades gracefully — shows empty state", async () => {
   const schemaApi: StudioSchemaRouteApi = {
     list: async () => [],
     sync: async () => ({ schemaHash: "", syncedAt: "", affectedTypes: [] }),
@@ -235,8 +235,8 @@ test("returns forbidden when content API returns 403", async () => {
   const contentApi: StudioContentListApi = {
     list: async () => {
       throw new RuntimeError({
-        code: "FORBIDDEN_ORIGIN",
-        message: "Origin not allowed",
+        code: "FORBIDDEN",
+        message: "No content:read grant",
         statusCode: 403,
       });
     },
@@ -244,10 +244,11 @@ test("returns forbidden when content API returns 403", async () => {
 
   const result = await loadDashboardData(schemaApi, contentApi);
 
-  assert.equal(result.status, "forbidden");
+  // Both schema and content are empty → empty state, NOT forbidden
+  assert.equal(result.status, "empty");
 });
 
-test("returns forbidden when content API returns 401", async () => {
+test("content 401 degrades gracefully — shows empty state", async () => {
   const schemaApi: StudioSchemaRouteApi = {
     list: async () => [],
     sync: async () => ({ schemaHash: "", syncedAt: "", affectedTypes: [] }),
@@ -265,7 +266,33 @@ test("returns forbidden when content API returns 401", async () => {
 
   const result = await loadDashboardData(schemaApi, contentApi);
 
-  assert.equal(result.status, "forbidden");
+  assert.equal(result.status, "empty");
+});
+
+test("content 403 with schema types shows loaded with empty content", async () => {
+  const schemaApi: StudioSchemaRouteApi = {
+    list: async () => [makeSchemaEntry("BlogPost")],
+    sync: async () => ({ schemaHash: "", syncedAt: "", affectedTypes: [] }),
+  };
+
+  const contentApi: StudioContentListApi = {
+    list: async () => {
+      throw new RuntimeError({
+        code: "FORBIDDEN",
+        message: "No content:read grant",
+        statusCode: 403,
+      });
+    },
+  };
+
+  const result = await loadDashboardData(schemaApi, contentApi);
+
+  assert.equal(result.status, "loaded");
+  if (result.status !== "loaded") return;
+  assert.equal(result.data.totalDocuments, 0);
+  assert.equal(result.data.contentTypes.length, 1);
+  assert.equal(result.data.contentTypes[0]?.totalCount, 0);
+  assert.equal(result.data.recentDocuments.length, 0);
 });
 
 test("returns error state when content API returns 500", async () => {

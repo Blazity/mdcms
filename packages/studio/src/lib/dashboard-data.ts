@@ -1,7 +1,33 @@
-import type { SchemaRegistryEntry } from "@mdcms/shared";
+import type {
+  ApiPaginatedEnvelope,
+  ContentDocumentResponse,
+  SchemaRegistryEntry,
+} from "@mdcms/shared";
 
 import type { StudioSchemaRouteApi } from "./schema-route-api.js";
 import type { StudioContentListApi } from "./content-list-api.js";
+
+const EMPTY_PAGINATED: ApiPaginatedEnvelope<ContentDocumentResponse> = {
+  data: [],
+  pagination: { total: 0, limit: 1, offset: 0, hasMore: false },
+};
+
+function isPermissionError(err: unknown): boolean {
+  if (!err || typeof err !== "object" || !("statusCode" in err)) return false;
+  const code = (err as { statusCode: number }).statusCode;
+  return code === 401 || code === 403;
+}
+
+function catchPermission(
+  promise: Promise<ApiPaginatedEnvelope<ContentDocumentResponse>>,
+): Promise<ApiPaginatedEnvelope<ContentDocumentResponse>> {
+  return promise.catch(
+    (err: unknown): ApiPaginatedEnvelope<ContentDocumentResponse> => {
+      if (isPermissionError(err)) return EMPTY_PAGINATED;
+      throw err;
+    },
+  );
+}
 
 export type ContentTypeStat = {
   type: string;
@@ -38,23 +64,20 @@ export async function loadDashboardData(
   contentApi: StudioContentListApi,
 ): Promise<DashboardLoadResult> {
   try {
-    // Fetch schema and content in parallel, but isolate schema failures so
-    // a 403 from the schema API does not block content-backed widgets.
+    // Fetch schema and content in parallel. Permission errors (401/403)
+    // on individual APIs degrade to empty results so the dashboard still
+    // renders whatever data the caller is allowed to see.
     const [schemaTypes, totalResult, publishedResult, recentResult] =
       await Promise.all([
         schemaApi.list().catch((err: unknown): SchemaRegistryEntry[] => {
-          const code =
-            err && typeof err === "object" && "statusCode" in err
-              ? (err as { statusCode: number }).statusCode
-              : undefined;
-          if (code === 401 || code === 403) {
-            return [];
-          }
+          if (isPermissionError(err)) return [];
           throw err;
         }),
-        contentApi.list({ limit: 1 }),
-        contentApi.list({ published: true, limit: 1 }),
-        contentApi.list({ sort: "updatedAt", order: "desc", limit: 5 }),
+        catchPermission(contentApi.list({ limit: 1 })),
+        catchPermission(contentApi.list({ published: true, limit: 1 })),
+        catchPermission(
+          contentApi.list({ sort: "updatedAt", order: "desc", limit: 5 }),
+        ),
       ]);
 
     const totalDocuments = totalResult.pagination.total;
@@ -72,8 +95,10 @@ export async function loadDashboardData(
     const typeStats = await Promise.all(
       typesToShow.map(async (entry: SchemaRegistryEntry) => {
         const [typeTotal, typePublished] = await Promise.all([
-          contentApi.list({ type: entry.type, limit: 1 }),
-          contentApi.list({ type: entry.type, published: true, limit: 1 }),
+          catchPermission(contentApi.list({ type: entry.type, limit: 1 })),
+          catchPermission(
+            contentApi.list({ type: entry.type, published: true, limit: 1 }),
+          ),
         ]);
 
         const totalCount = typeTotal.pagination.total;
@@ -120,7 +145,7 @@ export async function loadDashboardData(
         ? (error as { statusCode: number }).statusCode
         : undefined;
 
-    if (statusCode === 401 || statusCode === 403) {
+    if (statusCode === 401) {
       return { status: "forbidden" };
     }
 
