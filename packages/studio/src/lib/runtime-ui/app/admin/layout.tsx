@@ -72,6 +72,9 @@ export default function AdminLayout({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [canReadSchema, setCanReadSchema] = useState(false);
   const [canCreateContent, setCanCreateContent] = useState(false);
+  const [canPublishContent, setCanPublishContent] = useState(false);
+  const [canUnpublishContent, setCanUnpublishContent] = useState(false);
+  const [canDeleteContent, setCanDeleteContent] = useState(false);
   const [canManageUsers, setCanManageUsers] = useState(false);
   const [canManageSettings, setCanManageSettings] = useState(false);
   const [sessionState, setSessionState] = useState<StudioSessionState>({
@@ -94,6 +97,9 @@ export default function AdminLayout({
     if (!loadInput) {
       setCanReadSchema(false);
       setCanCreateContent(false);
+      setCanPublishContent(false);
+      setCanUnpublishContent(false);
+      setCanDeleteContent(false);
       setCanManageUsers(false);
       setCanManageSettings(false);
       return;
@@ -111,6 +117,9 @@ export default function AdminLayout({
         if (!cancelled) {
           setCanReadSchema(response.capabilities.schema.read);
           setCanCreateContent(response.capabilities.content.write);
+          setCanPublishContent(response.capabilities.content.publish);
+          setCanUnpublishContent(response.capabilities.content.unpublish);
+          setCanDeleteContent(response.capabilities.content.delete);
           setCanManageUsers(response.capabilities.users.manage);
           setCanManageSettings(response.capabilities.settings.manage);
         }
@@ -119,6 +128,9 @@ export default function AdminLayout({
         if (!cancelled) {
           setCanReadSchema(false);
           setCanCreateContent(false);
+          setCanPublishContent(false);
+          setCanUnpublishContent(false);
+          setCanDeleteContent(false);
           setCanManageUsers(false);
           setCanManageSettings(false);
         }
@@ -283,6 +295,9 @@ export default function AdminLayout({
           value={{
             canReadSchema,
             canCreateContent,
+            canPublishContent,
+            canUnpublishContent,
+            canDeleteContent,
             canManageUsers,
             canManageSettings,
           }}

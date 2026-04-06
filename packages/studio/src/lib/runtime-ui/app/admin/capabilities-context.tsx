@@ -5,6 +5,9 @@ import { createContext, useContext, type PropsWithChildren } from "react";
 export type AdminCapabilitiesValue = {
   canReadSchema: boolean;
   canCreateContent: boolean;
+  canPublishContent: boolean;
+  canUnpublishContent: boolean;
+  canDeleteContent: boolean;
   canManageUsers: boolean;
   canManageSettings: boolean;
 };
@@ -12,6 +15,9 @@ export type AdminCapabilitiesValue = {
 const DEFAULT_ADMIN_CAPABILITIES: AdminCapabilitiesValue = {
   canReadSchema: false,
   canCreateContent: false,
+  canPublishContent: false,
+  canUnpublishContent: false,
+  canDeleteContent: false,
   canManageUsers: false,
   canManageSettings: false,
 };
@@ -51,4 +57,16 @@ export function useCanManageUsers(): boolean {
 
 export function useCanManageSettings(): boolean {
   return useAdminCapabilities().canManageSettings;
+}
+
+export function useCanPublishContent(): boolean {
+  return useAdminCapabilities().canPublishContent;
+}
+
+export function useCanUnpublishContent(): boolean {
+  return useAdminCapabilities().canUnpublishContent;
+}
+
+export function useCanDeleteContent(): boolean {
+  return useAdminCapabilities().canDeleteContent;
 }
