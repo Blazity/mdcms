@@ -751,14 +751,30 @@ export function mountContentApiRoutes(
         const basePath = source.path.replace(/\/$/, "");
         let candidatePath = `${basePath}-copy`;
         let attempt = 1;
+        let pathAvailable = false;
         while (attempt < 100) {
           const existing = await options.store.list(scope, {
             path: candidatePath,
             limit: "1",
           });
-          if (existing.total === 0) break;
+          if (existing.total === 0) {
+            pathAvailable = true;
+            break;
+          }
           attempt++;
           candidatePath = `${basePath}-copy-${attempt}`;
+        }
+
+        if (!pathAvailable) {
+          throw new RuntimeError({
+            code: "DUPLICATE_PATH_EXHAUSTED",
+            message: "Unable to generate a unique copy path after 99 attempts.",
+            statusCode: 409,
+            details: {
+              documentId: params.documentId,
+              basePath,
+            },
+          });
         }
 
         const schemaHash = await (async () => {

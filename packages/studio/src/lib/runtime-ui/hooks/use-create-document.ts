@@ -59,11 +59,12 @@ export function useCreateDocument(typeId: string) {
     },
   });
 
+  const { reset } = mutation;
   const open = useCallback(() => setIsOpen(true), []);
   const close = useCallback(() => {
     setIsOpen(false);
-    mutation.reset();
-  }, [mutation]);
+    reset();
+  }, [reset]);
 
   return {
     isOpen,

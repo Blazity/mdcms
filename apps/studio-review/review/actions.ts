@@ -56,7 +56,7 @@ const REVIEW_ACTIONS: readonly ActionCatalogItem[] = [
     kind: "command",
     method: "POST",
     path: "/api/v1/content/:id/unpublish",
-    permissions: ["content:unpublish"],
+    permissions: ["content:publish"],
     studio: {
       visible: true,
       surface: "content.document",
@@ -125,8 +125,6 @@ function hasScenarioPermission(
       return scenario.capabilities.content.write;
     case "content:publish":
       return scenario.capabilities.content.publish;
-    case "content:unpublish":
-      return scenario.capabilities.content.unpublish;
     case "content:delete":
       return scenario.capabilities.content.delete;
     case "schema:read":

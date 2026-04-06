@@ -59,6 +59,7 @@ import {
   useContentTypeList,
   PAGE_SIZE,
   type MappedContentDocument,
+  type ContentTypeListFilters,
 } from "../../../../hooks/use-content-type-list.js";
 import { useCreateDocument } from "../../../../hooks/use-create-document.js";
 import { CreateDocumentDialog } from "../../../../components/create-document-dialog.js";
@@ -121,7 +122,7 @@ export default function ContentTypePage() {
       list.setFilters({ q: searchInput || undefined });
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchInput]);
+  }, [searchInput, list.setFilters]);
 
   // Schema query for type metadata (localized, locales, directory)
   const schemaApi = useMemo(() => {
@@ -177,7 +178,10 @@ export default function ContentTypePage() {
   ]);
 
   const publishMutation = useMutation({
-    mutationFn: (documentId: string) => documentApi!.publish({ documentId }),
+    mutationFn: (documentId: string) => {
+      if (!documentApi) throw new Error("Document API not available.");
+      return documentApi.publish({ documentId });
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: ["content-list", typeId],
@@ -186,7 +190,10 @@ export default function ContentTypePage() {
   });
 
   const unpublishMutation = useMutation({
-    mutationFn: (documentId: string) => documentApi!.unpublish({ documentId }),
+    mutationFn: (documentId: string) => {
+      if (!documentApi) throw new Error("Document API not available.");
+      return documentApi.unpublish({ documentId });
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: ["content-list", typeId],
@@ -195,7 +202,10 @@ export default function ContentTypePage() {
   });
 
   const duplicateMutation = useMutation({
-    mutationFn: (documentId: string) => documentApi!.duplicate({ documentId }),
+    mutationFn: (documentId: string) => {
+      if (!documentApi) throw new Error("Document API not available.");
+      return documentApi.duplicate({ documentId });
+    },
     onSuccess: (data) => {
       void queryClient.invalidateQueries({
         queryKey: ["content-list", typeId],
@@ -205,7 +215,10 @@ export default function ContentTypePage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (documentId: string) => documentApi!.softDelete({ documentId }),
+    mutationFn: (documentId: string) => {
+      if (!documentApi) throw new Error("Document API not available.");
+      return documentApi.softDelete({ documentId });
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: ["content-list", typeId],
@@ -319,7 +332,9 @@ export default function ContentTypePage() {
             <Select
               value={list.filters.status ?? "all"}
               onValueChange={(value) =>
-                list.setFilters({ status: value as any })
+                list.setFilters({
+                  status: value as ContentTypeListFilters["status"],
+                })
               }
             >
               <SelectTrigger className="w-36">

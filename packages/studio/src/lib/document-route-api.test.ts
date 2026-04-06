@@ -569,10 +569,7 @@ test("softDelete sends DELETE /api/v1/content/:documentId", async () => {
   const deleteCall = calls[1];
   assert.ok(String(deleteCall?.input).endsWith("/api/v1/content/doc-1"));
   assert.equal(deleteCall?.init?.method, "DELETE");
-  assert.equal(
-    readHeader(deleteCall?.init, "x-mdcms-csrf-token"),
-    "csrf-abc",
-  );
+  assert.equal(readHeader(deleteCall?.init, "x-mdcms-csrf-token"), "csrf-abc");
 });
 
 test("create throws RuntimeError on 403", async () => {

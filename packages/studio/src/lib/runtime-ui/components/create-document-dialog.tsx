@@ -53,7 +53,10 @@ export function CreateDocumentDialog({
     }
   }, [isOpen, prefix, locales]);
 
-  const canSubmit = path.trim().length > 0 && !isSubmitting;
+  const canSubmit =
+    path.trim().length > 0 &&
+    !isSubmitting &&
+    (!localized || (locales && locales.length > 0 && !!locale));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

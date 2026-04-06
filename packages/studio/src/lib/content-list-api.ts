@@ -71,7 +71,8 @@ export function createStudioContentListApi(
       const url = resolveStudioRelativeUrl("/api/v1/content", config.serverUrl);
 
       if (query.type) url.searchParams.set("type", query.type);
-      if (query.q) url.searchParams.set("q", query.q);
+      const trimmedQ = query.q?.trim();
+      if (trimmedQ) url.searchParams.set("q", trimmedQ);
       if (query.draft !== undefined)
         url.searchParams.set("draft", String(query.draft));
       if (query.published !== undefined)

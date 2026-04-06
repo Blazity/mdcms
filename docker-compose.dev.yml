@@ -63,7 +63,6 @@ services:
       MDCMS_DEMO_SEED_USER_EMAIL: ${MDCMS_DEMO_SEED_USER_EMAIL:-demo@mdcms.local}
       MDCMS_DEMO_SEED_USER_NAME: ${MDCMS_DEMO_SEED_USER_NAME:-Demo User}
       MDCMS_DEMO_SEED_USER_PASSWORD: ${MDCMS_DEMO_SEED_USER_PASSWORD:-Demo12345!}
-      MDCMS_AUTH_INSECURE_COOKIES: ${MDCMS_AUTH_INSECURE_COOKIES:-true}
     volumes:
       - .:/workspace
       - workspace_node_modules:/workspace/node_modules

@@ -8,7 +8,10 @@ import type {
 } from "@mdcms/shared";
 import { RuntimeError } from "@mdcms/shared";
 
-import { createStudioContentListApi } from "../../content-list-api.js";
+import {
+  createStudioContentListApi,
+  type StudioContentListQuery,
+} from "../../content-list-api.js";
 import { useStudioMountInfo } from "../app/admin/mount-info-context.js";
 
 export type DocumentStatus = "published" | "draft" | "changed";
@@ -77,10 +80,15 @@ export function mapContentDocument(
   };
 }
 
+type ContentListFilterQuery = Omit<
+  StudioContentListQuery,
+  "type" | "limit" | "offset" | "isDeleted" | "draft"
+>;
+
 export function mapFiltersToQuery(
   filters: ContentTypeListFilters,
-): Record<string, unknown> {
-  const query: Record<string, unknown> = {};
+): ContentListFilterQuery {
+  const query: ContentListFilterQuery = {};
 
   if (filters.q) {
     query.q = filters.q;
@@ -160,7 +168,7 @@ export function useContentTypeList(typeId: string) {
         ...queryParams,
         limit: PAGE_SIZE,
         offset,
-      } as any);
+      });
       return result;
     },
     enabled: api !== null,

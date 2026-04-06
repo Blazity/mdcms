@@ -12,6 +12,7 @@ test("listReviewActions filters the review catalog by scenario capabilities", ()
       "content.publish",
       "content.create",
       "content.duplicate",
+      "content.unpublish",
       "schema.list",
     ],
   );
