@@ -13,6 +13,7 @@ import {
 } from "../../content-overview-state.js";
 import Link from "../adapters/next-link.js";
 import { ChevronRight, FileText, Globe, GlobeOff } from "lucide-react";
+import { resolveStudioHref, useBasePath } from "../navigation.js";
 import {
   PageHeader,
   PageHeaderDescription,
@@ -30,7 +31,10 @@ function findMetricValue(
   return entry.metrics.find((metric) => metric.id === metricId)?.value;
 }
 
-function renderCard(entry: StudioContentOverviewEntry): ReactNode {
+function renderCard(
+  entry: StudioContentOverviewEntry,
+  basePath: string,
+): ReactNode {
   const totalCount = findMetricValue(entry, "documents");
   const publishedCount = findMetricValue(entry, "published");
   const draftCount = findMetricValue(entry, "withDrafts");
@@ -127,16 +131,22 @@ function renderCard(entry: StudioContentOverviewEntry): ReactNode {
   }
 
   return (
-    <Link key={entry.type} href={`/admin/content/${entry.type}`}>
+    <Link
+      key={entry.type}
+      href={resolveStudioHref(basePath, `/content/${entry.type}`)}
+    >
       {card}
     </Link>
   );
 }
 
-function renderCardGrid(entries: StudioContentOverviewEntry[]) {
+function renderCardGrid(
+  entries: StudioContentOverviewEntry[],
+  basePath: string,
+) {
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {entries.map((entry) => renderCard(entry))}
+      {entries.map((entry) => renderCard(entry, basePath))}
     </div>
   );
 }
@@ -175,6 +185,8 @@ export function ContentPageView({
 }: {
   state: StudioContentOverviewState;
 }) {
+  const basePath = useBasePath();
+
   return (
     <div className="min-h-screen">
       <PageHeader breadcrumbs={[{ label: "Content" }]} />
@@ -238,11 +250,11 @@ export function ContentPageView({
               <Badge variant="outline">Limited access</Badge>
               <p className="text-sm text-muted-foreground">{state.message}</p>
             </section>
-            {renderCardGrid(state.entries)}
+            {renderCardGrid(state.entries, basePath)}
           </div>
         ) : (
           <div data-mdcms-content-page-state="ready" className="space-y-4">
-            {renderCardGrid(state.entries)}
+            {renderCardGrid(state.entries, basePath)}
           </div>
         )}
       </div>

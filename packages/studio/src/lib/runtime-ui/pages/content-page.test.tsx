@@ -39,7 +39,10 @@ function createReadyState(
   };
 }
 
-function renderMarkup(state: StudioContentOverviewState): string {
+function renderMarkup(
+  state: StudioContentOverviewState,
+  options?: { basePath?: string },
+): string {
   return renderToStaticMarkup(
     createElement(
       ThemeProvider,
@@ -67,7 +70,7 @@ function renderMarkup(state: StudioContentOverviewState): string {
               value: {
                 pathname: "/content",
                 params: {},
-                basePath: "/admin",
+                basePath: options?.basePath ?? "/admin",
                 push: () => {},
                 replace: () => {},
                 back: () => {},
@@ -137,6 +140,14 @@ test("ContentPageView renders populated live overview cards with subtitle, compa
   assert.match(markup, /5.*published/);
   assert.match(markup, /2.*drafts/);
   assert.match(markup, /href="\/admin\/content\/BlogPost"/);
+});
+
+test("ContentPageView uses the configured Studio base path for card navigation", () => {
+  const markup = renderMarkup(createReadyState(), {
+    basePath: "/review/editor/admin",
+  });
+
+  assert.match(markup, /href="\/review\/editor\/admin\/content\/BlogPost"/);
 });
 
 test("ContentPageView renders permission-constrained cards with disabled navigation", () => {
