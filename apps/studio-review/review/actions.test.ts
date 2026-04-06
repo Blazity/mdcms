@@ -7,7 +7,13 @@ import { getReviewAction, listReviewActions } from "./actions";
 test("listReviewActions filters the review catalog by scenario capabilities", () => {
   assert.deepEqual(
     listReviewActions("editor").map((action) => action.id),
-    ["content.list", "content.publish", "schema.list"],
+    [
+      "content.list",
+      "content.publish",
+      "content.create",
+      "content.duplicate",
+      "schema.list",
+    ],
   );
   assert.deepEqual(
     listReviewActions("viewer").map((action) => action.id),
@@ -18,6 +24,10 @@ test("listReviewActions filters the review catalog by scenario capabilities", ()
     [
       "content.list",
       "content.publish",
+      "content.create",
+      "content.duplicate",
+      "content.unpublish",
+      "content.delete",
       "schema.list",
       "users.list",
       "settings.read",

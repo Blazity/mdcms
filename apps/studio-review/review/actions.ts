@@ -28,6 +28,56 @@ const REVIEW_ACTIONS: readonly ActionCatalogItem[] = [
     },
   },
   {
+    id: "content.create",
+    kind: "command",
+    method: "POST",
+    path: "/api/v1/content",
+    permissions: ["content:write"],
+    studio: {
+      visible: true,
+      surface: "content.list",
+      label: "Create document",
+    },
+  },
+  {
+    id: "content.duplicate",
+    kind: "command",
+    method: "POST",
+    path: "/api/v1/content/:id/duplicate",
+    permissions: ["content:write"],
+    studio: {
+      visible: true,
+      surface: "content.list",
+      label: "Duplicate document",
+    },
+  },
+  {
+    id: "content.unpublish",
+    kind: "command",
+    method: "POST",
+    path: "/api/v1/content/:id/unpublish",
+    permissions: ["content:unpublish"],
+    studio: {
+      visible: true,
+      surface: "content.document",
+      label: "Unpublish entry",
+      confirm: "Revert this document to draft?",
+    },
+  },
+  {
+    id: "content.delete",
+    kind: "command",
+    method: "DELETE",
+    path: "/api/v1/content/:id",
+    permissions: ["content:delete"],
+    studio: {
+      visible: true,
+      surface: "content.document",
+      label: "Delete entry",
+      confirm: "Delete this document? It can be restored from trash.",
+    },
+  },
+  {
     id: "schema.list",
     kind: "query",
     method: "GET",
@@ -71,8 +121,14 @@ function hasScenarioPermission(
   switch (permission) {
     case "content:read":
       return scenario.capabilities.content.read;
+    case "content:write":
+      return scenario.capabilities.content.write;
     case "content:publish":
       return scenario.capabilities.content.publish;
+    case "content:unpublish":
+      return scenario.capabilities.content.unpublish;
+    case "content:delete":
+      return scenario.capabilities.content.delete;
     case "schema:read":
       return scenario.capabilities.schema.read;
     case "users:manage":
