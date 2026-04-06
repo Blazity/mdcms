@@ -108,10 +108,18 @@ export type StudioDocumentRouteApi = {
   getVersion: (
     input: StudioDocumentRouteVersionDetailInput,
   ) => Promise<ContentVersionDocumentResponse>;
-  create: (input: StudioDocumentRouteCreateInput) => Promise<ContentDocumentResponse>;
-  duplicate: (input: StudioDocumentRouteDuplicateInput) => Promise<ContentDocumentResponse>;
-  unpublish: (input: StudioDocumentRouteMutationInput & { actorId?: string }) => Promise<ContentDocumentResponse>;
-  softDelete: (input: StudioDocumentRouteSoftDeleteInput) => Promise<ContentDocumentResponse>;
+  create: (
+    input: StudioDocumentRouteCreateInput,
+  ) => Promise<ContentDocumentResponse>;
+  duplicate: (
+    input: StudioDocumentRouteDuplicateInput,
+  ) => Promise<ContentDocumentResponse>;
+  unpublish: (
+    input: StudioDocumentRouteMutationInput & { actorId?: string },
+  ) => Promise<ContentDocumentResponse>;
+  softDelete: (
+    input: StudioDocumentRouteSoftDeleteInput,
+  ) => Promise<ContentDocumentResponse>;
 };
 
 type StudioDocumentRoutePayload = {

@@ -36,15 +36,29 @@ const baseDocument: ContentDocument = {
 function createRouteCapture() {
   const routes: Record<string, RouteHandler> = {};
   const app: ContentRouteApp = {
-    get: (path, handler) => { routes[`GET ${path}`] = handler; return app; },
-    post: (path, handler) => { routes[`POST ${path}`] = handler; return app; },
-    put: (path, handler) => { routes[`PUT ${path}`] = handler; return app; },
-    delete: (path, handler) => { routes[`DELETE ${path}`] = handler; return app; },
+    get: (path, handler) => {
+      routes[`GET ${path}`] = handler;
+      return app;
+    },
+    post: (path, handler) => {
+      routes[`POST ${path}`] = handler;
+      return app;
+    },
+    put: (path, handler) => {
+      routes[`PUT ${path}`] = handler;
+      return app;
+    },
+    delete: (path, handler) => {
+      routes[`DELETE ${path}`] = handler;
+      return app;
+    },
   };
   return { app, routes };
 }
 
-function createRequest(overrides?: Partial<{ headers: Record<string, string> }>) {
+function createRequest(
+  overrides?: Partial<{ headers: Record<string, string> }>,
+) {
   const headers: Record<string, string> = {
     "x-mdcms-project": "test-project",
     "x-mdcms-environment": "staging",

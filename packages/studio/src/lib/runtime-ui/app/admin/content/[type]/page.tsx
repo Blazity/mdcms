@@ -135,7 +135,12 @@ export default function ContentTypePage() {
       },
       { auth: mountInfo.auth },
     );
-  }, [mountInfo.project, mountInfo.environment, mountInfo.apiBaseUrl, mountInfo.auth]);
+  }, [
+    mountInfo.project,
+    mountInfo.environment,
+    mountInfo.apiBaseUrl,
+    mountInfo.auth,
+  ]);
 
   const schemaQuery = useQuery({
     queryKey: ["schema-list"],
@@ -164,38 +169,47 @@ export default function ContentTypePage() {
       },
       { auth: mountInfo.auth },
     );
-  }, [mountInfo.project, mountInfo.environment, mountInfo.apiBaseUrl, mountInfo.auth]);
+  }, [
+    mountInfo.project,
+    mountInfo.environment,
+    mountInfo.apiBaseUrl,
+    mountInfo.auth,
+  ]);
 
   const publishMutation = useMutation({
-    mutationFn: (documentId: string) =>
-      documentApi!.publish({ documentId }),
+    mutationFn: (documentId: string) => documentApi!.publish({ documentId }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["content-list", typeId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["content-list", typeId],
+      });
     },
   });
 
   const unpublishMutation = useMutation({
-    mutationFn: (documentId: string) =>
-      documentApi!.unpublish({ documentId }),
+    mutationFn: (documentId: string) => documentApi!.unpublish({ documentId }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["content-list", typeId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["content-list", typeId],
+      });
     },
   });
 
   const duplicateMutation = useMutation({
-    mutationFn: (documentId: string) =>
-      documentApi!.duplicate({ documentId }),
+    mutationFn: (documentId: string) => documentApi!.duplicate({ documentId }),
     onSuccess: (data) => {
-      void queryClient.invalidateQueries({ queryKey: ["content-list", typeId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["content-list", typeId],
+      });
       router.push(`/admin/content/${typeId}/${data.documentId}`);
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (documentId: string) =>
-      documentApi!.softDelete({ documentId }),
+    mutationFn: (documentId: string) => documentApi!.softDelete({ documentId }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["content-list", typeId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["content-list", typeId],
+      });
     },
   });
 
@@ -304,7 +318,9 @@ export default function ContentTypePage() {
             </div>
             <Select
               value={list.filters.status ?? "all"}
-              onValueChange={(value) => list.setFilters({ status: value as any })}
+              onValueChange={(value) =>
+                list.setFilters({ status: value as any })
+              }
             >
               <SelectTrigger className="w-36">
                 <SelectValue placeholder="All statuses" />

@@ -483,7 +483,8 @@ function createNewMethodsApi(options: StudioDocumentRouteApiOptions = {}) {
 
 function createMockFetcher(responses: Response[]) {
   let callIndex = 0;
-  const calls: Array<{ input: string | URL | Request; init?: RequestInit }> = [];
+  const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
+    [];
   const fetcher = async (input: any, init?: any) => {
     calls.push({ input, init });
     return responses[callIndex++] ?? new Response(null, { status: 500 });
@@ -549,7 +550,9 @@ test("unpublish sends POST /api/v1/content/:documentId/unpublish", async () => {
 
   assert.equal(result.documentId, "doc-1");
   const unpubCall = calls[1];
-  assert.ok(String(unpubCall?.input).includes("/api/v1/content/doc-1/unpublish"));
+  assert.ok(
+    String(unpubCall?.input).includes("/api/v1/content/doc-1/unpublish"),
+  );
   assert.equal(unpubCall?.init?.method, "POST");
 });
 
@@ -571,10 +574,9 @@ test("softDelete sends DELETE /api/v1/content/:documentId", async () => {
 test("create throws RuntimeError on 403", async () => {
   const { fetcher } = createMockFetcher([
     sessionResponse("csrf-abc"),
-    new Response(
-      JSON.stringify({ code: "FORBIDDEN", message: "Forbidden" }),
-      { status: 403 },
-    ),
+    new Response(JSON.stringify({ code: "FORBIDDEN", message: "Forbidden" }), {
+      status: 403,
+    }),
   ]);
   const api = createNewMethodsApi({ auth: { mode: "cookie" }, fetcher });
 

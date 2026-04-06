@@ -171,8 +171,7 @@ export function useContentTypeList(typeId: string) {
     [query.data?.data],
   );
 
-  const pagination: PaginationMetadata | null =
-    query.data?.pagination ?? null;
+  const pagination: PaginationMetadata | null = query.data?.pagination ?? null;
 
   const status: ContentTypeListStatus = useMemo(() => {
     if (query.isLoading) return "loading";
@@ -196,13 +195,10 @@ export function useContentTypeList(typeId: string) {
       : "Failed to load content list.";
   }, [query.error]);
 
-  const setFilters = useCallback(
-    (next: Partial<ContentTypeListFilters>) => {
-      setFiltersState((prev) => ({ ...prev, ...next }));
-      setOffset(0);
-    },
-    [],
-  );
+  const setFilters = useCallback((next: Partial<ContentTypeListFilters>) => {
+    setFiltersState((prev) => ({ ...prev, ...next }));
+    setOffset(0);
+  }, []);
 
   const setPage = useCallback((nextOffset: number) => {
     setOffset(nextOffset);

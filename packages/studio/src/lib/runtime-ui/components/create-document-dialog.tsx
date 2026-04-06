@@ -44,9 +44,7 @@ export function CreateDocumentDialog({
     ? typeDirectory
     : `${typeDirectory}/`;
   const [path, setPath] = useState(prefix);
-  const [locale, setLocale] = useState<string | undefined>(
-    locales?.[0],
-  );
+  const [locale, setLocale] = useState<string | undefined>(locales?.[0]);
 
   useEffect(() => {
     if (isOpen) {
@@ -105,9 +103,7 @@ export function CreateDocumentDialog({
                 </Select>
               </div>
             )}
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
-            )}
+            {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
           <DialogFooter>
             <Button

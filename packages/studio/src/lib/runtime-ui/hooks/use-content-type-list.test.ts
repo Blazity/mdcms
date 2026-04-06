@@ -46,12 +46,18 @@ test("deriveDocumentStatus returns changed when published with unpublished chang
 });
 
 test("extractDocumentTitle returns frontmatter title when present", () => {
-  assert.equal(extractDocumentTitle({ title: "My Post" }, "blog/post"), "My Post");
+  assert.equal(
+    extractDocumentTitle({ title: "My Post" }, "blog/post"),
+    "My Post",
+  );
 });
 
 test("extractDocumentTitle falls back to last path segment", () => {
   assert.equal(extractDocumentTitle({}, "blog/my-post"), "my-post");
-  assert.equal(extractDocumentTitle({ title: "" }, "blog/fallback"), "fallback");
+  assert.equal(
+    extractDocumentTitle({ title: "" }, "blog/fallback"),
+    "fallback",
+  );
   assert.equal(extractDocumentTitle({ title: 42 }, "a/b/c"), "c");
 });
 

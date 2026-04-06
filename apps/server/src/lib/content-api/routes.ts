@@ -763,9 +763,7 @@ export function mountContentApiRoutes(
 
         const schemaHash = await (async () => {
           try {
-            return (
-              await options.getWriteSchemaSyncState(scope)
-            )?.schemaHash;
+            return (await options.getWriteSchemaSyncState(scope))?.schemaHash;
           } catch {
             return undefined;
           }
