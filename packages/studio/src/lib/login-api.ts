@@ -49,7 +49,8 @@ export function createLoginApi(
       } catch (error) {
         return {
           outcome: "error",
-          message: error instanceof Error ? error.message : "Login request failed.",
+          message:
+            error instanceof Error ? error.message : "Login request failed.",
         };
       }
 
@@ -65,10 +66,16 @@ export function createLoginApi(
         let retryAfterSeconds = 5;
         try {
           const payload = await response.json();
-          if (isRecord(payload) && isRecord(payload.details) && typeof payload.details.retryAfterSeconds === "number") {
+          if (
+            isRecord(payload) &&
+            isRecord(payload.details) &&
+            typeof payload.details.retryAfterSeconds === "number"
+          ) {
             retryAfterSeconds = payload.details.retryAfterSeconds;
           }
-        } catch { /* use default */ }
+        } catch {
+          /* use default */
+        }
         return { outcome: "throttled", retryAfterSeconds };
       }
 
