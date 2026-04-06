@@ -240,6 +240,7 @@ export type AuthService = {
   handleSamlAcs: (request: Request) => Promise<Response>;
   handleSamlMetadata: (request: Request) => Promise<Response>;
   handleAuthRequest: (request: Request) => Promise<Response>;
+  listSsoProviders: () => Array<{ id: string; name: string }>;
 };
 
 type BetterAuthLikeSession = {
@@ -1897,6 +1898,16 @@ function createAuthBackoffError(retryAfterSeconds: number): RuntimeError {
   });
 }
 
+function formatSsoProviderName(providerId: string): string {
+  const names: Record<string, string> = {
+    okta: "Okta",
+    "azure-ad": "Azure AD",
+    "google-workspace": "Google Workspace",
+    auth0: "Auth0",
+  };
+  return names[providerId] ?? providerId;
+}
+
 function createAuthBackoffResponse(
   request: Request,
   retryAfterSeconds: number,
@@ -2641,10 +2652,10 @@ export function createAuthService(
 
   function toRedirectResponse(response: Response, location: string): Response {
     const headers = new Headers(response.headers);
-    headers.delete("content-type");
+    headers.set("content-type", "application/json");
     headers.set("location", location);
 
-    return new Response(null, {
+    return new Response(JSON.stringify({ url: location }), {
       status: 302,
       headers,
     });
@@ -4060,6 +4071,21 @@ export function createAuthService(
     handleAuthRequest(request) {
       return auth.handler(request);
     },
+    listSsoProviders() {
+      const providers: Array<{ id: string; name: string }> = [];
+
+      for (const [id] of oidcProviderConfigById) {
+        providers.push({ id, name: formatSsoProviderName(id) });
+      }
+
+      for (const [id] of samlProviderConfigById) {
+        if (!providers.some((p) => p.id === id)) {
+          providers.push({ id, name: formatSsoProviderName(id) });
+        }
+      }
+
+      return providers;
+    },
   };
 }
 
@@ -4414,6 +4440,12 @@ export function mountAuthRoutes(
     executeWithRuntimeErrorsHandled(request, async () =>
       options.authService.startSsoSignIn(request),
     ),
+  );
+  authApp.get?.("/api/v1/auth/sso/providers", ({ request }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () => {
+      const providers = options.authService.listSsoProviders();
+      return { data: providers };
+    }),
   );
   authApp.get?.("/api/v1/auth/sso/callback/:providerId", ({ request }: any) =>
     executeWithRuntimeErrorsHandled(request, async () =>

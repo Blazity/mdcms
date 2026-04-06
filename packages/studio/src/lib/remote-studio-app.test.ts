@@ -366,6 +366,7 @@ test("SettingsPage links the schema tab to the live schema browser instead of re
           {
             value: {
               canReadSchema: true,
+              canCreateContent: false,
               canManageUsers: false,
               canManageSettings: false,
             },

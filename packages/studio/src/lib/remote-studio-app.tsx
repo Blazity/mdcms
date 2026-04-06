@@ -20,6 +20,9 @@ import SettingsPage from "./runtime-ui/app/admin/settings-page.js";
 import TrashPage from "./runtime-ui/app/admin/trash-page.js";
 import UsersPage from "./runtime-ui/app/admin/users-page.js";
 import WorkflowsPage from "./runtime-ui/app/admin/workflows-page.js";
+import LoginPage from "./runtime-ui/app/admin/login-page.js";
+import { StudioSessionProvider } from "./runtime-ui/app/admin/session-context.js";
+import { StudioMountInfoProvider } from "./runtime-ui/app/admin/mount-info-context.js";
 import { ThemeProvider } from "./runtime-ui/adapters/next-themes.js";
 import { StudioNavigationProvider } from "./runtime-ui/navigation.js";
 
@@ -33,6 +36,11 @@ type StudioRuntimeRouteDefinition = MatchableRoute & {
 };
 
 const RUNTIME_ROUTES: readonly StudioRuntimeRouteDefinition[] = [
+  {
+    id: "login",
+    path: "/login",
+    render: () => <LoginPage />,
+  },
   {
     id: "dashboard",
     path: "/",
@@ -508,16 +516,33 @@ export function RemoteStudioApp({
           data-mdcms-active-route={activeRoute?.id ?? "unknown"}
           className="mdcms-studio-runtime"
         >
-          <AdminLayout context={context}>
-            {renderRouteContent(activeRoute, context)}
-            {activeRoute?.id === "content.document" ? (
-              <RuntimeDocumentDiagnostics
-                context={context}
-                previewContainerRef={previewContainerRef}
-                actionStripState={actionStripState}
-              />
-            ) : null}
-          </AdminLayout>
+          {activeRoute?.id === "login" ? (
+            <StudioSessionProvider value={{ status: "unauthenticated" }}>
+              <StudioMountInfoProvider
+                value={{
+                  project: context.documentRoute?.project ?? null,
+                  environment: context.documentRoute?.environment ?? null,
+                  apiBaseUrl: context.apiBaseUrl,
+                  auth: context.auth,
+                  environments: [],
+                  hostBridge: context.hostBridge,
+                }}
+              >
+                {renderRouteContent(activeRoute, context)}
+              </StudioMountInfoProvider>
+            </StudioSessionProvider>
+          ) : (
+            <AdminLayout context={context}>
+              {renderRouteContent(activeRoute, context)}
+              {activeRoute?.id === "content.document" ? (
+                <RuntimeDocumentDiagnostics
+                  context={context}
+                  previewContainerRef={previewContainerRef}
+                  actionStripState={actionStripState}
+                />
+              ) : null}
+            </AdminLayout>
+          )}
         </section>
       </StudioNavigationProvider>
     </ThemeProvider>

@@ -37,6 +37,7 @@ function renderSettingsPage(input: {
           {
             value: {
               canReadSchema: true,
+              canCreateContent: false,
               canManageUsers: false,
               canManageSettings: false,
               ...input.capabilities,

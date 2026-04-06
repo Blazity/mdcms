@@ -13,6 +13,7 @@ import {
   type StudioSessionState,
 } from "./session-context.js";
 import { StudioMountInfoProvider } from "./mount-info-context.js";
+import { usePathname, useRouter } from "../../navigation.js";
 import { AppSidebar } from "../../components/layout/app-sidebar";
 import { cn } from "../../lib/utils";
 
@@ -67,6 +68,7 @@ export default function AdminLayout({
 }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [canReadSchema, setCanReadSchema] = useState(false);
+  const [canCreateContent, setCanCreateContent] = useState(false);
   const [canManageUsers, setCanManageUsers] = useState(false);
   const [canManageSettings, setCanManageSettings] = useState(false);
   const [sessionState, setSessionState] = useState<StudioSessionState>({
@@ -88,6 +90,7 @@ export default function AdminLayout({
 
     if (!loadInput) {
       setCanReadSchema(false);
+      setCanCreateContent(false);
       setCanManageUsers(false);
       setCanManageSettings(false);
       return;
@@ -104,6 +107,7 @@ export default function AdminLayout({
       .then((response) => {
         if (!cancelled) {
           setCanReadSchema(response.capabilities.schema.read);
+          setCanCreateContent(response.capabilities.content.write);
           setCanManageUsers(response.capabilities.users.manage);
           setCanManageSettings(response.capabilities.settings.manage);
         }
@@ -111,6 +115,7 @@ export default function AdminLayout({
       .catch(() => {
         if (!cancelled) {
           setCanReadSchema(false);
+          setCanCreateContent(false);
           setCanManageUsers(false);
           setCanManageSettings(false);
         }
@@ -211,6 +216,48 @@ export default function AdminLayout({
     context.documentRoute?.project,
   ]);
 
+  const pathname = usePathname();
+  const router = useRouter();
+
+  // Auth gate: redirect only truly unauthenticated users to login.
+  // Transient errors (e.g. network blip) should not kick an
+  // authenticated user out — show an inline error instead.
+  useEffect(() => {
+    if (sessionState.status === "unauthenticated") {
+      const returnTo = encodeURIComponent(
+        pathname.includes("/admin") ? pathname : "/admin",
+      );
+      router.replace(`/admin/login?returnTo=${returnTo}`);
+    }
+  }, [sessionState.status, pathname, router]);
+
+  if (sessionState.status === "loading" && typeof window !== "undefined") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-foreground-muted text-sm">Loading...</div>
+      </div>
+    );
+  }
+
+  if (sessionState.status === "unauthenticated") {
+    return null;
+  }
+
+  if (sessionState.status === "error") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="max-w-md text-center space-y-2">
+          <p className="text-sm font-medium text-foreground">
+            Session could not be verified
+          </p>
+          <p className="text-sm text-foreground-muted">
+            {sessionState.message}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const handleToggle = () => {
     const newState = !sidebarCollapsed;
     setSidebarCollapsed(newState);
@@ -221,6 +268,7 @@ export default function AdminLayout({
     project: context.documentRoute?.project ?? null,
     environment: context.documentRoute?.environment ?? null,
     apiBaseUrl: context.apiBaseUrl,
+    auth: context.auth,
     environments,
     hostBridge: context.hostBridge,
   };
@@ -228,7 +276,12 @@ export default function AdminLayout({
   return (
     <div className="min-h-screen overflow-x-hidden bg-background">
       <AdminCapabilitiesProvider
-        value={{ canReadSchema, canManageUsers, canManageSettings }}
+        value={{
+          canReadSchema,
+          canCreateContent,
+          canManageUsers,
+          canManageSettings,
+        }}
       >
         <StudioSessionProvider value={sessionState}>
           <StudioMountInfoProvider value={mountInfo}>
