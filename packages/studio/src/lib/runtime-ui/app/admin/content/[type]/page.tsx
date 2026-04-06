@@ -1,26 +1,25 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "../../../../adapters/next-navigation.js";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Search,
   Plus,
-  List,
-  LayoutGrid,
   MoreHorizontal,
   Edit,
   Copy,
-  FolderInput,
-  History,
   Trash2,
   Send,
-  X,
   FileText,
+  Loader2,
+  AlertCircle,
+  ShieldAlert,
+  ArrowUpFromLine,
 } from "lucide-react";
 import { Button } from "../../../../components/ui/button.js";
 import { Input } from "../../../../components/ui/input.js";
 import { Badge } from "../../../../components/ui/badge.js";
-import { Checkbox } from "../../../../components/ui/checkbox.js";
 import { Avatar, AvatarFallback } from "../../../../components/ui/avatar.js";
 import {
   Select,
@@ -53,12 +52,18 @@ import {
   PaginationPrevious,
 } from "../../../../components/ui/pagination.js";
 import { PageHeader } from "../../../../components/layout/page-header.js";
-import {
-  mockDocuments,
-  mockContentTypes,
-  formatRelativeTime,
-} from "../../../../lib/mock-data.js";
 import { cn } from "../../../../lib/utils.js";
+import { useAdminCapabilities } from "../../capabilities-context.js";
+import { useStudioMountInfo } from "../../mount-info-context.js";
+import {
+  useContentTypeList,
+  PAGE_SIZE,
+  type MappedContentDocument,
+} from "../../../../hooks/use-content-type-list.js";
+import { useCreateDocument } from "../../../../hooks/use-create-document.js";
+import { CreateDocumentDialog } from "../../../../components/create-document-dialog.js";
+import { createStudioSchemaRouteApi } from "../../../../../schema-route-api.js";
+import { createStudioDocumentRouteApi } from "../../../../../document-route-api.js";
 
 const statusConfig = {
   published: {
@@ -75,98 +80,189 @@ const statusConfig = {
   },
 };
 
+function formatRelativeTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (seconds < 60) return "Just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  if (hours < 24) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function authorInitials(createdBy: string): string {
+  return createdBy.slice(0, 2).toUpperCase();
+}
+
 export default function ContentTypePage() {
   const params = useParams();
   const router = useRouter();
   const typeId = params.type as string;
+  const mountInfo = useStudioMountInfo();
+  const capabilities = useAdminCapabilities();
+  const queryClient = useQueryClient();
 
-  const contentType = mockContentTypes.find((t) => t.id === typeId);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [localeFilter, setLocaleFilter] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<string>("updated");
-  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 20;
+  const [searchInput, setSearchInput] = useState("");
 
-  // Filter documents for this type
-  const typeDocuments = useMemo(() => {
-    return mockDocuments.filter(
-      (doc) => doc.type.toLowerCase() === contentType?.name.toLowerCase(),
+  const list = useContentTypeList(typeId);
+  const create = useCreateDocument(typeId);
+
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      list.setFilters({ q: searchInput || undefined });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  // Schema query for type metadata (localized, locales, directory)
+  const schemaApi = useMemo(() => {
+    if (!mountInfo.project || !mountInfo.environment || !mountInfo.apiBaseUrl)
+      return null;
+    return createStudioSchemaRouteApi(
+      {
+        project: mountInfo.project,
+        environment: mountInfo.environment,
+        serverUrl: mountInfo.apiBaseUrl,
+      },
+      { auth: mountInfo.auth },
     );
-  }, [contentType]);
+  }, [mountInfo.project, mountInfo.environment, mountInfo.apiBaseUrl, mountInfo.auth]);
 
-  // Apply filters
-  const filteredDocuments = useMemo(() => {
-    let docs = [...typeDocuments];
+  const schemaQuery = useQuery({
+    queryKey: ["schema-list"],
+    queryFn: () => schemaApi!.list(),
+    enabled: schemaApi !== null,
+    staleTime: 60_000,
+  });
 
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      docs = docs.filter(
-        (doc) =>
-          doc.title.toLowerCase().includes(query) ||
-          doc.path.toLowerCase().includes(query),
-      );
-    }
+  const schemaEntry = useMemo(() => {
+    return schemaQuery.data?.find(
+      (entry) => entry.type.toLowerCase() === typeId.toLowerCase(),
+    );
+  }, [schemaQuery.data, typeId]);
 
-    if (statusFilter !== "all") {
-      docs = docs.filter((doc) => doc.status === statusFilter);
-    }
+  const typeName = schemaEntry?.type ?? typeId;
 
-    if (localeFilter !== "all") {
-      docs = docs.filter((doc) => doc.locale === localeFilter);
-    }
+  // Document route API for row actions
+  const documentApi = useMemo(() => {
+    if (!mountInfo.project || !mountInfo.environment || !mountInfo.apiBaseUrl)
+      return null;
+    return createStudioDocumentRouteApi(
+      {
+        project: mountInfo.project,
+        environment: mountInfo.environment,
+        serverUrl: mountInfo.apiBaseUrl,
+      },
+      { auth: mountInfo.auth },
+    );
+  }, [mountInfo.project, mountInfo.environment, mountInfo.apiBaseUrl, mountInfo.auth]);
 
-    // Sort
-    docs.sort((a, b) => {
-      switch (sortBy) {
-        case "updated":
-          return b.updatedAt.getTime() - a.updatedAt.getTime();
-        case "created":
-          return b.createdAt.getTime() - a.createdAt.getTime();
-        case "path-asc":
-          return a.path.localeCompare(b.path);
-        case "path-desc":
-          return b.path.localeCompare(a.path);
-        default:
-          return 0;
-      }
-    });
+  const publishMutation = useMutation({
+    mutationFn: (documentId: string) =>
+      documentApi!.publish({ documentId }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["content-list", typeId] });
+    },
+  });
 
-    return docs;
-  }, [typeDocuments, searchQuery, statusFilter, localeFilter, sortBy]);
+  const unpublishMutation = useMutation({
+    mutationFn: (documentId: string) =>
+      documentApi!.unpublish({ documentId }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["content-list", typeId] });
+    },
+  });
+
+  const duplicateMutation = useMutation({
+    mutationFn: (documentId: string) =>
+      documentApi!.duplicate({ documentId }),
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: ["content-list", typeId] });
+      router.push(`/admin/content/${typeId}/${data.documentId}`);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (documentId: string) =>
+      documentApi!.softDelete({ documentId }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["content-list", typeId] });
+    },
+  });
 
   // Pagination
-  const totalPages = Math.ceil(filteredDocuments.length / pageSize);
-  const paginatedDocuments = filteredDocuments.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize,
-  );
+  const totalPages = list.pagination
+    ? Math.ceil(list.pagination.total / PAGE_SIZE)
+    : 0;
+  const currentPage = list.pagination
+    ? Math.floor(list.pagination.offset / PAGE_SIZE) + 1
+    : 1;
 
-  const toggleSelect = (id: string) => {
-    const newSelected = new Set(selectedIds);
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
-    } else {
-      newSelected.add(id);
-    }
-    setSelectedIds(newSelected);
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedIds.size === paginatedDocuments.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(paginatedDocuments.map((d) => d.id)));
-    }
-  };
-
-  if (!contentType) {
+  function renderRowActions(doc: MappedContentDocument) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-foreground-muted">Content type not found</p>
-      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-8 w-8">
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            onClick={() =>
+              router.push(`/admin/content/${typeId}/${doc.documentId}`)
+            }
+          >
+            <Edit className="mr-2 h-4 w-4" />
+            Edit
+          </DropdownMenuItem>
+          {capabilities.canPublishContent &&
+            (doc.status === "draft" || doc.status === "changed") && (
+              <DropdownMenuItem
+                onClick={() => publishMutation.mutate(doc.documentId)}
+              >
+                <Send className="mr-2 h-4 w-4" />
+                Publish
+              </DropdownMenuItem>
+            )}
+          {capabilities.canUnpublishContent && doc.status === "published" && (
+            <DropdownMenuItem
+              onClick={() => unpublishMutation.mutate(doc.documentId)}
+            >
+              <ArrowUpFromLine className="mr-2 h-4 w-4" />
+              Unpublish
+            </DropdownMenuItem>
+          )}
+          {capabilities.canCreateContent && (
+            <DropdownMenuItem
+              onClick={() => duplicateMutation.mutate(doc.documentId)}
+            >
+              <Copy className="mr-2 h-4 w-4" />
+              Duplicate
+            </DropdownMenuItem>
+          )}
+          {capabilities.canDeleteContent && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={() => deleteMutation.mutate(doc.documentId)}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     );
   }
 
@@ -175,53 +271,41 @@ export default function ContentTypePage() {
       <PageHeader
         breadcrumbs={[
           { label: "Content", href: "/admin/content" },
-          { label: contentType.name },
+          { label: typeName },
         ]}
       />
 
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">{contentType.name}</h1>
-          <Button className="bg-accent hover:bg-accent-hover text-white">
-            <Plus className="mr-2 h-4 w-4" />
-            New Document
-          </Button>
+          <h1 className="text-2xl font-semibold">{typeName}</h1>
+          {capabilities.canCreateContent && (
+            <Button
+              className="bg-accent hover:bg-accent-hover text-white"
+              onClick={create.open}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              New Document
+            </Button>
+          )}
         </div>
 
         {/* Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
-            {/* Search */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground-muted" />
               <Input
                 placeholder="Search documents..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 className="pl-9 w-72"
               />
             </div>
-
-            {/* Locale filter */}
-            {contentType.localized && (
-              <Select value={localeFilter} onValueChange={setLocaleFilter}>
-                <SelectTrigger className="w-32">
-                  <SelectValue placeholder="All locales" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All locales</SelectItem>
-                  {contentType.locales?.map((locale) => (
-                    <SelectItem key={locale} value={locale}>
-                      {locale}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-
-            {/* Status filter */}
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select
+              value={list.filters.status ?? "all"}
+              onValueChange={(value) => list.setFilters({ status: value as any })}
+            >
               <SelectTrigger className="w-36">
                 <SelectValue placeholder="All statuses" />
               </SelectTrigger>
@@ -233,330 +317,227 @@ export default function ContentTypePage() {
               </SelectContent>
             </Select>
           </div>
-
-          <div className="flex items-center gap-3">
-            {/* Sort */}
-            <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-36">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="updated">Last updated</SelectItem>
-                <SelectItem value="created">Created</SelectItem>
-                <SelectItem value="path-asc">Path A-Z</SelectItem>
-                <SelectItem value="path-desc">Path Z-A</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* View toggle */}
-            <div className="flex border border-border rounded-md">
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  "rounded-r-none",
-                  viewMode === "list" && "bg-background-subtle",
-                )}
-                onClick={() => setViewMode("list")}
-              >
-                <List className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  "rounded-l-none",
-                  viewMode === "grid" && "bg-background-subtle",
-                )}
-                onClick={() => setViewMode("grid")}
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
+          <Select
+            value={list.filters.sort ?? "updated"}
+            onValueChange={(value) => list.setFilters({ sort: value })}
+          >
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="updated">Last updated</SelectItem>
+              <SelectItem value="created">Created</SelectItem>
+              <SelectItem value="path-asc">Path A-Z</SelectItem>
+              <SelectItem value="path-desc">Path Z-A</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
-        {/* Bulk action bar */}
-        {selectedIds.size > 0 && (
-          <div className="flex items-center gap-3 rounded-lg bg-accent-subtle p-3">
-            <span className="text-sm font-medium">
-              {selectedIds.size} selected
-            </span>
-            <Button variant="outline" size="sm">
-              <Send className="mr-2 h-3 w-3" />
-              Publish
-            </Button>
-            <Button variant="outline" size="sm">
-              Unpublish
-            </Button>
-            <Button variant="outline" size="sm">
-              <FolderInput className="mr-2 h-3 w-3" />
-              Move
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-destructive hover:text-destructive"
-            >
-              <Trash2 className="mr-2 h-3 w-3" />
-              Delete
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSelectedIds(new Set())}
-            >
-              <X className="mr-2 h-3 w-3" />
-              Deselect
+        {/* Content area */}
+        {list.status === "loading" && (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="h-6 w-6 animate-spin text-foreground-muted" />
+          </div>
+        )}
+
+        {list.status === "forbidden" && (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <ShieldAlert className="mb-4 h-8 w-8 text-foreground-muted" />
+            <h3 className="mb-2 text-lg font-semibold">Access denied</h3>
+            <p className="text-sm text-foreground-muted">
+              You do not have permission to view content for this target.
+            </p>
+          </div>
+        )}
+
+        {list.status === "error" && (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <AlertCircle className="mb-4 h-8 w-8 text-destructive" />
+            <h3 className="mb-2 text-lg font-semibold">
+              Failed to load documents
+            </h3>
+            <p className="mb-4 text-sm text-foreground-muted">
+              {list.errorMessage}
+            </p>
+            <Button variant="outline" onClick={list.refresh}>
+              Try again
             </Button>
           </div>
         )}
 
-        {/* Content Table */}
-        {paginatedDocuments.length > 0 ? (
-          <div className="rounded-lg border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10">
-                    <Checkbox
-                      checked={
-                        paginatedDocuments.length > 0 &&
-                        selectedIds.size === paginatedDocuments.length
-                      }
-                      onCheckedChange={toggleSelectAll}
-                    />
-                  </TableHead>
-                  <TableHead>Title / Path</TableHead>
-                  {contentType.localized && (
-                    <TableHead className="w-20">Locale</TableHead>
-                  )}
-                  {contentType.localized && (
-                    <TableHead className="w-28">Translation</TableHead>
-                  )}
-                  <TableHead className="w-28">Status</TableHead>
-                  <TableHead className="w-32">Updated</TableHead>
-                  <TableHead className="w-28">Author</TableHead>
-                  <TableHead className="w-16">Presence</TableHead>
-                  <TableHead className="w-14"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paginatedDocuments.map((doc) => (
-                  <TableRow
-                    key={doc.id}
-                    className={cn(
-                      "cursor-pointer",
-                      selectedIds.has(doc.id) && "bg-accent-subtle",
-                    )}
-                    onClick={() =>
-                      router.push(`/admin/content/${typeId}/${doc.id}`)
-                    }
-                  >
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <Checkbox
-                        checked={selectedIds.has(doc.id)}
-                        onCheckedChange={() => toggleSelect(doc.id)}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium">{doc.title}</p>
-                        <p className="text-xs text-foreground-muted font-mono">
-                          {doc.path}
-                        </p>
-                      </div>
-                    </TableCell>
-                    {contentType.localized && (
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {doc.locale}
-                        </Badge>
-                      </TableCell>
-                    )}
-                    {contentType.localized && (
-                      <TableCell>
-                        {doc.translationProgress && (
-                          <div className="flex items-center gap-1">
-                            {Array.from({
-                              length: doc.translationProgress.total,
-                            }).map((_, i) => (
-                              <span
-                                key={i}
-                                className={cn(
-                                  "h-2 w-2 rounded-full",
-                                  i < doc.translationProgress!.completed
-                                    ? "bg-success"
-                                    : "bg-border",
-                                )}
-                              />
-                            ))}
-                            <span className="ml-1 text-xs text-foreground-muted">
-                              {doc.translationProgress.completed}/
-                              {doc.translationProgress.total}
-                            </span>
-                          </div>
-                        )}
-                      </TableCell>
-                    )}
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "text-xs",
-                          statusConfig[doc.status].className,
-                        )}
-                      >
-                        {statusConfig[doc.status].label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-foreground-muted">
-                      {formatRelativeTime(doc.updatedAt)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-6 w-6">
-                          <AvatarFallback className="text-xs">
-                            {doc.author.name
-                              .split(" ")
-                              .map((n) => n[0])
-                              .join("")}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="text-sm truncate max-w-16">
-                          {doc.author.name.split(" ")[0]}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {doc.isBeingEdited && doc.editedBy && (
-                        <div className="relative">
-                          <Avatar className="h-6 w-6 ring-2 ring-success animate-pulse">
-                            <AvatarFallback className="text-xs">
-                              {doc.editedBy.name
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")}
-                            </AvatarFallback>
-                          </Avatar>
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
-                            <Edit className="mr-2 h-4 w-4" />
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Send className="mr-2 h-4 w-4" />
-                            {doc.status === "published"
-                              ? "Unpublish"
-                              : "Publish"}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Copy className="mr-2 h-4 w-4" />
-                            Duplicate
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <FolderInput className="mr-2 h-4 w-4" />
-                            Move
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <History className="mr-2 h-4 w-4" />
-                            View history
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-destructive focus:text-destructive">
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        ) : (
-          /* Empty state */
+        {list.status === "empty" && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="mb-4 rounded-full bg-background-subtle p-4">
               <FileText className="h-8 w-8 text-foreground-muted" />
             </div>
             <h3 className="mb-2 text-lg font-semibold">No documents yet</h3>
             <p className="mb-4 text-sm text-foreground-muted">
-              Create your first {contentType.name} document to get started.
+              Create your first {typeName} document to get started.
             </p>
-            <Button className="bg-accent hover:bg-accent-hover text-white">
-              <Plus className="mr-2 h-4 w-4" />
-              New Document
-            </Button>
+            {capabilities.canCreateContent && (
+              <Button
+                className="bg-accent hover:bg-accent-hover text-white"
+                onClick={create.open}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                New Document
+              </Button>
+            )}
           </div>
         )}
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-foreground-muted">
-              Showing {(currentPage - 1) * pageSize + 1}–
-              {Math.min(currentPage * pageSize, filteredDocuments.length)} of{" "}
-              {filteredDocuments.length} documents
-            </p>
-            <Pagination>
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    className={
-                      currentPage === 1
-                        ? "pointer-events-none opacity-50"
-                        : "cursor-pointer"
-                    }
-                  />
-                </PaginationItem>
-                {Array.from({ length: Math.min(5, totalPages) }).map((_, i) => {
-                  const page = i + 1;
-                  return (
-                    <PaginationItem key={page}>
-                      <PaginationLink
-                        onClick={() => setCurrentPage(page)}
-                        isActive={currentPage === page}
+        {list.status === "ready" && (
+          <>
+            {list.documents.length > 0 ? (
+              <div className="rounded-lg border border-border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Title / Path</TableHead>
+                      <TableHead className="w-28">Status</TableHead>
+                      <TableHead className="w-32">Updated</TableHead>
+                      <TableHead className="w-28">Author</TableHead>
+                      <TableHead className="w-14"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {list.documents.map((doc) => (
+                      <TableRow
+                        key={doc.documentId}
                         className="cursor-pointer"
+                        onClick={() =>
+                          router.push(
+                            `/admin/content/${typeId}/${doc.documentId}`,
+                          )
+                        }
                       >
-                        {page}
-                      </PaginationLink>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{doc.title}</p>
+                            <p className="text-xs text-foreground-muted font-mono">
+                              {doc.path}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "text-xs",
+                              statusConfig[doc.status].className,
+                            )}
+                          >
+                            {statusConfig[doc.status].label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-foreground-muted">
+                          {formatRelativeTime(doc.updatedAt)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-6 w-6">
+                              <AvatarFallback className="text-xs">
+                                {authorInitials(doc.createdBy)}
+                              </AvatarFallback>
+                            </Avatar>
+                          </div>
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          {renderRowActions(doc)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <div className="mb-4 rounded-full bg-background-subtle p-4">
+                  <Search className="h-8 w-8 text-foreground-muted" />
+                </div>
+                <h3 className="mb-2 text-lg font-semibold">No results</h3>
+                <p className="text-sm text-foreground-muted">
+                  No documents match your current filters.
+                </p>
+              </div>
+            )}
+
+            {totalPages > 1 && list.pagination && (
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-foreground-muted">
+                  Showing {list.pagination.offset + 1}–
+                  {Math.min(
+                    list.pagination.offset + PAGE_SIZE,
+                    list.pagination.total,
+                  )}{" "}
+                  of {list.pagination.total} documents
+                </p>
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        onClick={() =>
+                          list.setPage(
+                            Math.max(0, list.pagination!.offset - PAGE_SIZE),
+                          )
+                        }
+                        className={
+                          currentPage === 1
+                            ? "pointer-events-none opacity-50"
+                            : "cursor-pointer"
+                        }
+                      />
                     </PaginationItem>
-                  );
-                })}
-                <PaginationItem>
-                  <PaginationNext
-                    onClick={() =>
-                      setCurrentPage((p) => Math.min(totalPages, p + 1))
-                    }
-                    className={
-                      currentPage === totalPages
-                        ? "pointer-events-none opacity-50"
-                        : "cursor-pointer"
-                    }
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          </div>
+                    {Array.from({ length: Math.min(5, totalPages) }).map(
+                      (_, i) => {
+                        const page = i + 1;
+                        return (
+                          <PaginationItem key={page}>
+                            <PaginationLink
+                              onClick={() =>
+                                list.setPage((page - 1) * PAGE_SIZE)
+                              }
+                              isActive={currentPage === page}
+                              className="cursor-pointer"
+                            >
+                              {page}
+                            </PaginationLink>
+                          </PaginationItem>
+                        );
+                      },
+                    )}
+                    <PaginationItem>
+                      <PaginationNext
+                        onClick={() =>
+                          list.setPage(list.pagination!.offset + PAGE_SIZE)
+                        }
+                        className={
+                          currentPage === totalPages
+                            ? "pointer-events-none opacity-50"
+                            : "cursor-pointer"
+                        }
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
+            )}
+          </>
         )}
       </div>
+
+      {/* Create document dialog */}
+      <CreateDocumentDialog
+        isOpen={create.isOpen}
+        isSubmitting={create.isSubmitting}
+        error={create.error}
+        typeDirectory={schemaEntry?.directory ?? typeId}
+        localized={schemaEntry?.localized ?? false}
+        onClose={create.close}
+        onSubmit={(input) => {
+          void create.submit(input);
+        }}
+      />
     </div>
   );
 }
