@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type {
   ContentDocumentResponse,
@@ -151,6 +151,16 @@ export function useTrashList() {
   );
 
   const pagination: PaginationMetadata | null = query.data?.pagination ?? null;
+
+  // Clamp offset when total shrinks (e.g. after restoring items)
+  useEffect(() => {
+    if (pagination && offset > 0 && offset >= pagination.total) {
+      const lastPageStart =
+        Math.max(0, Math.floor((pagination.total - 1) / TRASH_PAGE_SIZE)) *
+        TRASH_PAGE_SIZE;
+      setOffset(lastPageStart);
+    }
+  }, [pagination, offset]);
 
   const status: TrashListStatus = useMemo(() => {
     if (query.isLoading) return "loading";

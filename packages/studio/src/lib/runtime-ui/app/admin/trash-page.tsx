@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { RuntimeError } from "@mdcms/shared";
 import {
   Search,
   MoreHorizontal,
@@ -154,6 +155,25 @@ export default function TrashPage() {
       void queryClient.invalidateQueries({ queryKey: ["trash-list"] });
     },
     onError: (error: Error) => {
+      if (
+        error instanceof RuntimeError &&
+        error.statusCode === 409 &&
+        error.code === "CONTENT_PATH_CONFLICT"
+      ) {
+        const details = error.details as Record<string, unknown> | undefined;
+        const payload = details?.payload as
+          | Record<string, unknown>
+          | undefined;
+        const path =
+          typeof payload?.path === "string" ? payload.path : undefined;
+        const locale =
+          typeof payload?.locale === "string" ? payload.locale : undefined;
+        const suffix = path ? ` at \`${path}\`${locale ? ` (${locale})` : ""}` : "";
+        setRowActionError(
+          `Could not restore — a document already exists${suffix}.`,
+        );
+        return;
+      }
       setRowActionError(error.message || "Restore failed.");
     },
   });
@@ -170,13 +190,18 @@ export default function TrashPage() {
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-8 w-8">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            aria-label={`Actions for ${doc.title}`}
+          >
             <MoreHorizontal className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem
-            disabled={!capabilities.canDeleteContent}
+            disabled={!capabilities.canCreateContent}
             onClick={() => restoreMutation.mutate(doc.documentId)}
           >
             <RotateCcw className="mr-2 h-4 w-4" />
