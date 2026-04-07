@@ -222,6 +222,13 @@ Unpublishing sets `published_version = NULL` and `has_unpublished_changes = TRUE
 - `body`
 - optional actor fields
 
+Path validation:
+
+- `path` must not end with a trailing slash. A document slug segment is
+  required after any directory prefix (e.g. `blog/my-post`, not `blog/`).
+- `path` must not start with a leading slash.
+- Paths that violate these rules are rejected with `INVALID_INPUT` (`400`).
+
 It also accepts optional `sourceDocumentId`:
 
 - omitted `sourceDocumentId` creates a brand new logical document with a fresh
