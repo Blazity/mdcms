@@ -133,7 +133,13 @@ export function useTrashList() {
   const queryParams = useMemo(() => mapTrashFiltersToQuery(filters), [filters]);
 
   const query = useQuery({
-    queryKey: ["trash-list", queryParams, offset],
+    queryKey: [
+      "trash-list",
+      mountInfo.project,
+      mountInfo.environment,
+      queryParams,
+      offset,
+    ],
     queryFn: async () => {
       const result = await api!.list({
         ...queryParams,

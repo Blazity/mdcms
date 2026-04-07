@@ -118,7 +118,7 @@ export default function TrashPage() {
   ]);
 
   const schemaQuery = useQuery({
-    queryKey: ["schema-list"],
+    queryKey: ["schema-list", mountInfo.project, mountInfo.environment],
     queryFn: () => schemaApi!.list(),
     enabled: schemaApi !== null,
     staleTime: 60_000,
@@ -204,7 +204,9 @@ export default function TrashPage() {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem
-            disabled={!capabilities.canCreateContent}
+            disabled={
+              !capabilities.canCreateContent || restoreMutation.isPending
+            }
             onClick={() => restoreMutation.mutate(doc.documentId)}
           >
             <RotateCcw className="mr-2 h-4 w-4" />
@@ -234,6 +236,7 @@ export default function TrashPage() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground-muted" />
               <Input
+                aria-label="Search deleted documents"
                 placeholder="Search deleted documents..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
@@ -248,7 +251,7 @@ export default function TrashPage() {
                 })
               }
             >
-              <SelectTrigger className="w-36">
+              <SelectTrigger className="w-36" aria-label="Filter by type">
                 <SelectValue placeholder="All types" />
               </SelectTrigger>
               <SelectContent>
@@ -265,7 +268,7 @@ export default function TrashPage() {
             value={list.filters.sort ?? "updated"}
             onValueChange={(value) => list.setFilters({ sort: value })}
           >
-            <SelectTrigger className="w-36">
+            <SelectTrigger className="w-36" aria-label="Sort order">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
