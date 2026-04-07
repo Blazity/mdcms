@@ -83,6 +83,12 @@ export type StudioDocumentRouteSoftDeleteInput = {
   signal?: AbortSignal;
 };
 
+export type StudioDocumentRouteRestoreInput = {
+  documentId: string;
+  locale?: string;
+  signal?: AbortSignal;
+};
+
 export type StudioDocumentRouteApiOptions = {
   auth?: StudioRuntimeAuth;
   fetcher?: typeof fetch;
@@ -122,6 +128,9 @@ export type StudioDocumentRouteApi = {
   ) => Promise<ContentDocumentResponse>;
   softDelete: (
     input: StudioDocumentRouteSoftDeleteInput,
+  ) => Promise<ContentDocumentResponse>;
+  restore: (
+    input: StudioDocumentRouteRestoreInput,
   ) => Promise<ContentDocumentResponse>;
 };
 
@@ -872,6 +881,21 @@ export function createStudioDocumentRouteApi(
         "DELETE /api/v1/content/:documentId",
         payload,
         "Failed to delete document.",
+      );
+    },
+    async restore(input) {
+      const payload = await requestContentMutation(config, options, {
+        method: "POST",
+        path: `/api/v1/content/${encodeURIComponent(input.documentId)}/restore`,
+        locale: input.locale,
+        signal: input.signal,
+        payload: {},
+      });
+
+      return toContentDocumentResponse(
+        "POST /api/v1/content/:documentId/restore",
+        payload,
+        "Failed to restore document.",
       );
     },
   };

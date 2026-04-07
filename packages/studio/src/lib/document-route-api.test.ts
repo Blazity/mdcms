@@ -588,6 +588,27 @@ test("create throws RuntimeError on 403", async () => {
   );
 });
 
+test("restore sends POST /api/v1/content/:documentId/restore with CSRF token", async () => {
+  const { fetcher, calls } = createMockFetcher([
+    sessionResponse("csrf-abc"),
+    new Response(JSON.stringify(validDocumentResponse), { status: 200 }),
+  ]);
+  const api = createNewMethodsApi({ auth: { mode: "cookie" }, fetcher });
+
+  const result = await api.restore({ documentId: "doc-1" });
+
+  assert.equal(result.documentId, "doc-1");
+  const restoreCall = calls[1];
+  assert.ok(
+    String(restoreCall?.input).endsWith("/api/v1/content/doc-1/restore"),
+  );
+  assert.equal(restoreCall?.init?.method, "POST");
+  assert.equal(
+    readHeader(restoreCall?.init, "x-mdcms-csrf-token"),
+    "csrf-abc",
+  );
+});
+
 test("version detail helper validates required fields and rejects malformed payloads", async () => {
   const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
     [];
