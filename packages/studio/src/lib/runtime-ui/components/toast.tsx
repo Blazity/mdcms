@@ -4,8 +4,10 @@ import {
   createContext,
   useCallback,
   useContext,
-  useState,
   useEffect,
+  useMemo,
+  useRef,
+  useState,
   type PropsWithChildren,
 } from "react";
 import { CheckCircle2, AlertCircle, X } from "lucide-react";
@@ -33,8 +35,14 @@ const AUTO_DISMISS_MS = 4000;
 
 export function ToastProvider({ children }: PropsWithChildren) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   const dismiss = useCallback((id: number) => {
+    const handle = timers.current.get(id);
+    if (handle) {
+      clearTimeout(handle);
+      timers.current.delete(id);
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
@@ -42,16 +50,33 @@ export function ToastProvider({ children }: PropsWithChildren) {
     (variant: ToastVariant, message: string) => {
       const id = nextId++;
       setToasts((prev) => [...prev, { id, variant, message }]);
-      setTimeout(() => dismiss(id), AUTO_DISMISS_MS);
+      const handle = setTimeout(() => {
+        timers.current.delete(id);
+        dismiss(id);
+      }, AUTO_DISMISS_MS);
+      timers.current.set(id, handle);
     },
     [dismiss],
   );
 
-  const api: ToastApi = {
-    success: (message: string) => push("success", message),
-    error: (message: string) => push("error", message),
-    dismiss,
-  };
+  useEffect(() => {
+    const currentTimers = timers.current;
+    return () => {
+      for (const handle of currentTimers.values()) {
+        clearTimeout(handle);
+      }
+      currentTimers.clear();
+    };
+  }, []);
+
+  const api = useMemo<ToastApi>(
+    () => ({
+      success: (message: string) => push("success", message),
+      error: (message: string) => push("error", message),
+      dismiss,
+    }),
+    [push, dismiss],
+  );
 
   return (
     <ToastContext.Provider value={api}>
