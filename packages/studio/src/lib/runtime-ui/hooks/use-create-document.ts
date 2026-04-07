@@ -17,6 +17,7 @@ export function buildCreatePayload(
     path: input.path,
     locale: input.locale || IMPLICIT_DEFAULT_LOCALE,
     format: "mdx" as const,
+    body: "",
     schemaHash: input.schemaHash,
   };
 }
