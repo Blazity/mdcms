@@ -55,6 +55,7 @@ export type ReviewScenario = {
     body: string;
     createdBy: string;
     createdAt: string;
+    updatedBy: string;
     updatedAt: string;
   };
   versions: Array<{
@@ -158,6 +159,7 @@ function createDraftDocument(overrides?: Partial<ReviewScenario["document"]>) {
     ].join("\n"),
     createdBy,
     createdAt: "2026-04-01T09:00:00.000Z",
+    updatedBy: createdBy,
     updatedAt: "2026-04-05T10:00:00.000Z",
     ...overrides,
   };
