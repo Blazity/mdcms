@@ -749,64 +749,59 @@ export function mountContentApiRoutes(
           });
         }
 
-        await options.authorize(request, {
-          requiredScope: "content:write",
-          project: scope.project,
-          environment: scope.environment,
-          documentPath: source.path,
-        });
-
         const basePath = source.path.replace(/\/$/, "");
         let candidatePath = `${basePath}-copy`;
         let attempt = 1;
-        let pathAvailable = false;
-        while (attempt < 100) {
-          const existing = await options.store.list(scope, {
-            path: candidatePath,
-            limit: "100",
-          });
-          const exactMatch = existing.rows.some(
-            (row) => row.path === candidatePath,
-          );
-          if (!exactMatch) {
-            pathAvailable = true;
-            break;
-          }
-          attempt++;
-          candidatePath = `${basePath}-copy-${attempt}`;
-        }
-
-        if (!pathAvailable) {
-          throw new RuntimeError({
-            code: "DUPLICATE_PATH_EXHAUSTED",
-            message: "Unable to generate a unique copy path after 99 attempts.",
-            statusCode: 409,
-            details: {
-              documentId: params.documentId,
-              basePath,
-            },
-          });
-        }
-
         const syncState = await options.getWriteSchemaSyncState(scope);
         const schemaHash = syncState?.schemaHash;
 
-        const document = await options.store.create(
-          scope,
-          {
-            path: candidatePath,
-            type: source.type,
-            locale: source.locale,
-            format: source.format,
-            frontmatter: source.frontmatter,
-            body: source.body,
-          },
-          schemaHash ? { expectedSchemaHash: schemaHash } : undefined,
-        );
+        while (attempt < 100) {
+          await options.authorize(request, {
+            requiredScope: "content:write",
+            project: scope.project,
+            environment: scope.environment,
+            documentPath: candidatePath,
+          });
 
-        return {
-          data: toDocumentResponse(document),
-        };
+          try {
+            const document = await options.store.create(
+              scope,
+              {
+                path: candidatePath,
+                type: source.type,
+                locale: source.locale,
+                format: source.format,
+                frontmatter: source.frontmatter,
+                body: source.body,
+              },
+              schemaHash ? { expectedSchemaHash: schemaHash } : undefined,
+            );
+
+            return {
+              data: toDocumentResponse(document),
+            };
+          } catch (error) {
+            if (
+              error instanceof RuntimeError &&
+              error.code === "CONTENT_PATH_CONFLICT"
+            ) {
+              attempt++;
+              candidatePath = `${basePath}-copy-${attempt}`;
+              continue;
+            }
+            throw error;
+          }
+        }
+
+        throw new RuntimeError({
+          code: "DUPLICATE_PATH_EXHAUSTED",
+          message: "Unable to generate a unique copy path after 99 attempts.",
+          statusCode: 409,
+          details: {
+            documentId: params.documentId,
+            basePath,
+          },
+        });
       });
     },
   );

@@ -325,7 +325,7 @@ export default function ContentTypePage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">{typeName}</h1>
-          {capabilities.canCreateContent && (
+          {capabilities.canCreateContent && schemaEntry && (
             <Button
               className="bg-accent hover:bg-accent-hover text-white"
               onClick={create.open}
@@ -439,7 +439,7 @@ export default function ContentTypePage() {
             <p className="mb-4 text-sm text-foreground-muted">
               Create your first {typeName} document to get started.
             </p>
-            {capabilities.canCreateContent && (
+            {capabilities.canCreateContent && schemaEntry && (
               <Button
                 className="bg-accent hover:bg-accent-hover text-white"
                 onClick={create.open}

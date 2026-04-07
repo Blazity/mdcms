@@ -31,7 +31,6 @@ export type ContentTypeListFilters = {
   q?: string;
   status?: "all" | "published" | "draft" | "changed";
   sort?: string;
-  order?: "asc" | "desc";
 };
 
 export type ContentTypeListStatus =
@@ -167,6 +166,7 @@ export function useContentTypeList(typeId: string) {
       const result = await api!.list({
         type: typeId,
         ...queryParams,
+        isDeleted: false,
         limit: PAGE_SIZE,
         offset,
       });
