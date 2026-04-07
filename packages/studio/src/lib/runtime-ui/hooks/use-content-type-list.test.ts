@@ -29,6 +29,7 @@ const baseDoc: ContentDocumentResponse = {
   body: "# Hello",
   createdBy: "user-1",
   createdAt: "2026-03-01T00:00:00.000Z",
+  updatedBy: "user-1",
   updatedAt: "2026-03-20T00:00:00.000Z",
 };
 

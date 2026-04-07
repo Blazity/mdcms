@@ -138,10 +138,8 @@ function ToastItem({
       className={cn(
         "flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg bg-background transition-all duration-200",
         visible ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0",
-        toast.variant === "success" &&
-          "border-success/20 text-success",
-        toast.variant === "error" &&
-          "border-destructive/20 text-destructive",
+        toast.variant === "success" && "border-success/20 text-success",
+        toast.variant === "error" && "border-destructive/20 text-destructive",
       )}
     >
       <Icon className="h-4 w-4 shrink-0" />

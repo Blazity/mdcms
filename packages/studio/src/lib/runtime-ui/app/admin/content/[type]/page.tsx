@@ -263,7 +263,9 @@ export default function ContentTypePage() {
           typeId,
         ],
       });
-      toast.success("Document moved to trash. It can be restored from the Trash page.");
+      toast.success(
+        "Document moved to trash. It can be restored from the Trash page.",
+      );
     },
     onError: onRowActionError,
   });

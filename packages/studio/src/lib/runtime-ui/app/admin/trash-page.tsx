@@ -164,14 +164,14 @@ export default function TrashPage() {
         error.code === "CONTENT_PATH_CONFLICT"
       ) {
         const details = error.details as Record<string, unknown> | undefined;
-        const payload = details?.payload as
-          | Record<string, unknown>
-          | undefined;
+        const payload = details?.payload as Record<string, unknown> | undefined;
         const path =
           typeof payload?.path === "string" ? payload.path : undefined;
         const locale =
           typeof payload?.locale === "string" ? payload.locale : undefined;
-        const suffix = path ? ` at \`${path}\`${locale ? ` (${locale})` : ""}` : "";
+        const suffix = path
+          ? ` at \`${path}\`${locale ? ` (${locale})` : ""}`
+          : "";
         setRowActionError(
           `Could not restore — a document already exists${suffix}.`,
         );
@@ -279,7 +279,10 @@ export default function TrashPage() {
 
         {/* Row action error banner */}
         {rowActionError && (
-          <div role="alert" className="flex items-center justify-between rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3">
+          <div
+            role="alert"
+            className="flex items-center justify-between rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3"
+          >
             <p className="text-sm text-destructive">{rowActionError}</p>
             <Button
               variant="ghost"

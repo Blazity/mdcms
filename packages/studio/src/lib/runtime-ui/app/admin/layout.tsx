@@ -293,39 +293,39 @@ export default function AdminLayout({
   return (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
-      <div className="min-h-screen overflow-x-hidden bg-background">
-        <AdminCapabilitiesProvider
-          value={{
-            canReadSchema,
-            canCreateContent,
-            canPublishContent,
-            canUnpublishContent,
-            canDeleteContent,
-            canManageUsers,
-            canManageSettings,
-          }}
-        >
-          <StudioSessionProvider value={sessionState}>
-            <StudioMountInfoProvider value={mountInfo}>
-              <AppSidebar
-                canReadSchema={canReadSchema}
-                canManageUsers={canManageUsers}
-                canManageSettings={canManageSettings}
-                collapsed={sidebarCollapsed}
-                onToggle={handleToggle}
-              />
-              <main
-                className={cn(
-                  "min-h-screen min-w-0 overflow-x-hidden transition-all duration-300",
-                  sidebarCollapsed ? "ml-16" : "ml-60",
-                )}
-              >
-                {children}
-              </main>
-            </StudioMountInfoProvider>
-          </StudioSessionProvider>
-        </AdminCapabilitiesProvider>
-      </div>
+        <div className="min-h-screen overflow-x-hidden bg-background">
+          <AdminCapabilitiesProvider
+            value={{
+              canReadSchema,
+              canCreateContent,
+              canPublishContent,
+              canUnpublishContent,
+              canDeleteContent,
+              canManageUsers,
+              canManageSettings,
+            }}
+          >
+            <StudioSessionProvider value={sessionState}>
+              <StudioMountInfoProvider value={mountInfo}>
+                <AppSidebar
+                  canReadSchema={canReadSchema}
+                  canManageUsers={canManageUsers}
+                  canManageSettings={canManageSettings}
+                  collapsed={sidebarCollapsed}
+                  onToggle={handleToggle}
+                />
+                <main
+                  className={cn(
+                    "min-h-screen min-w-0 overflow-x-hidden transition-all duration-300",
+                    sidebarCollapsed ? "ml-16" : "ml-60",
+                  )}
+                >
+                  {children}
+                </main>
+              </StudioMountInfoProvider>
+            </StudioSessionProvider>
+          </AdminCapabilitiesProvider>
+        </div>
       </ToastProvider>
     </QueryClientProvider>
   );
