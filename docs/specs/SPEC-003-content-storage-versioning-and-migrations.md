@@ -210,6 +210,7 @@ Unpublishing sets `published_version = NULL` and `has_unpublished_changes = TRUE
 | `POST`   | `/content/:documentId/unpublish`                 | Set `published_version` to `NULL` and keep editable head content                                                        |
 | `POST`   | `/content/:documentId/restore`                   | Restore a deleted document to a draft state (`targetStatus` accepts `draft` or `published`)                             |
 | `POST`   | `/content/:documentId/versions/:version/restore` | Restore a specific historical version as a new head version (`targetStatus` accepts `draft` or `published`)             |
+| `POST`   | `/content/:documentId/duplicate`                 | Duplicate a document with an auto-generated `-copy` path suffix                                                         |
 
 `POST /content` accepts the standard create payload:
 
@@ -271,6 +272,49 @@ Reference fields persist plain env-local `document_id` UUID strings in
 | `offset`                | integer  | Pagination offset                                                                                                                                                                                                                                                |
 | `sort`                  | string   | Sort field (e.g., `createdAt`, `updatedAt`, `path`)                                                                                                                                                                                                              |
 | `order`                 | string   | Sort direction (`asc` or `desc`)                                                                                                                                                                                                                                 |
+| `q`                     | string   | Free-text search (server-side, matches against document path and frontmatter title)                                                                                                                                                                              |
+
+### User Summary Sidecar
+
+`GET /api/v1/content` includes an optional `users` map alongside `data` and
+`pagination` when the server can resolve document authors.
+
+- The server collects unique `createdBy` user IDs from the result rows and
+  batch-resolves them in a single query.
+- The response shape is `{ data: [...], pagination: {...}, users: { [userId]: { name, email } } }`.
+- `users` is a `Record<string, { name: string; email: string }>` keyed by user
+  ID. Entries may be absent for IDs that cannot be resolved (e.g. deleted users
+  or the system default actor).
+- Studio uses the `users` map to display author initials/names without issuing
+  separate per-user lookups.
+- The `users` map is informational only and does not affect authorization or
+  document data integrity.
+
+## Document Duplication
+
+`POST /api/v1/content/:documentId/duplicate` creates a copy of an existing
+document with an auto-generated unique path.
+
+Contract:
+
+- Required scope is `content:write`.
+- CSRF token is required.
+- The source document must exist and must not be soft-deleted; otherwise the
+  endpoint returns `NOT_FOUND` (`404`).
+- Authorization is checked both at the global scope and at the source document's
+  path level.
+- The new document receives the same `type`, `locale`, `format`, `frontmatter`,
+  and `body` as the source.
+- Path generation appends `-copy` to the source path. If that path is already
+  taken (exact match), the server tries `-copy-2` through `-copy-99`. If all
+  candidates are exhausted, the endpoint returns `DUPLICATE_PATH_EXHAUSTED`
+  (`409`).
+- The new document gets a fresh `document_id` and `translation_group_id`.
+- `createdBy` and `updatedBy` are set from the current session principal, not
+  copied from the source.
+- The response returns the newly created `ContentDocumentResponse`.
+- Schema hash validation follows the same rules as `POST /content` when a synced
+  schema exists for the target scope.
 
 ## Content Overview Counts
 
