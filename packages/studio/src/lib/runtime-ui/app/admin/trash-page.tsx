@@ -55,6 +55,7 @@ import {
 } from "../../hooks/use-trash-list.js";
 import { createStudioSchemaRouteApi } from "../../../schema-route-api.js";
 import { createStudioDocumentRouteApi } from "../../../document-route-api.js";
+import { useToast } from "../../components/toast.js";
 
 function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -82,6 +83,7 @@ export default function TrashPage() {
   const mountInfo = useStudioMountInfo();
   const capabilities = useAdminCapabilities();
   const queryClient = useQueryClient();
+  const toast = useToast();
 
   const [searchInput, setSearchInput] = useState("");
   const [rowActionError, setRowActionError] = useState<string | null>(null);
@@ -153,6 +155,7 @@ export default function TrashPage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["trash-list"] });
+      toast.success("Document restored. It is now available as a draft.");
     },
     onError: (error: Error) => {
       if (
