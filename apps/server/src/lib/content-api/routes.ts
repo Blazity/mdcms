@@ -749,6 +749,13 @@ export function mountContentApiRoutes(
           });
         }
 
+        await options.authorize(request, {
+          requiredScope: "content:read",
+          project: scope.project,
+          environment: scope.environment,
+          documentPath: source.path,
+        });
+
         const basePath = source.path.replace(/\/$/, "");
         let candidatePath = `${basePath}-copy`;
         let attempt = 1;

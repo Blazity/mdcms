@@ -151,7 +151,7 @@ export default function ContentTypePage() {
   ]);
 
   const schemaQuery = useQuery({
-    queryKey: ["schema-list"],
+    queryKey: ["schema-list", mountInfo.project, mountInfo.environment],
     queryFn: () => schemaApi!.list(),
     enabled: schemaApi !== null,
     staleTime: 60_000,
@@ -196,7 +196,12 @@ export default function ContentTypePage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["content-list", typeId],
+        queryKey: [
+          "content-list",
+          mountInfo.project,
+          mountInfo.environment,
+          typeId,
+        ],
       });
     },
     onError: onRowActionError,
@@ -210,7 +215,12 @@ export default function ContentTypePage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["content-list", typeId],
+        queryKey: [
+          "content-list",
+          mountInfo.project,
+          mountInfo.environment,
+          typeId,
+        ],
       });
     },
     onError: onRowActionError,
@@ -224,7 +234,12 @@ export default function ContentTypePage() {
     },
     onSuccess: (data) => {
       void queryClient.invalidateQueries({
-        queryKey: ["content-list", typeId],
+        queryKey: [
+          "content-list",
+          mountInfo.project,
+          mountInfo.environment,
+          typeId,
+        ],
       });
       router.push(`/admin/content/${typeId}/${data.documentId}`);
     },
@@ -239,7 +254,12 @@ export default function ContentTypePage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["content-list", typeId],
+        queryKey: [
+          "content-list",
+          mountInfo.project,
+          mountInfo.environment,
+          typeId,
+        ],
       });
     },
     onError: onRowActionError,
@@ -603,7 +623,7 @@ export default function ContentTypePage() {
         locales={mountInfo.supportedLocales}
         onClose={create.close}
         onSubmit={(input) => {
-          void create.submit({
+          create.submit({
             ...input,
             schemaHash: schemaEntry?.schemaHash,
           });

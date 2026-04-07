@@ -66,7 +66,12 @@ export function useCreateDocument(typeId: string) {
     },
     onSuccess: (data) => {
       void queryClient.invalidateQueries({
-        queryKey: ["content-list", typeId],
+        queryKey: [
+          "content-list",
+          mountInfo.project,
+          mountInfo.environment,
+          typeId,
+        ],
       });
       setIsOpen(false);
       router.push(`/admin/content/${typeId}/${data.documentId}`);
@@ -86,6 +91,6 @@ export function useCreateDocument(typeId: string) {
     error: mutation.error?.message,
     open,
     close,
-    submit: mutation.mutateAsync,
+    submit: mutation.mutate,
   };
 }

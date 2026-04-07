@@ -1016,7 +1016,7 @@ export function createDatabaseContentStore(
 
       const nextPath =
         payload.path !== undefined
-          ? assertRequiredString(payload.path, "path")
+          ? validateContentPath(assertRequiredString(payload.path, "path"))
           : existing.path;
       const nextLocale =
         payload.locale !== undefined

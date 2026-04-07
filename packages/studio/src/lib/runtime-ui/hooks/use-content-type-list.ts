@@ -161,7 +161,14 @@ export function useContentTypeList(typeId: string) {
   const queryParams = useMemo(() => mapFiltersToQuery(filters), [filters]);
 
   const query = useQuery({
-    queryKey: ["content-list", typeId, queryParams, offset],
+    queryKey: [
+      "content-list",
+      mountInfo.project,
+      mountInfo.environment,
+      typeId,
+      queryParams,
+      offset,
+    ],
     queryFn: async () => {
       const result = await api!.list({
         type: typeId,

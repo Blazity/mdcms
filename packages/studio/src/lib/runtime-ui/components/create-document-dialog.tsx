@@ -77,8 +77,10 @@ export function CreateDocumentDialog({
     }
   }, [title, prefix, pathEdited]);
 
-  const slug = path.startsWith(prefix) ? path.slice(prefix.length) : path;
-  const hasValidSlug = slug.trim().length > 0 && !slug.endsWith("/");
+  const hasPrefix = path.startsWith(prefix);
+  const slug = hasPrefix ? path.slice(prefix.length) : "";
+  const hasValidSlug =
+    hasPrefix && slug.trim().length > 0 && !slug.endsWith("/");
   const needsLocale = localized && locales && locales.length > 0;
   const canSubmit =
     title.trim().length > 0 &&
@@ -134,7 +136,9 @@ export function CreateDocumentDialog({
               />
               {!hasValidSlug && path.length > 0 && (
                 <p className="text-xs text-foreground-muted">
-                  Path needs a document name after the directory prefix.
+                  {!hasPrefix
+                    ? `Path must start with "${prefix}".`
+                    : "Path needs a document name after the directory prefix."}
                 </p>
               )}
             </div>
