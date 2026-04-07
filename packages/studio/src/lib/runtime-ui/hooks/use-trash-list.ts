@@ -106,7 +106,9 @@ function hasActiveFilters(filters: TrashListFilters): boolean {
 
 export function useTrashList() {
   const mountInfo = useStudioMountInfo();
-  const [filters, setFiltersState] = useState<TrashListFilters>({});
+  const [filters, setFiltersState] = useState<TrashListFilters>({
+    sort: "updated",
+  });
   const [offset, setOffset] = useState(0);
 
   const api = useMemo(() => {

@@ -276,7 +276,7 @@ export default function TrashPage() {
 
         {/* Row action error banner */}
         {rowActionError && (
-          <div className="flex items-center justify-between rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3">
+          <div role="alert" className="flex items-center justify-between rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3">
             <p className="text-sm text-destructive">{rowActionError}</p>
             <Button
               variant="ghost"
