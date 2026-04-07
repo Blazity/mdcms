@@ -136,6 +136,7 @@ export function useTrashList() {
       const result = await api!.list({
         ...queryParams,
         isDeleted: true,
+        draft: true,
         limit: TRASH_PAGE_SIZE,
         offset,
       });

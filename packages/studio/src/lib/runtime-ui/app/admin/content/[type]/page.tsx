@@ -16,6 +16,7 @@ import {
   AlertCircle,
   ShieldAlert,
   ArrowUpFromLine,
+  CheckCircle2,
 } from "lucide-react";
 import { Button } from "../../../../components/ui/button.js";
 import { Input } from "../../../../components/ui/input.js";
@@ -119,6 +120,14 @@ export default function ContentTypePage() {
 
   const [searchInput, setSearchInput] = useState("");
   const [rowActionError, setRowActionError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Auto-dismiss success message
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = setTimeout(() => setSuccessMessage(null), 4000);
+    return () => clearTimeout(timer);
+  }, [successMessage]);
 
   const list = useContentTypeList(typeId);
   const create = useCreateDocument(typeId);
@@ -261,6 +270,7 @@ export default function ContentTypePage() {
           typeId,
         ],
       });
+      setSuccessMessage("Document moved to trash. It can be restored from the Trash page.");
     },
     onError: onRowActionError,
   });
@@ -425,6 +435,14 @@ export default function ContentTypePage() {
             >
               Dismiss
             </Button>
+          </div>
+        )}
+
+        {/* Success banner */}
+        {successMessage && (
+          <div className="flex items-center gap-2 rounded-lg border border-success/20 bg-success/5 px-4 py-3">
+            <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
+            <p className="text-sm text-success">{successMessage}</p>
           </div>
         )}
 
