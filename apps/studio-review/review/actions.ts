@@ -78,6 +78,19 @@ const REVIEW_ACTIONS: readonly ActionCatalogItem[] = [
     },
   },
   {
+    id: "content.restore",
+    kind: "command",
+    method: "POST",
+    path: "/api/v1/content/:id/restore",
+    permissions: ["content:write"],
+    studio: {
+      visible: true,
+      surface: "content.trash",
+      label: "Restore document",
+      confirm: "Restore this document? It will return to draft state.",
+    },
+  },
+  {
     id: "schema.list",
     kind: "query",
     method: "GET",
