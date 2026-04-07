@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useRouter } from "../../../../adapters/next-navigation.js";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -55,6 +55,7 @@ import { PageHeader } from "../../../../components/layout/page-header.js";
 import { cn } from "../../../../lib/utils.js";
 import { useAdminCapabilities } from "../../capabilities-context.js";
 import { useStudioMountInfo } from "../../mount-info-context.js";
+import { useStudioSession } from "../../session-context.js";
 import {
   useContentTypeList,
   PAGE_SIZE,
@@ -99,8 +100,16 @@ function formatRelativeTime(dateStr: string): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function authorInitials(createdBy: string): string {
-  return createdBy.slice(0, 2).toUpperCase();
+function deriveAuthorInitials(
+  email: string | undefined,
+): string {
+  if (!email) return "?";
+  const local = email.split("@")[0] || "";
+  const parts = local.split(/[._-]/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return local.slice(0, 2).toUpperCase();
 }
 
 export default function ContentTypePage() {
@@ -108,8 +117,22 @@ export default function ContentTypePage() {
   const router = useRouter();
   const typeId = params.type as string;
   const mountInfo = useStudioMountInfo();
+  const sessionState = useStudioSession();
   const capabilities = useAdminCapabilities();
   const queryClient = useQueryClient();
+
+  const resolveAuthorInitials = useCallback(
+    (createdBy: string) => {
+      if (
+        sessionState.status === "authenticated" &&
+        sessionState.session.userId === createdBy
+      ) {
+        return deriveAuthorInitials(sessionState.session.email);
+      }
+      return "?";
+    },
+    [sessionState],
+  );
 
   const [searchInput, setSearchInput] = useState("");
   const [rowActionError, setRowActionError] = useState<string | null>(null);
@@ -496,7 +519,7 @@ export default function ContentTypePage() {
                           <div className="flex items-center gap-2">
                             <Avatar className="h-6 w-6">
                               <AvatarFallback className="text-xs">
-                                {authorInitials(doc.createdBy)}
+                                {resolveAuthorInitials(doc.createdBy)}
                               </AvatarFallback>
                             </Avatar>
                           </div>

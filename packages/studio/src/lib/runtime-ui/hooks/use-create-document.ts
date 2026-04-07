@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
+import { IMPLICIT_DEFAULT_LOCALE } from "@mdcms/shared";
 import { createStudioDocumentRouteApi } from "../../document-route-api.js";
 import { useStudioMountInfo } from "../app/admin/mount-info-context.js";
 import { useRouter } from "../navigation.js";
@@ -14,7 +15,7 @@ export function buildCreatePayload(
   return {
     type: typeId,
     path: input.path,
-    locale: input.locale,
+    locale: input.locale || IMPLICIT_DEFAULT_LOCALE,
     format: "mdx" as const,
     schemaHash: input.schemaHash,
   };
