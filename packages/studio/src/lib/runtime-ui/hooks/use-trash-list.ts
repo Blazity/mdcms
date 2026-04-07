@@ -25,11 +25,12 @@ export type MappedTrashDocument = {
   deletedBy: string;
 };
 
+export type TrashListSort = "updated" | "created" | "path-asc" | "path-desc";
+
 export type TrashListFilters = {
   q?: string;
   type?: string;
-  sort?: string;
-  order?: "asc" | "desc";
+  sort?: TrashListSort;
 };
 
 export type TrashListStatus =

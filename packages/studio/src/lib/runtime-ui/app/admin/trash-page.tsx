@@ -52,6 +52,7 @@ import {
   useTrashList,
   TRASH_PAGE_SIZE,
   type MappedTrashDocument,
+  type TrashListSort,
 } from "../../hooks/use-trash-list.js";
 import { createStudioSchemaRouteApi } from "../../../schema-route-api.js";
 import { createStudioDocumentRouteApi } from "../../../document-route-api.js";
@@ -266,7 +267,9 @@ export default function TrashPage() {
           </div>
           <Select
             value={list.filters.sort ?? "updated"}
-            onValueChange={(value) => list.setFilters({ sort: value })}
+            onValueChange={(value) =>
+              list.setFilters({ sort: value as TrashListSort })
+            }
           >
             <SelectTrigger className="w-36" aria-label="Sort order">
               <SelectValue />
