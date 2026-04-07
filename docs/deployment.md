@@ -53,7 +53,7 @@ docker build -f apps/server/Dockerfile -t mdcms-server .
 ### Redis 7
 
 - Image: `redis:7-alpine`
-- AOF persistence enabled (`--appendonly yes`, snapshots every 60s)
+- AOF persistence enabled (`--appendonly yes`), RDB snapshot if at least 1 key changed in 60 seconds (`--save 60 1`)
 - Health check: `redis-cli ping`
 
 ### MinIO (S3-compatible storage)
@@ -85,6 +85,11 @@ Copy `.env.example` to `.env` and adjust values. When absent, Compose uses the i
 | `S3_BUCKET` | `mdcms-media` | S3 bucket name for media |
 | `SMTP_HOST` | `mailhog` | SMTP server hostname |
 | `SMTP_PORT` | `1025` | SMTP server port |
+| `POSTGRES_USER` | `mdcms` | PostgreSQL superuser name |
+| `POSTGRES_PASSWORD` | `mdcms` | PostgreSQL superuser password |
+| `POSTGRES_DB` | `mdcms` | PostgreSQL database name |
+| `MINIO_ROOT_USER` | `minioadmin` | MinIO root access key |
+| `MINIO_ROOT_PASSWORD` | `minioadmin` | MinIO root secret key |
 | `NODE_ENV` | `development` | Runtime environment |
 | `LOG_LEVEL` | `info` | Log verbosity |
 | `APP_VERSION` | `0.0.0` | Application version tag |
@@ -140,7 +145,7 @@ All services have health checks configured in `docker-compose.yml`:
 
 | Service | Test | Interval | Timeout | Retries | Start Period |
 |---------|------|----------|---------|---------|--------------|
-| server | `fetch http://127.0.0.1:4000/healthz` | 10s | 5s | 12 | 5s |
+| server | `bun -e "const response = await fetch('http://127.0.0.1:4000/healthz'); if (!response.ok) throw new Error('server health check failed');"` | 10s | 5s | 12 | 5s |
 | postgres | `pg_isready -U mdcms -d mdcms` | 10s | 5s | 8 | — |
 | redis | `redis-cli ping` | 10s | 3s | 8 | — |
 | minio | `curl -f http://localhost:9000/minio/health/live` | 10s | 5s | 8 | — |

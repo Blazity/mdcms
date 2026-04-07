@@ -43,4 +43,5 @@ Thumbs.db
 **/.next
 .mdcms/manifests/
 .worktrees/
+blazebot/memory/
 apps/studio-review/.generated/
