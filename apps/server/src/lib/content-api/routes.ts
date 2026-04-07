@@ -154,11 +154,16 @@ export function mountContentApiRoutes(
       );
 
       if (options.resolveUsers && response.data.length > 0) {
-        const uniqueUserIds = [
-          ...new Set(response.data.map((doc) => doc.createdBy)),
-        ];
-        const users = await options.resolveUsers(uniqueUserIds);
-        (response as Record<string, unknown>).users = users;
+        try {
+          const uniqueUserIds = [
+            ...new Set(response.data.map((doc) => doc.createdBy)),
+          ];
+          const users = await options.resolveUsers(uniqueUserIds);
+          (response as Record<string, unknown>).users = users;
+        } catch {
+          // User enrichment is best-effort; a lookup failure must not
+          // break the content list response.
+        }
       }
 
       if (resolvePaths.length === 0) {
