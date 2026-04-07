@@ -275,6 +275,40 @@ export function parseRestoreTargetStatus(
   });
 }
 
+export function validateContentPath(path: string): string {
+  const trimmed = path.trim();
+
+  if (trimmed.length === 0) {
+    throw new RuntimeError({
+      code: "INVALID_INPUT",
+      message: 'Field "path" is required.',
+      statusCode: 400,
+      details: { field: "path" },
+    });
+  }
+
+  if (trimmed.endsWith("/")) {
+    throw new RuntimeError({
+      code: "INVALID_INPUT",
+      message:
+        'Field "path" must not end with a trailing slash. A document slug is required.',
+      statusCode: 400,
+      details: { field: "path", value: trimmed },
+    });
+  }
+
+  if (trimmed.startsWith("/")) {
+    throw new RuntimeError({
+      code: "INVALID_INPUT",
+      message: 'Field "path" must not start with a leading slash.',
+      statusCode: 400,
+      details: { field: "path", value: trimmed },
+    });
+  }
+
+  return trimmed;
+}
+
 export function pickScope(request: Request): ContentScope {
   const scope = resolveRequestTargetRouting(request);
 

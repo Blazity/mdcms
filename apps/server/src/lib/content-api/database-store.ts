@@ -34,6 +34,7 @@ import {
   parsePositiveInt,
   parseSortField,
   parseSortOrder,
+  validateContentPath,
 } from "./parsing.js";
 import {
   buildContentPathConflict,
@@ -468,7 +469,9 @@ export function createDatabaseContentStore(
     },
 
     async create(scope, payload, options?: ContentWriteOperationOptions) {
-      const path = assertRequiredString(payload.path, "path");
+      const path = validateContentPath(
+        assertRequiredString(payload.path, "path"),
+      );
       const type = assertRequiredString(payload.type, "type");
       const locale = assertRequiredString(payload.locale, "locale");
       const sourceDocumentId = parseOptionalString(
@@ -1013,7 +1016,7 @@ export function createDatabaseContentStore(
 
       const nextPath =
         payload.path !== undefined
-          ? assertRequiredString(payload.path, "path")
+          ? validateContentPath(assertRequiredString(payload.path, "path"))
           : existing.path;
       const nextLocale =
         payload.locale !== undefined

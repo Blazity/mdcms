@@ -14,7 +14,7 @@ import EnvironmentsPage from "./runtime-ui/app/admin/environments-page.js";
 import MediaPage from "./runtime-ui/app/admin/media-page.js";
 import ContentDocumentPage from "./runtime-ui/pages/content-document-page.js";
 import ContentPage from "./runtime-ui/pages/content-page.js";
-import ContentTypePage from "./runtime-ui/pages/content-type-page.js";
+import ContentTypePage from "./runtime-ui/app/admin/content/[type]/page.js";
 import SchemaPage from "./runtime-ui/app/admin/schema-page.js";
 import SettingsPage from "./runtime-ui/app/admin/settings-page.js";
 import TrashPage from "./runtime-ui/app/admin/trash-page.js";

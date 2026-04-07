@@ -23,6 +23,7 @@ import {
   parseOptionalString,
   parsePositiveInt,
   parseSortField,
+  validateContentPath,
   parseSortOrder,
 } from "./parsing.js";
 import { validateReferenceFieldIdentities } from "./reference-validation.js";
@@ -223,7 +224,9 @@ export function createInMemoryContentStore(
     async create(scope, payload, _options?: ContentWriteOperationOptions) {
       const store = getScopeStore(scope);
       const scopeSchemas = getScopeSchemas(scope);
-      const path = assertRequiredString(payload.path, "path");
+      const path = validateContentPath(
+        assertRequiredString(payload.path, "path"),
+      );
       const type = assertRequiredString(payload.type, "type");
       const locale = assertRequiredString(payload.locale, "locale");
       const sourceDocumentId = parseOptionalString(
@@ -599,7 +602,7 @@ export function createInMemoryContentStore(
 
       const nextPath =
         payload.path !== undefined
-          ? assertRequiredString(payload.path, "path")
+          ? validateContentPath(assertRequiredString(payload.path, "path"))
           : existing.path;
       const nextLocale =
         payload.locale !== undefined

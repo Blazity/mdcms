@@ -2,6 +2,7 @@ import {
   RuntimeError,
   type ApiPaginatedEnvelope,
   type ContentDocumentResponse,
+  type ContentUserSummary,
 } from "@mdcms/shared";
 
 import type { MdcmsConfig } from "./studio-component.js";
@@ -23,6 +24,7 @@ export type StudioContentListApiOptions = {
 
 export type StudioContentListQuery = {
   type?: string;
+  q?: string;
   draft?: boolean;
   published?: boolean;
   hasUnpublishedChanges?: boolean;
@@ -33,10 +35,13 @@ export type StudioContentListQuery = {
   offset?: number;
 };
 
+export type StudioContentListResult =
+  ApiPaginatedEnvelope<ContentDocumentResponse> & {
+    users?: Record<string, ContentUserSummary>;
+  };
+
 export type StudioContentListApi = {
-  list: (
-    query?: StudioContentListQuery,
-  ) => Promise<ApiPaginatedEnvelope<ContentDocumentResponse>>;
+  list: (query?: StudioContentListQuery) => Promise<StudioContentListResult>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -70,6 +75,8 @@ export function createStudioContentListApi(
       const url = resolveStudioRelativeUrl("/api/v1/content", config.serverUrl);
 
       if (query.type) url.searchParams.set("type", query.type);
+      const trimmedQ = query.q?.trim();
+      if (trimmedQ) url.searchParams.set("q", trimmedQ);
       if (query.draft !== undefined)
         url.searchParams.set("draft", String(query.draft));
       if (query.published !== undefined)
@@ -133,6 +140,10 @@ export function createStudioContentListApi(
 
       const pagination = payload.pagination;
 
+      const users = isRecord(payload.users)
+        ? (payload.users as Record<string, ContentUserSummary>)
+        : undefined;
+
       return {
         data: payload.data as ContentDocumentResponse[],
         pagination: {
@@ -141,6 +152,7 @@ export function createStudioContentListApi(
           offset: isFiniteNumber(pagination.offset) ? pagination.offset : 0,
           hasMore: isBoolean(pagination.hasMore) ? pagination.hasMore : false,
         },
+        ...(users ? { users } : {}),
       };
     },
   };

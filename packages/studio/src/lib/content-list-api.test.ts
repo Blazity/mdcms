@@ -261,3 +261,39 @@ test("list defaults to empty query when called with no args", async () => {
   const url = new URL(String(calls[0]?.input));
   assert.equal(url.searchParams.toString(), "");
 });
+
+test("list passes q search param when provided", async () => {
+  const calls: Array<{ input: string | URL | Request }> = [];
+  const api = createApi({
+    fetcher: async (input) => {
+      calls.push({ input });
+      return new Response(JSON.stringify(validPaginatedResponse), {
+        status: 200,
+      });
+    },
+  });
+
+  await api.list({ type: "BlogPost", q: "hello world", limit: 10 });
+
+  const url = new URL(String(calls[0]?.input));
+  assert.equal(url.searchParams.get("q"), "hello world");
+  assert.equal(url.searchParams.get("type"), "BlogPost");
+  assert.equal(url.searchParams.get("limit"), "10");
+});
+
+test("list omits q param when not provided", async () => {
+  const calls: Array<{ input: string | URL | Request }> = [];
+  const api = createApi({
+    fetcher: async (input) => {
+      calls.push({ input });
+      return new Response(JSON.stringify(validPaginatedResponse), {
+        status: 200,
+      });
+    },
+  });
+
+  await api.list({ type: "BlogPost" });
+
+  const url = new URL(String(calls[0]?.input));
+  assert.equal(url.searchParams.get("q"), null);
+});

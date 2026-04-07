@@ -222,9 +222,14 @@ export type ContentWriteSchemaSyncLookup = (
   scope: ContentScope,
 ) => Promise<ContentWriteSchemaSyncState | undefined>;
 
+export type ContentUserSummaryLookup = (
+  userIds: string[],
+) => Promise<Record<string, { name: string; email: string }>>;
+
 export type MountContentApiRoutesOptions = {
   store: ContentStore;
   authorize: ContentRequestAuthorizer;
   requireCsrf: ContentRequestCsrfProtector;
   getWriteSchemaSyncState: ContentWriteSchemaSyncLookup;
+  resolveUsers?: ContentUserSummaryLookup;
 };

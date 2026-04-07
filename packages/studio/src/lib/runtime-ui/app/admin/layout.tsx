@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import type { StudioMountContext, EnvironmentSummary } from "@mdcms/shared";
+
+import { createStudioQueryClient } from "../../query-client.js";
 
 import { createStudioCurrentPrincipalCapabilitiesApi } from "../../../current-principal-capabilities-api.js";
 import { createStudioSessionApi } from "../../../session-api.js";
@@ -65,9 +68,13 @@ export default function AdminLayout({
   children: React.ReactNode;
   context: StudioMountContext;
 }) {
+  const [queryClient] = useState(() => createStudioQueryClient());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [canReadSchema, setCanReadSchema] = useState(false);
   const [canCreateContent, setCanCreateContent] = useState(false);
+  const [canPublishContent, setCanPublishContent] = useState(false);
+  const [canUnpublishContent, setCanUnpublishContent] = useState(false);
+  const [canDeleteContent, setCanDeleteContent] = useState(false);
   const [canManageUsers, setCanManageUsers] = useState(false);
   const [canManageSettings, setCanManageSettings] = useState(false);
   const [sessionState, setSessionState] = useState<StudioSessionState>({
@@ -90,6 +97,9 @@ export default function AdminLayout({
     if (!loadInput) {
       setCanReadSchema(false);
       setCanCreateContent(false);
+      setCanPublishContent(false);
+      setCanUnpublishContent(false);
+      setCanDeleteContent(false);
       setCanManageUsers(false);
       setCanManageSettings(false);
       return;
@@ -107,6 +117,9 @@ export default function AdminLayout({
         if (!cancelled) {
           setCanReadSchema(response.capabilities.schema.read);
           setCanCreateContent(response.capabilities.content.write);
+          setCanPublishContent(response.capabilities.content.publish);
+          setCanUnpublishContent(response.capabilities.content.unpublish);
+          setCanDeleteContent(response.capabilities.content.delete);
           setCanManageUsers(response.capabilities.users.manage);
           setCanManageSettings(response.capabilities.settings.manage);
         }
@@ -115,6 +128,9 @@ export default function AdminLayout({
         if (!cancelled) {
           setCanReadSchema(false);
           setCanCreateContent(false);
+          setCanPublishContent(false);
+          setCanUnpublishContent(false);
+          setCanDeleteContent(false);
           setCanManageUsers(false);
           setCanManageSettings(false);
         }
@@ -270,38 +286,44 @@ export default function AdminLayout({
     auth: context.auth,
     environments,
     hostBridge: context.hostBridge,
+    supportedLocales: context.documentRoute?.supportedLocales,
   };
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-background">
-      <AdminCapabilitiesProvider
-        value={{
-          canReadSchema,
-          canCreateContent,
-          canManageUsers,
-          canManageSettings,
-        }}
-      >
-        <StudioSessionProvider value={sessionState}>
-          <StudioMountInfoProvider value={mountInfo}>
-            <AppSidebar
-              canReadSchema={canReadSchema}
-              canManageUsers={canManageUsers}
-              canManageSettings={canManageSettings}
-              collapsed={sidebarCollapsed}
-              onToggle={handleToggle}
-            />
-            <main
-              className={cn(
-                "min-h-screen min-w-0 overflow-x-hidden transition-all duration-300",
-                sidebarCollapsed ? "ml-16" : "ml-60",
-              )}
-            >
-              {children}
-            </main>
-          </StudioMountInfoProvider>
-        </StudioSessionProvider>
-      </AdminCapabilitiesProvider>
-    </div>
+    <QueryClientProvider client={queryClient}>
+      <div className="min-h-screen overflow-x-hidden bg-background">
+        <AdminCapabilitiesProvider
+          value={{
+            canReadSchema,
+            canCreateContent,
+            canPublishContent,
+            canUnpublishContent,
+            canDeleteContent,
+            canManageUsers,
+            canManageSettings,
+          }}
+        >
+          <StudioSessionProvider value={sessionState}>
+            <StudioMountInfoProvider value={mountInfo}>
+              <AppSidebar
+                canReadSchema={canReadSchema}
+                canManageUsers={canManageUsers}
+                canManageSettings={canManageSettings}
+                collapsed={sidebarCollapsed}
+                onToggle={handleToggle}
+              />
+              <main
+                className={cn(
+                  "min-h-screen min-w-0 overflow-x-hidden transition-all duration-300",
+                  sidebarCollapsed ? "ml-16" : "ml-60",
+                )}
+              >
+                {children}
+              </main>
+            </StudioMountInfoProvider>
+          </StudioSessionProvider>
+        </AdminCapabilitiesProvider>
+      </div>
+    </QueryClientProvider>
   );
 }
