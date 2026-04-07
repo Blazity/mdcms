@@ -72,6 +72,11 @@ export type ContentVersionDocumentResponse = ContentVersionSummaryResponse & {
   resolveErrors?: ResolveErrorsMap;
 };
 
+export type ContentUserSummary = {
+  name: string;
+  email: string;
+};
+
 export type ContentOverviewCountsResponse = {
   type: string;
   total: number;

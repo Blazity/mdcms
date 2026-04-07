@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type {
   ContentDocumentResponse,
+  ContentUserSummary,
   PaginationMetadata,
 } from "@mdcms/shared";
 import { RuntimeError } from "@mdcms/shared";
@@ -180,6 +181,7 @@ export function useContentTypeList(typeId: string) {
   );
 
   const pagination: PaginationMetadata | null = query.data?.pagination ?? null;
+  const users: Record<string, ContentUserSummary> = query.data?.users ?? {};
 
   const status: ContentTypeListStatus = useMemo(() => {
     if (query.isLoading) return "loading";
@@ -220,6 +222,7 @@ export function useContentTypeList(typeId: string) {
     status,
     documents,
     pagination,
+    users,
     filters,
     errorMessage,
     setFilters,

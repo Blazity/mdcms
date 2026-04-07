@@ -153,6 +153,14 @@ export function mountContentApiRoutes(
         toDocumentResponse(row),
       );
 
+      if (options.resolveUsers && response.data.length > 0) {
+        const uniqueUserIds = [
+          ...new Set(response.data.map((doc) => doc.createdBy)),
+        ];
+        const users = await options.resolveUsers(uniqueUserIds);
+        (response as Record<string, unknown>).users = users;
+      }
+
       if (resolvePaths.length === 0) {
         return response;
       }
