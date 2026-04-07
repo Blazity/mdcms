@@ -65,6 +65,7 @@ export type StudioDocumentRouteCreateInput = {
   path: string;
   locale?: string;
   format?: "md" | "mdx";
+  schemaHash?: string;
   signal?: AbortSignal;
 };
 
@@ -811,6 +812,7 @@ export function createStudioDocumentRouteApi(
         path: "/api/v1/content",
         locale: input.locale,
         signal: input.signal,
+        schemaHash: input.schemaHash,
         payload: {
           type: input.type,
           path: input.path,

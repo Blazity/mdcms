@@ -9,13 +9,14 @@ import { useRouter } from "../navigation.js";
 
 export function buildCreatePayload(
   typeId: string,
-  input: { path: string; locale?: string },
+  input: { path: string; locale?: string; schemaHash?: string },
 ) {
   return {
     type: typeId,
     path: input.path,
     locale: input.locale,
     format: "mdx" as const,
+    schemaHash: input.schemaHash,
   };
 }
 
@@ -45,7 +46,11 @@ export function useCreateDocument(typeId: string) {
   ]);
 
   const mutation = useMutation({
-    mutationFn: async (input: { path: string; locale?: string }) => {
+    mutationFn: async (input: {
+      path: string;
+      locale?: string;
+      schemaHash?: string;
+    }) => {
       if (!api) throw new Error("API not available.");
       const payload = buildCreatePayload(typeId, input);
       return api.create(payload);

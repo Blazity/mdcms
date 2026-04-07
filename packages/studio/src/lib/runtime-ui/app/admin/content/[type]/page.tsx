@@ -595,7 +595,10 @@ export default function ContentTypePage() {
         locales={mountInfo.supportedLocales}
         onClose={create.close}
         onSubmit={(input) => {
-          void create.submit(input);
+          void create.submit({
+            ...input,
+            schemaHash: schemaEntry?.schemaHash,
+          });
         }}
       />
     </div>
