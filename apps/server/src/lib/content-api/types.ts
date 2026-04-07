@@ -36,9 +36,7 @@ export type ContentWriteSchemaSyncState = {
   schemaHash: string;
 };
 
-export type ContentDocument = ContentDocumentResponse & {
-  updatedBy: string;
-};
+export type ContentDocument = ContentDocumentResponse;
 
 export type ContentVersionSummary = ContentVersionSummaryResponse;
 

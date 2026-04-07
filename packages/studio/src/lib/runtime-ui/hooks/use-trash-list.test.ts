@@ -27,6 +27,7 @@ const baseDeletedDoc: ContentDocumentResponse = {
   body: "# Hello",
   createdBy: "user-1",
   createdAt: "2026-03-01T00:00:00.000Z",
+  updatedBy: "user-2",
   updatedAt: "2026-03-25T14:00:00.000Z",
 };
 
@@ -42,7 +43,7 @@ test("mapTrashDocument transforms deleted API response to trash view model", () 
   assert.equal(mapped.locale, "en");
   assert.equal(mapped.type, "BlogPost");
   assert.equal(mapped.deletedAt, "2026-03-25T14:00:00.000Z");
-  assert.equal(mapped.deletedBy, "user-1");
+  assert.equal(mapped.deletedBy, "user-2");
 });
 
 test("mapTrashDocument falls back to last path segment for title", () => {

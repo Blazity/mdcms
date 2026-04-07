@@ -343,6 +343,7 @@ function validateContentDocumentResponseData(
     !isString(data.body) ||
     !isNonEmptyString(data.createdBy) ||
     !isNonEmptyString(data.createdAt) ||
+    !isNonEmptyString(data.updatedBy) ||
     !isNonEmptyString(data.updatedAt) ||
     (data.resolveErrors !== undefined &&
       !isResolveErrorsMap(data.resolveErrors))

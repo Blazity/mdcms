@@ -850,6 +850,7 @@ test("loadStudioDocumentShell fetches draft content with scoped headers", async 
               body: "# Launch Notes",
               createdBy: "44444444-4444-4444-8444-444444444444",
               createdAt: "2026-03-04T09:00:00.000Z",
+              updatedBy: "44444444-4444-4444-8444-444444444444",
               updatedAt: "2026-03-04T10:00:00.000Z",
             },
           }),

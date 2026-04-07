@@ -51,7 +51,7 @@ export function mapTrashDocument(
     locale: doc.locale,
     type: doc.type,
     deletedAt: doc.updatedAt,
-    deletedBy: doc.createdBy,
+    deletedBy: doc.updatedBy,
   };
 }
 
