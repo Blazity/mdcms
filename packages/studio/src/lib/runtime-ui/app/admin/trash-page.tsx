@@ -301,9 +301,7 @@ export default function TrashPage() {
             <div className="mb-4 rounded-full bg-background-subtle p-4">
               <Trash2 className="h-8 w-8 text-foreground-muted" />
             </div>
-            <h3 className="mb-2 text-lg font-semibold">
-              No deleted documents
-            </h3>
+            <h3 className="mb-2 text-lg font-semibold">No deleted documents</h3>
             <p className="text-sm text-foreground-muted">
               Documents you delete will appear here for recovery.
             </p>
@@ -352,9 +350,7 @@ export default function TrashPage() {
                             </Avatar>
                           </div>
                         </TableCell>
-                        <TableCell>
-                          {renderRowActions(doc)}
-                        </TableCell>
+                        <TableCell>{renderRowActions(doc)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

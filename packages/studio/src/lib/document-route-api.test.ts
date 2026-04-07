@@ -603,10 +603,7 @@ test("restore sends POST /api/v1/content/:documentId/restore with CSRF token", a
     String(restoreCall?.input).endsWith("/api/v1/content/doc-1/restore"),
   );
   assert.equal(restoreCall?.init?.method, "POST");
-  assert.equal(
-    readHeader(restoreCall?.init, "x-mdcms-csrf-token"),
-    "csrf-abc",
-  );
+  assert.equal(readHeader(restoreCall?.init, "x-mdcms-csrf-token"), "csrf-abc");
 });
 
 test("version detail helper validates required fields and rejects malformed payloads", async () => {
