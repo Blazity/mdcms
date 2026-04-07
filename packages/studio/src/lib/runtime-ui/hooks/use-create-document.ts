@@ -10,13 +10,19 @@ import { useRouter } from "../navigation.js";
 
 export function buildCreatePayload(
   typeId: string,
-  input: { path: string; locale?: string; schemaHash?: string },
+  input: {
+    path: string;
+    locale?: string;
+    title: string;
+    schemaHash?: string;
+  },
 ) {
   return {
     type: typeId,
     path: input.path,
     locale: input.locale || IMPLICIT_DEFAULT_LOCALE,
     format: "mdx" as const,
+    frontmatter: { title: input.title },
     body: "",
     schemaHash: input.schemaHash,
   };
@@ -51,6 +57,7 @@ export function useCreateDocument(typeId: string) {
     mutationFn: async (input: {
       path: string;
       locale?: string;
+      title: string;
       schemaHash?: string;
     }) => {
       if (!api) throw new Error("API not available.");

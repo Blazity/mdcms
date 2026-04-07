@@ -27,8 +27,18 @@ export type CreateDocumentDialogProps = {
   localized: boolean;
   locales?: string[];
   onClose: () => void;
-  onSubmit: (input: { path: string; locale?: string }) => void;
+  onSubmit: (input: { path: string; locale?: string; title: string }) => void;
 };
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/[\s_]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
 
 export function CreateDocumentDialog({
   isOpen,
@@ -44,19 +54,37 @@ export function CreateDocumentDialog({
     () => (typeDirectory.endsWith("/") ? typeDirectory : `${typeDirectory}/`),
     [typeDirectory],
   );
+  const [title, setTitle] = useState("");
+  const [pathEdited, setPathEdited] = useState(false);
   const [path, setPath] = useState(prefix);
   const [locale, setLocale] = useState<string | undefined>(locales?.[0]);
 
   useEffect(() => {
     if (isOpen) {
+      setTitle("");
       setPath(prefix);
+      setPathEdited(false);
       setLocale(locales?.[0]);
     }
   }, [isOpen, prefix, locales]);
 
+  // Auto-derive path from title unless user manually edited it
+  useEffect(() => {
+    if (!pathEdited && title) {
+      setPath(`${prefix}${slugify(title)}`);
+    } else if (!pathEdited && !title) {
+      setPath(prefix);
+    }
+  }, [title, prefix, pathEdited]);
+
+  const slug = path.startsWith(prefix) ? path.slice(prefix.length) : path;
+  const hasValidSlug = slug.trim().length > 0 && !slug.endsWith("/");
   const needsLocale = localized && locales && locales.length > 0;
   const canSubmit =
-    path.trim().length > 0 && !isSubmitting && (!needsLocale || !!locale);
+    title.trim().length > 0 &&
+    hasValidSlug &&
+    !isSubmitting &&
+    (!needsLocale || !!locale);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,6 +92,7 @@ export function CreateDocumentDialog({
     onSubmit({
       path: path.trim(),
       locale: localized ? locale : undefined,
+      title: title.trim(),
     });
   };
 
@@ -76,14 +105,38 @@ export function CreateDocumentDialog({
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="doc-path">Path</Label>
+              <Label htmlFor="doc-title">Title</Label>
+              <Input
+                id="doc-title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="My new document"
+                disabled={isSubmitting}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="doc-path">
+                Path
+                <span className="ml-1 text-xs text-foreground-muted font-normal">
+                  (auto-generated)
+                </span>
+              </Label>
               <Input
                 id="doc-path"
                 value={path}
-                onChange={(e) => setPath(e.target.value)}
+                onChange={(e) => {
+                  setPath(e.target.value);
+                  setPathEdited(true);
+                }}
                 placeholder={`${prefix}my-document`}
                 disabled={isSubmitting}
               />
+              {!hasValidSlug && path.length > 0 && (
+                <p className="text-xs text-foreground-muted">
+                  Path needs a document name after the directory prefix.
+                </p>
+              )}
             </div>
             {localized && locales && locales.length > 0 && (
               <div className="space-y-2">
