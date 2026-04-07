@@ -265,6 +265,12 @@ export default function ContentTypePage() {
     onError: onRowActionError,
   });
 
+  const isRowActionPending =
+    publishMutation.isPending ||
+    unpublishMutation.isPending ||
+    duplicateMutation.isPending ||
+    deleteMutation.isPending;
+
   // Pagination
   const totalPages = list.pagination
     ? Math.ceil(list.pagination.total / PAGE_SIZE)
@@ -293,6 +299,7 @@ export default function ContentTypePage() {
           {capabilities.canPublishContent &&
             (doc.status === "draft" || doc.status === "changed") && (
               <DropdownMenuItem
+                disabled={isRowActionPending}
                 onClick={() => publishMutation.mutate(doc.documentId)}
               >
                 <Send className="mr-2 h-4 w-4" />
@@ -301,6 +308,7 @@ export default function ContentTypePage() {
             )}
           {capabilities.canUnpublishContent && doc.status === "published" && (
             <DropdownMenuItem
+              disabled={isRowActionPending}
               onClick={() => unpublishMutation.mutate(doc.documentId)}
             >
               <ArrowUpFromLine className="mr-2 h-4 w-4" />
@@ -309,6 +317,7 @@ export default function ContentTypePage() {
           )}
           {capabilities.canCreateContent && (
             <DropdownMenuItem
+              disabled={isRowActionPending}
               onClick={() => duplicateMutation.mutate(doc.documentId)}
             >
               <Copy className="mr-2 h-4 w-4" />
@@ -319,6 +328,7 @@ export default function ContentTypePage() {
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem
+                disabled={isRowActionPending}
                 className="text-destructive focus:text-destructive"
                 onClick={() => deleteMutation.mutate(doc.documentId)}
               >

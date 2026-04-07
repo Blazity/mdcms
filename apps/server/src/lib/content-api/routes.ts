@@ -755,7 +755,7 @@ export function mountContentApiRoutes(
         }
 
         await options.authorize(request, {
-          requiredScope: "content:read",
+          requiredScope: "content:read:draft",
           project: scope.project,
           environment: scope.environment,
           documentPath: source.path,
