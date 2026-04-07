@@ -56,6 +56,11 @@ If all types are non-localized, `locales` may be omitted. In that implicit singl
   `translation_group_id` from the source document.
 - The content list indicates translation status for localized types (e.g., "2/4 locales translated").
 - Non-localized types render as single-variant content with no locale switcher.
+- When creating a new document for a localized type, the Studio creation dialog
+  shows a locale picker populated from the project's configured
+  `locales.supported` list. For non-localized types, no locale picker is shown
+  and the document is created with the implicit default locale
+  (`__mdcms_default__`).
 
 ### SDK Usage
 

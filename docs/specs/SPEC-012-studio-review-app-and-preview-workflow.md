@@ -95,7 +95,7 @@ The review app consumes the same contract families as the Studio shell for:
 - schema reads
 - content document reads
 - content version history
-- review-supported content mutations such as publish flows
+- review-supported content mutations (create, publish, unpublish, duplicate, delete)
 
 Whenever a change modifies any contract consumed by the review app, the same
 change must update the review app so its mocks and preview routes remain in

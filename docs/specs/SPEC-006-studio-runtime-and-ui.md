@@ -254,6 +254,72 @@ Deterministic states:
   requests render a deterministic error state. Partial metric failures must not
   fall back to mock values.
 
+### Content Type List (`/admin/content/:type`)
+
+The `/admin/content/:type` route is a live document list for a specific schema
+type within the active `(project, environment)` target. It is backed by:
+
+- `GET /api/v1/content?type=<typeId>` for the paginated document list with
+  server-side search, status filtering, sort, and pagination
+- `GET /api/v1/schema` for type metadata (name, directory, localized flag)
+- `GET /api/v1/me/capabilities` for action gating (inherited from layout)
+
+The list response includes an optional `users` sidecar map that batch-resolves
+`createdBy` user IDs to `{ name, email }` for author display without per-user
+lookups.
+
+Normative behavior:
+
+- The document list is keyed by the `type` route parameter resolved against live
+  schema entries. Studio must not use mock content-type fixtures.
+- Server-side search uses the `q` query parameter. The Studio search input is
+  debounced before issuing requests.
+- Status filtering maps UI states (`published`, `draft`, `changed`) to the
+  `published` and `hasUnpublishedChanges` query parameters.
+- Pagination is server-side with `limit` and `offset`. Page size is fixed at 20.
+- Author initials are derived from the `users` sidecar email. When a user
+  cannot be resolved, a placeholder is shown.
+
+Deterministic states:
+
+- If the content list API returns `401` or `403`, the route renders a forbidden
+  state with a permission banner.
+- If the content list API returns a non-auth, non-forbidden error, the route
+  renders an error state with a retry action.
+- If the content list returns zero documents and no filters are active, the
+  route renders a deterministic empty state encouraging document creation.
+- If the content list returns zero documents with active filters (search or
+  status), the route renders a "no results" state within the ready view.
+
+Document creation:
+
+- The "New Document" button is gated by `capabilities.content.write`. When
+  the caller lacks write capability, the button is hidden.
+- Clicking the button opens an inline creation dialog with:
+  - **Path** (required text input, pre-populated with the type's directory
+    prefix from the schema entry)
+  - **Locale** (select, shown only when the type is localized and the project
+    has configured `locales.supported`; for non-localized types, the document
+    is created with the implicit default locale `__mdcms_default__`)
+- On success, the dialog closes, the content list cache is invalidated, and
+  Studio navigates to the new document editor at
+  `/admin/content/:type/:documentId`.
+
+Row-level actions:
+
+- Each document row has a dropdown menu with the following default actions:
+
+| Action    | Behavior                                       | Capability gate                  | Visibility condition    |
+| --------- | ---------------------------------------------- | -------------------------------- | ----------------------- |
+| Edit      | Navigate to document editor                    | None                             | Always                  |
+| Publish   | `POST .../publish`, invalidate list            | `capabilities.content.publish`   | Draft or changed status |
+| Unpublish | `POST .../unpublish`, invalidate list          | `capabilities.content.unpublish` | Published status        |
+| Duplicate | `POST .../duplicate`, navigate to new document | `capabilities.content.write`     | Always                  |
+| Delete    | `DELETE .../content/:id`, invalidate list      | `capabilities.content.delete`    | Always                  |
+
+- Row action failures are surfaced inline with a dismissible error banner.
+- The `content.list.row.actions` extensibility slot applies to these actions.
+
 ### Theme Preference Persistence
 
 Studio-owned theme preference persists in browser-local storage.
@@ -294,6 +360,9 @@ Normative behavior:
   `mdcms.config.ts` snapshot.
 - The runtime must not infer write authority from local schema availability
   alone.
+- Content list page action gating uses `capabilities.content.write` (create,
+  duplicate), `capabilities.content.publish` (publish), `capabilities.content.unpublish`
+  (unpublish), and `capabilities.content.delete` (delete).
 
 Schema mismatch recovery:
 
