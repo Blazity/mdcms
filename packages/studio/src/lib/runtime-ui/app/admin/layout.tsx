@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { StudioMountContext, EnvironmentSummary } from "@mdcms/shared";
 
@@ -78,9 +78,26 @@ export default function AdminLayout({
   const [canDeleteContent, setCanDeleteContent] = useState(false);
   const [canManageUsers, setCanManageUsers] = useState(false);
   const [canManageSettings, setCanManageSettings] = useState(false);
-  const [activeEnvironment, setActiveEnvironment] = useState<string | null>(
-    context.documentRoute?.environment ?? null,
+  const [activeEnvironment, setActiveEnvironmentRaw] = useState<string | null>(
+    () => {
+      if (typeof window !== "undefined") {
+        const fromQuery = new URLSearchParams(window.location.search).get(
+          "env",
+        );
+        if (fromQuery) return fromQuery;
+      }
+      return context.documentRoute?.environment ?? null;
+    },
   );
+
+  const setActiveEnvironment = useCallback((env: string) => {
+    setActiveEnvironmentRaw(env);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("env", env);
+      window.history.replaceState(null, "", url.toString());
+    }
+  }, []);
   const [sessionState, setSessionState] = useState<StudioSessionState>({
     status: "loading",
   });
