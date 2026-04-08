@@ -74,6 +74,7 @@ test("loadStudioDocumentDraft fetches draft content with scoped headers", async 
             body: "# Launch Notes",
             createdBy: "44444444-4444-4444-8444-444444444444",
             createdAt: "2026-03-04T09:00:00.000Z",
+            updatedBy: "44444444-4444-4444-8444-444444444444",
             updatedAt: "2026-03-04T10:00:00.000Z",
           },
         }),
@@ -166,6 +167,7 @@ test("cookie-authenticated mutations bootstrap CSRF from auth/session", async ()
             body: "# Updated",
             createdBy: "44444444-4444-4444-8444-444444444444",
             createdAt: "2026-03-04T09:00:00.000Z",
+            updatedBy: "44444444-4444-4444-8444-444444444444",
             updatedAt: "2026-03-05T10:00:00.000Z",
           },
         }),
@@ -230,6 +232,7 @@ test("token-authenticated mutations do not bootstrap CSRF", async () => {
             body: "# Published",
             createdBy: "44444444-4444-4444-8444-444444444444",
             createdAt: "2026-03-04T09:00:00.000Z",
+            updatedBy: "44444444-4444-4444-8444-444444444444",
             updatedAt: "2026-03-06T10:00:00.000Z",
           },
         }),
@@ -317,6 +320,7 @@ test("cookie-authenticated mutations preserve a path-prefixed studio serverUrl",
               body: "# Updated",
               createdBy: "44444444-4444-4444-8444-444444444444",
               createdAt: "2026-03-04T09:00:00.000Z",
+              updatedBy: "44444444-4444-4444-8444-444444444444",
               updatedAt: "2026-03-05T10:00:00.000Z",
             },
           }),
@@ -473,6 +477,7 @@ const validDocumentResponse = {
     body: "# Hello",
     createdBy: "user-1",
     createdAt: "2026-03-01T00:00:00.000Z",
+    updatedBy: "user-1",
     updatedAt: "2026-03-20T00:00:00.000Z",
   },
 };
@@ -586,6 +591,24 @@ test("create throws RuntimeError on 403", async () => {
     (error: unknown) =>
       error instanceof RuntimeError && error.statusCode === 403,
   );
+});
+
+test("restore sends POST /api/v1/content/:documentId/restore with CSRF token", async () => {
+  const { fetcher, calls } = createMockFetcher([
+    sessionResponse("csrf-abc"),
+    new Response(JSON.stringify(validDocumentResponse), { status: 200 }),
+  ]);
+  const api = createNewMethodsApi({ auth: { mode: "cookie" }, fetcher });
+
+  const result = await api.restore({ documentId: "doc-1" });
+
+  assert.equal(result.documentId, "doc-1");
+  const restoreCall = calls[1];
+  assert.ok(
+    String(restoreCall?.input).endsWith("/api/v1/content/doc-1/restore"),
+  );
+  assert.equal(restoreCall?.init?.method, "POST");
+  assert.equal(readHeader(restoreCall?.init, "x-mdcms-csrf-token"), "csrf-abc");
 });
 
 test("version detail helper validates required fields and rejects malformed payloads", async () => {

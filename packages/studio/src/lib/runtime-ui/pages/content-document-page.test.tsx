@@ -230,6 +230,7 @@ function createDocumentResponse(overrides: Record<string, unknown> = {}) {
     body: "# Launch Notes",
     createdBy: "33333333-3333-4333-8333-333333333331",
     createdAt: "2026-03-27T10:00:00.000Z",
+    updatedBy: "33333333-3333-4333-8333-333333333331",
     updatedAt: "2026-03-27T12:00:00.000Z",
     ...overrides,
   };

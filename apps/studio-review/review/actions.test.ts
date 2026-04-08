@@ -13,6 +13,7 @@ test("listReviewActions filters the review catalog by scenario capabilities", ()
       "content.create",
       "content.duplicate",
       "content.unpublish",
+      "content.restore",
       "schema.list",
     ],
   );
@@ -29,6 +30,7 @@ test("listReviewActions filters the review catalog by scenario capabilities", ()
       "content.duplicate",
       "content.unpublish",
       "content.delete",
+      "content.restore",
       "schema.list",
       "users.list",
       "settings.read",

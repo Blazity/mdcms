@@ -45,6 +45,7 @@ test("createClient list unwraps the paginated content envelope", async () => {
     body: "Hello world",
     createdBy: "33333333-3333-3333-3333-333333333333",
     createdAt: "2026-03-26T10:00:00.000Z",
+    updatedBy: "33333333-3333-3333-3333-333333333333",
     updatedAt: "2026-03-26T12:00:00.000Z",
   };
 
@@ -202,6 +203,7 @@ test("createClient get by id unwraps a single-document envelope", async () => {
     body: "Hello world",
     createdBy: "33333333-3333-3333-3333-333333333333",
     createdAt: "2026-03-26T10:00:00.000Z",
+    updatedBy: "33333333-3333-3333-3333-333333333333",
     updatedAt: "2026-03-26T12:00:00.000Z",
   };
 
@@ -261,6 +263,7 @@ test("createClient get by slug resolves a single typed list match", async () => 
     body: "Hello world",
     createdBy: "33333333-3333-3333-3333-333333333333",
     createdAt: "2026-03-26T10:00:00.000Z",
+    updatedBy: "33333333-3333-3333-3333-333333333333",
     updatedAt: "2026-03-26T12:00:00.000Z",
   };
 
@@ -343,6 +346,7 @@ test("createClient get by slug throws MdcmsClientError when multiple documents m
     body: "Hello world",
     createdBy: "33333333-3333-3333-3333-333333333333",
     createdAt: "2026-03-26T10:00:00.000Z",
+    updatedBy: "33333333-3333-3333-3333-333333333333",
     updatedAt: "2026-03-26T12:00:00.000Z",
   };
   const second: ContentDocumentResponse = {
@@ -462,6 +466,7 @@ test("createClient get by id serializes locale, resolve, and draft query paramet
     body: "Bonjour le monde",
     createdBy: "33333333-3333-3333-3333-333333333333",
     createdAt: "2026-03-26T10:00:00.000Z",
+    updatedBy: "33333333-3333-3333-3333-333333333333",
     updatedAt: "2026-03-26T12:00:00.000Z",
   };
 
@@ -517,6 +522,7 @@ test("createClient get by slug serializes locale and repeated resolve query para
     body: "Bonjour le monde",
     createdBy: "33333333-3333-3333-3333-333333333333",
     createdAt: "2026-03-26T10:00:00.000Z",
+    updatedBy: "33333333-3333-3333-3333-333333333333",
     updatedAt: "2026-03-26T12:00:00.000Z",
   };
 

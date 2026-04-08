@@ -43,4 +43,5 @@ Thumbs.db
 **/.next
 .mdcms/manifests/
 .worktrees/
+docs/superpowers/
 apps/studio-review/.generated/

@@ -156,7 +156,9 @@ export function mountContentApiRoutes(
       if (options.resolveUsers && response.data.length > 0) {
         try {
           const uniqueUserIds = [
-            ...new Set(response.data.map((doc) => doc.createdBy)),
+            ...new Set(
+              response.data.flatMap((doc) => [doc.createdBy, doc.updatedBy]),
+            ),
           ];
           const users = await options.resolveUsers(uniqueUserIds);
           (response as Record<string, unknown>).users = users;

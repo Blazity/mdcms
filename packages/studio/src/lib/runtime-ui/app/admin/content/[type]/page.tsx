@@ -65,6 +65,7 @@ import { useCreateDocument } from "../../../../hooks/use-create-document.js";
 import { CreateDocumentDialog } from "../../../../components/create-document-dialog.js";
 import { createStudioSchemaRouteApi } from "../../../../../schema-route-api.js";
 import { createStudioDocumentRouteApi } from "../../../../../document-route-api.js";
+import { useToast } from "../../../../components/toast.js";
 
 const statusConfig = {
   published: {
@@ -117,6 +118,7 @@ export default function ContentTypePage() {
   const capabilities = useAdminCapabilities();
   const queryClient = useQueryClient();
 
+  const toast = useToast();
   const [searchInput, setSearchInput] = useState("");
   const [rowActionError, setRowActionError] = useState<string | null>(null);
 
@@ -261,6 +263,9 @@ export default function ContentTypePage() {
           typeId,
         ],
       });
+      toast.success(
+        "Document moved to trash. It can be restored from the Trash page.",
+      );
     },
     onError: onRowActionError,
   });

@@ -5,6 +5,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import type { StudioMountContext, EnvironmentSummary } from "@mdcms/shared";
 
 import { createStudioQueryClient } from "../../query-client.js";
+import { ToastProvider } from "../../components/toast.js";
 
 import { createStudioCurrentPrincipalCapabilitiesApi } from "../../../current-principal-capabilities-api.js";
 import { createStudioSessionApi } from "../../../session-api.js";
@@ -291,39 +292,41 @@ export default function AdminLayout({
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="min-h-screen overflow-x-hidden bg-background">
-        <AdminCapabilitiesProvider
-          value={{
-            canReadSchema,
-            canCreateContent,
-            canPublishContent,
-            canUnpublishContent,
-            canDeleteContent,
-            canManageUsers,
-            canManageSettings,
-          }}
-        >
-          <StudioSessionProvider value={sessionState}>
-            <StudioMountInfoProvider value={mountInfo}>
-              <AppSidebar
-                canReadSchema={canReadSchema}
-                canManageUsers={canManageUsers}
-                canManageSettings={canManageSettings}
-                collapsed={sidebarCollapsed}
-                onToggle={handleToggle}
-              />
-              <main
-                className={cn(
-                  "min-h-screen min-w-0 overflow-x-hidden transition-all duration-300",
-                  sidebarCollapsed ? "ml-16" : "ml-60",
-                )}
-              >
-                {children}
-              </main>
-            </StudioMountInfoProvider>
-          </StudioSessionProvider>
-        </AdminCapabilitiesProvider>
-      </div>
+      <ToastProvider>
+        <div className="min-h-screen overflow-x-hidden bg-background">
+          <AdminCapabilitiesProvider
+            value={{
+              canReadSchema,
+              canCreateContent,
+              canPublishContent,
+              canUnpublishContent,
+              canDeleteContent,
+              canManageUsers,
+              canManageSettings,
+            }}
+          >
+            <StudioSessionProvider value={sessionState}>
+              <StudioMountInfoProvider value={mountInfo}>
+                <AppSidebar
+                  canReadSchema={canReadSchema}
+                  canManageUsers={canManageUsers}
+                  canManageSettings={canManageSettings}
+                  collapsed={sidebarCollapsed}
+                  onToggle={handleToggle}
+                />
+                <main
+                  className={cn(
+                    "min-h-screen min-w-0 overflow-x-hidden transition-all duration-300",
+                    sidebarCollapsed ? "ml-16" : "ml-60",
+                  )}
+                >
+                  {children}
+                </main>
+              </StudioMountInfoProvider>
+            </StudioSessionProvider>
+          </AdminCapabilitiesProvider>
+        </div>
+      </ToastProvider>
     </QueryClientProvider>
   );
 }
