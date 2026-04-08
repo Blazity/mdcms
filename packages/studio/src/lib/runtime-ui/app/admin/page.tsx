@@ -27,6 +27,7 @@ import { useStudioMountInfo } from "./mount-info-context.js";
 import { useAdminCapabilities } from "./capabilities-context.js";
 import { createStudioSchemaRouteApi } from "../../../schema-route-api.js";
 import { createStudioContentListApi } from "../../../content-list-api.js";
+import { createStudioContentOverviewApi } from "../../../content-overview-api.js";
 import {
   loadDashboardData,
   type DashboardLoadResult,
@@ -82,8 +83,9 @@ export default function DashboardPage() {
 
     const schemaApi = createStudioSchemaRouteApi(config, authOpts);
     const contentApi = createStudioContentListApi(config, authOpts);
+    const overviewApi = createStudioContentOverviewApi(config, authOpts);
 
-    loadDashboardData(schemaApi, contentApi)
+    loadDashboardData(schemaApi, contentApi, overviewApi)
       .then((result) => {
         if (!cancelled) {
           setState(result);
