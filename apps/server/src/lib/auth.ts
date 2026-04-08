@@ -148,8 +148,8 @@ export type ApiKeyMetadata = {
 };
 
 export type CliLoginStartInput = {
-  project?: string;
-  environment?: string;
+  project: string;
+  environment: string;
   redirectUri: string;
   state: string;
   scopes?: ApiKeyOperationScope[];
@@ -417,8 +417,8 @@ const CreateApiKeyInputSchema = z.object({
 });
 
 const CliLoginStartInputSchema = z.object({
-  project: z.string().trim().min(1).optional(),
-  environment: z.string().trim().min(1).optional(),
+  project: z.string().trim().min(1),
+  environment: z.string().trim().min(1),
   redirectUri: z.string().trim().url(),
   state: z.string().trim().min(16).max(256),
   scopes: z.array(z.enum(API_KEY_OPERATION_SCOPES)).min(1).optional(),
@@ -3452,16 +3452,11 @@ export function createAuthService(
           });
         }
 
-        if (metadata.contextAllowlist.length > 0) {
-          if (!requirement.project || !requirement.environment) {
-            throw new RuntimeError({
-              code: "FORBIDDEN",
-              message:
-                "API key authorization requires explicit project/environment routing context.",
-              statusCode: 403,
-            });
-          }
-
+        if (
+          metadata.contextAllowlist.length > 0 &&
+          requirement.project &&
+          requirement.environment
+        ) {
           const isContextAllowed = apiKeyAllowsTarget(
             metadata.contextAllowlist,
             {
@@ -3482,7 +3477,10 @@ export function createAuthService(
               },
             });
           }
-        } else if (requirement.project || requirement.environment) {
+        } else if (
+          metadata.contextAllowlist.length === 0 &&
+          (requirement.project || requirement.environment)
+        ) {
           throw new RuntimeError({
             code: "FORBIDDEN",
             message:

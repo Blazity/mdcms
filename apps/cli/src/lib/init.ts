@@ -230,7 +230,11 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
         }
       }
 
-      // ── Step 2: Login ──────────────────────────────────────────────
+      // ── Step 2: Project + Environment Names ──────────────────────────
+      const projectName = await prompter.text("Project name");
+      const envName = await prompter.text("Environment name", "production");
+
+      // ── Step 3: Login ──────────────────────────────────────────────
       let apiKey: string;
       if (options?.skipAuth) {
         apiKey = "skip-auth-key";
@@ -248,6 +252,8 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
               body: JSON.stringify({
                 redirectUri: listener.redirectUri,
                 state: oauthState,
+                project: projectName,
+                environment: envName,
                 scopes: [
                   "projects:write",
                   "schema:write",
@@ -308,13 +314,12 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
         }
       }
 
-      // ── Step 3: Create Project ────────────────────────────────────────
+      // ── Step 4: Create Project ────────────────────────────────────────
       const authHeaders: Record<string, string> = {
         authorization: `Bearer ${apiKey}`,
         "content-type": "application/json",
       };
 
-      const projectName = await prompter.text("Project name");
       const s3 = prompter.spinner();
       s3.start("Creating project...");
       const createResponse = await fetcher(`${serverUrl}/api/v1/projects`, {
@@ -346,8 +351,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
       const existingEnvs = created.data.environments ?? [];
       s3.stop(`Project "${project}" created`);
 
-      // ── Step 4: Create Environment ─────────────────────────────────
-      const envName = await prompter.text("Environment name", "production");
+      // ── Step 5: Create Environment ─────────────────────────────────
       const alreadyExists = existingEnvs.some((e) => e.name === envName);
 
       if (alreadyExists) {

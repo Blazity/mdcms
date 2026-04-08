@@ -40,9 +40,11 @@ test("login command stores exchanged API key in scoped credential profile", asyn
           redirectUri: string;
           state: string;
           scopes: string[];
-          project?: string;
+          project: string;
+          environment: string;
         };
-        assert.equal(body.project, undefined);
+        assert.equal(body.project, "marketing-site");
+        assert.equal(body.environment, "staging");
         assert.equal(body.redirectUri, "http://127.0.0.1:41001/callback");
         assert.equal(body.state, "state_test_login_abcdefghijklmnop");
         assert.ok(body.scopes.includes("projects:read"));
