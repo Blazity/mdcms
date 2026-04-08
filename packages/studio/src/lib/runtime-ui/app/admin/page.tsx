@@ -309,9 +309,7 @@ export default function DashboardPage() {
           {/* Content */}
           <Card className="border-border">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-lg font-semibold">
-                Content
-              </CardTitle>
+              <CardTitle className="text-lg font-semibold">Content</CardTitle>
               <Link
                 href="/admin/content"
                 className="text-sm text-foreground-muted hover:text-accent flex items-center gap-1"

@@ -353,8 +353,5 @@ test("recent documents include frontmatter and hasUnpublishedChanges", async () 
   if (result.status !== "loaded") return;
   assert.equal(result.data.recentDocuments.length, 1);
   assert.equal(result.data.recentDocuments[0]?.hasUnpublishedChanges, true);
-  assert.equal(
-    result.data.recentDocuments[0]?.frontmatter.title,
-    "Draft Post",
-  );
+  assert.equal(result.data.recentDocuments[0]?.frontmatter.title, "Draft Post");
 });

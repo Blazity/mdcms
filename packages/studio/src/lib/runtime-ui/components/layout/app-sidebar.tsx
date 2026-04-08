@@ -141,7 +141,6 @@ export function AppSidebar({
               );
             })}
           </ul>
-
         </nav>
 
         {/* Bottom Section */}

@@ -245,10 +245,7 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  variant="destructive"
-                  onClick={handleSignOut}
-                >
+                <DropdownMenuItem variant="destructive" onClick={handleSignOut}>
                   <LogOut className="mr-2 h-4 w-4" />
                   Sign out
                 </DropdownMenuItem>

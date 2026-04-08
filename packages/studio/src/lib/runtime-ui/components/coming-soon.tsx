@@ -9,7 +9,11 @@ interface ComingSoonProps {
   description: string;
 }
 
-export function ComingSoon({ icon: Icon, title, description }: ComingSoonProps) {
+export function ComingSoon({
+  icon: Icon,
+  title,
+  description,
+}: ComingSoonProps) {
   return (
     <div className="relative flex flex-col items-center justify-center py-24">
       {/* Large watermark icon */}
