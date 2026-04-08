@@ -48,6 +48,7 @@ export type ContentDocumentResponse = {
   resolveErrors?: ResolveErrorsMap;
   createdBy: string;
   createdAt: string;
+  updatedBy: string;
   updatedAt: string;
 };
 
@@ -70,4 +71,16 @@ export type ContentVersionDocumentResponse = ContentVersionSummaryResponse & {
   frontmatter: Record<string, unknown>;
   body: string;
   resolveErrors?: ResolveErrorsMap;
+};
+
+export type ContentUserSummary = {
+  name: string;
+  email: string;
+};
+
+export type ContentOverviewCountsResponse = {
+  type: string;
+  total: number;
+  published: number;
+  drafts: number;
 };

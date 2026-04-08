@@ -6,7 +6,66 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { StudioNavigationProvider } from "../../navigation.js";
 import { AppSidebar } from "./app-sidebar.js";
 
-function renderSidebar(canReadSchema: boolean): string {
+function renderSidebar(input?: {
+  canReadSchema?: boolean;
+  pathname?: string;
+  basePath?: string;
+}): string {
+  return renderToStaticMarkup(
+    createElement(
+      StudioNavigationProvider,
+      {
+        value: {
+          pathname: input?.pathname ?? "/admin",
+          params: {},
+          basePath: input?.basePath,
+          push: () => {},
+          replace: () => {},
+          back: () => {},
+        },
+      },
+      createElement(AppSidebar, {
+        canReadSchema: input?.canReadSchema ?? true,
+        collapsed: false,
+        onToggle: () => {},
+      }),
+    ),
+  );
+}
+
+test("AppSidebar shows the Schema route when schema.read is allowed", () => {
+  const markup = renderSidebar({
+    canReadSchema: true,
+  });
+
+  assert.match(markup, /href="\/admin\/schema"/);
+});
+
+test("AppSidebar hides the Schema route when schema.read is not allowed", () => {
+  const markup = renderSidebar({
+    canReadSchema: false,
+  });
+
+  assert.doesNotMatch(markup, /href="\/admin\/schema"/);
+});
+
+test("AppSidebar keeps review deployment links scoped to the active scenario base path", () => {
+  const markup = renderSidebar({
+    canReadSchema: true,
+    pathname: "/review/editor/admin/schema",
+    basePath: "/review/editor/admin",
+  });
+
+  assert.match(markup, /href="\/review\/editor\/admin\/schema"/);
+  assert.doesNotMatch(markup, /href="\/admin\/schema"/);
+  assert.match(markup, /bg-accent-subtle/);
+});
+
+function renderSidebarWithCapabilities(caps: {
+  canReadSchema: boolean;
+  canManageUsers: boolean;
+  canManageSettings: boolean;
+}): string {
   return renderToStaticMarkup(
     createElement(
       StudioNavigationProvider,
@@ -20,7 +79,7 @@ function renderSidebar(canReadSchema: boolean): string {
         },
       },
       createElement(AppSidebar, {
-        canReadSchema,
+        ...caps,
         collapsed: false,
         onToggle: () => {},
       }),
@@ -28,14 +87,52 @@ function renderSidebar(canReadSchema: boolean): string {
   );
 }
 
-test("AppSidebar shows the Schema route when schema.read is allowed", () => {
-  const markup = renderSidebar(true);
+test("AppSidebar shows Users route when users.manage is allowed", () => {
+  const markup = renderSidebarWithCapabilities({
+    canReadSchema: true,
+    canManageUsers: true,
+    canManageSettings: true,
+  });
 
-  assert.match(markup, /href="\/admin\/schema"/);
+  assert.match(markup, /href="\/admin\/users"/);
 });
 
-test("AppSidebar hides the Schema route when schema.read is not allowed", () => {
-  const markup = renderSidebar(false);
+test("AppSidebar hides Users route when users.manage is not allowed", () => {
+  const markup = renderSidebarWithCapabilities({
+    canReadSchema: true,
+    canManageUsers: false,
+    canManageSettings: true,
+  });
 
-  assert.doesNotMatch(markup, /href="\/admin\/schema"/);
+  assert.doesNotMatch(markup, /href="\/admin\/users"/);
+});
+
+test("AppSidebar shows Settings route when settings.manage is allowed", () => {
+  const markup = renderSidebarWithCapabilities({
+    canReadSchema: true,
+    canManageUsers: true,
+    canManageSettings: true,
+  });
+
+  assert.match(markup, /href="\/admin\/settings"/);
+});
+
+test("AppSidebar hides Settings route when settings.manage is not allowed", () => {
+  const markup = renderSidebarWithCapabilities({
+    canReadSchema: true,
+    canManageUsers: true,
+    canManageSettings: false,
+  });
+
+  assert.doesNotMatch(markup, /href="\/admin\/settings"/);
+});
+
+test("AppSidebar does not render online presence section", () => {
+  const markup = renderSidebarWithCapabilities({
+    canReadSchema: true,
+    canManageUsers: true,
+    canManageSettings: true,
+  });
+
+  assert.doesNotMatch(markup, /Online now/i);
 });

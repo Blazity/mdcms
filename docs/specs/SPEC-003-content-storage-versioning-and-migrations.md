@@ -210,6 +210,7 @@ Unpublishing sets `published_version = NULL` and `has_unpublished_changes = TRUE
 | `POST`   | `/content/:documentId/unpublish`                 | Set `published_version` to `NULL` and keep editable head content                                                        |
 | `POST`   | `/content/:documentId/restore`                   | Restore a deleted document to a draft state (`targetStatus` accepts `draft` or `published`)                             |
 | `POST`   | `/content/:documentId/versions/:version/restore` | Restore a specific historical version as a new head version (`targetStatus` accepts `draft` or `published`)             |
+| `POST`   | `/content/:documentId/duplicate`                 | Duplicate a document with an auto-generated `-copy` path suffix                                                         |
 
 `POST /content` accepts the standard create payload:
 
@@ -220,6 +221,13 @@ Unpublishing sets `published_version = NULL` and `has_unpublished_changes = TRUE
 - `frontmatter`
 - `body`
 - optional actor fields
+
+Path validation:
+
+- `path` must not end with a trailing slash. A document slug segment is
+  required after any directory prefix (e.g. `blog/my-post`, not `blog/`).
+- `path` must not start with a leading slash.
+- Paths that violate these rules are rejected with `INVALID_INPUT` (`400`).
 
 It also accepts optional `sourceDocumentId`:
 
@@ -271,6 +279,94 @@ Reference fields persist plain env-local `document_id` UUID strings in
 | `offset`                | integer  | Pagination offset                                                                                                                                                                                                                                                |
 | `sort`                  | string   | Sort field (e.g., `createdAt`, `updatedAt`, `path`)                                                                                                                                                                                                              |
 | `order`                 | string   | Sort direction (`asc` or `desc`)                                                                                                                                                                                                                                 |
+| `q`                     | string   | Free-text search (server-side, matches against document path and frontmatter title)                                                                                                                                                                              |
+
+### User Summary Sidecar
+
+`GET /api/v1/content` includes an optional `users` map alongside `data` and
+`pagination` when the server can resolve document authors.
+
+- The server collects unique `createdBy` and `updatedBy` user IDs from the
+  result rows and batch-resolves them in a single query.
+- The response shape is `{ data: [...], pagination: {...}, users: { [userId]: { name, email } } }`.
+- `users` is a `Record<string, { name: string; email: string }>` keyed by user
+  ID. Entries may be absent for IDs that cannot be resolved (e.g. deleted users
+  or the system default actor).
+- Studio uses the `users` map to display author initials/names without issuing
+  separate per-user lookups.
+- The `users` map is informational only and does not affect authorization or
+  document data integrity.
+
+## Document Duplication
+
+`POST /api/v1/content/:documentId/duplicate` creates a copy of an existing
+document with an auto-generated unique path.
+
+Contract:
+
+- Required scope is `content:write`.
+- CSRF token is required.
+- The source document must exist and must not be soft-deleted; otherwise the
+  endpoint returns `NOT_FOUND` (`404`).
+- Authorization is checked both at the global scope and at the source document's
+  path level.
+- The new document receives the same `type`, `locale`, `format`, `frontmatter`,
+  and `body` as the source.
+- Path generation appends `-copy` to the source path. If that path is already
+  taken (exact match), the server tries `-copy-2` through `-copy-99`. If all
+  candidates are exhausted, the endpoint returns `DUPLICATE_PATH_EXHAUSTED`
+  (`409`).
+- The new document gets a fresh `document_id` and `translation_group_id`.
+- `createdBy` and `updatedBy` are set from the current session principal, not
+  copied from the source.
+- The response returns the newly created `ContentDocumentResponse`.
+- Schema hash validation follows the same rules as `POST /content` when a synced
+  schema exists for the target scope.
+
+## Content Overview Counts
+
+`GET /api/v1/content/overview` is a metadata-only endpoint for schema-first UI
+surfaces such as Studio's `/admin/content` overview. It exposes truthful
+aggregate counts without granting draft list or draft body access.
+
+Contract:
+
+- Required scope is `content:read`.
+- Explicit target routing for `project` and `environment` is required with the
+  same rules as the rest of `/api/v1/content*`.
+- The request accepts one or more `type` query parameters. Repeating `type`
+  requests counts for multiple schema types in a single round trip.
+- The response is metadata only:
+
+```json
+{
+  "data": [
+    {
+      "type": "BlogPost",
+      "total": 12,
+      "published": 9,
+      "drafts": 3
+    }
+  ]
+}
+```
+
+Count semantics:
+
+- `total`: all non-deleted documents of the type
+- `published`: non-deleted documents with `published_version IS NOT NULL`
+- `drafts`: non-deleted documents with `published_version IS NULL`
+
+Additional rules:
+
+- The endpoint must not return document IDs, paths, locales, frontmatter, body,
+  or any other document-row payload.
+- If a requested type has zero matching documents, the response still includes a
+  row for that type with zero counts.
+- Unknown types return a zero-count row so overview consumers can render
+  deterministic schema cards when the backend has no documents yet.
+- This endpoint does not change the meaning of `GET /api/v1/content?draft=true`;
+  mutable draft list and detail reads still require `content:read:draft`.
 
 ## Version History
 
@@ -386,6 +482,7 @@ All `/api/v1/content*` endpoints require explicit target routing for `project` a
 
 | Method | Path                                                    | Auth Mode          | Required Scope                                                                           | Target Routing                  | Request                                                                                                                                                                                               | Success                                                                                   | Deterministic Errors                                                                                                                                                                                                                                                                                                                                                             |
 | ------ | ------------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/v1/content/overview`                              | session_or_api_key | `content:read`                                                                           | required: `project_environment` | Query supports repeated `type` values plus `project`, `environment`                                                                                                                                   | `200` `{ data: { type, total, published, drafts }[] }`                                    | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_QUERY_PARAM` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`)                                                                                                                                                                                                                                  |
 | GET    | `/api/v1/content`                                       | session_or_api_key | `content:read` (published mode), `content:read:draft` when `draft=true`                  | required: `project_environment` | Query supports: `type`, `path`, `locale`, `slug`, `published`, `isDeleted`, `hasUnpublishedChanges`, `draft`, `resolve` (type required), `project`, `environment`, `limit`, `offset`, `sort`, `order` | `200` `{ data: ContentDocument[], pagination: { total, limit, offset, hasMore } }`        | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_QUERY_PARAM` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`)                                                                                                                                                                                                                                  |
 | GET    | `/api/v1/content/:documentId`                           | session_or_api_key | `content:read` (published mode), `content:read:draft` when `draft=true`                  | required: `project_environment` | path `documentId`, optional `draft=true`, optional `resolve`                                                                                                                                          | `200` `{ data: ContentDocument }`                                                         | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_QUERY_PARAM` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                                                                                                                                                                             |
 | GET    | `/api/v1/content/:documentId/versions`                  | session_or_api_key | `content:read`                                                                           | required: `project_environment` | path `documentId`, optional `limit`, optional `offset`                                                                                                                                                | `200` `{ data: DocumentVersionSummary[], pagination: { total, limit, offset, hasMore } }` | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_QUERY_PARAM` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                                                                                                                                                                             |

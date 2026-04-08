@@ -184,6 +184,9 @@ function createAuthServiceStub(overrides: Partial<AuthService>): AuthService {
     async handleAuthRequest() {
       return new Response("not implemented", { status: 501 });
     },
+    listSsoProviders() {
+      return [];
+    },
   };
 
   return {

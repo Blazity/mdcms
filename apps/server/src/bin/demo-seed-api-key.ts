@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { RuntimeError } from "@mdcms/shared";
-
 import { createAuthService } from "../lib/auth.js";
 import { createDatabaseContentStore } from "../lib/content-api.js";
 import { createDatabaseConnection } from "../lib/db.js";
@@ -30,6 +29,7 @@ const LOCAL_AUTH_ORIGIN = "http://localhost";
 const DEMO_CONTENT_CHANGE_SUMMARY = "compose demo seed";
 
 type DemoSeedDocument = {
+  key: string;
   type: string;
   path: string;
   locale: string;
@@ -37,10 +37,12 @@ type DemoSeedDocument = {
   frontmatter: Record<string, unknown>;
   body: string;
   publish: boolean;
+  sourceKey?: string;
 };
 
 const DEMO_CONTENT_DOCUMENTS: readonly DemoSeedDocument[] = [
   {
+    key: "post:hello-mdcms:en",
     type: "post",
     path: "content/posts/hello-mdcms",
     locale: "en",
@@ -64,6 +66,7 @@ const DEMO_CONTENT_DOCUMENTS: readonly DemoSeedDocument[] = [
     publish: true,
   },
   {
+    key: "post:pull-push-demo:en",
     type: "post",
     path: "content/posts/pull-push-demo",
     locale: "en",
@@ -87,6 +90,7 @@ const DEMO_CONTENT_DOCUMENTS: readonly DemoSeedDocument[] = [
     publish: true,
   },
   {
+    key: "page:about:en",
     type: "page",
     path: "content/pages/about",
     locale: "en",
@@ -104,6 +108,51 @@ const DEMO_CONTENT_DOCUMENTS: readonly DemoSeedDocument[] = [
       "- one demo user",
       "- one fixed demo API key",
       "- sample content documents",
+    ].join("\n"),
+    publish: true,
+  },
+  {
+    key: "campaign:global-launch:en",
+    type: "campaign",
+    path: "content/campaigns/global-launch",
+    locale: "en",
+    format: "md",
+    frontmatter: {
+      title: "Global Launch",
+      slug: "global-launch",
+      summary: "English launch copy seeded for localized overview testing.",
+    },
+    body: [
+      "# Global Launch",
+      "",
+      "This localized demo document is the default English campaign source.",
+      "",
+      "- locale: en",
+      "- translation group: global-launch",
+      "- created by `demo:seed`",
+    ].join("\n"),
+    publish: true,
+  },
+  {
+    key: "campaign:global-launch:fr",
+    sourceKey: "campaign:global-launch:en",
+    type: "campaign",
+    path: "content/campaigns/global-launch",
+    locale: "fr",
+    format: "md",
+    frontmatter: {
+      title: "Lancement mondial",
+      slug: "lancement-mondial",
+      summary: "Copie francaise generee pour tester les variantes localisees.",
+    },
+    body: [
+      "# Lancement mondial",
+      "",
+      "Cette variante partage le meme groupe de traduction que la campagne anglaise.",
+      "",
+      "- langue: fr",
+      "- groupe de traduction: global-launch",
+      "- cree par `demo:seed`",
     ].join("\n"),
     publish: true,
   },
@@ -299,6 +348,34 @@ async function ensureDemoApiKey(input: {
   });
 }
 
+async function ensureDemoRbacGrant(input: {
+  db: ReturnType<typeof createDatabaseConnection>["db"];
+  userId: string;
+  project: string;
+}): Promise<void> {
+  const existing = await input.db.query.rbacGrants.findFirst({
+    where: and(
+      eq(rbacGrants.userId, input.userId),
+      eq(rbacGrants.scopeKind, "project"),
+      eq(rbacGrants.project, input.project),
+      isNull(rbacGrants.revokedAt),
+    ),
+  });
+
+  if (existing) {
+    return;
+  }
+
+  await input.db.insert(rbacGrants).values({
+    userId: input.userId,
+    role: "viewer",
+    scopeKind: "project",
+    project: input.project,
+    source: "demo-seed",
+    createdByUserId: input.userId,
+  });
+}
+
 async function ensureDemoContent(input: {
   db: ReturnType<typeof createDatabaseConnection>["db"];
   actorId: string;
@@ -306,6 +383,7 @@ async function ensureDemoContent(input: {
   environment: string;
 }): Promise<number> {
   const store = createDatabaseContentStore({ db: input.db });
+  const seededDocuments = new Map<string, { documentId: string }>();
   let seededCount = 0;
 
   for (const template of DEMO_CONTENT_DOCUMENTS) {
@@ -347,8 +425,21 @@ async function ensureDemoContent(input: {
         );
       }
 
+      seededDocuments.set(template.key, {
+        documentId: existing.documentId,
+      });
       seededCount += 1;
       continue;
+    }
+
+    const sourceDocumentId = template.sourceKey
+      ? seededDocuments.get(template.sourceKey)?.documentId
+      : undefined;
+
+    if (template.sourceKey && !sourceDocumentId) {
+      throw new Error(
+        `Demo seed source document ${template.sourceKey} was not available before creating ${template.key}.`,
+      );
     }
 
     const created = await store.create(
@@ -365,6 +456,7 @@ async function ensureDemoContent(input: {
         body: template.body,
         createdBy: input.actorId,
         updatedBy: input.actorId,
+        ...(sourceDocumentId ? { sourceDocumentId } : {}),
       },
     );
 
@@ -382,6 +474,9 @@ async function ensureDemoContent(input: {
       );
     }
 
+    seededDocuments.set(template.key, {
+      documentId: created.documentId,
+    });
     seededCount += 1;
   }
 
@@ -441,6 +536,12 @@ async function main(): Promise<void> {
       apiKey,
       project,
       environment,
+    });
+
+    await ensureDemoRbacGrant({
+      db: connection.db,
+      userId,
+      project,
     });
 
     const seededDocuments = await ensureDemoContent({

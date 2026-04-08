@@ -375,6 +375,7 @@ test("runtime contract validators cover positive and negative shapes", () => {
       documentRoute: {
         project: "marketing-site",
         environment: "staging",
+        supportedLocales: ["en-US", "fr"],
         write: {
           canWrite: true,
           schemaHash: "schema-hash",
@@ -747,6 +748,26 @@ test("assertStudioMountContext rejects invalid extracted mdx prop shapes", () =>
         },
       }),
     /propHints/,
+  );
+});
+
+test("assertHostBridgeV1 accepts a bridge with onNavigate callback", () => {
+  assert.doesNotThrow(() =>
+    assertHostBridgeV1({
+      ...validHostBridge,
+      onNavigate: () => {},
+    }),
+  );
+});
+
+test("assertHostBridgeV1 rejects a bridge with non-function onNavigate", () => {
+  assert.throws(
+    () =>
+      assertHostBridgeV1({
+        ...validHostBridge,
+        onNavigate: "not-a-function",
+      }),
+    /onNavigate/,
   );
 });
 

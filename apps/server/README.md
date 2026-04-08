@@ -113,6 +113,7 @@ Backend API/runtime package boundary for MDCMS.
 
 - Content routes are mounted under `/api/v1/content` in the server runtime.
 - Implemented endpoints:
+  - `GET /api/v1/content/overview`
   - `GET /api/v1/content`
   - `GET /api/v1/content/:documentId`
   - `GET /api/v1/content/:documentId/versions`
@@ -132,6 +133,8 @@ Backend API/runtime package boundary for MDCMS.
 - `reference('Type')` values are stored as plain environment-local `document_id` UUID strings, not `{$ref, type}` objects.
 - List endpoint query contract supports:
   - `type`, `path`, `locale`, `slug`, `published`, `isDeleted`, `hasUnpublishedChanges`, `draft`, `resolve`, `project`, `environment`, `limit`, `offset`, `sort`, `order`, `q`
+- Overview endpoint query contract supports:
+  - repeated `type` values plus `project`, `environment`
 - Version-history list query contract supports:
   - `limit`, `offset`
 - Pagination defaults:
@@ -140,6 +143,12 @@ Backend API/runtime package boundary for MDCMS.
 - Read semantics:
   - default (`draft` omitted or `draft=false`) returns only published snapshots from `document_versions` for non-deleted documents.
   - `draft=true` returns mutable head rows from `documents`.
+- Overview count semantics:
+  - `GET /api/v1/content/overview` returns metadata-only per-type rows `{ type, total, published, drafts }`
+  - `total` counts non-deleted head rows for the requested type
+  - `published` counts non-deleted rows with `published_version`
+  - `drafts` counts non-deleted rows with no `published_version`
+  - the endpoint never returns document rows or draft bodies
 - Publish lifecycle semantics:
   - publish appends immutable row to `document_versions`, updates `documents.published_version`, and sets `documents.has_unpublished_changes = FALSE`.
   - unpublish clears `documents.published_version` and sets `documents.has_unpublished_changes = TRUE`.

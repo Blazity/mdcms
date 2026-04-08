@@ -39,6 +39,19 @@ test("studio-example registers the expected demo MDX components", async () => {
   assert.ok(pricingEditor);
 });
 
+test("studio-example config includes a localized demo type with explicit locales", () => {
+  assert.deepEqual(config.locales, {
+    default: "en",
+    supported: ["en", "fr"],
+  });
+
+  const campaignType = config.types.find((type) => type.name === "campaign");
+
+  assert.ok(campaignType);
+  assert.equal(campaignType?.localized, true);
+  assert.equal(campaignType?.directory, "content/campaigns");
+});
+
 test("demo MDX components tolerate empty preview props during insertion", () => {
   const chartMarkup = renderToStaticMarkup(createElement(Chart, {} as never));
   const calloutMarkup = renderToStaticMarkup(

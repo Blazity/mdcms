@@ -1,77 +1,191 @@
-// @ts-nocheck
 "use client";
 
-import Link from "../../adapters/next-link";
+import { useState, useEffect } from "react";
+import Link from "../../adapters/next-link.js";
 import {
   FileText,
   CheckCircle,
   Edit3,
-  Users,
   Plus,
-  Globe,
   ChevronRight,
+  Clock,
+  Loader2,
+  AlertCircle,
+  ShieldAlert,
 } from "lucide-react";
-import { Button } from "../../components/ui/button";
+import { Button } from "../../components/ui/button.js";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-} from "../../components/ui/card";
-import { Avatar, AvatarFallback } from "../../components/ui/avatar";
-import { Badge } from "../../components/ui/badge";
-import { PageHeader } from "../../components/layout/page-header";
+} from "../../components/ui/card.js";
+import { Badge } from "../../components/ui/badge.js";
+import { PageHeader } from "../../components/layout/page-header.js";
+import { useStudioSession } from "./session-context.js";
+import { useStudioMountInfo } from "./mount-info-context.js";
+import { useAdminCapabilities } from "./capabilities-context.js";
+import { createStudioSchemaRouteApi } from "../../../schema-route-api.js";
+import { createStudioContentListApi } from "../../../content-list-api.js";
 import {
-  currentUser,
-  dashboardStats,
-  mockContentTypes,
-  mockActivities,
-  mockUsers,
-  formatRelativeTime,
-} from "../../lib/mock-data";
-import { cn } from "../../lib/utils";
+  loadDashboardData,
+  type DashboardLoadResult,
+} from "../../../dashboard-data.js";
 
-const statCards = [
-  {
-    label: "Documents",
-    value: dashboardStats.totalDocuments,
-    icon: FileText,
-    trend: `+${dashboardStats.weeklyGrowth} this week`,
-    trendColor: "text-success",
-  },
-  {
-    label: "Published",
-    value: dashboardStats.publishedDocuments,
-    icon: CheckCircle,
-    trend: `${Math.round((dashboardStats.publishedDocuments / dashboardStats.totalDocuments) * 100)}% of total`,
-    trendColor: "text-foreground-muted",
-  },
-  {
-    label: "Unpublished changes",
-    value: dashboardStats.draftDocuments,
-    icon: Edit3,
-    trend: `${dashboardStats.todayUpdates} updated today`,
-    trendColor: "text-warning",
-  },
-  {
-    label: "Editors online",
-    value: dashboardStats.activeEditors,
-    icon: Users,
-    isUsers: true,
-  },
-];
+type DashboardState = { status: "loading" } | DashboardLoadResult;
 
-const quickActions = [
-  {
-    label: "New Document",
-    icon: Plus,
-    href: "/admin/content",
-    variant: "default" as const,
-  },
-];
+function formatRelativeTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (seconds < 60) return "Just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  if (hours < 24) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function deriveUserLabel(email: string): string {
+  const local = (email || "").split("@")[0];
+  if (!local) return "";
+  return local.charAt(0).toUpperCase() + local.slice(1);
+}
 
 export default function DashboardPage() {
-  const onlineUsers = mockUsers.filter((u) => u.isOnline);
+  const session = useStudioSession();
+  const mountInfo = useStudioMountInfo();
+  const { canCreateContent } = useAdminCapabilities();
+  const [state, setState] = useState<DashboardState>({ status: "loading" });
+
+  useEffect(() => {
+    const { project, environment, apiBaseUrl, auth } = mountInfo;
+
+    if (!project || !environment || !apiBaseUrl) {
+      setState({ status: "loading" });
+      return;
+    }
+
+    setState({ status: "loading" });
+
+    let cancelled = false;
+    const config = { project, environment, serverUrl: apiBaseUrl };
+    const authOpts = { auth };
+
+    const schemaApi = createStudioSchemaRouteApi(config, authOpts);
+    const contentApi = createStudioContentListApi(config, authOpts);
+
+    loadDashboardData(schemaApi, contentApi)
+      .then((result) => {
+        if (!cancelled) {
+          setState(result);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setState({
+            status: "error",
+            message:
+              err instanceof Error
+                ? err.message
+                : "Failed to load dashboard data.",
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    mountInfo.project,
+    mountInfo.environment,
+    mountInfo.apiBaseUrl,
+    mountInfo.auth,
+  ]);
+
+  const userLabel =
+    session.status === "authenticated"
+      ? deriveUserLabel(session.session.email)
+      : null;
+
+  if (state.status === "loading") {
+    return (
+      <div className="min-h-screen">
+        <PageHeader breadcrumbs={[{ label: "Dashboard" }]} />
+        <div className="flex items-center justify-center p-24">
+          <Loader2 className="h-6 w-6 animate-spin text-foreground-muted" />
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === "forbidden") {
+    return (
+      <div className="min-h-screen">
+        <PageHeader breadcrumbs={[{ label: "Dashboard" }]} />
+        <div className="flex flex-col items-center justify-center gap-3 p-24 text-center">
+          <ShieldAlert className="h-8 w-8 text-foreground-muted" />
+          <h2 className="text-lg font-semibold">Access denied</h2>
+          <p className="text-sm text-foreground-muted max-w-md">
+            You do not have permission to view this dashboard. Contact an
+            administrator for access.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <div className="min-h-screen">
+        <PageHeader breadcrumbs={[{ label: "Dashboard" }]} />
+        <div className="flex flex-col items-center justify-center gap-3 p-24 text-center">
+          <AlertCircle className="h-8 w-8 text-destructive" />
+          <h2 className="text-lg font-semibold">Something went wrong</h2>
+          <p className="text-sm text-foreground-muted max-w-md">
+            {state.message}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const { data } = state;
+
+  const statCards = [
+    {
+      label: "Documents",
+      value: data.totalDocuments,
+      icon: FileText,
+      detail:
+        data.totalContentTypes > 0
+          ? `${data.totalContentTypes} content type${data.totalContentTypes !== 1 ? "s" : ""}`
+          : undefined,
+    },
+    {
+      label: "Published",
+      value: data.publishedDocuments,
+      icon: CheckCircle,
+      detail:
+        data.totalDocuments > 0
+          ? `${Math.round((data.publishedDocuments / data.totalDocuments) * 100)}% of total`
+          : undefined,
+    },
+    {
+      label: "Drafts",
+      value: data.draftDocuments,
+      icon: Edit3,
+      detail: "Unpublished documents",
+    },
+  ];
 
   return (
     <div className="min-h-screen">
@@ -81,13 +195,15 @@ export default function DashboardPage() {
         {/* Page Title */}
         <div>
           <h1 className="text-2xl font-semibold">Dashboard</h1>
-          <p className="text-sm text-foreground-muted">
-            Welcome back, {currentUser.name}
-          </p>
+          {userLabel && (
+            <p className="text-sm text-foreground-muted">
+              Welcome back, {userLabel}
+            </p>
+          )}
         </div>
 
         {/* Stats Row */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-3">
           {statCards.map((stat) => (
             <Card key={stat.label} className="border-border py-0 gap-0">
               <CardContent className="p-4">
@@ -97,25 +213,9 @@ export default function DashboardPage() {
                       {stat.label}
                     </p>
                     <p className="text-3xl font-bold">{stat.value}</p>
-                    {stat.isUsers ? (
-                      <div className="flex -space-x-2 pt-1">
-                        {onlineUsers.slice(0, 4).map((user) => (
-                          <Avatar
-                            key={user.id}
-                            className="h-6 w-6 border-2 border-background"
-                          >
-                            <AvatarFallback className="text-xs">
-                              {user.name
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")}
-                            </AvatarFallback>
-                          </Avatar>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className={cn("text-xs", stat.trendColor)}>
-                        {stat.trend}
+                    {stat.detail && (
+                      <p className="text-xs text-foreground-muted">
+                        {stat.detail}
                       </p>
                     )}
                   </div>
@@ -129,27 +229,22 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Actions */}
-        <div className="flex flex-wrap gap-3">
-          {quickActions.map((action) => (
+        {canCreateContent && (
+          <div className="flex flex-wrap gap-3">
             <Button
-              key={action.label}
-              variant={action.variant}
+              variant="default"
               asChild
-              className={
-                action.variant === "default"
-                  ? "bg-accent hover:bg-accent-hover text-white"
-                  : ""
-              }
+              className="bg-accent hover:bg-accent-hover text-white"
             >
-              <Link href={action.href}>
-                <action.icon className="mr-2 h-4 w-4" />
-                {action.label}
+              <Link href="/admin/content">
+                <Plus className="mr-2 h-4 w-4" />
+                New Document
               </Link>
             </Button>
-          ))}
-        </div>
+          </div>
+        )}
 
-        {/* Content Types & Activity */}
+        {/* Content Types & Recent Documents */}
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Content Types */}
           <Card className="border-border">
@@ -165,100 +260,117 @@ export default function DashboardPage() {
               </Link>
             </CardHeader>
             <CardContent className="space-y-3">
-              {mockContentTypes.slice(0, 5).map((type) => {
-                const publishedRatio =
-                  (type.publishedCount / type.documentCount) * 100;
-                return (
-                  <Link
-                    key={type.id}
-                    href={`/admin/content/${type.id}`}
-                    className="flex items-center gap-4 rounded-lg p-3 transition-colors hover:bg-background-subtle"
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent/10">
-                      <FileText className="h-5 w-5 text-accent" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium truncate">{type.name}</p>
-                        {type.localized && (
-                          <Badge variant="outline" className="text-xs gap-1">
-                            <Globe className="h-3 w-3" />
-                            {type.locales?.length} locales
-                          </Badge>
-                        )}
+              {data.contentTypes.length === 0 ? (
+                <p className="text-sm text-foreground-muted py-4 text-center">
+                  No schema types synced yet.
+                </p>
+              ) : (
+                data.contentTypes.map((ct) => {
+                  const publishedRatio =
+                    ct.totalCount > 0
+                      ? (ct.publishedCount / ct.totalCount) * 100
+                      : 0;
+                  return (
+                    <Link
+                      key={ct.type}
+                      href={`/admin/content/${ct.type}`}
+                      className="flex items-center gap-4 rounded-lg p-3 transition-colors hover:bg-background-subtle"
+                    >
+                      <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent/10">
+                        <FileText className="h-5 w-5 text-accent" />
                       </div>
-                      <p className="text-sm text-foreground-muted truncate">
-                        {type.documentCount} documents
-                      </p>
-                    </div>
-                    <div className="w-24">
-                      <div className="flex h-2 overflow-hidden rounded-full bg-border">
-                        <div
-                          className="bg-success transition-all"
-                          style={{ width: `${publishedRatio}%` }}
-                        />
-                        <div
-                          className="bg-warning"
-                          style={{ width: `${100 - publishedRatio}%` }}
-                        />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium truncate">{ct.type}</p>
+                          {ct.localized && (
+                            <Badge variant="outline" className="text-xs">
+                              Localized
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-foreground-muted truncate">
+                          {ct.totalCount} document
+                          {ct.totalCount !== 1 ? "s" : ""}
+                        </p>
                       </div>
-                      <p className="mt-1 text-xs text-foreground-muted text-right">
-                        {type.publishedCount}/{type.documentCount}
-                      </p>
-                    </div>
-                  </Link>
-                );
-              })}
+                      {ct.totalCount > 0 && (
+                        <div className="w-24">
+                          <div className="flex h-2 overflow-hidden rounded-full bg-border">
+                            <div
+                              className="bg-success transition-all"
+                              style={{ width: `${publishedRatio}%` }}
+                            />
+                            <div
+                              className="bg-warning"
+                              style={{ width: `${100 - publishedRatio}%` }}
+                            />
+                          </div>
+                          <p className="mt-1 text-xs text-foreground-muted text-right">
+                            {ct.publishedCount}/{ct.totalCount}
+                          </p>
+                        </div>
+                      )}
+                    </Link>
+                  );
+                })
+              )}
             </CardContent>
           </Card>
 
-          {/* Recent Activity */}
+          {/* Recent Documents */}
           <Card className="border-border">
             <CardHeader className="flex flex-row items-center justify-between pb-4">
               <CardTitle className="text-lg font-semibold">
-                Recent Activity
+                Recent Documents
               </CardTitle>
               <Link
-                href="#"
+                href="/admin/content"
                 className="text-sm text-foreground-muted hover:text-accent flex items-center gap-1"
               >
                 View all <ChevronRight className="h-4 w-4" />
               </Link>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {mockActivities.slice(0, 8).map((activity) => (
-                  <div key={activity.id} className="flex items-start gap-3">
-                    <Avatar className="h-6 w-6 shrink-0">
-                      <AvatarFallback className="text-xs">
-                        {activity.user.name
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0 text-sm">
-                      <span className="text-foreground-muted">
-                        <span className="font-medium text-foreground">
-                          {activity.user.name}
-                        </span>{" "}
-                        {activity.action}{" "}
-                        {activity.documentTitle && (
-                          <>
-                            <span className="font-medium text-foreground">
-                              {activity.documentTitle}
-                            </span>{" "}
-                            in {activity.documentType}
-                          </>
-                        )}
+              {data.recentDocuments.length === 0 ? (
+                <p className="text-sm text-foreground-muted py-4 text-center">
+                  No documents yet.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {data.recentDocuments.map((doc) => (
+                    <div
+                      key={doc.documentId}
+                      className="flex items-start gap-3"
+                    >
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent/10">
+                        <FileText className="h-4 w-4 text-accent" />
+                      </div>
+                      <div className="flex-1 min-w-0 text-sm">
+                        <p className="font-medium truncate">
+                          {doc.frontmatter.title
+                            ? String(doc.frontmatter.title)
+                            : doc.path}
+                        </p>
+                        <p className="text-foreground-muted truncate">
+                          <span>{doc.type}</span>
+                          {doc.hasUnpublishedChanges && (
+                            <Badge
+                              variant="outline"
+                              className="ml-2 text-xs text-warning"
+                            >
+                              Draft
+                            </Badge>
+                          )}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-xs text-foreground-muted flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {formatRelativeTime(doc.updatedAt)}
                       </span>
                     </div>
-                    <span className="shrink-0 text-xs text-foreground-muted">
-                      {formatRelativeTime(activity.timestamp)}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

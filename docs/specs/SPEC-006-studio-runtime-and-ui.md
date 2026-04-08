@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-31
+last_updated: 2026-04-06
 ---
 
 # SPEC-006 Studio Runtime and UI
@@ -204,6 +204,140 @@ The primary navigation model is **schema-first**: users navigate by content type
 
 Secondary navigation by folder path is available as an alternative view.
 
+### Content Overview (`/admin/content`)
+
+The `/admin/content` route is a live schema-first overview for the active
+`(project, environment)` target. It is backed by:
+
+- `GET /api/v1/me/capabilities` for target-scoped capability gating
+- `GET /api/v1/schema` for the canonical list of schema types
+- `GET /api/v1/content/overview` for metadata-only per-type counts
+
+Normative behavior:
+
+- Overview cards are keyed by live schema registry entries. Studio must not use
+  mock content-type fixtures to decide which types appear.
+- Each card links to `/admin/content/:type` only when the current caller can
+  read content for that target. When the caller cannot read content, Studio
+  keeps the card visible for schema discovery but disables list navigation.
+- Studio must not present a count or label that the current route contracts
+  cannot prove. Unsupported metrics are omitted instead of estimated.
+- When `capabilities.content.read` is `true`, Studio may show a per-type
+  `total`, `published`, and `drafts` counts derived from
+  `GET /api/v1/content/overview`.
+- On `/admin/content`, `drafts` means non-deleted documents whose current head
+  has no published version. It does not include published documents that also
+  have newer unpublished changes.
+- The overview count contract is metadata-only. Showing these counts does not
+  grant access to draft document rows, draft document bodies, or any broader
+  draft list access outside the overview itself.
+- Localization presentation on `/admin/content` is schema-derived in MVP:
+  localized types may show a `Localized` badge from the schema contract and
+  non-localized types may show `Single locale`.
+- When the embedded runtime has explicit locale configuration for the active
+  project, `/admin/content` may show that configured locale-code list next to a
+  localized type badge. This list is config-derived only and must not be
+  presented as translation coverage.
+
+Deterministic states:
+
+- If `GET /api/v1/schema` returns `401` or `403`, the route renders a forbidden
+  state because Studio cannot determine which schema types exist.
+- If schema loading succeeds but both `capabilities.content.read` and
+  `capabilities.content.readDraft` are `false`, the route renders a
+  permission-constrained overview: schema cards stay visible, all content
+  counts are omitted, list navigation is disabled, and the page shows a clear
+  permission banner instead of a full route-level forbidden state.
+- If schema loading succeeds and returns zero types, the route renders a
+  deterministic empty state for the active target.
+- Non-auth, non-forbidden failures from the live schema or content overview
+  requests render a deterministic error state. Partial metric failures must not
+  fall back to mock values.
+
+### Content Type List (`/admin/content/:type`)
+
+The `/admin/content/:type` route is a live document list for a specific schema
+type within the active `(project, environment)` target. It is backed by:
+
+- `GET /api/v1/content?type=<typeId>` for the paginated document list with
+  server-side search, status filtering, sort, and pagination
+- `GET /api/v1/schema` for type metadata (name, directory, localized flag)
+- `GET /api/v1/me/capabilities` for action gating (inherited from layout)
+
+The list response includes an optional `users` sidecar map that batch-resolves
+`createdBy` user IDs to `{ name, email }` for author display without per-user
+lookups.
+
+Normative behavior:
+
+- The document list is keyed by the `type` route parameter resolved against live
+  schema entries. Studio must not use mock content-type fixtures.
+- Server-side search uses the `q` query parameter. The Studio search input is
+  debounced before issuing requests.
+- Status filtering maps UI states (`published`, `draft`, `changed`) to the
+  `published` and `hasUnpublishedChanges` query parameters.
+- Pagination is server-side with `limit` and `offset`. Page size is fixed at 20.
+- Author initials are derived from the `users` sidecar email. When a user
+  cannot be resolved, a placeholder is shown.
+
+Deterministic states:
+
+- If the content list API returns `401` or `403`, the route renders a forbidden
+  state with a permission banner.
+- If the content list API returns a non-auth, non-forbidden error, the route
+  renders an error state with a retry action.
+- If the content list returns zero documents and no filters are active, the
+  route renders a deterministic empty state encouraging document creation.
+- If the content list returns zero documents with active filters (search or
+  status), the route renders a "no results" state within the ready view.
+
+Document creation:
+
+- The "New Document" button is gated by `capabilities.content.write`. When
+  the caller lacks write capability, the button is hidden.
+- Clicking the button opens an inline creation dialog with:
+  - **Path** (required text input, pre-populated with the type's directory
+    prefix from the schema entry)
+  - **Locale** (select, shown only when the type is localized and the project
+    has configured `locales.supported`; for non-localized types, the document
+    is created with the implicit default locale `__mdcms_default__`)
+- On success, the dialog closes, the content list cache is invalidated, and
+  Studio navigates to the new document editor at
+  `/admin/content/:type/:documentId`.
+
+Row-level actions:
+
+- Each document row has a dropdown menu with the following default actions:
+
+| Action    | Behavior                                       | Capability gate                  | Visibility condition    |
+| --------- | ---------------------------------------------- | -------------------------------- | ----------------------- |
+| Edit      | Navigate to document editor                    | None                             | Always                  |
+| Publish   | `POST .../publish`, invalidate list            | `capabilities.content.publish`   | Draft or changed status |
+| Unpublish | `POST .../unpublish`, invalidate list          | `capabilities.content.unpublish` | Published status        |
+| Duplicate | `POST .../duplicate`, navigate to new document | `capabilities.content.write`     | Always                  |
+| Delete    | `DELETE .../content/:id`, invalidate list      | `capabilities.content.delete`    | Always                  |
+
+- Row action failures are surfaced inline with a dismissible error banner.
+- The `content.list.row.actions` extensibility slot applies to these actions.
+
+### Theme Preference Persistence
+
+Studio-owned theme preference persists in browser-local storage.
+
+Normative behavior:
+
+- The runtime stores the selected theme in `localStorage`; it is not persisted
+  through the backend and is not host-bridge-owned in MVP.
+- Preference precedence is:
+  1. persisted Studio preference
+  2. explicit runtime `defaultTheme`
+  3. system theme when `enableSystem` is enabled
+  4. `light`
+- Persistence scope is browser-local across full page reloads and Studio
+  remounts for the same browser profile.
+- The theme toggle must continue to support both light and dark rendering even
+  when the persisted preference was set by an earlier Studio runtime version.
+
 ### Project Scope and Switching
 
 Each embedded Studio instance is configured with a specific project through `mdcms.config.ts` and shows only that project's content and schema.
@@ -226,6 +360,9 @@ Normative behavior:
   `mdcms.config.ts` snapshot.
 - The runtime must not infer write authority from local schema availability
   alone.
+- Content list page action gating uses `capabilities.content.write` (create,
+  duplicate), `capabilities.content.publish` (publish), `capabilities.content.unpublish`
+  (unpublish), and `capabilities.content.delete` (delete).
 
 Schema mismatch recovery:
 

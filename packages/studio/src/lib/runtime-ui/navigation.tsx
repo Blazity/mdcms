@@ -69,6 +69,25 @@ function normalizeInternalHref(path: string): string {
   return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
+function resolveStudioRootedAdminHref(
+  basePath: string,
+  href: string,
+): string | undefined {
+  if (!basePath.endsWith("/admin")) {
+    return undefined;
+  }
+
+  if (href === "/admin") {
+    return basePath;
+  }
+
+  if (!href.startsWith("/admin/")) {
+    return undefined;
+  }
+
+  return `${basePath}${href.slice("/admin".length)}`;
+}
+
 export function StudioNavigationProvider({
   value,
   children,
@@ -100,8 +119,10 @@ export function useRouter() {
   const navigation = useStudioNavigationContext();
 
   return {
-    push: navigation.push,
-    replace: navigation.replace,
+    push: (href: string) =>
+      navigation.push(resolveStudioHref(navigation.basePath, href)),
+    replace: (href: string) =>
+      navigation.replace(resolveStudioHref(navigation.basePath, href)),
     back: navigation.back,
   };
 }
@@ -110,11 +131,31 @@ export function resolveStudioHref(
   basePath: string | undefined,
   href: string,
 ): string {
+  if (isExternalHref(href)) {
+    return href;
+  }
+
   const normalizedBasePath = normalizeBasePath(basePath);
   const normalizedHref = normalizeInternalHref(href);
 
   if (normalizedBasePath.length === 0) {
     return normalizedHref;
+  }
+
+  if (
+    normalizedHref === normalizedBasePath ||
+    normalizedHref.startsWith(`${normalizedBasePath}/`)
+  ) {
+    return normalizedHref;
+  }
+
+  const studioRootedHref = resolveStudioRootedAdminHref(
+    normalizedBasePath,
+    normalizedHref,
+  );
+
+  if (studioRootedHref) {
+    return studioRootedHref;
   }
 
   if (normalizedHref === "/") {
@@ -134,11 +175,14 @@ export function RuntimeLink({
   href: string;
 }) {
   const navigation = useStudioNavigationContext();
+  const resolvedHref = isExternalHref(href)
+    ? href
+    : resolveStudioHref(navigation.basePath, href);
 
   return (
     <a
       {...props}
-      href={href}
+      href={resolvedHref}
       target={target}
       rel={rel}
       onClick={(event) => {
@@ -148,13 +192,13 @@ export function RuntimeLink({
           event.defaultPrevented ||
           target === "_blank" ||
           isModifiedEvent(event) ||
-          isExternalHref(href)
+          isExternalHref(resolvedHref)
         ) {
           return;
         }
 
         event.preventDefault();
-        navigation.push(href);
+        navigation.push(resolvedHref);
       }}
     />
   );

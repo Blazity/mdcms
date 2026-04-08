@@ -1,60 +1,60 @@
-// @ts-nocheck
 import assert from "node:assert/strict";
 import { test } from "bun:test";
 
 import { installStudioRuntimeStyles } from "./style-installer.js";
 
-type FakeLinkNode = {
+type RuntimeStylesheetDocument = NonNullable<
+  Parameters<typeof installStudioRuntimeStyles>[1]
+>;
+type RuntimeStylesheetNode = ReturnType<
+  RuntimeStylesheetDocument["createElement"]
+>;
+
+type FakeLinkNode = RuntimeStylesheetNode & {
   tagName: string;
-  rel: string;
-  href: string;
-  dataset: Record<string, string>;
   parentNode: FakeHeadNode | null;
-  remove: () => void;
 };
 
-type FakeHeadNode = {
+type FakeHeadNode = RuntimeStylesheetDocument["head"] & {
   children: FakeLinkNode[];
-  appendChild: (node: FakeLinkNode) => FakeLinkNode;
 };
 
 function createFakeDocument(): {
-  document: {
-    head: FakeHeadNode;
-    createElement: (tagName: string) => FakeLinkNode;
-    querySelector: (selector: string) => FakeLinkNode | null;
-  };
+  document: RuntimeStylesheetDocument;
   head: FakeHeadNode;
 } {
   const head: FakeHeadNode = {
     children: [],
     appendChild(node) {
-      node.parentNode = head;
-      head.children.push(node);
-      return node;
+      const linkNode = node as FakeLinkNode;
+      linkNode.parentNode = head;
+      head.children.push(linkNode);
+      return linkNode;
     },
   };
 
-  const document = {
+  const document: RuntimeStylesheetDocument = {
     head,
     createElement(tagName: string) {
-      return {
+      const linkNode: FakeLinkNode = {
         tagName: tagName.toUpperCase(),
         rel: "",
         href: "",
         dataset: {},
         parentNode: null,
         remove() {
-          if (!this.parentNode) {
+          if (!linkNode.parentNode) {
             return;
           }
 
-          this.parentNode.children = this.parentNode.children.filter(
-            (child) => child !== this,
+          linkNode.parentNode.children = linkNode.parentNode.children.filter(
+            (child: FakeLinkNode) => child !== linkNode,
           );
-          this.parentNode = null;
+          linkNode.parentNode = null;
         },
       };
+
+      return linkNode;
     },
     querySelector(selector: string) {
       const matchedHref = selector.match(/href="([^"]+)"/)?.[1];

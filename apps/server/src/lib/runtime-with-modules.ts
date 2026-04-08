@@ -4,7 +4,7 @@ import {
   type ServerRequestHandler,
 } from "./server.js";
 import { createConsoleLogger, type Logger } from "@mdcms/shared";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { parseServerEnv } from "./env.js";
 import { createDatabaseConnection, type DatabaseConnection } from "./db.js";
 import { createContentDAL } from "./dal/index.js";
@@ -38,7 +38,7 @@ import {
   createStudioRuntimePublication,
   type CreateStudioRuntimePublicationOptions,
 } from "./studio-bootstrap.js";
-import { schemaSyncs } from "./db/schema.js";
+import { authUsers, schemaSyncs } from "./db/schema.js";
 import { resolveProjectEnvironmentScope } from "./project-provisioning.js";
 
 import {
@@ -165,6 +165,22 @@ export function createServerRequestHandlerWithModules(
           return {
             schemaHash: row.schemaHash,
           };
+        },
+        resolveUsers: async (userIds) => {
+          if (userIds.length === 0) return {};
+          const rows = await dbConnection.db
+            .select({
+              id: authUsers.id,
+              name: authUsers.name,
+              email: authUsers.email,
+            })
+            .from(authUsers)
+            .where(inArray(authUsers.id, userIds));
+          const map: Record<string, { name: string; email: string }> = {};
+          for (const row of rows) {
+            map[row.id] = { name: row.name, email: row.email };
+          }
+          return map;
         },
       });
       mountSchemaApiRoutes(app, {

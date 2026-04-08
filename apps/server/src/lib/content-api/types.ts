@@ -1,5 +1,6 @@
 import type {
   ContentDocumentResponse,
+  ContentOverviewCountsResponse,
   ContentVersionDocumentResponse,
   ContentVersionSummaryResponse,
   SchemaRegistryTypeSnapshot,
@@ -35,9 +36,7 @@ export type ContentWriteSchemaSyncState = {
   schemaHash: string;
 };
 
-export type ContentDocument = ContentDocumentResponse & {
-  updatedBy: string;
-};
+export type ContentDocument = ContentDocumentResponse;
 
 export type ContentVersionSummary = ContentVersionSummaryResponse;
 
@@ -123,6 +122,8 @@ export type ContentListResult<Row> = {
   offset: number;
 };
 
+export type ContentOverviewCounts = ContentOverviewCountsResponse;
+
 export type ContentStore = {
   getSchema: (
     scope: ContentScope,
@@ -137,6 +138,10 @@ export type ContentStore = {
     scope: ContentScope,
     query: ContentListQuery,
   ) => Promise<ContentListResult<ContentDocument>>;
+  getOverviewCounts: (
+    scope: ContentScope,
+    input: { types: string[] },
+  ) => Promise<ContentOverviewCounts[]>;
   getById: (
     scope: ContentScope,
     documentId: string,
@@ -218,9 +223,14 @@ export type ContentWriteSchemaSyncLookup = (
   scope: ContentScope,
 ) => Promise<ContentWriteSchemaSyncState | undefined>;
 
+export type ContentUserSummaryLookup = (
+  userIds: string[],
+) => Promise<Record<string, { name: string; email: string }>>;
+
 export type MountContentApiRoutesOptions = {
   store: ContentStore;
   authorize: ContentRequestAuthorizer;
   requireCsrf: ContentRequestCsrfProtector;
   getWriteSchemaSyncState: ContentWriteSchemaSyncLookup;
+  resolveUsers?: ContentUserSummaryLookup;
 };

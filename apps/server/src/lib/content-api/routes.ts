@@ -75,11 +75,56 @@ function getResolveQueryValue(
   return values.length === 1 ? values[0] : values;
 }
 
+function parseOverviewTypes(request: Request): string[] {
+  const types = new URL(request.url).searchParams.getAll("type");
+
+  if (types.length === 0) {
+    throw new RuntimeError({
+      code: "INVALID_QUERY_PARAM",
+      message: 'Query parameter "type" is required.',
+      statusCode: 400,
+      details: { field: "type" },
+    });
+  }
+
+  return types.map((type) => {
+    const normalized = type.trim();
+
+    if (normalized.length === 0) {
+      throw new RuntimeError({
+        code: "INVALID_QUERY_PARAM",
+        message: 'Query parameter "type" is required.',
+        statusCode: 400,
+        details: { field: "type", value: type },
+      });
+    }
+
+    return normalized;
+  });
+}
+
 export function mountContentApiRoutes(
   app: unknown,
   options: MountContentApiRoutesOptions,
 ): void {
   const contentApp = app as ContentRouteApp;
+
+  contentApp.get?.("/api/v1/content/overview", ({ request }: any) => {
+    return executeWithRuntimeErrorsHandled(request, async () => {
+      const scope = pickScope(request);
+      const types = parseOverviewTypes(request);
+
+      await options.authorize(request, {
+        requiredScope: "content:read",
+        project: scope.project,
+        environment: scope.environment,
+      });
+
+      return {
+        data: await options.store.getOverviewCounts(scope, { types }),
+      };
+    });
+  });
 
   contentApp.get?.("/api/v1/content", ({ request, query }: any) => {
     return executeWithRuntimeErrorsHandled(request, async () => {
@@ -124,6 +169,19 @@ export function mountContentApiRoutes(
           doc.frontmatter,
           schemaCache.get(doc.type),
         );
+      if (options.resolveUsers && response.data.length > 0) {
+        try {
+          const uniqueUserIds = [
+            ...new Set(
+              response.data.flatMap((doc) => [doc.createdBy, doc.updatedBy]),
+            ),
+          ];
+          const users = await options.resolveUsers(uniqueUserIds);
+          (response as Record<string, unknown>).users = users;
+        } catch {
+          // User enrichment is best-effort; a lookup failure must not
+          // break the content list response.
+        }
       }
 
       if (resolvePaths.length === 0) {
@@ -696,6 +754,97 @@ export function mountContentApiRoutes(
         return {
           data: toDocumentResponse(document),
         };
+      });
+    },
+  );
+
+  contentApp.post?.(
+    "/api/v1/content/:documentId/duplicate",
+    ({ request, params, body }: any) => {
+      return executeWithRuntimeErrorsHandled(request, async () => {
+        const scope = pickScope(request);
+        await options.requireCsrf(request);
+        await options.authorize(request, {
+          requiredScope: "content:write",
+          project: scope.project,
+          environment: scope.environment,
+        });
+
+        const source = await options.store.getById(scope, params.documentId, {
+          draft: true,
+        });
+
+        if (!source || source.isDeleted) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+            details: {
+              documentId: params.documentId,
+            },
+          });
+        }
+
+        await options.authorize(request, {
+          requiredScope: "content:read:draft",
+          project: scope.project,
+          environment: scope.environment,
+          documentPath: source.path,
+        });
+
+        const basePath = source.path.replace(/\/$/, "");
+        let candidatePath = `${basePath}-copy`;
+        let attempt = 1;
+        const syncState = await options.getWriteSchemaSyncState(scope);
+        const schemaHash = syncState?.schemaHash;
+
+        while (attempt < 100) {
+          await options.authorize(request, {
+            requiredScope: "content:write",
+            project: scope.project,
+            environment: scope.environment,
+            documentPath: candidatePath,
+          });
+
+          try {
+            const document = await options.store.create(
+              scope,
+              {
+                path: candidatePath,
+                type: source.type,
+                locale: source.locale,
+                format: source.format,
+                frontmatter: source.frontmatter,
+                body: source.body,
+              },
+              schemaHash ? { expectedSchemaHash: schemaHash } : undefined,
+            );
+
+            return {
+              data: toDocumentResponse(document),
+            };
+          } catch (error) {
+            if (
+              error instanceof RuntimeError &&
+              error.code === "CONTENT_PATH_CONFLICT"
+            ) {
+              attempt++;
+              candidatePath = `${basePath}-copy-${attempt}`;
+              continue;
+            }
+            throw error;
+          }
+        }
+
+        throw new RuntimeError({
+          code: "DUPLICATE_PATH_EXHAUSTED",
+          message: "Unable to generate a unique copy path after 99 attempts.",
+          statusCode: 409,
+          details: {
+            documentId: params.documentId,
+            basePath,
+          },
+        });
       });
     },
   );

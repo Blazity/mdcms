@@ -26,3 +26,4 @@ This catalog owns the live product and subsystem specifications for MDCMS. Contr
 | SPEC-009 | [i18n and Environments](./SPEC-009-i18n-and-environments.md)                                           | Localization, project/environment hierarchy, environment model, and environment management endpoints |
 | SPEC-010 | [Media, Webhooks, Search, and Integrations](./SPEC-010-media-webhooks-search-and-integrations.md)      | Post-MVP media, webhooks, and search                                                                 |
 | SPEC-011 | [Local Development and Operations](./SPEC-011-local-development-and-operations.md)                     | Docker Compose stack and local developer workflow                                                    |
+| SPEC-012 | [Studio Review App and Preview Workflow](./SPEC-012-studio-review-app-and-preview-workflow.md)         | Studio review app, PR preview workflow, and review-fixture contract synchronization                  |

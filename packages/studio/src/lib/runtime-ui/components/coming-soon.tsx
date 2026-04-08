@@ -1,10 +1,9 @@
-// @ts-nocheck
 "use client";
 
 import { LucideIcon } from "lucide-react";
-import { Button } from "./ui/button";
-import { Card, CardContent } from "./ui/card";
-import { Badge } from "./ui/badge";
+import { Button } from "./ui/button.js";
+import { Card, CardContent } from "./ui/card.js";
+import { Badge } from "./ui/badge.js";
 
 interface ComingSoonProps {
   icon: LucideIcon;

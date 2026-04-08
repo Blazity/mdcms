@@ -38,6 +38,7 @@ export function toDocumentResponse(
     body: document.body,
     createdBy: document.createdBy,
     createdAt: document.createdAt,
+    updatedBy: document.updatedBy,
     updatedAt: document.updatedAt,
   };
 }

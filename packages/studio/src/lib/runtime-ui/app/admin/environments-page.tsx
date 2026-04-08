@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 
 import { useState } from "react";
@@ -16,23 +15,23 @@ import {
   PageHeaderHeading,
   PageHeaderDescription,
   PageHeaderActions,
-} from "../../components/layout/page-header";
-import { Button } from "../../components/ui/button";
+} from "../../components/layout/page-header.js";
+import { Button } from "../../components/ui/button.js";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "../../components/ui/card";
-import { Badge } from "../../components/ui/badge";
+} from "../../components/ui/card.js";
+import { Badge } from "../../components/ui/badge.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu";
+} from "../../components/ui/dropdown-menu.js";
 import {
   Dialog,
   DialogContent,
@@ -41,21 +40,53 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "../../components/ui/dialog";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
-import { Textarea } from "../../components/ui/textarea";
-import { mockEnvironments } from "../../lib/mock-data";
+} from "../../components/ui/dialog.js";
+import { Input } from "../../components/ui/input.js";
+import { Label } from "../../components/ui/label.js";
+import { Textarea } from "../../components/ui/textarea.js";
+import { mockEnvironments } from "../../lib/mock-data.js";
+
+type EnvironmentCard = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  isProduction: boolean;
+  color: string;
+  documentCount: number;
+  lastPublished: Date | null;
+};
+
+const environmentColorMap = {
+  green: "#22c55e",
+  yellow: "#eab308",
+  blue: "#3b82f6",
+  gray: "#6b7280",
+} as const;
+
+const initialEnvironments: EnvironmentCard[] = mockEnvironments.map(
+  (environment) => ({
+    id: environment.id,
+    name: environment.name,
+    slug: environment.id,
+    description: environment.description ?? "",
+    isProduction: environment.isProduction ?? false,
+    color: environmentColorMap[environment.color],
+    documentCount: environment.documentCount,
+    lastPublished: null,
+  }),
+);
 
 export default function EnvironmentsPage() {
-  const [environments, setEnvironments] = useState(mockEnvironments);
+  const [environments, setEnvironments] =
+    useState<EnvironmentCard[]>(initialEnvironments);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newEnv, setNewEnv] = useState({ name: "", slug: "", description: "" });
 
   const handleCreateEnvironment = () => {
     if (!newEnv.name || !newEnv.slug) return;
 
-    const env = {
+    const env: EnvironmentCard = {
       id: `env-${Date.now()}`,
       name: newEnv.name,
       slug: newEnv.slug,
@@ -242,7 +273,7 @@ export default function EnvironmentsPage() {
                   <p className="text-muted-foreground">Last Published</p>
                   <p className="font-medium">
                     {env.lastPublished
-                      ? new Date(env.lastPublished).toLocaleDateString()
+                      ? env.lastPublished.toLocaleDateString()
                       : "Never"}
                   </p>
                 </div>

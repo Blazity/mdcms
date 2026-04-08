@@ -1,0 +1,28 @@
+{
+  "name": "@mdcms/studio-review",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "nx": {
+    "name": "studio-review"
+  },
+  "scripts": {
+    "build:workspace-deps": "bun x --bun tsc --build ../../packages/shared/tsconfig.lib.json ../../apps/cli/tsconfig.lib.json ../../packages/studio/tsconfig.lib.json",
+    "build:workspace-deps:watch": "bun x --bun tsc --build ../../packages/shared/tsconfig.lib.json ../../apps/cli/tsconfig.lib.json ../../packages/studio/tsconfig.lib.json --watch --preserveWatchOutput",
+    "dev": "bun run build:workspace-deps && bun --conditions @mdcms/source scripts/build-review-runtime.ts && sh -lc 'trap \"kill 0\" INT TERM EXIT; bun run build:workspace-deps:watch & bun --conditions @mdcms/source scripts/dev-runtime-watch.ts & NEXT_TELEMETRY_DISABLED=1 bun x next dev --hostname ${MDCMS_STUDIO_REVIEW_HOST:-127.0.0.1} & wait'",
+    "vercel-build": "bun run build:workspace-deps && bun --conditions @mdcms/source scripts/build-review-runtime.ts && next build"
+  },
+  "dependencies": {
+    "@mdcms/cli": "workspace:*",
+    "@mdcms/shared": "workspace:*",
+    "@mdcms/studio": "workspace:*",
+    "next": "^15.2.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.12",
+    "@types/react-dom": "^19.0.5"
+  }
+}

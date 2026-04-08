@@ -8,6 +8,7 @@ import {
   assertStudioBootstrapReadyResponse,
   assertStudioMountContext,
   isRuntimeErrorLike,
+  parseMdcmsConfig,
   type ErrorEnvelope,
   type HostBridgeV1,
   type MdxComponentCatalog,
@@ -19,6 +20,10 @@ import {
 import { assertStudioRuntimePublication } from "./bootstrap-verification.js";
 import { resolveStudioDocumentRouteSchemaCapability } from "./document-route-schema.js";
 import type { MdcmsConfig } from "./studio.js";
+import {
+  normalizeStudioBaseUrl,
+  resolveStudioRelativeUrl,
+} from "./url-resolution.js";
 
 export const STUDIO_PACKAGE_VERSION = "0.0.1";
 export const STUDIO_HOST_BRIDGE_COMPATIBILITY_VERSION = "1.0.0";
@@ -50,7 +55,7 @@ type LocalMdxPropsEditorResultCache = Map<string, Promise<unknown | null>>;
 const BOOTSTRAP_FETCH_RETRY_DELAYS_MS = [50, 150] as const;
 
 function normalizeBaseUrl(serverUrl: string): string {
-  return serverUrl.endsWith("/") ? serverUrl.slice(0, -1) : serverUrl;
+  return normalizeStudioBaseUrl(serverUrl);
 }
 
 function resolveUrl(pathOrUrl: string, apiBaseUrl: string): string {
@@ -61,7 +66,7 @@ function resolveBootstrapUrl(
   apiBaseUrl: string,
   retry?: StudioBootstrapRetryContext,
 ): string {
-  const url = new URL("/api/v1/studio/bootstrap", `${apiBaseUrl}/`);
+  const url = resolveStudioRelativeUrl("api/v1/studio/bootstrap", apiBaseUrl);
 
   if (retry) {
     url.searchParams.set("rejectedBuildId", retry.rejectedBuildId);
@@ -233,10 +238,27 @@ async function createDocumentRouteMountContext(
   }
 
   const capability = await resolveStudioDocumentRouteSchemaCapability(config);
+  let supportedLocales: string[] | undefined;
+
+  try {
+    const parsedConfig = parseMdcmsConfig(config);
+    supportedLocales = parsedConfig.locales.implicit
+      ? undefined
+      : [...parsedConfig.locales.supported];
+  } catch (error) {
+    if (error instanceof RuntimeError && error.code === "INVALID_CONFIG") {
+      supportedLocales = undefined;
+    } else {
+      throw error;
+    }
+  }
 
   return {
     project,
     environment,
+    ...(supportedLocales && supportedLocales.length > 0
+      ? { supportedLocales }
+      : {}),
     write: capability.canWrite
       ? {
           canWrite: true,

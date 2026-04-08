@@ -1,11 +1,10 @@
-// @ts-nocheck
 import { GitBranch } from "lucide-react";
-import { ComingSoon } from "../../components/coming-soon";
+import { ComingSoon } from "../../components/coming-soon.js";
 import {
   PageHeader,
   PageHeaderHeading,
   PageHeaderDescription,
-} from "../../components/layout/page-header";
+} from "../../components/layout/page-header.js";
 
 export default function WorkflowsPage() {
   return (

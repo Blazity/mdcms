@@ -27,6 +27,8 @@ Run from the workspace root:
 - `bun run check` - Run `build` and `typecheck` targets across projects.
 - `bun run hooks:install` - Re-register the tracked Git hooks if local Git config was reset.
 - `bun run dev` - Start Studio watch build, server auto-restart, and the Studio example Next.js dev server in one command.
+- `bun run studio:review:runtime` - Build the private Studio review runtime artifacts used by the review app bootstrap route.
+- `bun run studio:review:dev` - Build the review runtime artifacts and start the private Studio review app.
 - `bun run compose:dev` - Run the full dev loop in Docker Compose (infra + migrations + hot-reload app/server/studio).
 - `bun run compose:dev:down` - Stop the Docker Compose dev stack.
 - `bun run compose:health` - Run the Docker Compose integration health and persistence checks.
@@ -47,6 +49,7 @@ The [`.githooks/pre-push`](/Users/karol/Desktop/mdcms/.githooks/pre-push) hook r
 - `apps/server`
 - `apps/cli`
 - `apps/studio-example`
+- `apps/studio-review`
 - `packages/studio`
 - `packages/sdk`
 - `packages/shared`
@@ -76,6 +79,7 @@ Service endpoints:
 - Mailhog SMTP: `localhost:1025`
 - Mailhog UI: `http://localhost:8025`
 - Studio example app: `http://127.0.0.1:4173`
+- Studio review app: `http://127.0.0.1:3000`
 
 Stop stack:
 
@@ -96,6 +100,34 @@ bun run compose:health
 ```
 
 The verification script boots the stack, waits for healthy services, validates `/healthz`, checks required host port mappings, verifies `pgdata` and `miniodata` persistence across restart, and tears everything down.
+
+## Private Studio Review App
+
+The repository also contains a private review-only Next.js app at
+[`apps/studio-review`](/Users/karol/Desktop/mdcms/apps/studio-review). It is
+intended for PR visual review of Studio shell and editor changes without
+starting the full Compose stack.
+
+The review app keeps production Studio contracts unchanged:
+
+- it mounts the normal `@mdcms/studio` `<Studio />` shell
+- it serves a local review-only `/api/v1/studio/bootstrap` and
+  `/api/v1/studio/assets/*` subtree from prebuilt runtime artifacts
+- it serves deterministic mock API responses under a scenario-scoped
+  `serverUrl` subtree
+
+Local run:
+
+```bash
+bun run studio:review:dev
+```
+
+Useful routes:
+
+- `http://127.0.0.1:3000/`
+- `http://127.0.0.1:3000/review/editor/admin`
+- `http://127.0.0.1:3000/review/editor/admin/content/post/11111111-1111-4111-8111-111111111111`
+- `http://127.0.0.1:3000/review/owner/admin/schema`
 
 ## Demo Runbook (Pull + Push + Raw Content Page)
 
