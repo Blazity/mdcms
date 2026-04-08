@@ -1,4 +1,5 @@
 import type { ParsedMdcmsConfig } from "@mdcms/shared";
+import { RuntimeError } from "@mdcms/shared";
 import { buildSchemaSyncPayload } from "@mdcms/shared/server";
 
 import type { CliCommand, CliCommandContext } from "./framework.js";
@@ -16,6 +17,22 @@ async function runSchemaSync(context: CliCommandContext): Promise<number> {
     stderr,
     cwd,
   } = context;
+
+  const types = config.types ?? [];
+  if (types.length === 0) {
+    throw new RuntimeError({
+      code: "NO_TYPES_DEFINED",
+      message:
+        `No content types defined in mdcms.config.ts.\n` +
+        `Define at least one type before syncing schema, e.g.:\n\n` +
+        `  const post = defineType("post", {\n` +
+        `    directory: "content/posts",\n` +
+        `    fields: { title: z.string() },\n` +
+        `  });\n\n` +
+        `Then pass it to defineConfig: types: [post]`,
+      statusCode: 400,
+    });
+  }
 
   const payload = buildSchemaSyncPayload(
     config as ParsedMdcmsConfig,

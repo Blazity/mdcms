@@ -476,9 +476,9 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
             `  ${type.name} (${type.fileCount} file${type.fileCount !== 1 ? "s" : ""}, fields: ${fieldNames.join(", ") || "none"})\n`,
           );
         }
-      }
 
-      await prompter.confirm("Confirm inferred types?");
+        await prompter.confirm("Confirm inferred types?");
+      }
 
       // ── Step 7: Generate Config + Sync Schema ───────────────────────
       const configInput: GenerateConfigInput = {
@@ -506,56 +506,68 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
       });
 
       const parsedConfig = parseMdcmsConfig(rawConfig);
-      const schemaSyncPayload = buildSchemaSyncPayload(
-        parsedConfig,
-        environment,
-      );
 
-      const schemaHeaders: Record<string, string> = {
-        "content-type": "application/json",
-        "x-mdcms-project": project,
-        "x-mdcms-environment": environment,
-        authorization: `Bearer ${apiKey}`,
-      };
+      let schemaHash: string | undefined;
 
-      const schemaResponse = await fetcher(`${serverUrl}/api/v1/schema`, {
-        method: "PUT",
-        headers: schemaHeaders,
-        body: JSON.stringify(schemaSyncPayload),
-      });
-
-      if (!schemaResponse.ok) {
-        const errorBody = (await schemaResponse
-          .json()
-          .catch(() => undefined)) as
-          | { code?: string; message?: string }
-          | undefined;
-        stderr.write(
-          `${errorBody?.code ?? "SCHEMA_SYNC_FAILED"}: ${errorBody?.message ?? `Server responded with ${schemaResponse.status}`}\n`,
+      if (inferredTypes.length === 0) {
+        stdout.write(
+          `Skipping schema sync — no content types to sync.\n` +
+            `Add types to mdcms.config.ts and run: mdcms schema sync\n`,
         );
-        return 1;
-      }
+      } else {
+        const schemaSyncPayload = buildSchemaSyncPayload(
+          parsedConfig,
+          environment,
+        );
 
-      const schemaResult = (await schemaResponse.json()) as {
-        data: {
-          schemaHash: string;
-          syncedAt: string;
-          affectedTypes: string[];
+        const schemaHeaders: Record<string, string> = {
+          "content-type": "application/json",
+          "x-mdcms-project": project,
+          "x-mdcms-environment": environment,
+          authorization: `Bearer ${apiKey}`,
         };
-      };
 
-      await writeSchemaState(
-        { cwd, project, environment },
-        {
-          schemaHash: schemaResult.data.schemaHash,
-          syncedAt: schemaResult.data.syncedAt,
-          serverUrl,
-        },
-      );
+        const schemaResponse = await fetcher(`${serverUrl}/api/v1/schema`, {
+          method: "PUT",
+          headers: schemaHeaders,
+          body: JSON.stringify(schemaSyncPayload),
+        });
 
-      stdout.write(
-        `Schema synced (hash: ${schemaResult.data.schemaHash.slice(0, 12)})\n`,
-      );
+        if (!schemaResponse.ok) {
+          const errorBody = (await schemaResponse
+            .json()
+            .catch(() => undefined)) as
+            | { code?: string; message?: string }
+            | undefined;
+          stderr.write(
+            `${errorBody?.code ?? "SCHEMA_SYNC_FAILED"}: ${errorBody?.message ?? `Server responded with ${schemaResponse.status}`}\n`,
+          );
+          return 1;
+        }
+
+        const schemaResult = (await schemaResponse.json()) as {
+          data: {
+            schemaHash: string;
+            syncedAt: string;
+            affectedTypes: string[];
+          };
+        };
+
+        schemaHash = schemaResult.data.schemaHash;
+
+        await writeSchemaState(
+          { cwd, project, environment },
+          {
+            schemaHash,
+            syncedAt: schemaResult.data.syncedAt,
+            serverUrl,
+          },
+        );
+
+        stdout.write(
+          `Schema synced (hash: ${schemaHash.slice(0, 12)})\n`,
+        );
+      }
 
       // ── Step 8: Initial Import ──────────────────────────────────────
       const filesToImport = allFiles.filter((file) =>
@@ -629,7 +641,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
               "content-type": "application/json",
               "x-mdcms-project": project,
               "x-mdcms-environment": environment,
-              "x-mdcms-schema-hash": schemaResult.data.schemaHash,
+              "x-mdcms-schema-hash": schemaHash!,
               authorization: `Bearer ${apiKey}`,
             };
 

@@ -1,4 +1,4 @@
-import { input, select, checkbox, confirm } from "@inquirer/prompts";
+import { input, select, checkbox } from "@inquirer/prompts";
 import ora from "ora";
 
 function isExitPromptError(error: unknown): boolean {
@@ -78,7 +78,13 @@ export function createInquirerPrompter(): Prompter {
     },
     async confirm(message) {
       try {
-        return await confirm({ message });
+        return await select({
+          message,
+          choices: [
+            { name: "Yes", value: true },
+            { name: "No", value: false },
+          ],
+        });
       } catch (error) {
         if (isExitPromptError(error)) process.exit(0);
         throw error;

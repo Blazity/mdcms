@@ -843,8 +843,11 @@ async function buildPushPlan(
           resolvedPath: resolved.path,
         });
       } catch {
+        const dir = file.path.split("/").slice(0, -1).join("/");
         context.stderr.write(
-          `Warning: skipping "${file.path}" — cannot map to a configured content type.\n`,
+          `Warning: skipping "${file.path}" — no content type maps to directory "${dir}".\n` +
+            `  Define a type with this directory in mdcms.config.ts, e.g.:\n` +
+            `  defineType("myType", { directory: "${dir}", fields: { ... } })\n\n`,
         );
       }
     }
@@ -1120,7 +1123,8 @@ export async function runPushCommand(
     throw new RuntimeError({
       code: "SCHEMA_STATE_MISSING",
       message:
-        'No local schema state found. Run "cms schema sync" before pushing.',
+        `No local schema state found for ${context.project}/${context.environment}.\n` +
+        `Run: mdcms schema sync`,
       statusCode: 400,
     });
   }
@@ -1138,9 +1142,30 @@ export async function runPushCommand(
     pushPlan.newCandidates.length > 0;
 
   if (!hasAnything) {
-    context.stdout.write(
-      `No documents found for ${context.project}/${context.environment}.\n`,
-    );
+    const contentDirs = context.config.contentDirectories ?? [];
+    const types = context.config.types ?? [];
+
+    if (contentDirs.length === 0) {
+      context.stderr.write(
+        `No content directories configured in mdcms.config.ts.\n` +
+          `Add directories to scan, e.g.:\n\n` +
+          `  contentDirectories: ["content/posts"]\n\n`,
+      );
+    } else if (types.length === 0) {
+      context.stderr.write(
+        `No content types defined in mdcms.config.ts.\n` +
+          `Define at least one type that maps to your content directory, e.g.:\n\n` +
+          `  const post = defineType("post", {\n` +
+          `    directory: "content/posts",\n` +
+          `    fields: { title: z.string() },\n` +
+          `  });\n\n` +
+          `Then pass it to defineConfig: types: [post]\n\n`,
+      );
+    } else {
+      context.stdout.write(
+        `No documents found for ${context.project}/${context.environment}.\n`,
+      );
+    }
     return 0;
   }
 

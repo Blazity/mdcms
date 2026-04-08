@@ -1,8 +1,7 @@
 import { stdin as processStdin, stdout as processStdout } from "node:process";
 import { resolve } from "node:path";
-import { createInterface } from "node:readline/promises";
 
-import { checkbox } from "@inquirer/prompts";
+import { checkbox, select } from "@inquirer/prompts";
 import { RuntimeError, type CliPreflightHook } from "@mdcms/shared";
 
 import { formatCliErrorEnvelope } from "./cli.js";
@@ -303,10 +302,18 @@ export async function resolveExecutionContext(input: {
     input.global.environment ?? envEnvironment ?? input.config.environment;
 
   if (input.requiresTarget && (!project || !environment)) {
+    const missing = !project && !environment
+      ? "project and environment"
+      : !project
+        ? "project"
+        : "environment";
     throw new RuntimeError({
       code: "MISSING_TARGET",
       message:
-        "Both project and environment are required. Provide --project/--environment, MDCMS_PROJECT/MDCMS_ENVIRONMENT, or config defaults.",
+        `Missing ${missing}. Provide via:\n` +
+        `  - CLI flags: --project <slug> --environment <name>\n` +
+        `  - Env vars: MDCMS_PROJECT / MDCMS_ENVIRONMENT\n` +
+        `  - Config:   project / environment fields in mdcms.config.ts`,
       statusCode: 400,
     });
   }
@@ -368,18 +375,13 @@ async function defaultConfirmPrompt(message: string): Promise<boolean> {
     return false;
   }
 
-  const reader = createInterface({
-    input: processStdin,
-    output: processStdout,
+  return select({
+    message,
+    choices: [
+      { name: "Yes", value: true },
+      { name: "No", value: false },
+    ],
   });
-
-  try {
-    const answer = await reader.question(`${message} [y/N] `);
-    const normalized = answer.trim().toLowerCase();
-    return normalized === "y" || normalized === "yes";
-  } finally {
-    reader.close();
-  }
 }
 
 async function defaultMultiSelectPrompt<T extends string>(

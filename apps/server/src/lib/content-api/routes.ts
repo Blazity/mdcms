@@ -169,49 +169,52 @@ export function mountContentApiRoutes(
           doc.frontmatter,
           schemaCache.get(doc.type),
         );
-      if (options.resolveUsers && response.data.length > 0) {
-        try {
-          const uniqueUserIds = [
-            ...new Set(
-              response.data.flatMap((doc) => [doc.createdBy, doc.updatedBy]),
-            ),
-          ];
-          const users = await options.resolveUsers(uniqueUserIds);
-          (response as Record<string, unknown>).users = users;
-        } catch {
-          // User enrichment is best-effort; a lookup failure must not
-          // break the content list response.
+        if (options.resolveUsers && response.data.length > 0) {
+          try {
+            const uniqueUserIds = [
+              ...new Set(
+                response.data.flatMap((doc) => [doc.createdBy, doc.updatedBy]),
+              ),
+            ];
+            const users = await options.resolveUsers(uniqueUserIds);
+            (response as Record<string, unknown>).users = users;
+          } catch {
+            // User enrichment is best-effort; a lookup failure must not
+            // break the content list response.
+          }
         }
-      }
 
-      if (resolvePaths.length === 0) {
-        return response;
-      }
+        if (resolvePaths.length === 0) {
+          return response;
+        }
 
-      const resolvePlan = await prepareResolvePlan({
-        scope,
-        store: options.store,
-        documentType: resolvedType!,
-        paths: resolvePaths,
-      });
+        const resolvePlan = await prepareResolvePlan({
+          scope,
+          store: options.store,
+          documentType: resolvedType!,
+          paths: resolvePaths,
+        });
 
-      return {
-        ...response,
-        data: await Promise.all(
-          response.data.map((document) =>
-            applyResolvePlan({
-              authorize: options.authorize,
-              request,
-              requiredScope,
-              scope,
-              store: options.store,
-              draft,
-              document,
-              plan: resolvePlan,
-            }),
+        return {
+          ...response,
+          data: await Promise.all(
+            response.data.map((document) =>
+              applyResolvePlan({
+                authorize: options.authorize,
+                request,
+                requiredScope,
+                scope,
+                store: options.store,
+                draft,
+                document,
+                plan: resolvePlan,
+              }),
+            ),
           ),
-        ),
-      };
+        };
+      }
+
+      return response;
     });
   });
 
