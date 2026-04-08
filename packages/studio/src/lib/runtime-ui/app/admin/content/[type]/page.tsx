@@ -12,7 +12,6 @@ import {
   Trash2,
   Send,
   FileText,
-  Loader2,
   AlertCircle,
   ShieldAlert,
   ArrowUpFromLine,
@@ -52,6 +51,7 @@ import {
   PaginationPrevious,
 } from "../../../../components/ui/pagination.js";
 import { PageHeader } from "../../../../components/layout/page-header.js";
+import { Skeleton } from "../../../../components/ui/skeleton.js";
 import { cn } from "../../../../lib/utils.js";
 import { useAdminCapabilities } from "../../capabilities-context.js";
 import { useStudioMountInfo } from "../../mount-info-context.js";
@@ -121,9 +121,20 @@ export default function ContentTypePage() {
   const toast = useToast();
   const [searchInput, setSearchInput] = useState("");
   const [rowActionError, setRowActionError] = useState<string | null>(null);
+  const [showLoading, setShowLoading] = useState(false);
 
   const list = useContentTypeList(typeId);
   const create = useCreateDocument(typeId);
+
+  // Debounce loading skeleton by 200ms
+  useEffect(() => {
+    if (list.status !== "loading") {
+      setShowLoading(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowLoading(true), 200);
+    return () => clearTimeout(timer);
+  }, [list.status]);
 
   // Debounced search
   useEffect(() => {
@@ -434,9 +445,28 @@ export default function ContentTypePage() {
         )}
 
         {/* Content area */}
-        {list.status === "loading" && (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="h-6 w-6 animate-spin text-foreground-muted" />
+        {list.status === "loading" && showLoading && (
+          <div className="rounded-lg border border-border">
+            <div className="border-b border-border px-4 py-3 flex gap-4">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-4 w-16 ml-auto" />
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-4 w-16" />
+            </div>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-4 border-b border-border px-4 py-3 last:border-b-0"
+              >
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-48" />
+                  <Skeleton className="h-3 w-32" />
+                </div>
+                <Skeleton className="h-5 w-16 rounded-full" />
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-6 w-6 rounded-full" />
+              </div>
+            ))}
           </div>
         )}
 
