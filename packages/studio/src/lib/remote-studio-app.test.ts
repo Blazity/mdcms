@@ -150,7 +150,7 @@ test("RemoteStudioApp renders only the filtered action catalog on the document r
     },
     documentRoute: {
       project: "marketing-site",
-      environment: "staging",
+      initialEnvironment: "staging",
       write: {
         canWrite: true,
         schemaHash: "schema-hash",
@@ -254,7 +254,7 @@ test("RemoteStudioApp keeps the editor route chrome truthful and width-constrain
     },
     documentRoute: {
       project: "marketing-site",
-      environment: "staging",
+      initialEnvironment: "staging",
       write: {
         canWrite: true,
         schemaHash: "schema-hash",
@@ -291,7 +291,7 @@ test("RemoteStudioApp renders the expanded admin route surfaces", () => {
     },
     documentRoute: {
       project: "marketing-site",
-      environment: "staging",
+      initialEnvironment: "staging",
       write: {
         canWrite: false,
         message: "Schema sync required before Studio can write drafts.",

@@ -113,7 +113,7 @@ export function createSchemaPageLoadInput(
   return {
     config: {
       project: route.project,
-      environment: route.environment,
+      environment: route.initialEnvironment,
       serverUrl: context.apiBaseUrl,
     },
     auth: context.auth,

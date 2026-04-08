@@ -164,7 +164,7 @@ export function createContentPageLoadInput(
   return {
     config: {
       project: route.project,
-      environment: route.environment,
+      environment: route.initialEnvironment,
       serverUrl: context.apiBaseUrl,
       supportedLocales: route.supportedLocales,
     },

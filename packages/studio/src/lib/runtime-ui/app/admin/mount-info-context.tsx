@@ -46,3 +46,20 @@ export function StudioMountInfoProvider({
 export function useStudioMountInfo(): StudioMountInfo {
   return useContext(StudioMountInfoContext);
 }
+
+export type StudioApiConfig = {
+  config: { project: string; environment: string; serverUrl: string };
+  authOptions: { auth: StudioMountContext["auth"] };
+};
+
+/** Centralized API config derived from the active environment. All
+ *  environment-scoped API calls should use this instead of constructing
+ *  config objects manually, so the active environment is never stale. */
+export function useStudioApiConfig(): StudioApiConfig | null {
+  const { project, environment, apiBaseUrl, auth } = useStudioMountInfo();
+  if (!project || !environment) return null;
+  return {
+    config: { project, environment, serverUrl: apiBaseUrl },
+    authOptions: { auth },
+  };
+}

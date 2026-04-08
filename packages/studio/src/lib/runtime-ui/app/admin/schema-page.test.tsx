@@ -55,7 +55,7 @@ test("createSchemaPageLoadInput maps the mounted project and environment", () =>
     },
     documentRoute: {
       project: "marketing-site",
-      environment: "staging",
+      initialEnvironment: "staging",
       write: {
         canWrite: false,
         message: "Schema sync required before Studio can write drafts.",

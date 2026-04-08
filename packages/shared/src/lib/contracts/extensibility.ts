@@ -142,7 +142,10 @@ export type StudioDocumentRouteWriteContext =
 
 export type StudioDocumentRouteMountContext = {
   project: string;
-  environment: string;
+  /** Initial environment provided by the host app. Studio owns the active
+   *  environment after mount — use `useStudioMountInfo().environment` for the
+   *  current value at runtime. */
+  initialEnvironment: string;
   supportedLocales?: string[];
   write: StudioDocumentRouteWriteContext;
 };
@@ -543,7 +546,7 @@ const studioDocumentRouteWriteSchema = z.discriminatedUnion("canWrite", [
 const studioDocumentRouteContextSchema = z
   .object({
     project: nonEmptyStringSchema,
-    environment: nonEmptyStringSchema,
+    initialEnvironment: nonEmptyStringSchema,
     supportedLocales: z.array(nonEmptyStringSchema).optional(),
     write: studioDocumentRouteWriteSchema,
   })

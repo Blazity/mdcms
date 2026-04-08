@@ -521,7 +521,7 @@ export function RemoteStudioApp({
               <StudioMountInfoProvider
                 value={{
                   project: context.documentRoute?.project ?? null,
-                  environment: context.documentRoute?.environment ?? null,
+                  environment: context.documentRoute?.initialEnvironment ?? null,
                   setEnvironment: () => {},
                   apiBaseUrl: context.apiBaseUrl,
                   auth: context.auth,

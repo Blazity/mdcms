@@ -46,7 +46,7 @@ export function createAdminLayoutCapabilitiesLoadInput(
   return {
     config: {
       project: route.project,
-      environment: route.environment,
+      environment: route.initialEnvironment,
       serverUrl: context.apiBaseUrl,
     },
     auth: context.auth,
@@ -86,7 +86,7 @@ export default function AdminLayout({
         );
         if (fromQuery) return fromQuery;
       }
-      return context.documentRoute?.environment ?? null;
+      return context.documentRoute?.initialEnvironment ?? null;
     },
   );
 

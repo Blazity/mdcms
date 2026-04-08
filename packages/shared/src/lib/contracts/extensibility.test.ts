@@ -374,7 +374,7 @@ test("runtime contract validators cover positive and negative shapes", () => {
       hostBridge: validHostBridge,
       documentRoute: {
         project: "marketing-site",
-        environment: "staging",
+        initialEnvironment: "staging",
         supportedLocales: ["en-US", "fr"],
         write: {
           canWrite: true,
@@ -441,7 +441,7 @@ test("runtime contract validators cover positive and negative shapes", () => {
         hostBridge: validHostBridge,
         documentRoute: {
           project: "marketing-site",
-          environment: "staging",
+          initialEnvironment: "staging",
           write: {
             canWrite: true,
           },

@@ -20,7 +20,7 @@ function createContext(): StudioMountContext {
     },
     documentRoute: {
       project: "marketing-site",
-      environment: "staging",
+      initialEnvironment: "staging",
       write: {
         canWrite: true,
         schemaHash: "schema-hash",
