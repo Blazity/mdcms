@@ -40,9 +40,9 @@ export async function loadDashboardData(
     const [schemaTypes, totalResult, publishedResult, recentResult] =
       await Promise.all([
         schemaApi.list(),
-        contentApi.list({ limit: 1 }),
+        contentApi.list({ draft: true, limit: 1 }),
         contentApi.list({ published: true, limit: 1 }),
-        contentApi.list({ sort: "updatedAt", order: "desc", limit: 5 }),
+        contentApi.list({ draft: true, sort: "updatedAt", order: "desc", limit: 5 }),
       ]);
 
     const totalDocuments = totalResult.pagination.total;
@@ -53,7 +53,7 @@ export async function loadDashboardData(
     const typeStats = await Promise.all(
       typesToShow.map(async (entry: SchemaRegistryEntry) => {
         const [typeTotal, typePublished] = await Promise.all([
-          contentApi.list({ type: entry.type, limit: 1 }),
+          contentApi.list({ draft: true, type: entry.type, limit: 1 }),
           contentApi.list({ type: entry.type, published: true, limit: 1 }),
         ]);
 
