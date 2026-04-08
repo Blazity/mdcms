@@ -484,10 +484,19 @@ export function RemoteStudioApp({
       return;
     }
 
+    // Preserve the active environment query param across navigations
+    const currentEnv = new URLSearchParams(window.location.search).get("env");
+    let resolvedHref = href;
+    if (currentEnv && !href.includes("?")) {
+      resolvedHref = `${href}?env=${encodeURIComponent(currentEnv)}`;
+    } else if (currentEnv && href.includes("?") && !href.includes("env=")) {
+      resolvedHref = `${href}&env=${encodeURIComponent(currentEnv)}`;
+    }
+
     if (mode === "replace") {
-      window.history.replaceState(null, "", href);
+      window.history.replaceState(null, "", resolvedHref);
     } else {
-      window.history.pushState(null, "", href);
+      window.history.pushState(null, "", resolvedHref);
     }
 
     setPathname(window.location.pathname);
