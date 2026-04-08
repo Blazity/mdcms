@@ -11,6 +11,7 @@ import {
   type StudioContentOverviewEntry,
   type StudioContentOverviewState,
 } from "../../content-overview-state.js";
+import { useStudioMountInfo } from "../app/admin/mount-info-context.js";
 import Link from "../adapters/next-link.js";
 import { ChevronRight, FileText, Globe, GlobeOff } from "lucide-react";
 import { resolveStudioHref, useBasePath } from "../navigation.js";
@@ -269,17 +270,26 @@ export default function ContentPage({
   context: StudioMountContext;
   loadState?: typeof loadStudioContentOverviewState;
 }) {
+  const mountInfo = useStudioMountInfo();
   const [state, setState] = useState<StudioContentOverviewState>(() =>
     createStudioContentOverviewLoadingState(),
   );
 
   useEffect(() => {
-    const loadInput = createContentPageLoadInput(context);
-
-    if (!loadInput) {
+    if (!mountInfo.project || !mountInfo.environment) {
       setState(createContentPageMissingRouteState());
       return;
     }
+
+    const loadInput: ContentPageLoadInput = {
+      config: {
+        project: mountInfo.project,
+        environment: mountInfo.environment,
+        serverUrl: mountInfo.apiBaseUrl,
+        supportedLocales: mountInfo.supportedLocales,
+      },
+      auth: mountInfo.auth,
+    };
 
     let active = true;
     setState(createStudioContentOverviewLoadingState());
@@ -310,11 +320,11 @@ export default function ContentPage({
       active = false;
     };
   }, [
-    context.apiBaseUrl,
-    context.auth.mode,
-    context.auth.mode === "token" ? context.auth.token : undefined,
-    context.documentRoute?.environment,
-    context.documentRoute?.project,
+    mountInfo.apiBaseUrl,
+    mountInfo.auth,
+    mountInfo.environment,
+    mountInfo.project,
+    mountInfo.supportedLocales,
     loadState,
   ]);
 

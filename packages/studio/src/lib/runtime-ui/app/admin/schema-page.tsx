@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import type { SchemaRegistryEntry, StudioMountContext } from "@mdcms/shared";
 
+import { useStudioMountInfo } from "./mount-info-context.js";
 import {
   createStudioSchemaLoadingState,
   loadStudioSchemaState,
@@ -290,17 +291,25 @@ export default function SchemaPage({
 }: {
   context: StudioMountContext;
 }) {
+  const mountInfo = useStudioMountInfo();
   const [state, setState] = useState<StudioSchemaState>(() =>
     createSchemaPageLoadingState(),
   );
 
   useEffect(() => {
-    const loadInput = createSchemaPageLoadInput(context);
-
-    if (!loadInput) {
+    if (!mountInfo.project || !mountInfo.environment) {
       setState(createSchemaPageMissingRouteState());
       return;
     }
+
+    const loadInput: SchemaPageLoadInput = {
+      config: {
+        project: mountInfo.project,
+        environment: mountInfo.environment,
+        serverUrl: mountInfo.apiBaseUrl,
+      },
+      auth: mountInfo.auth,
+    };
 
     let active = true;
     setState(createSchemaPageLoadingState());
@@ -331,10 +340,10 @@ export default function SchemaPage({
       active = false;
     };
   }, [
-    context.apiBaseUrl,
-    context.auth,
-    context.documentRoute?.environment,
-    context.documentRoute?.project,
+    mountInfo.apiBaseUrl,
+    mountInfo.auth,
+    mountInfo.environment,
+    mountInfo.project,
   ]);
 
   return <SchemaPageView state={state} />;
