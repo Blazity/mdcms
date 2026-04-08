@@ -120,8 +120,8 @@ test("full init wizard creates config, schema state, and manifest", async () => 
     const fetcher = createMockFetcher(createDefaultFetchHandlers());
 
     const prompter = createMockPrompter({
-      text: ["http://localhost:4000"],
-      select: ["my-project", "staging"],
+      text: ["http://localhost:4000", "my-project", "staging"],
+      select: [],
       multiSelect: [["content/posts"]],
       confirm: [true, true, false],
     });
@@ -246,10 +246,10 @@ test("init with no content files still generates config", async () => {
     });
 
     const prompter = createMockPrompter({
-      text: ["http://localhost:4000"],
-      select: ["my-project", "production"],
+      text: ["http://localhost:4000", "my-project", "production", "content/posts"],
+      select: [],
       multiSelect: [],
-      confirm: [true],
+      confirm: [],
     });
 
     const command = createInitCommand({
@@ -278,7 +278,7 @@ test("init with no content files still generates config", async () => {
   });
 });
 
-test("init with create new project flow", async () => {
+test("init creates new project and generates config", async () => {
   await withTempDir(async (cwd) => {
     const fetcher = createMockFetcher({
       ...createDefaultFetchHandlers(),
@@ -313,10 +313,10 @@ test("init with create new project flow", async () => {
     });
 
     const prompter = createMockPrompter({
-      text: ["http://localhost:4000", "new-project"],
-      select: ["__create_new__", "production"],
+      text: ["http://localhost:4000", "new-project", "production", "content/posts"],
+      select: [],
       multiSelect: [],
-      confirm: [true],
+      confirm: [],
     });
 
     const command = createInitCommand({

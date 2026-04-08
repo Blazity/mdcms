@@ -59,9 +59,26 @@ export async function loadCliConfig(options: {
     });
   }
 
-  const configModule = await import(
-    `${pathToFileURL(configPath).href}?t=${Date.now()}`
-  );
+  let configModule: Record<string, unknown>;
+  try {
+    configModule = await import(
+      `${pathToFileURL(configPath).href}?t=${Date.now()}`
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === "object" && error !== null && "message" in error
+          ? String((error as { message: unknown }).message)
+          : "Unknown import error";
+
+    throw new RuntimeError({
+      code: "CONFIG_LOAD_FAILED",
+      message: `Failed to load config from "${configPath}": ${message}`,
+      statusCode: 400,
+      details: { configPath },
+    });
+  }
 
   return {
     config: parseMdcmsConfig(

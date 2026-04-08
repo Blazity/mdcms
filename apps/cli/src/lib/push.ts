@@ -431,6 +431,11 @@ async function updateExistingDocument(
       code: string;
       message: string;
     }
+  | {
+      kind: "path_conflict";
+      code: string;
+      message: string;
+    }
 > {
   const response = await context.fetcher(
     `${context.serverUrl}/api/v1/content/${candidate.documentId}`,
@@ -478,6 +483,14 @@ async function updateExistingDocument(
     };
   }
 
+  if (response.status === 409 && remoteError.code === "CONTENT_PATH_CONFLICT") {
+    return {
+      kind: "path_conflict",
+      code: remoteError.code,
+      message: `Path conflict for "${candidate.manifestEntry.path}". The manifest references a stale document ID. Run 'cms pull' to re-sync.`,
+    };
+  }
+
   throw new RuntimeError({
     code: remoteError.code,
     message: remoteError.message,
@@ -492,6 +505,7 @@ async function createDocumentFromLocalFile(
 ): Promise<
   | { kind: "created"; remote: ContentDocumentPayload }
   | { kind: "schema_mismatch"; code: string; message: string }
+  | { kind: "path_conflict"; code: string; message: string }
 > {
   const types = context.config.types ?? [];
 
@@ -542,6 +556,17 @@ async function createDocumentFromLocalFile(
       };
     }
 
+    if (
+      response.status === 409 &&
+      remoteError.code === "CONTENT_PATH_CONFLICT"
+    ) {
+      return {
+        kind: "path_conflict",
+        code: remoteError.code,
+        message: `Path "${createTarget.path}" already exists on server under a different document ID. Run 'cms pull' to re-sync your manifest.`,
+      };
+    }
+
     throw new RuntimeError({
       code: remoteError.code,
       message: remoteError.message,
@@ -559,6 +584,7 @@ async function createNewDocument(
 ): Promise<
   | { kind: "created"; remote: ContentDocumentPayload }
   | { kind: "schema_mismatch"; code: string; message: string }
+  | { kind: "path_conflict"; code: string; message: string }
 > {
   const response = await context.fetcher(
     `${context.serverUrl}/api/v1/content`,
@@ -589,6 +615,18 @@ async function createNewDocument(
         kind: "schema_mismatch",
         code: remoteError.code,
         message: remoteError.message,
+      };
+    }
+
+    // Issue #10: handle path conflict with actionable message
+    if (
+      response.status === 409 &&
+      remoteError.code === "CONTENT_PATH_CONFLICT"
+    ) {
+      return {
+        kind: "path_conflict",
+        code: remoteError.code,
+        message: `Path "${candidate.resolvedPath}" already exists on server. Run 'cms pull' to sync, then resolve the duplicate.`,
       };
     }
 
@@ -742,6 +780,16 @@ function printPushResults(
       `\nSome documents were rejected due to schema mismatch. Run 'cms schema sync' to update the server schema, then retry.\n`,
     );
   }
+
+  const pathConflictCount = results.filter(
+    (r) => r.reasonCode === "content_path_conflict",
+  ).length;
+
+  if (pathConflictCount > 0) {
+    context.stdout.write(
+      `\nSome documents were rejected due to path conflicts. Run 'cms pull' to sync with server, then resolve duplicates.\n`,
+    );
+  }
 }
 
 async function buildPushPlan(
@@ -874,6 +922,15 @@ async function applyPush(
   const nextManifest: ScopedManifest = { ...manifest };
   const results: PushResult[] = [];
   let failures = 0;
+  let manifestDirty = false;
+
+  // Helper: flush manifest after each successful operation (issue #6)
+  async function flushManifest(): Promise<void> {
+    if (manifestDirty) {
+      await writeScopedManifestAtomic(manifestPath, nextManifest);
+      manifestDirty = false;
+    }
+  }
 
   // Phase 1: Update changed documents
   for (const candidate of candidates) {
@@ -892,6 +949,8 @@ async function applyPush(
           publishedVersion: updateResult.remote.publishedVersion,
           hash: candidate.hash,
         };
+        manifestDirty = true;
+        await flushManifest();
 
         results.push({
           status: "updated",
@@ -927,13 +986,28 @@ async function applyPush(
         continue;
       }
 
+      if (updateResult.kind === "path_conflict") {
+        failures += 1;
+        results.push({
+          status: "failed",
+          documentId: candidate.documentId,
+          path: candidate.manifestEntry.path,
+          message: `${updateResult.code}: ${updateResult.message}`,
+          reasonCode: updateResult.code.toLowerCase(),
+        });
+        continue;
+      }
+
       const createResult = await createDocumentFromLocalFile(
         context,
         candidate,
         schemaHash,
       );
 
-      if (createResult.kind === "schema_mismatch") {
+      if (
+        createResult.kind === "schema_mismatch" ||
+        createResult.kind === "path_conflict"
+      ) {
         failures += 1;
         results.push({
           status: "failed",
@@ -954,6 +1028,8 @@ async function applyPush(
         publishedVersion: created.publishedVersion,
         hash: candidate.hash,
       };
+      manifestDirty = true;
+      await flushManifest();
 
       results.push({
         status: "created",
@@ -994,7 +1070,10 @@ async function applyPush(
         schemaHash,
       );
 
-      if (createResult.kind === "schema_mismatch") {
+      if (
+        createResult.kind === "schema_mismatch" ||
+        createResult.kind === "path_conflict"
+      ) {
         failures += 1;
         results.push({
           status: "failed",
@@ -1014,6 +1093,8 @@ async function applyPush(
         publishedVersion: created.publishedVersion,
         hash: candidate.hash,
       };
+      manifestDirty = true;
+      await flushManifest();
 
       results.push({
         status: "created",
@@ -1054,6 +1135,8 @@ async function applyPush(
       );
 
       delete nextManifest[candidate.documentId];
+      manifestDirty = true;
+      await flushManifest();
 
       results.push({
         status: "deleted",
@@ -1087,7 +1170,8 @@ async function applyPush(
     }
   }
 
-  await writeScopedManifestAtomic(manifestPath, nextManifest);
+  // Final flush in case any trailing writes
+  await flushManifest();
 
   return {
     results,
@@ -1124,7 +1208,10 @@ export async function runPushCommand(
       code: "SCHEMA_STATE_MISSING",
       message:
         `No local schema state found for ${context.project}/${context.environment}.\n` +
-        `Run: mdcms schema sync`,
+        `If you just cloned this repo, run these commands to get started:\n` +
+        `  1. mdcms schema sync   (sync schema to server)\n` +
+        `  2. mdcms pull          (download content from server)\n\n` +
+        `Otherwise, run: mdcms schema sync`,
       statusCode: 400,
     });
   }
@@ -1175,6 +1262,7 @@ export async function runPushCommand(
   });
 
   // Interactive selection for new files
+  // Issue #8: in non-interactive mode without --force, skip new/deleted but still push changed
   let selectedNewCandidates: NewFileCandidate[] = [];
   if (pushPlan.newCandidates.length > 0) {
     if (options.force) {
@@ -1190,6 +1278,15 @@ export async function runPushCommand(
       selectedNewCandidates = pushPlan.newCandidates.filter((c) =>
         selectedPaths.includes(c.path),
       );
+
+      if (
+        selectedPaths.length === 0 &&
+        pushPlan.newCandidates.length > 0
+      ) {
+        context.stdout.write(
+          `Hint: ${pushPlan.newCandidates.length} new file(s) skipped. Use --force to include them in non-interactive mode.\n`,
+        );
+      }
     }
   }
 
@@ -1209,6 +1306,15 @@ export async function runPushCommand(
       selectedDeletionCandidates = pushPlan.deletionCandidates.filter((c) =>
         selectedIds.includes(c.documentId),
       );
+
+      if (
+        selectedIds.length === 0 &&
+        pushPlan.deletionCandidates.length > 0
+      ) {
+        context.stdout.write(
+          `Hint: ${pushPlan.deletionCandidates.length} deletion(s) skipped. Use --force to include them in non-interactive mode.\n`,
+        );
+      }
     }
   }
 
@@ -1296,6 +1402,8 @@ export async function runPushCommand(
     return 0;
   }
 
+  // Issue #8: in non-interactive mode, auto-confirm changed files (already tracked)
+  // but still require --force for new/deleted. Only block if nothing to do.
   if (!options.force) {
     const parts: string[] = [];
     if (pushPlan.changedCandidates.length > 0) {

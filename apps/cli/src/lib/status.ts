@@ -467,7 +467,8 @@ function renderSchemaReport(
       break;
     case "no_state":
       context.stdout.write(
-        "  No synced schema found. Run `cms schema sync`.\n",
+        "  No synced schema found.\n" +
+          "  If you just cloned this repo, run: cms schema sync && cms pull\n",
       );
       break;
   }

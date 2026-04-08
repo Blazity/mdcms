@@ -135,6 +135,16 @@ export function createDatabaseProjectStore(options: {
         );
       }
 
+      const existing = await findProjectBySlug(db, slug);
+      if (existing) {
+        throw new RuntimeError({
+          code: "CONFLICT",
+          message: `Project "${slug}" already exists.`,
+          statusCode: 409,
+          details: { slug },
+        });
+      }
+
       await ensureProjectProvisioned(db, { project: slug });
 
       const projectRow = await findProjectBySlug(db, slug);

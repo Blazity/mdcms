@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { z } from "zod";
 
@@ -178,7 +179,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
             "",
             "Interactive wizard to set up MDCMS in an existing project.",
             "",
-            "Steps: server URL, login, project/environment selection,",
+            "Steps: server URL, login, project creation,",
             "directory scan, schema inference, config generation,",
             "schema sync, content import, and git cleanup.",
             "",
@@ -194,7 +195,16 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
       const fetcher = options?.fetcher ?? context.fetcher;
       const { cwd, stdout, stderr } = context;
 
-      const CREATE_NEW = "__create_new__";
+      const existingConfigPath = join(cwd, "mdcms.config.ts");
+      if (existsSync(existingConfigPath)) {
+        const overwrite = await prompter.confirm(
+          "mdcms.config.ts already exists. Re-running init will overwrite it. Continue?",
+        );
+        if (!overwrite) {
+          stdout.write("Init cancelled. Existing config preserved.\n");
+          return 0;
+        }
+      }
 
       prompter.intro("mdcms init");
 
@@ -239,9 +249,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
                 redirectUri: listener.redirectUri,
                 state: oauthState,
                 scopes: [
-                  "projects:read",
                   "projects:write",
-                  "schema:read",
                   "schema:write",
                   "content:read",
                   "content:read:draft",
@@ -300,94 +308,52 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
         }
       }
 
-      // ── Step 3: Select / Create Project ─────────────────────────────
+      // ── Step 3: Create Project ────────────────────────────────────────
       const authHeaders: Record<string, string> = {
         authorization: `Bearer ${apiKey}`,
         "content-type": "application/json",
       };
 
-      const projectsResponse = await fetcher(`${serverUrl}/api/v1/projects`, {
+      const projectName = await prompter.text("Project name");
+      const s3 = prompter.spinner();
+      s3.start("Creating project...");
+      const createResponse = await fetcher(`${serverUrl}/api/v1/projects`, {
+        method: "POST",
         headers: authHeaders,
+        body: JSON.stringify({ name: projectName }),
       });
-      if (!projectsResponse.ok) {
-        const errText = await projectsResponse.text().catch(() => "");
-        stderr.write(
-          `Failed to fetch projects: ${projectsResponse.status} ${errText}\n`,
-        );
+      if (!createResponse.ok) {
+        const errBody = (await createResponse.json().catch(() => undefined)) as
+          | { code?: string; message?: string }
+          | undefined;
+        if (createResponse.status === 409) {
+          s3.stop(`Project "${projectName}" already exists`);
+        } else {
+          s3.stop(
+            errBody?.message ?? `Failed to create project (${createResponse.status})`,
+          );
+        }
         return 1;
       }
-      const projectsBody = (await projectsResponse.json()) as {
+      const created = (await createResponse.json()) as {
         data: {
-          id: string;
           slug: string;
-          name: string;
-          environmentCount: number;
-        }[];
-      };
-
-      const projectChoices = [
-        ...projectsBody.data.map((p) => ({
-          label: `${p.name} (${p.environmentCount} environment${p.environmentCount !== 1 ? "s" : ""})`,
-          value: p.slug,
-        })),
-        { label: "Create a new project", value: CREATE_NEW },
-      ];
-
-      let project: string;
-      const projectSelection = await prompter.select(
-        "Select a project",
-        projectChoices,
-      );
-
-      if (projectSelection === CREATE_NEW) {
-        const projectName = await prompter.text("Project name");
-        const s = prompter.spinner();
-        s.start("Creating project...");
-        const createResponse = await fetcher(`${serverUrl}/api/v1/projects`, {
-          method: "POST",
-          headers: authHeaders,
-          body: JSON.stringify({ name: projectName }),
-        });
-        if (!createResponse.ok) {
-          s.stop("Failed to create project");
-          return 1;
-        }
-        const created = (await createResponse.json()) as {
-          data: { slug: string };
+          environments: { id: string; name: string }[];
         };
-        project = created.data.slug;
-        s.stop(`Project "${project}" created`);
-      } else {
-        project = projectSelection;
-      }
-
-      // ── Step 4: Select / Create Environment ─────────────────────────
-      const envsResponse = await fetcher(
-        `${serverUrl}/api/v1/projects/${project}/environments`,
-        { headers: authHeaders },
-      );
-      const envsBody = (await envsResponse.json()) as {
-        data: { id: string; name: string }[];
       };
+      const project = created.data.slug;
+      const existingEnvs = created.data.environments ?? [];
+      s3.stop(`Project "${project}" created`);
 
-      const envChoices = [
-        ...envsBody.data.map((e) => ({
-          label: e.name,
-          value: e.name,
-        })),
-        { label: "Create a new environment", value: CREATE_NEW },
-      ];
+      // ── Step 4: Create Environment ─────────────────────────────────
+      const envName = await prompter.text("Environment name", "production");
+      const alreadyExists = existingEnvs.some((e) => e.name === envName);
 
-      let environment: string;
-      const envSelection = await prompter.select(
-        "Select an environment",
-        envChoices,
-      );
-
-      if (envSelection === CREATE_NEW) {
-        const envName = await prompter.text("Environment name");
-        const s = prompter.spinner();
-        s.start("Creating environment...");
+      if (alreadyExists) {
+        stdout.write(`Environment "${envName}" already exists\n`);
+      } else {
+        const s4 = prompter.spinner();
+        s4.start("Creating environment...");
         const createEnvResponse = await fetcher(
           `${serverUrl}/api/v1/projects/${project}/environments`,
           {
@@ -397,14 +363,12 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
           },
         );
         if (!createEnvResponse.ok) {
-          s.stop("Failed to create environment");
+          s4.stop("Failed to create environment");
           return 1;
         }
-        environment = envName;
-        s.stop(`Environment "${environment}" created`);
-      } else {
-        environment = envSelection;
+        s4.stop(`Environment "${envName}" created`);
       }
+      const environment = envName;
 
       // Store credentials after project/env selection
       if (options?.credentialStore && apiKey !== "skip-auth-key") {
@@ -430,8 +394,53 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
       // Drop root-level files — "." is not a valid content directory
       dirGroups.delete(".");
 
+      let scaffoldedType: InferredType | null = null;
+
       if (dirGroups.size === 0) {
         stdout.write("No content files found.\n");
+
+        const dirName = await prompter.text(
+          "Content directory (e.g. content/posts)",
+          "content/posts",
+        );
+        selectedDirectories = [dirName];
+
+        const lastSegment = dirName.split("/").pop() ?? dirName;
+        const typeName = lastSegment.endsWith("s")
+          ? lastSegment.slice(0, -1)
+          : lastSegment;
+
+        scaffoldedType = {
+          name: typeName,
+          directory: dirName,
+          localized: false,
+          fields: {
+            title: { zodType: "z.string()", optional: false, samples: 0 },
+            slug: { zodType: "z.string()", optional: true, samples: 0 },
+          },
+          fileCount: 0,
+        };
+
+        stdout.write(
+          `Will create type "${typeName}" for directory "${dirName}" with fields: title, slug\n`,
+        );
+
+        // Create example post
+        const examplePath = join(cwd, dirName, "example.md");
+        await mkdir(join(cwd, dirName), { recursive: true });
+        await writeFile(
+          examplePath,
+          [
+            "---",
+            "title: Example Post",
+            "slug: example",
+            "---",
+            "",
+            "This is an example post created by `mdcms init`.",
+            "",
+          ].join("\n"),
+          "utf-8",
+        );
       } else {
         const choices = [...dirGroups.entries()].map(([dir, files]) => ({
           label: `${dir} (${files.length} file${files.length !== 1 ? "s" : ""})`,
@@ -446,6 +455,10 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
 
       // ── Step 5-6: Infer Schema + Detect Locales ─────────────────────
       const inferredTypes = inferSchema(allFiles, selectedDirectories);
+
+      if (scaffoldedType && inferredTypes.length === 0) {
+        inferredTypes.push(scaffoldedType);
+      }
       const localeConfig = await detectLocaleConfig(
         allFiles,
         inferredTypes,
@@ -468,7 +481,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
         }
       }
 
-      if (inferredTypes.length > 0) {
+      if (inferredTypes.length > 0 && !scaffoldedType) {
         stdout.write("Inferred content types:\n");
         for (const type of inferredTypes) {
           const fieldNames = Object.keys(type.fields);
@@ -564,9 +577,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
           },
         );
 
-        stdout.write(
-          `Schema synced (hash: ${schemaHash.slice(0, 12)})\n`,
-        );
+        stdout.write(`Schema synced (hash: ${schemaHash.slice(0, 12)})\n`);
       }
 
       // ── Step 8: Initial Import ──────────────────────────────────────
@@ -785,6 +796,13 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
             );
           }
         }
+      }
+
+      if (scaffoldedType) {
+        stdout.write(
+          `\nExample post created at ${selectedDirectories[0]}/example.md\n` +
+            `Run 'mdcms push' to upload it to the server.\n`,
+        );
       }
 
       prompter.outro("Initialization complete!");

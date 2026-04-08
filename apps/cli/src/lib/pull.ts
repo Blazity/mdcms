@@ -8,6 +8,7 @@ import type {
   ContentDocumentResponse,
 } from "@mdcms/shared";
 import { RuntimeError } from "@mdcms/shared";
+import { stringify as stringifyYaml } from "yaml";
 
 import type { CliCommand, CliCommandContext } from "./framework.js";
 import {
@@ -33,9 +34,13 @@ type ContentDocumentPayload = Pick<
 type PullChangeStatus =
   | "Modified"
   | "Locally modified"
+  | "Locally modified (server unchanged)"
+  | "Both modified"
   | "New"
   | "Moved/Renamed"
+  | "Moved/Renamed (locally modified)"
   | "Deleted on server"
+  | "Skipped (unknown type)"
   | "Unchanged";
 
 type PullChange = {
@@ -216,79 +221,8 @@ async function fetchAllContent(
   return rows;
 }
 
-function quoteYamlString(value: string): string {
-  return JSON.stringify(value);
-}
-
-function renderYamlScalar(value: unknown): string {
-  if (typeof value === "string") {
-    return quoteYamlString(value);
-  }
-
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-
-  if (value === null) {
-    return "null";
-  }
-
-  return quoteYamlString(String(value));
-}
-
-function renderYaml(value: unknown, depth = 0): string {
-  const pad = "  ".repeat(depth);
-
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      return "[]";
-    }
-
-    return value
-      .map((entry) => {
-        if (
-          entry &&
-          typeof entry === "object" &&
-          !Array.isArray(entry) &&
-          Object.keys(entry).length > 0
-        ) {
-          return `${pad}-\n${renderYaml(entry, depth + 1)}`;
-        }
-
-        return `${pad}- ${renderYamlScalar(entry)}`;
-      })
-      .join("\n");
-  }
-
-  if (value && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>).sort(
-      ([a], [b]) => a.localeCompare(b),
-    );
-
-    if (entries.length === 0) {
-      return "{}";
-    }
-
-    return entries
-      .map(([key, entryValue]) => {
-        if (
-          entryValue &&
-          typeof entryValue === "object" &&
-          (!Array.isArray(entryValue) || entryValue.length > 0)
-        ) {
-          return `${pad}${key}:\n${renderYaml(entryValue, depth + 1)}`;
-        }
-
-        if (Array.isArray(entryValue) && entryValue.length === 0) {
-          return `${pad}${key}: []`;
-        }
-
-        return `${pad}${key}: ${renderYamlScalar(entryValue)}`;
-      })
-      .join("\n");
-  }
-
-  return `${pad}${renderYamlScalar(value)}`;
+function renderYaml(value: Record<string, unknown>): string {
+  return stringifyYaml(value, { lineWidth: 0 }).trimEnd();
 }
 
 function renderMarkdownDocument(input: {
@@ -314,20 +248,13 @@ function hashContent(content: string): string {
 function resolveLocalPathForDocument(
   context: CliCommandContext,
   document: ContentDocumentPayload,
-): string {
+): string | undefined {
   const typeConfig = context.config.types?.find(
     (entry) => entry.name === document.type,
   );
 
   if (!typeConfig) {
-    throw new RuntimeError({
-      code: "TYPE_MAPPING_MISSING",
-      message: `Missing type mapping in config for content type "${document.type}".`,
-      statusCode: 400,
-      details: {
-        type: document.type,
-      },
-    });
+    return undefined;
   }
 
   const basePath = document.path.replace(/^\/+/, "");
@@ -383,11 +310,14 @@ function groupChanges(
 
 function printPlan(context: CliCommandContext, changes: PullChange[]): void {
   const orderedStatuses: PullChangeStatus[] = [
+    "Both modified",
     "Modified",
-    "Locally modified",
+    "Locally modified (server unchanged)",
     "New",
+    "Moved/Renamed (locally modified)",
     "Moved/Renamed",
     "Deleted on server",
+    "Skipped (unknown type)",
     "Unchanged",
   ];
   const groups = groupChanges(changes);
@@ -395,10 +325,18 @@ function printPlan(context: CliCommandContext, changes: PullChange[]): void {
   context.stdout.write("Pull plan:\n");
   for (const status of orderedStatuses) {
     const rows = groups.get(status) ?? [];
+
+    if (rows.length === 0) {
+      continue;
+    }
+
     context.stdout.write(`\n${status} (${rows.length})\n`);
 
     for (const change of rows) {
-      if (status === "Moved/Renamed") {
+      if (
+        status === "Moved/Renamed" ||
+        status === "Moved/Renamed (locally modified)"
+      ) {
         context.stdout.write(
           `  - ${change.previousPath} -> ${change.nextPath} (${formatRevision(change)})\n`,
         );
@@ -417,6 +355,23 @@ function printPlan(context: CliCommandContext, changes: PullChange[]): void {
       );
     }
   }
+
+  // Guidance for locally modified (server unchanged) files
+  const serverUnchanged = groups.get("Locally modified (server unchanged)");
+  if (serverUnchanged && serverUnchanged.length > 0) {
+    context.stdout.write(
+      `\nNote: ${serverUnchanged.length} file(s) modified locally but unchanged on server. Use 'cms push' to upload your changes.\n`,
+    );
+  }
+
+  // Guidance for both-modified files
+  const bothModified = groups.get("Both modified");
+  if (bothModified && bothModified.length > 0) {
+    context.stdout.write(
+      `\nWarning: ${bothModified.length} file(s) modified both locally and on server. Pull will overwrite local changes.\n` +
+        `Consider backing up local changes before proceeding, then re-apply after pull.\n`,
+    );
+  }
 }
 
 async function writeContentFile(path: string, content: string): Promise<void> {
@@ -431,7 +386,12 @@ async function applyPullChanges(input: {
   manifest: ScopedManifest;
 }): Promise<void> {
   for (const change of input.changes) {
-    if (change.status === "Unchanged") {
+    // Skip statuses that should not write files
+    if (
+      change.status === "Unchanged" ||
+      change.status === "Locally modified (server unchanged)" ||
+      change.status === "Skipped (unknown type)"
+    ) {
       continue;
     }
 
@@ -444,7 +404,11 @@ async function applyPullChanges(input: {
       continue;
     }
 
-    if (change.status === "Moved/Renamed" && change.previousPath) {
+    if (
+      (change.status === "Moved/Renamed" ||
+        change.status === "Moved/Renamed (locally modified)") &&
+      change.previousPath
+    ) {
       await rm(join(input.context.cwd, change.previousPath), { force: true });
     }
 
@@ -487,10 +451,26 @@ async function computePullChanges(input: {
 }): Promise<PullChange[]> {
   const changes: PullChange[] = [];
   const seenDocumentIds = new Set<string>();
+  const skippedTypes = new Map<string, number>();
 
   for (const document of input.remoteDocuments) {
     seenDocumentIds.add(document.documentId);
     const nextPath = resolveLocalPathForDocument(input.context, document);
+
+    // Issue #4: gracefully skip documents with unknown types
+    if (nextPath === undefined) {
+      skippedTypes.set(
+        document.type,
+        (skippedTypes.get(document.type) ?? 0) + 1,
+      );
+      changes.push({
+        status: "Skipped (unknown type)",
+        documentId: document.documentId,
+        nextPath: document.path,
+      });
+      continue;
+    }
+
     const nextContent = renderMarkdownDocument({
       frontmatter: document.frontmatter,
       body: document.body,
@@ -514,12 +494,21 @@ async function computePullChanges(input: {
 
     const manifestPath = manifestEntry.path;
     const localHash = await readHash(join(input.context.cwd, manifestPath));
+    const localModified =
+      localHash !== undefined && localHash !== manifestEntry.hash;
+    const remoteChanged =
+      nextHash !== manifestEntry.hash ||
+      document.draftRevision !== manifestEntry.draftRevision ||
+      document.publishedVersion !== manifestEntry.publishedVersion;
     const pathChanged =
       manifestPath !== nextPath || manifestEntry.format !== document.format;
 
+    // Issue #3: move/rename must also check local modification
     if (pathChanged) {
       changes.push({
-        status: "Moved/Renamed",
+        status: localModified
+          ? "Moved/Renamed (locally modified)"
+          : "Moved/Renamed",
         documentId: document.documentId,
         previousPath: manifestPath,
         nextPath,
@@ -532,9 +521,10 @@ async function computePullChanges(input: {
       continue;
     }
 
-    if (localHash && localHash !== manifestEntry.hash) {
+    // Issues #1 and #2: distinguish all four combinations
+    if (localModified && remoteChanged) {
       changes.push({
-        status: "Locally modified",
+        status: "Both modified",
         documentId: document.documentId,
         nextPath,
         format: document.format,
@@ -546,10 +536,20 @@ async function computePullChanges(input: {
       continue;
     }
 
-    const remoteChanged =
-      nextHash !== manifestEntry.hash ||
-      document.draftRevision !== manifestEntry.draftRevision ||
-      document.publishedVersion !== manifestEntry.publishedVersion;
+    if (localModified && !remoteChanged) {
+      // Server unchanged — user should push, not pull
+      changes.push({
+        status: "Locally modified (server unchanged)",
+        documentId: document.documentId,
+        nextPath,
+        format: document.format,
+        draftRevision: document.draftRevision,
+        publishedVersion: document.publishedVersion,
+        nextContent,
+        nextHash,
+      });
+      continue;
+    }
 
     if (remoteChanged || !localHash) {
       changes.push({
@@ -592,6 +592,15 @@ async function computePullChanges(input: {
     });
   }
 
+  // Issue #4: print summary of skipped types
+  if (skippedTypes.size > 0) {
+    for (const [type, count] of skippedTypes) {
+      input.context.stderr.write(
+        `Warning: Skipping ${count} document(s) of type "${type}" — not defined in local config.\n`,
+      );
+    }
+  }
+
   return changes;
 }
 
@@ -604,6 +613,7 @@ export async function runPullCommand(
   }
 
   const options = parsePullOptions(context.args);
+
   const remoteDocuments = await fetchAllContent(context, {
     draft: !options.published,
   });
@@ -626,13 +636,35 @@ export async function runPullCommand(
     return 0;
   }
 
-  const hasLocallyModified = changes.some(
-    (change) => change.status === "Locally modified",
+  // Build confirmation prompt covering all destructive statuses
+  const hasBothModified = changes.some(
+    (change) => change.status === "Both modified",
   );
+  const hasMovedLocallyModified = changes.some(
+    (change) => change.status === "Moved/Renamed (locally modified)",
+  );
+  const hasDeletedOnServer = changes.some(
+    (change) => change.status === "Deleted on server",
+  );
+  const needsConfirmation =
+    hasBothModified || hasMovedLocallyModified || hasDeletedOnServer;
 
-  if (hasLocallyModified && !options.force) {
+  if (needsConfirmation && !options.force) {
+    const parts: string[] = [];
+    if (hasBothModified) {
+      parts.push("overwrite locally modified files that also changed on server");
+    }
+    if (hasMovedLocallyModified) {
+      parts.push(
+        "move/rename files with local modifications (local changes will be lost)",
+      );
+    }
+    if (hasDeletedOnServer) {
+      parts.push("delete local files removed on server");
+    }
+
     const confirmed = await context.confirm(
-      "Locally modified files will be overwritten. Continue?",
+      `This will ${parts.join(", and ")}. Continue?`,
     );
 
     if (!confirmed) {
