@@ -14,6 +14,7 @@ import {
 import { useStudioMountInfo } from "../app/admin/mount-info-context.js";
 import Link from "../adapters/next-link.js";
 import { ChevronRight, FileText, Globe, GlobeOff } from "lucide-react";
+import { Skeleton } from "../components/ui/skeleton.js";
 import { resolveStudioHref, useBasePath } from "../navigation.js";
 import {
   PageHeader,
@@ -203,9 +204,27 @@ export function ContentPageView({
         {state.status === "loading" ? (
           <div
             data-mdcms-content-page-state="loading"
-            className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
+            className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
           >
-            {state.message}
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="rounded-lg border border-border p-4">
+                <div className="flex items-start gap-4">
+                  <Skeleton className="h-12 w-12 rounded-lg" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-5 w-28" />
+                    <Skeleton className="h-4 w-36" />
+                  </div>
+                </div>
+                <div className="mt-4 space-y-3 border-t border-border pt-4">
+                  <div className="flex gap-4">
+                    <Skeleton className="h-4 w-16" />
+                    <Skeleton className="h-4 w-20" />
+                    <Skeleton className="h-4 w-16" />
+                  </div>
+                  <Skeleton className="h-5 w-24 rounded-full" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : state.status === "forbidden" ? (
           <section
@@ -292,11 +311,15 @@ export default function ContentPage({
     };
 
     let active = true;
-    setState(createStudioContentOverviewLoadingState());
+
+    const loadingTimer = setTimeout(() => {
+      if (active) setState(createStudioContentOverviewLoadingState());
+    }, 200);
 
     void loadState(loadInput)
       .then((nextState) => {
         if (active) {
+          clearTimeout(loadingTimer);
           setState(nextState);
         }
       })
@@ -305,6 +328,7 @@ export default function ContentPage({
           return;
         }
 
+        clearTimeout(loadingTimer);
         setState({
           status: "error",
           project: loadInput.config.project,
@@ -318,6 +342,7 @@ export default function ContentPage({
 
     return () => {
       active = false;
+      clearTimeout(loadingTimer);
     };
   }, [
     mountInfo.apiBaseUrl,
