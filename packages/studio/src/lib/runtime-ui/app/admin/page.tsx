@@ -75,9 +75,14 @@ export default function DashboardPage() {
       return;
     }
 
-    setState({ status: "loading" });
-
     let cancelled = false;
+
+    // Delay showing the skeleton by 200ms — if data arrives faster the
+    // user never sees a loading flash.
+    const loadingTimer = setTimeout(() => {
+      if (!cancelled) setState({ status: "loading" });
+    }, 200);
+
     const config = { project, environment, serverUrl: apiBaseUrl };
     const authOpts = { auth };
 
@@ -88,11 +93,13 @@ export default function DashboardPage() {
     loadDashboardData(schemaApi, contentApi, overviewApi)
       .then((result) => {
         if (!cancelled) {
+          clearTimeout(loadingTimer);
           setState(result);
         }
       })
       .catch((err) => {
         if (!cancelled) {
+          clearTimeout(loadingTimer);
           setState({
             status: "error",
             message:
@@ -105,6 +112,7 @@ export default function DashboardPage() {
 
     return () => {
       cancelled = true;
+      clearTimeout(loadingTimer);
     };
   }, [
     mountInfo.project,
