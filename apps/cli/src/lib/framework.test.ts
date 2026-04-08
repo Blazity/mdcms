@@ -215,7 +215,7 @@ test("runMdcmsCli does not block config-optional commands when the default confi
 test("runMdcmsCli executes command with resolved target and auth context", async () => {
   let captured:
     | {
-        serverUrl: string;
+        serverUrl: string | undefined;
         project: string;
         environment: string;
         apiKey?: string;

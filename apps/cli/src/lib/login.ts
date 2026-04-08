@@ -391,7 +391,7 @@ export function createLoginCommand(options: LoginOptions = {}): CliCommand {
 
         await store.setProfile(
           {
-            serverUrl: context.serverUrl,
+            serverUrl: context.serverUrl!,
             project: context.project ?? "*",
             environment: context.environment ?? "*",
           },

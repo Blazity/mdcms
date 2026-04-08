@@ -8,7 +8,7 @@ import { writeSchemaState } from "./schema-state.js";
 async function runSchemaSync(context: CliCommandContext): Promise<number> {
   const {
     config,
-    serverUrl,
+    serverUrl: rawServerUrl,
     project,
     environment,
     apiKey,
@@ -17,6 +17,7 @@ async function runSchemaSync(context: CliCommandContext): Promise<number> {
     stderr,
     cwd,
   } = context;
+  const serverUrl = rawServerUrl!;
 
   const types = config.types ?? [];
   if (types.length === 0) {
