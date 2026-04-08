@@ -56,7 +56,7 @@ test("returns null when no locale evidence found", async () => {
   assert.equal(result, null);
 });
 
-test("detects single locale — non-localized", async () => {
+test("detects single locale — marks type localized", async () => {
   const files = [
     makeFile("content/posts/a.md", {
       source: "frontmatter",
@@ -69,8 +69,11 @@ test("detects single locale — non-localized", async () => {
   ];
   const types = [makeType("post", "content/posts")];
 
-  const result = await detectLocaleConfig(files, types);
-  assert.equal(result, null);
+  const result = (await detectLocaleConfig(files, types))!;
+  assert.ok(result);
+  assert.equal(result.defaultLocale, "en");
+  assert.deepEqual(result.supported, ["en"]);
+  assert.equal(types[0]!.localized, true);
 });
 
 test("detects multi-locale from suffix — marks type localized", async () => {
@@ -157,9 +160,11 @@ test("rejects __mdcms_default__ as locale tag", async () => {
   ];
   const types = [makeType("post", "content/posts")];
 
-  const result = await detectLocaleConfig(files, types);
-  // Should ignore the reserved token, only en detected = single locale = null
-  assert.equal(result, null);
+  const result = (await detectLocaleConfig(files, types))!;
+  // Should ignore the reserved token, only en detected = single locale still marks localized
+  assert.ok(result);
+  assert.equal(result.defaultLocale, "en");
+  assert.deepEqual(result.supported, ["en"]);
 });
 
 test("mixed localized and non-localized types", async () => {

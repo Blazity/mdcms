@@ -61,10 +61,10 @@ export async function updateGitignore(
   await writeFile(gitignorePath, content, "utf8");
 }
 
-export async function detectTrackedFiles(
+export function detectTrackedFiles(
   cwd: string,
   managedDirectories: string[],
-): Promise<string[]> {
+): string[] {
   try {
     execSync("git rev-parse --is-inside-work-tree", {
       cwd,
@@ -97,10 +97,7 @@ export async function detectTrackedFiles(
   return tracked;
 }
 
-export async function untrackFiles(
-  cwd: string,
-  directories: string[],
-): Promise<string[]> {
+export function untrackFiles(cwd: string, directories: string[]): string[] {
   const removed: string[] = [];
 
   for (const dir of directories) {

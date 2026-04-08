@@ -93,8 +93,11 @@ async function walkDirectory(
       const content = await readFile(fullPath, "utf-8");
       const parsed = parseMarkdownDocument(content);
       frontmatter = parsed.frontmatter;
-    } catch {
-      // Malformed frontmatter — treat as empty
+    } catch (error) {
+      // Malformed frontmatter — treat as empty; log for debugging
+      if (typeof process !== "undefined" && process.env.DEBUG) {
+        console.debug(`[scan] failed to parse ${fullPath}:`, error);
+      }
     }
 
     const frontmatterKeys = Object.keys(frontmatter);

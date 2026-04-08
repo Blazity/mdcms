@@ -7,6 +7,18 @@ import { RuntimeError } from "@mdcms/shared";
 import { createCredentialStore, type CredentialStore } from "./credentials.js";
 import type { CliCommand, CliCommandContext } from "./framework.js";
 
+const DEFAULT_CLI_LOGIN_SCOPES = [
+  "projects:read",
+  "projects:write",
+  "schema:read",
+  "schema:write",
+  "content:read",
+  "content:read:draft",
+  "content:write",
+  "content:write:draft",
+  "content:delete",
+] as const;
+
 type LoginOptions = {
   credentialStore?: CredentialStore;
   openBrowserUrl?: (url: string) => Promise<boolean>;
@@ -309,17 +321,7 @@ export function createLoginCommand(options: LoginOptions = {}): CliCommand {
             body: JSON.stringify({
               redirectUri: listener.redirectUri,
               state,
-              scopes: [
-                "projects:read",
-                "projects:write",
-                "schema:read",
-                "schema:write",
-                "content:read",
-                "content:read:draft",
-                "content:write",
-                "content:write:draft",
-                "content:delete",
-              ],
+              scopes: DEFAULT_CLI_LOGIN_SCOPES,
             }),
           },
         );

@@ -133,7 +133,7 @@ export function inferSchema(
 
       fields[key] = {
         zodType,
-        optional: true,
+        optional: count < fileCount,
         samples: count,
       };
     }

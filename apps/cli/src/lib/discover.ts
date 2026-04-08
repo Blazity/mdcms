@@ -1,5 +1,5 @@
 import { readdir } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 
 import type { ScopedManifest } from "./manifest.js";
 
@@ -53,7 +53,9 @@ export async function discoverUntrackedFiles(input: {
     const files = await walkDirectory(absoluteDir);
 
     for (const absolutePath of files) {
-      const relativePath = relative(input.cwd, absolutePath);
+      const relativePath = relative(input.cwd, absolutePath)
+        .split(sep)
+        .join("/");
 
       if (!trackedPaths.has(relativePath)) {
         untracked.push({ path: relativePath });

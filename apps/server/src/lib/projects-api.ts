@@ -238,18 +238,36 @@ export function createDatabaseProjectStore(options: {
         });
       }
 
-      const [created] = await db
-        .insert(environments)
-        .values({
-          projectId: projectRow.id,
-          name,
-          description: null,
-          createdBy: DEFAULT_PROVISION_ACTOR,
-        })
-        .returning({
-          id: environments.id,
-          name: environments.name,
-        });
+      let created;
+      try {
+        [created] = await db
+          .insert(environments)
+          .values({
+            projectId: projectRow.id,
+            name,
+            description: null,
+            createdBy: DEFAULT_PROVISION_ACTOR,
+          })
+          .returning({
+            id: environments.id,
+            name: environments.name,
+          });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (
+          message.includes("unique") ||
+          message.includes("duplicate") ||
+          message.includes("UNIQUE")
+        ) {
+          throw new RuntimeError({
+            code: "INVALID_INPUT",
+            message: `Environment with name "${name}" already exists for project "${normalizedSlug}".`,
+            statusCode: 400,
+            details: { project: normalizedSlug, name },
+          });
+        }
+        throw error;
+      }
 
       if (!created) {
         throw new RuntimeError({

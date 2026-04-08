@@ -491,7 +491,8 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
           );
         }
 
-        await prompter.confirm("Confirm inferred types?");
+        const confirmed = await prompter.confirm("Confirm inferred types?");
+        if (!confirmed) return 0;
       }
 
       // ── Step 7: Generate Config + Sync Schema ───────────────────────
@@ -637,6 +638,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
             let locale: string;
             if (file.localeHint) {
               locale =
+                localeConfig?.aliases[file.localeHint.rawValue] ??
                 normalizeLocale(file.localeHint.rawValue) ??
                 file.localeHint.rawValue;
             } else if (type?.localized && localeConfig) {
@@ -779,7 +781,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
       if (selectedDirectories.length > 0) {
         await updateGitignore(cwd, selectedDirectories);
 
-        const tracked = await detectTrackedFiles(cwd, selectedDirectories);
+        const tracked = detectTrackedFiles(cwd, selectedDirectories);
 
         if (tracked.length > 0) {
           const shouldUntrack = await prompter.confirm(
@@ -787,7 +789,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
           );
 
           if (shouldUntrack) {
-            const removed = await untrackFiles(cwd, selectedDirectories);
+            const removed = untrackFiles(cwd, selectedDirectories);
             stdout.write(`Untracked ${removed.length} file(s):\n`);
             for (const file of removed) {
               stdout.write(`  rm '${file}'\n`);

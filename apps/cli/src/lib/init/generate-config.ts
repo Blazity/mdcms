@@ -35,8 +35,8 @@ function renderFieldValue(field: {
 
 function renderType(type: InferredType): string {
   const lines: string[] = [];
-  lines.push(`    defineType("${type.name}", {`);
-  lines.push(`      directory: "${type.directory}",`);
+  lines.push(`    defineType(${JSON.stringify(type.name)}, {`);
+  lines.push(`      directory: ${JSON.stringify(type.directory)},`);
 
   if (type.localized) {
     lines.push("      localized: true,");
@@ -70,26 +70,24 @@ export function generateConfigSource(input: GenerateConfigInput): string {
 
   lines.push("");
   lines.push("export default defineConfig({");
-  lines.push(`  project: "${input.project}",`);
-  lines.push(`  environment: "${input.environment}",`);
-  lines.push(`  serverUrl: "${input.serverUrl}",`);
+  lines.push(`  project: ${JSON.stringify(input.project)},`);
+  lines.push(`  environment: ${JSON.stringify(input.environment)},`);
+  lines.push(`  serverUrl: ${JSON.stringify(input.serverUrl)},`);
   lines.push(
-    `  contentDirectories: [${input.contentDirectories.map((d) => `"${d}"`).join(", ")}],`,
+    `  contentDirectories: [${input.contentDirectories.map((d) => JSON.stringify(d)).join(", ")}],`,
   );
 
   // Locales
   if (input.localeConfig) {
     const lc = input.localeConfig;
     lines.push("  locales: {");
-    lines.push(`    default: "${lc.defaultLocale}",`);
-    lines.push(
-      `    supported: [${lc.supported.map((s) => `"${s}"`).join(", ")}],`,
-    );
+    lines.push(`    default: ${JSON.stringify(lc.defaultLocale)},`);
+    lines.push(`    supported: ${JSON.stringify(lc.supported)},`);
 
     if (Object.keys(lc.aliases).length > 0) {
       lines.push("    aliases: {");
       for (const [raw, normalized] of Object.entries(lc.aliases)) {
-        lines.push(`      ${raw}: "${normalized}",`);
+        lines.push(`      ${raw}: ${JSON.stringify(normalized)},`);
       }
       lines.push("    },");
     }

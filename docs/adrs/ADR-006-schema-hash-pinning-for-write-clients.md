@@ -2,7 +2,7 @@
 status: accepted
 canonical: true
 created: 2026-03-26
-last_updated: 2026-03-31
+last_updated: 2026-04-08
 ---
 
 # ADR-006 Schema Hash Pinning for Write Clients

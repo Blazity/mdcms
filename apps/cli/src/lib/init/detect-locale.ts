@@ -97,7 +97,7 @@ export async function detectLocaleConfig(
       }
     }
 
-    if (typeLocales.size >= 2) {
+    if (typeLocales.size >= 1) {
       type.localized = true;
       hasMultiLocaleType = true;
     }

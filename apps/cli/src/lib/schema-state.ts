@@ -31,7 +31,17 @@ export async function readSchemaState(
     return undefined;
   }
   try {
-    return JSON.parse(raw) as SchemaStateFile;
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof (parsed as Record<string, unknown>).schemaHash === "string" &&
+      typeof (parsed as Record<string, unknown>).syncedAt === "string" &&
+      typeof (parsed as Record<string, unknown>).serverUrl === "string"
+    ) {
+      return parsed as SchemaStateFile;
+    }
+    return undefined;
   } catch {
     return undefined;
   }

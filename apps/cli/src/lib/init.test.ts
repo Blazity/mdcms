@@ -126,8 +126,6 @@ test("full init wizard creates config, schema state, and manifest", async () => 
       confirm: [true, true, false],
     });
 
-    let stdoutOutput = "";
-
     const command = createInitCommand({
       prompter,
       fetcher,
@@ -137,11 +135,7 @@ test("full init wizard creates config, schema state, and manifest", async () => 
     const exitCode = await runMdcmsCli(["init"], {
       cwd,
       commands: [command],
-      stdout: {
-        write: (chunk: string) => {
-          stdoutOutput += chunk;
-        },
-      },
+      stdout: { write: () => undefined },
       stderr: { write: () => undefined },
       fetcher,
     });
@@ -202,8 +196,6 @@ test("init fails when server unreachable", async () => {
       text: ["http://localhost:4000"],
     });
 
-    let stderrOutput = "";
-
     const command = createInitCommand({
       prompter,
       fetcher,
@@ -214,11 +206,7 @@ test("init fails when server unreachable", async () => {
       cwd,
       commands: [command],
       stdout: { write: () => undefined },
-      stderr: {
-        write: (chunk: string) => {
-          stderrOutput += chunk;
-        },
-      },
+      stderr: { write: () => undefined },
       fetcher,
     });
 

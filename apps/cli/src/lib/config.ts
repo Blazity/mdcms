@@ -76,7 +76,7 @@ export async function loadCliConfig(options: {
       code: "CONFIG_LOAD_FAILED",
       message: `Failed to load config from "${configPath}": ${message}`,
       statusCode: 400,
-      details: { configPath },
+      details: { configPath, cause: error },
     });
   }
 

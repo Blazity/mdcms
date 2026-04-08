@@ -72,7 +72,7 @@ test("includes locale config when present", () => {
 
   assert.ok(source.includes("locales:"));
   assert.ok(source.includes('default: "en"'));
-  assert.ok(source.includes('supported: ["en", "fr"]'));
+  assert.ok(source.includes('supported: ["en","fr"]'));
   assert.ok(source.includes("aliases:"));
   assert.ok(source.includes('en_us: "en"'));
   assert.ok(source.includes("localized: true"));

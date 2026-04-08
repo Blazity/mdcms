@@ -16,7 +16,6 @@ import {
   serializeResolvedEnvironmentSchema,
   toRawConfigSnapshot,
   type SchemaRegistryEntry,
-  type SchemaStateFile,
 } from "./schema.js";
 import { buildSchemaSyncPayload } from "./schema-hash.js";
 
@@ -479,16 +478,4 @@ test("buildSchemaSyncPayload produces different hashes for different environment
   const staging = buildSchemaSyncPayload(parsed, "staging");
 
   assert.notEqual(production.schemaHash, staging.schemaHash);
-});
-
-test("SchemaStateFile type is usable as a value type", () => {
-  const state: SchemaStateFile = {
-    schemaHash: "abc123",
-    syncedAt: "2026-03-31T12:00:00.000Z",
-    serverUrl: "http://localhost:4000",
-  };
-
-  assert.equal(state.schemaHash, "abc123");
-  assert.equal(state.syncedAt, "2026-03-31T12:00:00.000Z");
-  assert.equal(state.serverUrl, "http://localhost:4000");
 });

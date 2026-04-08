@@ -114,7 +114,7 @@ The setup wizard uses `@inquirer/prompts` for the interactive TUI and walks thro
 11. **Initial import** — Push all selected content to the CMS server with explicit `locale` and `content_format` per document. On `409` path conflict, the wizard falls back to `PUT` (update) using the `conflictDocumentId` from the error response. Manifest entries are written to `.mdcms/manifests/<project>.<environment>.json` on success.
 12. **Gitignore + untracking update** — Add managed content directories to `.gitignore` and explicitly remove already tracked managed content files from the Git index (`git rm -r --cached <dir>`), so they are no longer tracked.
 
-After the credential exchange, the wizard stores the API key in the credential store (keyed by `serverUrl + project + environment`) for use by subsequent commands.
+After the credential exchange, the wizard stores the API key in the credential store (keyed by `serverUrl`) for use by subsequent commands. Login is not scoped to project or environment.
 
 If the selected managed directories are inside a Git repository and contain tracked files, the wizard must:
 

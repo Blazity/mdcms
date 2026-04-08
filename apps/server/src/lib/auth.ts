@@ -3482,6 +3482,13 @@ export function createAuthService(
               },
             });
           }
+        } else if (requirement.project || requirement.environment) {
+          throw new RuntimeError({
+            code: "FORBIDDEN",
+            message:
+              "API key has an empty context allowlist and cannot target any project/environment.",
+            statusCode: 403,
+          });
         }
 
         await touchApiKeyLastUsed(row.id);
@@ -3805,15 +3812,17 @@ export function createAuthService(
       }
 
       const label = challenge.project
-        ? `cli:${challenge.project}/${challenge.environment ?? "*"}`
+        ? `cli:${challenge.project}/${challenge.environment ?? "all"}`
         : "cli:user-level";
       const contextAllowlist = challenge.project
-        ? [
-            {
-              project: challenge.project,
-              environment: challenge.environment ?? "*",
-            },
-          ]
+        ? challenge.environment
+          ? [
+              {
+                project: challenge.project,
+                environment: challenge.environment,
+              },
+            ]
+          : []
         : [];
       const created = await createApiKeyForUser({
         userId: challenge.userId,

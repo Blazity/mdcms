@@ -405,14 +405,6 @@ async function applyPullChanges(input: {
     }
 
     if (
-      (change.status === "Moved/Renamed" ||
-        change.status === "Moved/Renamed (locally modified)") &&
-      change.previousPath
-    ) {
-      await rm(join(input.context.cwd, change.previousPath), { force: true });
-    }
-
-    if (
       !change.nextPath ||
       !change.nextContent ||
       !change.nextHash ||
@@ -429,6 +421,14 @@ async function applyPullChanges(input: {
       join(input.context.cwd, change.nextPath),
       change.nextContent,
     );
+
+    if (
+      (change.status === "Moved/Renamed" ||
+        change.status === "Moved/Renamed (locally modified)") &&
+      change.previousPath
+    ) {
+      await rm(join(input.context.cwd, change.previousPath), { force: true });
+    }
     input.manifest[change.documentId] = {
       path: change.nextPath,
       format: change.format,

@@ -642,14 +642,24 @@ async function createNewDocument(
 
 async function deleteDocument(
   context: CliCommandContext,
-  documentId: string,
+  candidate: DeletionCandidate,
   schemaHash: string,
-): Promise<{ kind: "deleted" } | { kind: "already_gone" }> {
+): Promise<
+  { kind: "deleted" } | { kind: "already_gone" } | { kind: "conflict" }
+> {
+  const headers = toRequestHeaders(context, schemaHash);
+  headers.set("x-mdcms-draft-revision", String(candidate.draftRevision));
+  if (candidate.publishedVersion !== null) {
+    headers.set(
+      "x-mdcms-published-version",
+      String(candidate.publishedVersion),
+    );
+  }
   const response = await context.fetcher(
-    `${context.serverUrl}/api/v1/content/${documentId}`,
+    `${context.serverUrl}/api/v1/content/${candidate.documentId}`,
     {
       method: "DELETE",
-      headers: toRequestHeaders(context, schemaHash),
+      headers,
     },
   );
 
@@ -659,6 +669,10 @@ async function deleteDocument(
 
   if (response.status === 404) {
     return { kind: "already_gone" };
+  }
+
+  if (response.status === 409) {
+    return { kind: "conflict" };
   }
 
   const body = (await response.json().catch(() => undefined)) as unknown;
@@ -890,13 +904,20 @@ async function buildPushPlan(
           resolvedLocale: resolved.locale,
           resolvedPath: resolved.path,
         });
-      } catch {
-        const dir = file.path.split("/").slice(0, -1).join("/");
-        context.stderr.write(
-          `Warning: skipping "${file.path}" — no content type maps to directory "${dir}".\n` +
-            `  Define a type with this directory in mdcms.config.ts, e.g.:\n` +
-            `  defineType("myType", { directory: "${dir}", fields: { ... } })\n\n`,
-        );
+      } catch (error) {
+        if (
+          error instanceof RuntimeError &&
+          error.code === "TYPE_MAPPING_MISSING"
+        ) {
+          const dir = file.path.split("/").slice(0, -1).join("/");
+          context.stderr.write(
+            `Warning: skipping "${file.path}" — no content type maps to directory "${dir}".\n` +
+              `  Define a type with this directory in mdcms.config.ts, e.g.:\n` +
+              `  defineType("myType", { directory: "${dir}", fields: { ... } })\n\n`,
+          );
+        } else {
+          throw error;
+        }
       }
     }
   }
@@ -1128,11 +1149,19 @@ async function applyPush(
   // Phase 3: Delete documents
   for (const candidate of deletionCandidates) {
     try {
-      const deleteResult = await deleteDocument(
-        context,
-        candidate.documentId,
-        schemaHash,
-      );
+      const deleteResult = await deleteDocument(context, candidate, schemaHash);
+
+      if (deleteResult.kind === "conflict") {
+        failures += 1;
+        results.push({
+          status: "failed",
+          documentId: candidate.documentId,
+          path: candidate.path,
+          message:
+            "Conflict: document was modified on the server since last pull. Run `mdcms pull` first.",
+        });
+        continue;
+      }
 
       delete nextManifest[candidate.documentId];
       manifestDirty = true;

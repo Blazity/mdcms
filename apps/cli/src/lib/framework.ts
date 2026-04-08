@@ -51,7 +51,7 @@ export type CliCommandContext = {
   env: NodeJS.ProcessEnv;
   config: CliConfig;
   configPath: string;
-  serverUrl: string;
+  serverUrl: string | undefined;
   project: string;
   environment: string;
   apiKey?: string;
@@ -276,7 +276,7 @@ export async function resolveExecutionContext(input: {
   resolveStoredApiKey?: ResolveStoredApiKey;
   requiresTarget: boolean;
 }): Promise<{
-  serverUrl: string;
+  serverUrl: string | undefined;
   project: string;
   environment: string;
   apiKey?: string;

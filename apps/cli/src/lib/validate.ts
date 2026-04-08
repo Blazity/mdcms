@@ -121,11 +121,22 @@ function validateKind(
         : [`Field "${path}" expected kind "boolean", got ${typeof value}.`];
 
     case "date":
-      return typeof value === "string" || value instanceof Date
-        ? []
-        : [
-            `Field "${path}" expected kind "date" (ISO string), got ${typeof value}.`,
+      if (value instanceof Date) {
+        return isNaN(value.valueOf())
+          ? [`Field "${path}" expected a valid date, got an invalid Date.`]
+          : [];
+      }
+      if (typeof value === "string") {
+        if (value.length === 0 || isNaN(Date.parse(value))) {
+          return [
+            `Field "${path}" expected a valid ISO date string, got ${JSON.stringify(value)}.`,
           ];
+        }
+        return [];
+      }
+      return [
+        `Field "${path}" expected kind "date" (ISO string), got ${typeof value}.`,
+      ];
 
     case "enum":
     case "literal": {
