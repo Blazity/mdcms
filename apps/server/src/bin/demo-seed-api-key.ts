@@ -303,18 +303,31 @@ async function ensureDemoApiKey(input: {
   });
 
   if (existing) {
+    const currentAllowlist = Array.isArray(existing.contextAllowlist)
+      ? (existing.contextAllowlist as Array<{
+          project: string;
+          environment: string;
+        }>)
+      : [];
+    const alreadyPresent = currentAllowlist.some(
+      (entry) =>
+        entry.project === input.project &&
+        entry.environment === input.environment,
+    );
+    const mergedAllowlist = alreadyPresent
+      ? currentAllowlist
+      : [
+          ...currentAllowlist,
+          { project: input.project, environment: input.environment },
+        ];
+
     await input.db
       .update(apiKeys)
       .set({
         label: DEMO_KEY_LABEL,
         keyPrefix: toKeyPrefix(input.apiKey),
         scopes: [...DEMO_KEY_SCOPES],
-        contextAllowlist: [
-          {
-            project: input.project,
-            environment: input.environment,
-          },
-        ],
+        contextAllowlist: mergedAllowlist,
         expiresAt: null,
         revokedAt: null,
         createdByUserId: input.userId,

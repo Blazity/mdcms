@@ -1,6 +1,11 @@
 "use client";
 
-import { createContext, useContext, type PropsWithChildren } from "react";
+import {
+  createContext,
+  useContext,
+  useMemo,
+  type PropsWithChildren,
+} from "react";
 
 import type {
   EnvironmentSummary,
@@ -57,9 +62,11 @@ export type StudioApiConfig = {
  *  config objects manually, so the active environment is never stale. */
 export function useStudioApiConfig(): StudioApiConfig | null {
   const { project, environment, apiBaseUrl, auth } = useStudioMountInfo();
-  if (!project || !environment) return null;
-  return {
-    config: { project, environment, serverUrl: apiBaseUrl },
-    authOptions: { auth },
-  };
+  return useMemo(() => {
+    if (!project || !environment) return null;
+    return {
+      config: { project, environment, serverUrl: apiBaseUrl },
+      authOptions: { auth },
+    };
+  }, [project, environment, apiBaseUrl, auth]);
 }

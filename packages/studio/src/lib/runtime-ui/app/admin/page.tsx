@@ -33,7 +33,10 @@ import {
   type DashboardLoadResult,
 } from "../../../dashboard-data.js";
 
-type DashboardState = { status: "loading" } | DashboardLoadResult;
+type DashboardState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | DashboardLoadResult;
 
 function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -65,7 +68,7 @@ export default function DashboardPage() {
   const session = useStudioSession();
   const mountInfo = useStudioMountInfo();
   const { canCreateContent } = useAdminCapabilities();
-  const [state, setState] = useState<DashboardState>({ status: "loading" });
+  const [state, setState] = useState<DashboardState>({ status: "idle" });
 
   useEffect(() => {
     const { project, environment, apiBaseUrl, auth } = mountInfo;
@@ -125,6 +128,14 @@ export default function DashboardPage() {
     session.status === "authenticated"
       ? deriveUserLabel(session.session.email)
       : null;
+
+  if (state.status === "idle") {
+    return (
+      <div className="min-h-screen">
+        <PageHeader breadcrumbs={[{ label: "Dashboard" }]} />
+      </div>
+    );
+  }
 
   if (state.status === "loading") {
     return (

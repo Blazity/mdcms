@@ -101,6 +101,7 @@ function renderConstraintSummary(field: SchemaFieldSnapshot): ReactNode {
   );
 }
 
+/** Maps a StudioMountContext to a schema load input. Exported for tests. */
 export function createSchemaPageLoadInput(
   context: StudioMountContext,
 ): SchemaPageLoadInput | null {

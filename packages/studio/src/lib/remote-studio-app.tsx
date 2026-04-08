@@ -487,10 +487,10 @@ export function RemoteStudioApp({
     // Preserve the active environment query param across navigations
     const currentEnv = new URLSearchParams(window.location.search).get("env");
     let resolvedHref = href;
-    if (currentEnv && !href.includes("?")) {
-      resolvedHref = `${href}?env=${encodeURIComponent(currentEnv)}`;
-    } else if (currentEnv && href.includes("?") && !href.includes("env=")) {
-      resolvedHref = `${href}&env=${encodeURIComponent(currentEnv)}`;
+    if (currentEnv) {
+      const url = new URL(href, window.location.origin);
+      url.searchParams.set("env", currentEnv);
+      resolvedHref = url.pathname + url.search + url.hash;
     }
 
     if (mode === "replace") {

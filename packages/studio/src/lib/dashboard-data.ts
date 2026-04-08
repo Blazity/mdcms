@@ -59,6 +59,7 @@ export async function loadDashboardData(
 
     let totalDocuments = 0;
     let publishedDocuments = 0;
+    let draftDocuments = 0;
 
     const typeStats: ContentTypeStat[] = typesToShow.map(
       (entry: SchemaRegistryEntry, index: number) => {
@@ -68,6 +69,7 @@ export async function loadDashboardData(
 
         totalDocuments += totalCount;
         publishedDocuments += publishedCount;
+        draftDocuments += counts?.drafts ?? 0;
 
         return {
           type: entry.type,
@@ -78,8 +80,6 @@ export async function loadDashboardData(
         };
       },
     );
-
-    const draftDocuments = Math.max(0, totalDocuments - publishedDocuments);
 
     return {
       status: "loaded",
