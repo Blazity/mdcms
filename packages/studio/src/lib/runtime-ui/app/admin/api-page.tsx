@@ -13,21 +13,14 @@ export default function ApiPlaygroundPage() {
         <div>
           <PageHeaderHeading>API Playground</PageHeaderHeading>
           <PageHeaderDescription>
-            Explore and test your content API endpoints
+            Explore your content API
           </PageHeaderDescription>
         </div>
       </PageHeader>
       <ComingSoon
         icon={Terminal}
         title="API Playground"
-        description="Test and explore your content API with an interactive playground. Generate queries, preview responses, and create code snippets for your applications."
-        features={[
-          "Interactive GraphQL and REST explorer",
-          "Auto-generated query builder",
-          "Response previews with syntax highlighting",
-          "Code generation for popular frameworks",
-          "API key management and testing",
-        ]}
+        description="An interactive environment for testing and exploring your content API endpoints."
       />
     </div>
   );

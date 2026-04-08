@@ -13,21 +13,14 @@ export default function WorkflowsPage() {
         <div>
           <PageHeaderHeading>Workflows</PageHeaderHeading>
           <PageHeaderDescription>
-            Automate content review and publishing processes
+            Content review and publishing workflows
           </PageHeaderDescription>
         </div>
       </PageHeader>
       <ComingSoon
         icon={GitBranch}
         title="Workflows"
-        description="Create automated content workflows with approval chains, scheduled publishing, and custom triggers to streamline your editorial process."
-        features={[
-          "Multi-step approval workflows",
-          "Role-based review assignments",
-          "Scheduled content publishing",
-          "Webhook triggers and notifications",
-          "Audit trail and compliance tracking",
-        ]}
+        description="Define review and approval steps for your content before it gets published."
       />
     </div>
   );
