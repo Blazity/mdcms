@@ -1,7 +1,6 @@
 "use client";
 
 import { LucideIcon } from "lucide-react";
-import { Card, CardContent } from "./ui/card.js";
 import { Badge } from "./ui/badge.js";
 
 interface ComingSoonProps {
@@ -12,32 +11,37 @@ interface ComingSoonProps {
 
 export function ComingSoon({ icon: Icon, title, description }: ComingSoonProps) {
   return (
-    <div className="flex min-h-[60vh] items-center justify-center">
-      <Card className="max-w-lg border-dashed">
-        <CardContent className="flex flex-col items-center py-12 text-center">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-            <Icon className="h-8 w-8 text-muted-foreground" />
-          </div>
-          <Badge variant="secondary" className="mb-4">
-            Coming Soon
-          </Badge>
-          <h2 className="mb-2 text-2xl font-semibold tracking-tight">
-            {title}
-          </h2>
-          <p className="mb-6 max-w-sm text-muted-foreground">{description}</p>
-          <p className="text-sm text-muted-foreground">
-            Want to help build this?{" "}
-            <a
-              href="https://github.com/blazity/mdcms"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-accent hover:underline"
-            >
-              Contribute on GitHub
-            </a>
-          </p>
-        </CardContent>
-      </Card>
+    <div className="relative flex flex-col items-center justify-center py-24">
+      {/* Large watermark icon */}
+      <Icon className="absolute h-64 w-64 text-foreground/[0.02] pointer-events-none" />
+
+      {/* Content */}
+      <div className="relative z-10 flex flex-col items-center text-center max-w-md">
+        <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-lg bg-accent/10">
+          <Icon className="h-6 w-6 text-accent" />
+        </div>
+        <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+        <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+          {description}
+        </p>
+        <Badge
+          variant="outline"
+          className="mt-4 font-normal text-muted-foreground"
+        >
+          Coming soon
+        </Badge>
+        <p className="mt-6 text-xs text-muted-foreground/60">
+          Want to help build this?{" "}
+          <a
+            href="https://github.com/blazity/mdcms"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-accent/70 hover:text-accent hover:underline"
+          >
+            Contribute on GitHub
+          </a>
+        </p>
+      </div>
     </div>
   );
 }
