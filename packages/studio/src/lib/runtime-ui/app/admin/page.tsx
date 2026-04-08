@@ -74,7 +74,6 @@ export default function DashboardPage() {
     const { project, environment, apiBaseUrl, auth } = mountInfo;
 
     if (!project || !environment || !apiBaseUrl) {
-      setState({ status: "loading" });
       return;
     }
 

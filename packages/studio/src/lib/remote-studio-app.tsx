@@ -489,7 +489,9 @@ export function RemoteStudioApp({
     let resolvedHref = href;
     if (currentEnv) {
       const url = new URL(href, window.location.origin);
-      url.searchParams.set("env", currentEnv);
+      if (!url.searchParams.has("env")) {
+        url.searchParams.set("env", currentEnv);
+      }
       resolvedHref = url.pathname + url.search + url.hash;
     }
 
