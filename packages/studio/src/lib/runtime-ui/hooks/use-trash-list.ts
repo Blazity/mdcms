@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type {
   ContentDocumentResponse,
+  ContentUserSummary,
   PaginationMetadata,
 } from "@mdcms/shared";
 import { RuntimeError } from "@mdcms/shared";
@@ -161,6 +162,7 @@ export function useTrashList() {
   );
 
   const pagination: PaginationMetadata | null = query.data?.pagination ?? null;
+  const users: Record<string, ContentUserSummary> = query.data?.users ?? {};
 
   // Clamp offset when total shrinks (e.g. after restoring items)
   useEffect(() => {
@@ -211,6 +213,7 @@ export function useTrashList() {
     status,
     documents,
     pagination,
+    users,
     filters,
     errorMessage,
     setFilters,

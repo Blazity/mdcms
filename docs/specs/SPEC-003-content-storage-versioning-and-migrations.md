@@ -286,8 +286,8 @@ Reference fields persist plain env-local `document_id` UUID strings in
 `GET /api/v1/content` includes an optional `users` map alongside `data` and
 `pagination` when the server can resolve document authors.
 
-- The server collects unique `createdBy` user IDs from the result rows and
-  batch-resolves them in a single query.
+- The server collects unique `createdBy` and `updatedBy` user IDs from the
+  result rows and batch-resolves them in a single query.
 - The response shape is `{ data: [...], pagination: {...}, users: { [userId]: { name, email } } }`.
 - `users` is a `Record<string, { name: string; email: string }>` keyed by user
   ID. Entries may be absent for IDs that cannot be resolved (e.g. deleted users
