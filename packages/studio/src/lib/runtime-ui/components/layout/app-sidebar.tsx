@@ -16,30 +16,19 @@ import {
   Settings,
   Trash2,
   FolderInput,
-  Sparkles,
-  Calendar,
-  Shield,
-  Search,
+  Terminal,
   ChevronsLeft,
   ChevronsRight,
-  ChevronDown,
 } from "lucide-react";
 import { cn } from "../../lib/utils.js";
 import { Button } from "../ui/button.js";
-import { Badge } from "../ui/badge.js";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "../ui/tooltip.js";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "../ui/collapsible.js";
 import { MDCMSLogo } from "../mdcms-logo.js";
-import { useState } from "react";
 
 interface AppSidebarProps {
   canReadSchema?: boolean;
@@ -57,8 +46,8 @@ const mainNavItems = [
   { icon: FolderInput, label: "Schema", href: "/admin/schema" },
   { icon: Users, label: "Users", href: "/admin/users" },
   { icon: Settings, label: "Settings", href: "/admin/settings" },
-  { icon: Sparkles, label: "Workflows", href: "/admin/workflows" },
-  { icon: Search, label: "API", href: "/admin/api" },
+  { icon: GitBranch, label: "Workflows", href: "/admin/workflows" },
+  { icon: Terminal, label: "API", href: "/admin/api" },
   { icon: Trash2, label: "Trash", href: "/admin/trash" },
 ];
 
@@ -75,12 +64,6 @@ function getMainNavItems(filters: {
   });
 }
 
-const comingSoonItems = [
-  { icon: Calendar, label: "Scheduled" },
-  { icon: Shield, label: "Audit Log" },
-  { icon: Search, label: "SEO Analysis" },
-];
-
 export function AppSidebar({
   canReadSchema,
   canManageUsers,
@@ -94,8 +77,6 @@ export function AppSidebar({
   const effectiveCanReadSchema = canReadSchema ?? contextCanReadSchema;
   const effectiveCanManageUsers = canManageUsers ?? false;
   const effectiveCanManageSettings = canManageSettings ?? false;
-  const [comingSoonOpen, setComingSoonOpen] = useState(false);
-
   return (
     <TooltipProvider delayDuration={0}>
       <aside
@@ -160,69 +141,6 @@ export function AppSidebar({
               );
             })}
           </ul>
-
-          {/* Separator */}
-          <div className="my-4 h-px bg-border" />
-
-          {/* Coming Soon Section */}
-          {collapsed ? (
-            <ul className="space-y-1">
-              {comingSoonItems.map((item) => (
-                <li key={item.label}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Link
-                        href="#"
-                        className="flex h-10 items-center justify-center rounded-md text-foreground-muted/60 hover:bg-background-subtle hover:text-foreground-muted"
-                        onClick={(event) => event.preventDefault()}
-                      >
-                        <item.icon className="h-5 w-5" />
-                      </Link>
-                    </TooltipTrigger>
-                    <TooltipContent side="right">
-                      {item.label} (Coming soon)
-                    </TooltipContent>
-                  </Tooltip>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <Collapsible open={comingSoonOpen} onOpenChange={setComingSoonOpen}>
-              <CollapsibleTrigger asChild>
-                <button className="flex w-full items-center justify-between px-3 py-2 text-xs font-medium uppercase tracking-wider text-foreground-muted hover:text-foreground">
-                  <span>Coming Soon</span>
-                  <ChevronDown
-                    className={cn(
-                      "h-4 w-4 transition-transform",
-                      comingSoonOpen && "rotate-180",
-                    )}
-                  />
-                </button>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <ul className="space-y-1 pt-1">
-                  {comingSoonItems.map((item) => (
-                    <li key={item.label}>
-                      <Link
-                        href="#"
-                        className="flex h-10 items-center gap-3 rounded-md px-3 text-sm text-foreground-muted/60 hover:bg-background-subtle hover:text-foreground-muted"
-                        onClick={(event) => event.preventDefault()}
-                      >
-                        <item.icon className="h-5 w-5 shrink-0" />
-                        <span className="flex-1">{item.label}</span>
-                        <Badge
-                          variant="outline"
-                          className="h-5 px-1.5 text-[10px] font-normal"
-                        >
-                          Soon
-                        </Badge>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </CollapsibleContent>
-            </Collapsible>
-          )}
         </nav>
 
         {/* Bottom Section */}

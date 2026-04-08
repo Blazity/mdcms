@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useTheme } from "../../adapters/next-themes.js";
 import Link from "../../adapters/next-link.js";
-import { Sun, Moon, ChevronRight, LogOut, User, Settings } from "lucide-react";
+import { Sun, Moon, ChevronRight, LogOut } from "lucide-react";
 import { Button } from "../ui/button.js";
 import { Avatar, AvatarFallback } from "../ui/avatar.js";
 import {
@@ -166,7 +166,7 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
   };
 
   const handleEnvironmentChange = (environmentName: string) => {
-    mountInfo.hostBridge?.onNavigate?.({ environment: environmentName });
+    mountInfo.setEnvironment(environmentName);
   };
 
   return (
@@ -178,7 +178,7 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
         {/* Right side - Controls */}
         <div className="flex items-center gap-3">
           {/* Environment selector */}
-          {mountInfo.environments.length > 0 ? (
+          {mountInfo.environments.length > 1 ? (
             <Select
               value={mountInfo.environment ?? undefined}
               onValueChange={handleEnvironmentChange}
@@ -245,19 +245,7 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <User className="mr-2 h-4 w-4" />
-                  Profile
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <Settings className="mr-2 h-4 w-4" />
-                  Preferences
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={handleSignOut}
-                >
+                <DropdownMenuItem variant="destructive" onClick={handleSignOut}>
                   <LogOut className="mr-2 h-4 w-4" />
                   Sign out
                 </DropdownMenuItem>

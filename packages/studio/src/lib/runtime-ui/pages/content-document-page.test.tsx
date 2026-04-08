@@ -95,7 +95,7 @@ function createReadyState() {
     typeLabel: "Blog post",
     documentRoute: {
       project: "marketing-site",
-      environment: "staging",
+      initialEnvironment: "staging",
       write: {
         canWrite: true,
         schemaHash: "schema-hash",
@@ -146,7 +146,7 @@ function createReadySchemaState(
 function createRouteContext(canWrite = true) {
   return {
     project: "marketing-site",
-    environment: "staging",
+    initialEnvironment: "staging",
     write: canWrite
       ? {
           canWrite: true as const,
@@ -247,7 +247,7 @@ test("createContentDocumentPageState maps shell loading and error states into vi
     typeLabel: "Blog post",
     documentRoute: {
       project: "marketing-site",
-      environment: "staging",
+      initialEnvironment: "staging",
       write: {
         canWrite: true,
         schemaHash: "schema-hash",
@@ -259,7 +259,7 @@ test("createContentDocumentPageState maps shell loading and error states into vi
     typeLabel: "Blog post",
     documentRoute: {
       project: "marketing-site",
-      environment: "staging",
+      initialEnvironment: "staging",
       write: {
         canWrite: true,
         schemaHash: "schema-hash",
@@ -271,7 +271,7 @@ test("createContentDocumentPageState maps shell loading and error states into vi
     typeLabel: "Blog post",
     documentRoute: {
       project: "marketing-site",
-      environment: "staging",
+      initialEnvironment: "staging",
       write: {
         canWrite: true,
         schemaHash: "schema-hash",
@@ -283,7 +283,7 @@ test("createContentDocumentPageState maps shell loading and error states into vi
     typeLabel: "Blog post",
     documentRoute: {
       project: "marketing-site",
-      environment: "staging",
+      initialEnvironment: "staging",
       write: {
         canWrite: true,
         schemaHash: "schema-hash",
@@ -309,7 +309,7 @@ test("ContentDocumentPageView renders document route loading and failure states"
       typeLabel: "Blog post",
       documentRoute: {
         project: "marketing-site",
-        environment: "staging",
+        initialEnvironment: "staging",
         write: {
           canWrite: true,
           schemaHash: "schema-hash",
@@ -323,7 +323,7 @@ test("ContentDocumentPageView renders document route loading and failure states"
       typeLabel: "Blog post",
       documentRoute: {
         project: "marketing-site",
-        environment: "staging",
+        initialEnvironment: "staging",
         write: {
           canWrite: true,
           schemaHash: "schema-hash",
@@ -337,7 +337,7 @@ test("ContentDocumentPageView renders document route loading and failure states"
       typeLabel: "Blog post",
       documentRoute: {
         project: "marketing-site",
-        environment: "staging",
+        initialEnvironment: "staging",
         write: {
           canWrite: true,
           schemaHash: "schema-hash",
@@ -351,7 +351,7 @@ test("ContentDocumentPageView renders document route loading and failure states"
       typeLabel: "Blog post",
       documentRoute: {
         project: "marketing-site",
-        environment: "staging",
+        initialEnvironment: "staging",
         write: {
           canWrite: true,
           schemaHash: "schema-hash",
@@ -1314,7 +1314,7 @@ test("ContentDocumentPageView blocks writes when the local schema hash capabilit
     typeLabel: "Blog post",
     documentRoute: {
       project: "marketing-site",
-      environment: "staging",
+      initialEnvironment: "staging",
       write: {
         canWrite: false,
         message: "Schema sync required before Studio can write drafts.",

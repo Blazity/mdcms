@@ -58,6 +58,7 @@ function renderMarkup(
             value: {
               project: "marketing-site",
               environment: "staging",
+              setEnvironment: () => {},
               apiBaseUrl: "http://localhost:4000",
               auth: { mode: "cookie" },
               environments: [],
@@ -94,7 +95,7 @@ test("ContentPageView renders loading and empty states deterministically", () =>
   assert.match(loadingMarkup, /class="min-h-screen"/);
   assert.match(loadingMarkup, />Content</);
   assert.match(loadingMarkup, /data-mdcms-content-page-state="loading"/);
-  assert.match(loadingMarkup, /Loading content overview\./);
+  assert.match(loadingMarkup, /data-slot="skeleton"/);
   assert.match(emptyMarkup, /data-mdcms-content-page-state="empty"/);
   assert.match(emptyMarkup, /No schema types were returned/);
 });

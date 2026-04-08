@@ -2,6 +2,7 @@ import type { SchemaRegistryEntry } from "@mdcms/shared";
 
 import type { StudioSchemaRouteApi } from "./schema-route-api.js";
 import type { StudioContentListApi } from "./content-list-api.js";
+import type { StudioContentOverviewApi } from "./content-overview-api.js";
 
 export type ContentTypeStat = {
   type: string;
@@ -35,33 +36,40 @@ export type DashboardLoadResult =
 export async function loadDashboardData(
   schemaApi: StudioSchemaRouteApi,
   contentApi: StudioContentListApi,
+  overviewApi: StudioContentOverviewApi,
 ): Promise<DashboardLoadResult> {
   try {
-    const [schemaTypes, totalResult, publishedResult, recentResult] =
-      await Promise.all([
-        schemaApi.list(),
-        contentApi.list({ limit: 1 }),
-        contentApi.list({ published: true, limit: 1 }),
-        contentApi.list({ sort: "updatedAt", order: "desc", limit: 5 }),
-      ]);
-
-    const totalDocuments = totalResult.pagination.total;
-    const publishedDocuments = publishedResult.pagination.total;
-    const draftDocuments = Math.max(0, totalDocuments - publishedDocuments);
+    const [schemaTypes, recentResult] = await Promise.all([
+      schemaApi.list(),
+      contentApi.list({
+        draft: true,
+        sort: "updatedAt",
+        order: "desc",
+        limit: 5,
+      }),
+    ]);
 
     const typesToShow = schemaTypes.slice(0, 5);
-    const typeStats = await Promise.all(
-      typesToShow.map(async (entry: SchemaRegistryEntry) => {
-        const [typeTotal, typePublished] = await Promise.all([
-          contentApi.list({ type: entry.type, limit: 1 }),
-          contentApi.list({ type: entry.type, published: true, limit: 1 }),
-        ]);
+    const overviewCounts =
+      typesToShow.length > 0
+        ? await overviewApi.get({
+            types: typesToShow.map((entry) => entry.type),
+          })
+        : [];
 
-        const totalCount = typeTotal.pagination.total;
-        const publishedCount = Math.min(
-          typePublished.pagination.total,
-          totalCount,
-        );
+    let totalDocuments = 0;
+    let publishedDocuments = 0;
+    let draftDocuments = 0;
+
+    const typeStats: ContentTypeStat[] = typesToShow.map(
+      (entry: SchemaRegistryEntry, index: number) => {
+        const counts = overviewCounts[index];
+        const totalCount = counts?.total ?? 0;
+        const publishedCount = counts?.published ?? 0;
+
+        totalDocuments += totalCount;
+        publishedDocuments += publishedCount;
+        draftDocuments += counts?.drafts ?? 0;
 
         return {
           type: entry.type,
@@ -70,7 +78,7 @@ export async function loadDashboardData(
           totalCount,
           publishedCount,
         };
-      }),
+      },
     );
 
     return {

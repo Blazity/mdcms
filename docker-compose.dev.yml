@@ -50,7 +50,7 @@ services:
       [
         "sh",
         "-lc",
-        "bun install --frozen-lockfile && bun run --cwd apps/server db:migrate && bun run --cwd apps/server demo:seed",
+        "bun install --frozen-lockfile && bun run --cwd apps/server db:migrate && MDCMS_DEMO_ENVIRONMENT=staging bun run --cwd apps/server demo:seed && MDCMS_DEMO_ENVIRONMENT=production bun run --cwd apps/server demo:seed",
       ]
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://mdcms:mdcms@postgres:5432/mdcms}

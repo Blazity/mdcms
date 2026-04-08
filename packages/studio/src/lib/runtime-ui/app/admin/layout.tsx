@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { StudioMountContext, EnvironmentSummary } from "@mdcms/shared";
 
@@ -46,7 +46,7 @@ export function createAdminLayoutCapabilitiesLoadInput(
   return {
     config: {
       project: route.project,
-      environment: route.environment,
+      environment: route.initialEnvironment,
       serverUrl: context.apiBaseUrl,
     },
     auth: context.auth,
@@ -78,6 +78,26 @@ export default function AdminLayout({
   const [canDeleteContent, setCanDeleteContent] = useState(false);
   const [canManageUsers, setCanManageUsers] = useState(false);
   const [canManageSettings, setCanManageSettings] = useState(false);
+  const [activeEnvironment, setActiveEnvironmentRaw] = useState<string | null>(
+    () => {
+      if (typeof window !== "undefined") {
+        const fromQuery = new URLSearchParams(window.location.search).get(
+          "env",
+        );
+        if (fromQuery) return fromQuery;
+      }
+      return context.documentRoute?.initialEnvironment ?? null;
+    },
+  );
+
+  const setActiveEnvironment = useCallback((env: string) => {
+    setActiveEnvironmentRaw(env);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("env", env);
+      window.history.replaceState(null, "", url.toString());
+    }
+  }, []);
   const [sessionState, setSessionState] = useState<StudioSessionState>({
     status: "loading",
   });
@@ -93,7 +113,18 @@ export default function AdminLayout({
 
   // Fetch capabilities
   useEffect(() => {
-    const loadInput = createAdminLayoutCapabilitiesLoadInput(context);
+    const project = context.documentRoute?.project;
+    const loadInput =
+      project && activeEnvironment
+        ? {
+            config: {
+              project,
+              environment: activeEnvironment,
+              serverUrl: context.apiBaseUrl,
+            },
+            auth: context.auth,
+          }
+        : null;
 
     if (!loadInput) {
       setCanReadSchema(false);
@@ -144,7 +175,7 @@ export default function AdminLayout({
     context.apiBaseUrl,
     context.auth.mode,
     context.auth.token,
-    context.documentRoute?.environment,
+    activeEnvironment,
     context.documentRoute?.project,
   ]);
 
@@ -196,17 +227,21 @@ export default function AdminLayout({
 
   // Fetch environments
   useEffect(() => {
-    const capLoadInput = createAdminLayoutCapabilitiesLoadInput(context);
-
-    if (!capLoadInput) {
+    const project = context.documentRoute?.project;
+    if (!project || !activeEnvironment) {
       setEnvironments([]);
       return;
     }
 
     let cancelled = false;
-    const envApi = createStudioEnvironmentApi(capLoadInput.config, {
-      auth: capLoadInput.auth,
-    });
+    const envApi = createStudioEnvironmentApi(
+      {
+        project,
+        environment: activeEnvironment,
+        serverUrl: context.apiBaseUrl,
+      },
+      { auth: context.auth },
+    );
 
     void envApi
       .list()
@@ -228,7 +263,7 @@ export default function AdminLayout({
     context.apiBaseUrl,
     context.auth.mode,
     context.auth.token,
-    context.documentRoute?.environment,
+    activeEnvironment,
     context.documentRoute?.project,
   ]);
 
@@ -282,7 +317,8 @@ export default function AdminLayout({
 
   const mountInfo = {
     project: context.documentRoute?.project ?? null,
-    environment: context.documentRoute?.environment ?? null,
+    environment: activeEnvironment,
+    setEnvironment: setActiveEnvironment,
     apiBaseUrl: context.apiBaseUrl,
     auth: context.auth,
     environments,

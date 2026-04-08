@@ -173,6 +173,7 @@ export function useContentTypeList(typeId: string) {
       const result = await api!.list({
         type: typeId,
         ...queryParams,
+        draft: true,
         isDeleted: false,
         limit: PAGE_SIZE,
         offset,

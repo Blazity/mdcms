@@ -255,7 +255,7 @@ async function createDocumentRouteMountContext(
 
   return {
     project,
-    environment,
+    initialEnvironment: environment,
     ...(supportedLocales && supportedLocales.length > 0
       ? { supportedLocales }
       : {}),

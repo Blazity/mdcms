@@ -6,6 +6,7 @@ import { test } from "bun:test";
 import { loadDashboardData } from "./dashboard-data.js";
 import type { StudioSchemaRouteApi } from "./schema-route-api.js";
 import type { StudioContentListApi } from "./content-list-api.js";
+import type { StudioContentOverviewApi } from "./content-overview-api.js";
 
 function paginatedResponse(
   total: number,
@@ -63,6 +64,22 @@ const emptySyncResult = {
   affectedTypes: [] as string[],
 };
 
+function makeOverviewApi(
+  counts: Record<string, { total: number; published: number; drafts: number }>,
+): StudioContentOverviewApi {
+  return {
+    get: async (input) =>
+      input.types.map((type) => ({
+        type,
+        total: counts[type]?.total ?? 0,
+        published: counts[type]?.published ?? 0,
+        drafts: counts[type]?.drafts ?? 0,
+      })),
+  };
+}
+
+const emptyOverviewApi = makeOverviewApi({});
+
 test("returns loaded state with real data", async () => {
   const schemaApi: StudioSchemaRouteApi = {
     list: async () => [
@@ -74,27 +91,21 @@ test("returns loaded state with real data", async () => {
 
   const contentApi: StudioContentListApi = {
     list: async (query = {}) => {
-      if (!query.type && !query.published && !query.sort)
-        return paginatedResponse(42);
-      if (!query.type && query.published === true) return paginatedResponse(30);
       if (query.sort === "updatedAt")
         return paginatedResponse(42, [
           makeDoc(),
           makeDoc({ documentId: "doc-2", path: "blog/world" }),
         ]);
-      if (query.type === "BlogPost" && !query.published)
-        return paginatedResponse(20);
-      if (query.type === "BlogPost" && query.published === true)
-        return paginatedResponse(15);
-      if (query.type === "Page" && !query.published)
-        return paginatedResponse(22);
-      if (query.type === "Page" && query.published === true)
-        return paginatedResponse(15);
       return paginatedResponse(0);
     },
   };
 
-  const result = await loadDashboardData(schemaApi, contentApi);
+  const overviewApi = makeOverviewApi({
+    BlogPost: { total: 20, published: 15, drafts: 5 },
+    Page: { total: 22, published: 15, drafts: 7 },
+  });
+
+  const result = await loadDashboardData(schemaApi, contentApi, overviewApi);
 
   assert.equal(result.status, "loaded");
   if (result.status !== "loaded") return;
@@ -121,7 +132,11 @@ test("zero documents returns loaded with 0 counts, not a special empty state", a
     list: async () => paginatedResponse(0),
   };
 
-  const result = await loadDashboardData(schemaApi, contentApi);
+  const result = await loadDashboardData(
+    schemaApi,
+    contentApi,
+    emptyOverviewApi,
+  );
 
   assert.equal(result.status, "loaded");
   if (result.status !== "loaded") return;
@@ -142,7 +157,11 @@ test("schema types with zero documents returns loaded with type stats", async ()
     list: async () => paginatedResponse(0),
   };
 
-  const result = await loadDashboardData(schemaApi, contentApi);
+  const overviewApi = makeOverviewApi({
+    BlogPost: { total: 0, published: 0, drafts: 0 },
+  });
+
+  const result = await loadDashboardData(schemaApi, contentApi, overviewApi);
 
   assert.equal(result.status, "loaded");
   if (result.status !== "loaded") return;
@@ -168,7 +187,11 @@ test("returns forbidden on schema 403", async () => {
     list: async () => paginatedResponse(10),
   };
 
-  const result = await loadDashboardData(schemaApi, contentApi);
+  const result = await loadDashboardData(
+    schemaApi,
+    contentApi,
+    emptyOverviewApi,
+  );
   assert.equal(result.status, "forbidden");
 });
 
@@ -188,7 +211,11 @@ test("returns forbidden on content 403", async () => {
     },
   };
 
-  const result = await loadDashboardData(schemaApi, contentApi);
+  const result = await loadDashboardData(
+    schemaApi,
+    contentApi,
+    emptyOverviewApi,
+  );
   assert.equal(result.status, "forbidden");
 });
 
@@ -208,7 +235,11 @@ test("returns forbidden on 401", async () => {
     list: async () => paginatedResponse(0),
   };
 
-  const result = await loadDashboardData(schemaApi, contentApi);
+  const result = await loadDashboardData(
+    schemaApi,
+    contentApi,
+    emptyOverviewApi,
+  );
   assert.equal(result.status, "forbidden");
 });
 
@@ -228,7 +259,11 @@ test("returns error on 500", async () => {
     list: async () => paginatedResponse(10),
   };
 
-  const result = await loadDashboardData(schemaApi, contentApi);
+  const result = await loadDashboardData(
+    schemaApi,
+    contentApi,
+    emptyOverviewApi,
+  );
   assert.equal(result.status, "error");
   if (result.status !== "error") return;
   assert.equal(result.message, "Schema service down");
@@ -246,7 +281,11 @@ test("returns error on network failure", async () => {
     list: async () => paginatedResponse(10),
   };
 
-  const result = await loadDashboardData(schemaApi, contentApi);
+  const result = await loadDashboardData(
+    schemaApi,
+    contentApi,
+    emptyOverviewApi,
+  );
   assert.equal(result.status, "error");
   if (result.status !== "error") return;
   assert.equal(result.message, "fetch failed");
@@ -266,7 +305,16 @@ test("caps content types at 5", async () => {
     list: async () => paginatedResponse(100),
   };
 
-  const result = await loadDashboardData(schemaApi, contentApi);
+  const counts: Record<
+    string,
+    { total: number; published: number; drafts: number }
+  > = {};
+  for (let i = 0; i < 8; i++) {
+    counts[`Type${i}`] = { total: 100, published: 80, drafts: 20 };
+  }
+  const overviewApi = makeOverviewApi(counts);
+
+  const result = await loadDashboardData(schemaApi, contentApi, overviewApi);
 
   assert.equal(result.status, "loaded");
   if (result.status !== "loaded") return;
@@ -295,7 +343,11 @@ test("recent documents include frontmatter and hasUnpublishedChanges", async () 
     },
   };
 
-  const result = await loadDashboardData(schemaApi, contentApi);
+  const overviewApi = makeOverviewApi({
+    BlogPost: { total: 1, published: 0, drafts: 1 },
+  });
+
+  const result = await loadDashboardData(schemaApi, contentApi, overviewApi);
 
   assert.equal(result.status, "loaded");
   if (result.status !== "loaded") return;

@@ -572,7 +572,7 @@ export function createContentDocumentRouteApi(input: {
   return createStudioDocumentRouteApi(
     {
       project: input.route.project,
-      environment: input.route.environment,
+      environment: input.route.initialEnvironment,
       serverUrl: input.context.apiBaseUrl,
     },
     {
@@ -723,7 +723,7 @@ export async function loadContentDocumentPageState(input: {
   const shell = await loadDocumentShell(
     {
       project: route.project,
-      environment: route.environment,
+      environment: route.initialEnvironment,
       serverUrl: input.context.apiBaseUrl,
     },
     {
@@ -749,7 +749,7 @@ export async function loadContentDocumentPageState(input: {
   const schemaState = await loadSchemaState({
     config: {
       project: route.project,
-      environment: route.environment,
+      environment: route.initialEnvironment,
       serverUrl: input.context.apiBaseUrl,
     },
     auth: input.context.auth,

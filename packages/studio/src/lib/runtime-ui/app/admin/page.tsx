@@ -9,7 +9,6 @@ import {
   Plus,
   ChevronRight,
   Clock,
-  Loader2,
   AlertCircle,
   ShieldAlert,
 } from "lucide-react";
@@ -21,18 +20,23 @@ import {
   CardTitle,
 } from "../../components/ui/card.js";
 import { Badge } from "../../components/ui/badge.js";
+import { Skeleton } from "../../components/ui/skeleton.js";
 import { PageHeader } from "../../components/layout/page-header.js";
 import { useStudioSession } from "./session-context.js";
 import { useStudioMountInfo } from "./mount-info-context.js";
 import { useAdminCapabilities } from "./capabilities-context.js";
 import { createStudioSchemaRouteApi } from "../../../schema-route-api.js";
 import { createStudioContentListApi } from "../../../content-list-api.js";
+import { createStudioContentOverviewApi } from "../../../content-overview-api.js";
 import {
   loadDashboardData,
   type DashboardLoadResult,
 } from "../../../dashboard-data.js";
 
-type DashboardState = { status: "loading" } | DashboardLoadResult;
+type DashboardState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | DashboardLoadResult;
 
 function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -64,33 +68,40 @@ export default function DashboardPage() {
   const session = useStudioSession();
   const mountInfo = useStudioMountInfo();
   const { canCreateContent } = useAdminCapabilities();
-  const [state, setState] = useState<DashboardState>({ status: "loading" });
+  const [state, setState] = useState<DashboardState>({ status: "idle" });
 
   useEffect(() => {
     const { project, environment, apiBaseUrl, auth } = mountInfo;
 
     if (!project || !environment || !apiBaseUrl) {
-      setState({ status: "loading" });
       return;
     }
 
-    setState({ status: "loading" });
-
     let cancelled = false;
+
+    // Delay showing the skeleton by 200ms — if data arrives faster the
+    // user never sees a loading flash.
+    const loadingTimer = setTimeout(() => {
+      if (!cancelled) setState({ status: "loading" });
+    }, 200);
+
     const config = { project, environment, serverUrl: apiBaseUrl };
     const authOpts = { auth };
 
     const schemaApi = createStudioSchemaRouteApi(config, authOpts);
     const contentApi = createStudioContentListApi(config, authOpts);
+    const overviewApi = createStudioContentOverviewApi(config, authOpts);
 
-    loadDashboardData(schemaApi, contentApi)
+    loadDashboardData(schemaApi, contentApi, overviewApi)
       .then((result) => {
         if (!cancelled) {
+          clearTimeout(loadingTimer);
           setState(result);
         }
       })
       .catch((err) => {
         if (!cancelled) {
+          clearTimeout(loadingTimer);
           setState({
             status: "error",
             message:
@@ -103,6 +114,7 @@ export default function DashboardPage() {
 
     return () => {
       cancelled = true;
+      clearTimeout(loadingTimer);
     };
   }, [
     mountInfo.project,
@@ -116,12 +128,70 @@ export default function DashboardPage() {
       ? deriveUserLabel(session.session.email)
       : null;
 
+  if (state.status === "idle") {
+    return (
+      <div className="min-h-screen">
+        <PageHeader breadcrumbs={[{ label: "Dashboard" }]} />
+      </div>
+    );
+  }
+
   if (state.status === "loading") {
     return (
       <div className="min-h-screen">
         <PageHeader breadcrumbs={[{ label: "Dashboard" }]} />
-        <div className="flex items-center justify-center p-24">
-          <Loader2 className="h-6 w-6 animate-spin text-foreground-muted" />
+        <div className="p-6 space-y-6">
+          <div>
+            <Skeleton className="h-8 w-40" />
+            <Skeleton className="mt-2 h-4 w-56" />
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Card key={i} className="border-border py-0 gap-0">
+                <CardContent className="p-4">
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-20" />
+                    <Skeleton className="h-8 w-16" />
+                    <Skeleton className="h-3 w-28" />
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card className="border-border">
+              <CardHeader className="pb-2">
+                <Skeleton className="h-5 w-24" />
+              </CardHeader>
+              <CardContent className="space-y-1">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-4 p-3">
+                    <Skeleton className="h-10 w-10 rounded-md" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-28" />
+                      <Skeleton className="h-3 w-20" />
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+            <Card className="border-border">
+              <CardHeader className="pb-2">
+                <Skeleton className="h-5 w-32" />
+              </CardHeader>
+              <CardContent className="space-y-1">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="flex items-start gap-3 p-2">
+                    <Skeleton className="h-8 w-8 rounded-md" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-36" />
+                      <Skeleton className="h-3 w-20" />
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     );
@@ -246,12 +316,10 @@ export default function DashboardPage() {
 
         {/* Content Types & Recent Documents */}
         <div className="grid gap-6 lg:grid-cols-2">
-          {/* Content Types */}
+          {/* Content */}
           <Card className="border-border">
-            <CardHeader className="flex flex-row items-center justify-between pb-4">
-              <CardTitle className="text-lg font-semibold">
-                Content Types
-              </CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-lg font-semibold">Content</CardTitle>
               <Link
                 href="/admin/content"
                 className="text-sm text-foreground-muted hover:text-accent flex items-center gap-1"
@@ -259,7 +327,7 @@ export default function DashboardPage() {
                 View all <ChevronRight className="h-4 w-4" />
               </Link>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-1">
               {data.contentTypes.length === 0 ? (
                 <p className="text-sm text-foreground-muted py-4 text-center">
                   No schema types synced yet.
@@ -317,11 +385,11 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Recent Documents */}
+          {/* Recently Updated */}
           <Card className="border-border">
             <CardHeader className="flex flex-row items-center justify-between pb-4">
               <CardTitle className="text-lg font-semibold">
-                Recent Documents
+                Recently updated
               </CardTitle>
               <Link
                 href="/admin/content"
@@ -336,11 +404,12 @@ export default function DashboardPage() {
                   No documents yet.
                 </p>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-1">
                   {data.recentDocuments.map((doc) => (
-                    <div
+                    <Link
                       key={doc.documentId}
-                      className="flex items-start gap-3"
+                      href={`/admin/content/${doc.type}/${doc.documentId}`}
+                      className="flex items-start gap-3 rounded-lg p-2 transition-colors hover:bg-background-subtle"
                     >
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent/10">
                         <FileText className="h-4 w-4 text-accent" />
@@ -367,7 +436,7 @@ export default function DashboardPage() {
                         <Clock className="h-3 w-3" />
                         {formatRelativeTime(doc.updatedAt)}
                       </span>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               )}

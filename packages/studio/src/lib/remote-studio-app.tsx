@@ -484,10 +484,21 @@ export function RemoteStudioApp({
       return;
     }
 
+    // Preserve the active environment query param across navigations
+    const currentEnv = new URLSearchParams(window.location.search).get("env");
+    let resolvedHref = href;
+    if (currentEnv) {
+      const url = new URL(href, window.location.origin);
+      if (!url.searchParams.has("env")) {
+        url.searchParams.set("env", currentEnv);
+      }
+      resolvedHref = url.pathname + url.search + url.hash;
+    }
+
     if (mode === "replace") {
-      window.history.replaceState(null, "", href);
+      window.history.replaceState(null, "", resolvedHref);
     } else {
-      window.history.pushState(null, "", href);
+      window.history.pushState(null, "", resolvedHref);
     }
 
     setPathname(window.location.pathname);
@@ -521,7 +532,9 @@ export function RemoteStudioApp({
               <StudioMountInfoProvider
                 value={{
                   project: context.documentRoute?.project ?? null,
-                  environment: context.documentRoute?.environment ?? null,
+                  environment:
+                    context.documentRoute?.initialEnvironment ?? null,
+                  setEnvironment: () => {},
                   apiBaseUrl: context.apiBaseUrl,
                   auth: context.auth,
                   environments: [],

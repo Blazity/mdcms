@@ -228,7 +228,7 @@ test("loadStudioRuntime fetches bootstrap, verifies runtime, and mounts the remo
       hostBridge: HostBridgeV1;
       documentRoute?: {
         project: string;
-        environment: string;
+        initialEnvironment: string;
         write:
           | {
               canWrite: true;
@@ -247,7 +247,7 @@ test("loadStudioRuntime fetches bootstrap, verifies runtime, and mounts the remo
     assert.equal(mountedContext.hostBridge, validHostBridge);
     assert.deepEqual(mountedContext.documentRoute, {
       project: "marketing-site",
-      environment: "staging",
+      initialEnvironment: "staging",
       write: {
         canWrite: false,
         message:
