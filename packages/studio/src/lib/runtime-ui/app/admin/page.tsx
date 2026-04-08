@@ -319,11 +319,11 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Recent Documents */}
+          {/* Recently Updated */}
           <Card className="border-border">
             <CardHeader className="flex flex-row items-center justify-between pb-4">
               <CardTitle className="text-lg font-semibold">
-                Recent Documents
+                Recently Updated
               </CardTitle>
               <Link
                 href="/admin/content"
