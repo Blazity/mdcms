@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useTheme } from "../../adapters/next-themes.js";
 import Link from "../../adapters/next-link.js";
-import { Sun, Moon, ChevronRight, LogOut, User, Settings } from "lucide-react";
+import { Sun, Moon, ChevronRight, LogOut } from "lucide-react";
 import { Button } from "../ui/button.js";
 import { Avatar, AvatarFallback } from "../ui/avatar.js";
 import {
@@ -245,17 +245,8 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <User className="mr-2 h-4 w-4" />
-                  Profile
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <Settings className="mr-2 h-4 w-4" />
-                  Preferences
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
+                  className="text-destructive focus:bg-destructive/10 focus:text-destructive"
                   onClick={handleSignOut}
                 >
                   <LogOut className="mr-2 h-4 w-4" />
