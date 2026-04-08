@@ -1225,8 +1225,7 @@ export async function runPushCommand(
   const pushPlan = await buildPushPlan(context, manifest);
 
   const hasAnything =
-    pushPlan.trackedCount > 0 ||
-    pushPlan.newCandidates.length > 0;
+    pushPlan.trackedCount > 0 || pushPlan.newCandidates.length > 0;
 
   if (!hasAnything) {
     const contentDirs = context.config.contentDirectories ?? [];
@@ -1256,10 +1255,16 @@ export async function runPushCommand(
     return 0;
   }
 
-  printPushPlan(context, pushPlan.changedCandidates, pushPlan.newCandidates, pushPlan.deletionCandidates, {
-    trackedCount: pushPlan.trackedCount,
-    unchangedCount: pushPlan.unchangedCount,
-  });
+  printPushPlan(
+    context,
+    pushPlan.changedCandidates,
+    pushPlan.newCandidates,
+    pushPlan.deletionCandidates,
+    {
+      trackedCount: pushPlan.trackedCount,
+      unchangedCount: pushPlan.unchangedCount,
+    },
+  );
 
   // Interactive selection for new files
   // Issue #8: in non-interactive mode without --force, skip new/deleted but still push changed
@@ -1279,10 +1284,7 @@ export async function runPushCommand(
         selectedPaths.includes(c.path),
       );
 
-      if (
-        selectedPaths.length === 0 &&
-        pushPlan.newCandidates.length > 0
-      ) {
+      if (selectedPaths.length === 0 && pushPlan.newCandidates.length > 0) {
         context.stdout.write(
           `Hint: ${pushPlan.newCandidates.length} new file(s) skipped. Use --force to include them in non-interactive mode.\n`,
         );
@@ -1307,10 +1309,7 @@ export async function runPushCommand(
         selectedIds.includes(c.documentId),
       );
 
-      if (
-        selectedIds.length === 0 &&
-        pushPlan.deletionCandidates.length > 0
-      ) {
+      if (selectedIds.length === 0 && pushPlan.deletionCandidates.length > 0) {
         context.stdout.write(
           `Hint: ${pushPlan.deletionCandidates.length} deletion(s) skipped. Use --force to include them in non-interactive mode.\n`,
         );

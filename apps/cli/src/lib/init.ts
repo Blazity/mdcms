@@ -330,7 +330,8 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
           s3.stop(`Project "${projectName}" already exists`);
         } else {
           s3.stop(
-            errBody?.message ?? `Failed to create project (${createResponse.status})`,
+            errBody?.message ??
+              `Failed to create project (${createResponse.status})`,
           );
         }
         return 1;

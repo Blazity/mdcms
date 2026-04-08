@@ -490,10 +490,7 @@ test("push exits successfully without API calls when no changed documents are fo
     assert.equal(exitCode, 0);
     assert.equal(requestCount, 0);
     assert.equal(confirmCount, 0);
-    assert.equal(
-      stdout.includes("No changes to push"),
-      true,
-    );
+    assert.equal(stdout.includes("No changes to push"), true);
   });
 });
 
@@ -1152,9 +1149,10 @@ test("push --force deletes locally-missing files via DELETE and removes from man
     assert.equal(deleteCalls, 1);
 
     // Manifest should no longer contain the deleted document
-    const manifest = JSON.parse(
-      await readFile(manifestPath, "utf8"),
-    ) as Record<string, unknown>;
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
     assert.equal(manifest["doc-to-delete"], undefined);
   });
 });

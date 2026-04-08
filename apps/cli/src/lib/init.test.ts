@@ -246,7 +246,12 @@ test("init with no content files still generates config", async () => {
     });
 
     const prompter = createMockPrompter({
-      text: ["http://localhost:4000", "my-project", "production", "content/posts"],
+      text: [
+        "http://localhost:4000",
+        "my-project",
+        "production",
+        "content/posts",
+      ],
       select: [],
       multiSelect: [],
       confirm: [],
@@ -313,7 +318,12 @@ test("init creates new project and generates config", async () => {
     });
 
     const prompter = createMockPrompter({
-      text: ["http://localhost:4000", "new-project", "production", "content/posts"],
+      text: [
+        "http://localhost:4000",
+        "new-project",
+        "production",
+        "content/posts",
+      ],
       select: [],
       multiSelect: [],
       confirm: [],

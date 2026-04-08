@@ -165,17 +165,17 @@ For each candidate file discovered during `cms init`:
 
 The pull plan classifies each document into one of the following categories:
 
-| Category | Meaning | Action |
-| --- | --- | --- |
-| **Both modified** | Local file changed AND server draft revision advanced since last sync. | Overwrites local file (requires confirmation). |
-| **Modified** | Server draft revision advanced but local file matches the manifest hash. | Overwrites local file (no confirmation needed). |
+| Category                                | Meaning                                                                          | Action                                                                                    |
+| --------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| **Both modified**                       | Local file changed AND server draft revision advanced since last sync.           | Overwrites local file (requires confirmation).                                            |
+| **Modified**                            | Server draft revision advanced but local file matches the manifest hash.         | Overwrites local file (no confirmation needed).                                           |
 | **Locally modified (server unchanged)** | Local file differs from manifest hash but server draft revision has not changed. | Skipped — file is not written. Guidance printed: "Use `cms push` to upload your changes." |
-| **New** | Document exists on server but has no manifest entry. | Written to disk. |
-| **Moved/Renamed (locally modified)** | Server path/format changed AND local file at the old path was edited. | Old file deleted, new file written (requires confirmation). |
-| **Moved/Renamed** | Server path/format changed, local file unmodified. | Old file deleted, new file written. |
-| **Deleted on server** | Manifest entry exists but document is absent from server response. | Local file deleted (requires confirmation). |
-| **Skipped (unknown type)** | Document type is not defined in local config. | Skipped with a warning to stderr. |
-| **Unchanged** | Hash, draft revision, and published version all match. | No action. |
+| **New**                                 | Document exists on server but has no manifest entry.                             | Written to disk.                                                                          |
+| **Moved/Renamed (locally modified)**    | Server path/format changed AND local file at the old path was edited.            | Old file deleted, new file written (requires confirmation).                               |
+| **Moved/Renamed**                       | Server path/format changed, local file unmodified.                               | Old file deleted, new file written.                                                       |
+| **Deleted on server**                   | Manifest entry exists but document is absent from server response.               | Local file deleted (requires confirmation).                                               |
+| **Skipped (unknown type)**              | Document type is not defined in local config.                                    | Skipped with a warning to stderr.                                                         |
+| **Unchanged**                           | Hash, draft revision, and published version all match.                           | No action.                                                                                |
 
 #### Plan Output Example
 
@@ -306,15 +306,15 @@ The manifest is flushed atomically (via `writeScopedManifestAtomic`) after each 
 
 Fetches all draft documents from the server and compares against the local manifest and file hashes. Each document is classified into one of these drift categories:
 
-| Category | Meaning |
-| --- | --- |
+| Category               | Meaning                                                            |
+| ---------------------- | ------------------------------------------------------------------ |
 | **Modified on server** | Server `draftRevision` advanced; local file matches manifest hash. |
-| **Modified locally** | Local file hash differs from manifest; server revision unchanged. |
-| **Both modified** | Both local file and server revision have changed since last sync. |
-| **New on server** | Document exists on server but has no manifest entry. |
-| **Deleted on server** | Manifest entry exists but document is absent from server. |
-| **Moved/Renamed** | Server path differs from manifest path for the same `documentId`. |
-| **Unchanged** | Hash, draft revision, and published version all match. |
+| **Modified locally**   | Local file hash differs from manifest; server revision unchanged.  |
+| **Both modified**      | Both local file and server revision have changed since last sync.  |
+| **New on server**      | Document exists on server but has no manifest entry.               |
+| **Deleted on server**  | Manifest entry exists but document is absent from server.          |
+| **Moved/Renamed**      | Server path differs from manifest path for the same `documentId`.  |
+| **Unchanged**          | Hash, draft revision, and published version all match.             |
 
 #### Schema Drift
 

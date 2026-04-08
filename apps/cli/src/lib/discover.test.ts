@@ -19,9 +19,17 @@ async function withTempDir(run: (cwd: string) => Promise<void>): Promise<void> {
 test("discoverUntrackedFiles returns files not in manifest", async () => {
   await withTempDir(async (cwd) => {
     await mkdir(join(cwd, "content", "posts"), { recursive: true });
-    await writeFile(join(cwd, "content/posts/tracked.md"), "# Tracked\n", "utf8");
+    await writeFile(
+      join(cwd, "content/posts/tracked.md"),
+      "# Tracked\n",
+      "utf8",
+    );
     await writeFile(join(cwd, "content/posts/new-post.md"), "# New\n", "utf8");
-    await writeFile(join(cwd, "content/posts/another.mdx"), "# Another\n", "utf8");
+    await writeFile(
+      join(cwd, "content/posts/another.mdx"),
+      "# Another\n",
+      "utf8",
+    );
 
     const manifest: ScopedManifest = {
       "doc-1": {

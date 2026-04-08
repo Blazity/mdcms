@@ -1,23 +1,23 @@
-import { stdin as processStdin, stdout as processStdout } from "node:process";
 import { resolve } from "node:path";
+import { stdin as processStdin } from "node:process";
 
 import { checkbox, select } from "@inquirer/prompts";
 import { RuntimeError, type CliPreflightHook } from "@mdcms/shared";
 
 import { formatCliErrorEnvelope } from "./cli.js";
-import { type CliConfig, loadCliConfig } from "./config.js";
+import { loadCliConfig, type CliConfig } from "./config.js";
 import { createCredentialStore, type CredentialStore } from "./credentials.js";
+import { createInitCommand } from "./init.js";
 import { createLoginCommand } from "./login.js";
 import { createLogoutCommand } from "./logout.js";
 import { createPullCommand } from "./pull.js";
 import { createPushCommand } from "./push.js";
-import { createInitCommand } from "./init.js";
-import { createSchemaSyncCommand } from "./schema-sync.js";
-import { createStatusCommand } from "./status.js";
 import {
   createCliRuntimeContextWithModules,
   type CliRuntimeContextWithModules,
 } from "./runtime-with-modules.js";
+import { createSchemaSyncCommand } from "./schema-sync.js";
+import { createStatusCommand } from "./status.js";
 
 export type Writer = {
   write: (chunk: string) => unknown;
@@ -302,11 +302,12 @@ export async function resolveExecutionContext(input: {
     input.global.environment ?? envEnvironment ?? input.config.environment;
 
   if (input.requiresTarget && (!project || !environment)) {
-    const missing = !project && !environment
-      ? "project and environment"
-      : !project
-        ? "project"
-        : "environment";
+    const missing =
+      !project && !environment
+        ? "project and environment"
+        : !project
+          ? "project"
+          : "environment";
     throw new RuntimeError({
       code: "MISSING_TARGET",
       message:

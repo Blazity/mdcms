@@ -652,7 +652,9 @@ export async function runPullCommand(
   if (needsConfirmation && !options.force) {
     const parts: string[] = [];
     if (hasBothModified) {
-      parts.push("overwrite locally modified files that also changed on server");
+      parts.push(
+        "overwrite locally modified files that also changed on server",
+      );
     }
     if (hasMovedLocallyModified) {
       parts.push(
