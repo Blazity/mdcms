@@ -1,6 +1,12 @@
 import { input, select, checkbox } from "@inquirer/prompts";
 import ora from "ora";
 
+/**
+ * Determines whether a value is an Error whose `name` is `"ExitPromptError"`.
+ *
+ * @param error - The value to test
+ * @returns `true` if `error` is an `Error` instance with `name` equal to `"ExitPromptError"`, `false` otherwise.
+ */
 function isExitPromptError(error: unknown): boolean {
   return error instanceof Error && error.name === "ExitPromptError";
 }
@@ -26,6 +32,17 @@ export type Prompter = {
   spinner(): { start(msg: string): void; stop(msg: string): void };
 };
 
+/**
+ * Create a Prompter implementation backed by @inquirer/prompts and ora.
+ *
+ * The returned prompter presents text, single-choice, multi-choice, and confirm prompts
+ * using Inquirer-style prompts and provides a spinner using ora. `select` and `multiSelect`
+ * present `PromptChoice` entries by using each choice's `label` as the displayed name and
+ * `value` as the selected value. If any prompt throws an error whose `name` equals
+ * `"ExitPromptError"`, the process will exit with code 0; other errors are rethrown.
+ *
+ * @returns A `Prompter` instance implementing the prompt and spinner methods.
+ */
 export function createInquirerPrompter(): Prompter {
   return {
     intro(message) {
@@ -111,6 +128,18 @@ export type MockPrompterQueues = {
   confirm?: boolean[];
 };
 
+/**
+ * Creates a Prompter that serves preconfigured responses from FIFO queues for testing.
+ *
+ * The returned prompter consumes values from the provided `canned` queues for each prompt type and provides no-op implementations for `intro`, `outro`, and spinner controls.
+ *
+ * @param canned - Optional canned response queues:
+ *   - `text`: sequence of string responses for `text` prompts
+ *   - `select`: sequence of string responses for `select` prompts
+ *   - `multiSelect`: sequence of string-array responses for `multiSelect` prompts
+ *   - `confirm`: sequence of boolean responses for `confirm` prompts
+ * @returns A `Prompter` whose prompt methods return and remove the next value from the corresponding queue. If a queue is empty when its prompt method is called, that method throws an `Error` with message `No more canned <type> responses` (where `<type>` is `text`, `select`, `multiSelect`, or `confirm`).
+ */
 export function createMockPrompter(canned: MockPrompterQueues): Prompter {
   const queues = {
     text: canned.text ? [...canned.text] : [],

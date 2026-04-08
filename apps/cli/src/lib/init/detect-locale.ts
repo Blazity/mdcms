@@ -11,6 +11,17 @@ const RESERVED_TOKENS = new Set(["__mdcms_default__"]);
 
 const BCP47_PATTERN = /^([a-z]{2,3})(?:[-_]([a-zA-Z]{2,4}))?$/i;
 
+/**
+ * Normalize a raw locale hint into a standardized BCP-47-like locale identifier.
+ *
+ * Trims whitespace, converts underscores to hyphens, validates the format, and
+ * returns a normalized locale using a lowercased language subtag and a formatted
+ * region subtag when present. If the input is empty or does not match the
+ * expected pattern, returns `null`.
+ *
+ * @param raw - The raw locale string to normalize (may include whitespace, underscores, or mixed case)
+ * @returns The normalized locale (e.g., `en`, `en-US`, `zh-Hant`) or `null` if the input is empty or invalid
+ */
 export function normalizeLocale(raw: string): string | null {
   const trimmed = raw.trim();
   if (trimmed.length === 0) return null;
@@ -31,6 +42,13 @@ export function normalizeLocale(raw: string): string | null {
   return `${language}-${region.charAt(0).toUpperCase()}${region.slice(1).toLowerCase()}`;
 }
 
+/**
+ * Determine whether a discovered file resides in or directly under a specified directory.
+ *
+ * @param file - The discovered file whose `relativePath` will be checked
+ * @param directory - The directory path to match against `file.relativePath`
+ * @returns `true` if `file.relativePath` equals `directory` or starts with `${directory}/`, `false` otherwise
+ */
 function filesBelongToDirectory(
   file: DiscoveredFile,
   directory: string,
@@ -41,6 +59,18 @@ function filesBelongToDirectory(
   );
 }
 
+/**
+ * Infer a project locale configuration by examining discovered files and their locale hints.
+ *
+ * Scans each inferred type's files for locale hints, normalizes or interactively maps unrecognized hints,
+ * marks types as localized when they contain two or more distinct locales, and—if any type is localized—
+ * produces a LocaleConfig with a most-frequent default, sorted supported locales, and alias mappings.
+ *
+ * @param files - Discovered files containing optional `localeHint.rawValue` and `relativePath`
+ * @param types - Inferred types with `directory` and mutable `localized` flag updated when multiple locales are found
+ * @param prompter - Optional interactive selector used to map raw locale hints that fail normalization; if omitted such files are skipped
+ * @returns A LocaleConfig with `defaultLocale`, `supported`, and `aliases`, or `null` if no inferred type contains multiple locales
+ */
 export async function detectLocaleConfig(
   files: DiscoveredFile[],
   types: InferredType[],

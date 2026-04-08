@@ -48,6 +48,17 @@ export type InitCommandOptions = {
   credentialStore?: CredentialStore;
 };
 
+/**
+ * Group discovered files by a directory key derived from each file's relative path.
+ *
+ * The directory key is:
+ * - "segment0/segment1" when the path has three or more segments,
+ * - "segment0" when the path has exactly two segments,
+ * - "." for single-segment (root) paths.
+ *
+ * @param files - Discovered files whose `relativePath` (slash-separated) is used to compute the group key
+ * @returns A map from directory key to the array of `DiscoveredFile` objects that belong to that directory
+ */
 function groupFilesByDirectory(
   files: DiscoveredFile[],
 ): Map<string, DiscoveredFile[]> {
@@ -72,6 +83,12 @@ function groupFilesByDirectory(
   return groups;
 }
 
+/**
+ * Removes a `.md` or `.mdx` extension from a relative file path.
+ *
+ * @param relativePath - The file path to strip the extension from
+ * @returns The path without the `.md` or `.mdx` extension, or the original `relativePath` if no matching extension is present
+ */
 function stripExtension(relativePath: string): string {
   const ext = extname(relativePath);
   if (ext === ".md" || ext === ".mdx") {
@@ -80,6 +97,13 @@ function stripExtension(relativePath: string): string {
   return relativePath;
 }
 
+/**
+ * Selects the first inferred content type whose configured directory is a prefix of the file's relative path.
+ *
+ * @param file - Discovered file whose `relativePath` is matched against type directories
+ * @param inferredTypes - Ordered list of inferred types; earlier entries take precedence when matching
+ * @returns The matching `InferredType` if found, `undefined` otherwise
+ */
 function findTypeForFile(
   file: DiscoveredFile,
   inferredTypes: InferredType[],
@@ -92,6 +116,17 @@ function findTypeForFile(
   return undefined;
 }
 
+/**
+ * Build an in-memory MDCMS configuration object from discovered project data for downstream parsing and schema sync.
+ *
+ * @param input - An object containing the initialization inputs:
+ *   - project: Project slug.
+ *   - serverUrl: Base URL of the MDCMS server.
+ *   - environment: Environment name to target.
+ *   - contentDirectories: List of content directories to manage.
+ *   - types: Inferred content types; each type's `fields` use `zodType` strings that will be converted into Zod validators (reference(...) values are represented as `z.string()` placeholders).
+ *   - localeConfig: Detected locale configuration or `null`.
+ * @returns A config object produced by `defineConfig` representing the provided project, server, environment, content directories, types, and optional locale settings.
 function buildRawConfig(input: {
   project: string;
   serverUrl: string;
@@ -165,6 +200,19 @@ function buildRawConfig(input: {
   return defineConfig(config as Parameters<typeof defineConfig>[0]);
 }
 
+/**
+ * Create the `mdcms init` CLI command that runs an interactive project setup wizard.
+ *
+ * The returned command guides the user through connecting to an MDCMS server, obtaining
+ * credentials, creating a project and environment, scanning and selecting content
+ * directories, inferring types and locales, writing `mdcms.config.ts`, syncing schema,
+ * optionally importing content, and performing optional git cleanup.
+ *
+ * @param options - Optional overrides for the command behavior (custom prompter, fetcher,
+ *   skipAuth to bypass interactive login, and an optional credentialStore for persisting
+ *   API credentials).
+ * @returns A `CliCommand` configured for the `init` flow.
+ */
 export function createInitCommand(options?: InitCommandOptions): CliCommand {
   return {
     name: "init",

@@ -46,6 +46,14 @@ type ProjectRouteApp = {
   post?: (path: string, handler: (ctx: any) => unknown) => ProjectRouteApp;
 };
 
+/**
+ * Create a RuntimeError representing an invalid input for a specific field.
+ *
+ * @param field - The name of the input field that is invalid
+ * @param message - A human-readable error message describing the invalid input
+ * @param details - Additional arbitrary details to include in the error `details` object; merged with `{ field }`
+ * @returns A `RuntimeError` with `code` set to `"INVALID_INPUT"`, `statusCode` 400, and `details` containing `field` plus any provided `details`
+ */
 function createInvalidInputError(
   field: string,
   message: string,
@@ -62,6 +70,14 @@ function createInvalidInputError(
   });
 }
 
+/**
+ * Validates that a value is a non-empty string and returns the trimmed result.
+ *
+ * @param value - The value to validate.
+ * @param field - The name of the field used in the error details if validation fails.
+ * @returns The trimmed string.
+ * @throws A `RuntimeError` with `code: "INVALID_INPUT"` and `statusCode: 400` when `value` is not a string or is empty after trimming; the error's `details` include the provided `field`.
+ */
 function assertRequiredString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw createInvalidInputError(field, `Field "${field}" is required.`);
@@ -70,6 +86,12 @@ function assertRequiredString(value: unknown, field: string): string {
   return value.trim();
 }
 
+/**
+ * Convert a value to an ISO 8601 timestamp string or return `null` when conversion isn't possible.
+ *
+ * @param value - A Date instance or any value that can be passed to the Date constructor; `null` or `undefined` will be treated as missing.
+ * @returns An ISO 8601 string representation of `value` if it represents a valid date, `null` otherwise.
+ */
 function toIsoString(value: unknown): string | null {
   if (value == null) return null;
   const date = value instanceof Date ? value : new Date(value as any);
@@ -77,6 +99,12 @@ function toIsoString(value: unknown): string | null {
   return date.toISOString();
 }
 
+/**
+ * Converts a string into a URL-friendly slug.
+ *
+ * @param name - The input string to convert into a slug
+ * @returns The slug: lowercased, characters other than `a-z`, `0-9`, and `-` replaced with `-`, consecutive `-` collapsed into a single `-`, and leading/trailing `-` removed
+ */
 function slugify(name: string): string {
   return name
     .toLowerCase()
@@ -85,6 +113,17 @@ function slugify(name: string): string {
     .replace(/^-|-$/g, "");
 }
 
+/**
+ * Create a ProjectStore backed by the provided Drizzle database.
+ *
+ * The returned store implements project and environment persistence operations:
+ * - list projects with computed environment counts,
+ * - create a project (validates name, generates a slug, provisions the project, and returns the project with its environments),
+ * - list environments for a project (throws a 404 if the project does not exist),
+ * - create an environment in a project (validates inputs and prevents duplicate names).
+ *
+ * @returns A ProjectStore implementation that uses the provided `db` to persist projects and environments.
+ */
 export function createDatabaseProjectStore(options: {
   db: DrizzleDatabase;
 }): ProjectStore {
@@ -264,6 +303,26 @@ export function createDatabaseProjectStore(options: {
   };
 }
 
+/**
+ * Registers HTTP routes for managing projects and their environments on the given app.
+ *
+ * Mounted routes:
+ * - GET  /api/v1/projects
+ *   - Requires read authorization; responds with `{ data: ProjectSummary[] }`.
+ * - POST /api/v1/projects
+ *   - Requires write authorization; expects `{ name }` in the request body; responds with `{ data: ProjectDetail }`.
+ * - GET  /api/v1/projects/:slug/environments
+ *   - Requires read authorization; expects `:slug` param; responds with `{ data: { id: string, name: string }[] }`.
+ * - POST /api/v1/projects/:slug/environments
+ *   - Requires write authorization; expects `:slug` param and `{ name }` in the request body; responds with `{ data: { id: string, name: string } }`.
+ *
+ * All routes use the provided `options.store` for persistence and call `options.authorizeRead` / `options.authorizeWrite`
+ * as appropriate for access control.
+ *
+ * @param app - An application-like object on which routes will be registered (expects optional `get`/`post` methods).
+ * @param options - Dependencies including a `ProjectStore` and authorization functions.
+ * @returns void
+ */
 export function mountProjectApiRoutes(
   app: unknown,
   options: MountProjectApiRoutesOptions,

@@ -195,6 +195,12 @@ async function fetchContentPage(
   };
 }
 
+/**
+ * Fetches all content documents from the remote MDCMS API for the given draft/published selection.
+ *
+ * @param input - Options for the fetch operation; `input.draft` selects draft (`true`) or published (`false`) content
+ * @returns The combined list of `ContentDocumentPayload` objects retrieved from the server
+ */
 async function fetchAllContent(
   context: CliCommandContext,
   input: { draft: boolean },
@@ -221,10 +227,26 @@ async function fetchAllContent(
   return rows;
 }
 
+/**
+ * Serialize an object to YAML with no line wrapping and no trailing whitespace.
+ *
+ * @param value - The object to serialize
+ * @returns The YAML string representation of `value` with trailing whitespace trimmed
+ */
 function renderYaml(value: Record<string, unknown>): string {
   return stringifyYaml(value, { lineWidth: 0 }).trimEnd();
 }
 
+/**
+ * Render a markdown (or MDX) file content, optionally prefixed with YAML frontmatter.
+ *
+ * The `frontmatter` object is serialized to YAML and included between `---` delimiters
+ * followed by a blank line; if `frontmatter` is empty, no frontmatter block is added.
+ *
+ * @param input.frontmatter - Key/value map to serialize as YAML frontmatter
+ * @param input.body - The document body; a trailing newline will be ensured
+ * @returns The complete file content: optional YAML frontmatter block, a blank line, then the body (always ending with a newline)
+ */
 function renderMarkdownDocument(input: {
   frontmatter: Record<string, unknown>;
   body: string;
@@ -245,6 +267,18 @@ function hashContent(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
+/**
+ * Compute the relative local filesystem path for a remote content document based on the CLI configuration.
+ *
+ * The returned path is suitable for writing under the repository root: leading slashes from the remote path
+ * are removed and the document's `format` is used as the file extension. For localized types the returned path
+ * includes the `locale` segment before the extension.
+ *
+ * @param context - CLI command context containing project configuration and type mappings
+ * @param document - Remote content document payload to resolve
+ * @returns The local relative path (e.g., `posts/my-article.en.mdx`) or `undefined` if there's no type mapping for the document's `type`
+ * @throws RuntimeError `INVALID_REMOTE_DOCUMENT` (status 400) if the document's type is localized but the `locale` is missing or empty
+ */
 function resolveLocalPathForDocument(
   context: CliCommandContext,
   document: ContentDocumentPayload,
@@ -308,6 +342,16 @@ function groupChanges(
   return groups;
 }
 
+/**
+ * Prints a human-readable pull plan and contextual guidance to the CLI stdout.
+ *
+ * Groups `changes` by status, lists each group's count and per-document lines
+ * (showing renames as `previous -> next`, deletions as `previous`, and other
+ * entries as `next` or `previous`), and appends guidance notes for locally
+ * modified files and conflicts where both local and remote have changes.
+ *
+ * @param changes - The list of computed pull changes to display, grouped by status
+ */
 function printPlan(context: CliCommandContext, changes: PullChange[]): void {
   const orderedStatuses: PullChangeStatus[] = [
     "Both modified",
@@ -374,11 +418,29 @@ function printPlan(context: CliCommandContext, changes: PullChange[]): void {
   }
 }
 
+/**
+ * Ensures the parent directory exists and writes `content` to `path` using UTF-8 encoding.
+ *
+ * @param path - Destination file path
+ * @param content - File contents to write
+ */
 async function writeContentFile(path: string, content: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, content, "utf8");
 }
 
+/**
+ * Apply a list of planned pull changes to the filesystem and update the scoped manifest atomically.
+ *
+ * Processes each `PullChange` in order: deletes files for server-deleted entries, removes moved/renamed previous paths, writes new or updated content files, and updates or removes entries in the provided `manifest`. After applying all changes, writes the updated scoped manifest to `manifestPath` atomically.
+ *
+ * @param input.context - CLI command context (cwd, IO helpers, etc.)
+ * @param input.changes - Ordered list of pull changes to apply
+ * @param input.manifestPath - Filesystem path where the scoped manifest will be written
+ * @param input.manifest - In-memory scoped manifest that will be mutated and persisted
+ *
+ * @throws RuntimeError - Thrown with code `INTERNAL_ERROR` if a change that requires writing lacks required fields (`nextPath`, `nextContent`, `nextHash`, or `format`).
+ */
 async function applyPullChanges(input: {
   context: CliCommandContext;
   changes: PullChange[];
@@ -444,6 +506,20 @@ async function applyPullChanges(input: {
   await writeScopedManifestAtomic(input.manifestPath, input.manifest);
 }
 
+/**
+ * Computes a plan of changes required to align local files and the scoped manifest with remote documents.
+ *
+ * Compares each remote document against the provided scoped manifest and local file hashes to classify
+ * documents into statuses such as `New`, `Modified`, `Unchanged`, `Both modified`, `Locally modified (server unchanged)`,
+ * `Moved/Renamed`, `Moved/Renamed (locally modified)`, `Deleted on server`, and `Skipped (unknown type)`.
+ * When a document's type is not defined in the local config, a `Skipped (unknown type)` change is emitted and
+ * a warning is written to `context.stderr`.
+ *
+ * @param input.remoteDocuments - Remote content documents to compare against the manifest
+ * @param input.manifest - The current scoped manifest mapping document IDs to local metadata
+ * @param input.context - CLI context (used for `cwd` to read local files and `stderr` to emit skip warnings)
+ * @returns An array of `PullChange` items describing creates, updates, renames/moves, deletions, and skips needed to synchronize local state with the remote
+ */
 async function computePullChanges(input: {
   context: CliCommandContext;
   remoteDocuments: ContentDocumentPayload[];
@@ -604,6 +680,13 @@ async function computePullChanges(input: {
   return changes;
 }
 
+/**
+ * Execute the `pull` CLI command: fetch remote content for the current scope, compute and display a pull plan, optionally prompt for destructive changes, and apply updates to local files and the scoped manifest.
+ *
+ * The command supports `--published`, `--force`, and `--dry-run` flags and prints help on `--help`/`-h`. When `--dry-run` is used no files or manifest entries are modified. If destructive changes (conflicting edits, local moves with local modifications, or deletions on the server) are present, the command prompts for confirmation unless `--force` is provided.
+ *
+ * @returns Exit code: `0` on success or when help/dry-run completes, `1` if the user cancels the confirmation prompt.
+ */
 export async function runPullCommand(
   context: CliCommandContext,
 ): Promise<number> {

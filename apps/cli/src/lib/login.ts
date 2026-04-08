@@ -49,6 +49,11 @@ function parseLoginArgs(args: string[]): { help: boolean } {
   };
 }
 
+/**
+ * Provide the multi-line help/usage text for the `mdcms login` command.
+ *
+ * @returns The help/usage string displayed for `mdcms login --help`
+ */
 function renderLoginHelp(): string {
   return [
     "Usage: mdcms login",
@@ -59,6 +64,21 @@ function renderLoginHelp(): string {
   ].join("\n");
 }
 
+/**
+ * Creates an ephemeral local HTTP listener that accepts an OAuth browser callback and exposes control helpers.
+ *
+ * The returned listener binds to 127.0.0.1 on a random port and provides a redirect URI that points to /callback.
+ * Calling `waitForCallback()` resolves with `{ code, state }` when an HTTP request arrives at `/callback` containing
+ * both `code` and `state` query parameters. `close()` stops the server.
+ *
+ * @returns A promise that resolves to a `LoopbackCallbackListener` containing:
+ * - `redirectUri`: the full redirect URL to use for the OAuth flow (http://127.0.0.1:<port>/callback)
+ * - `waitForCallback`: resolves to `{ code, state }` when a valid callback is received
+ * - `close`: closes the underlying server
+ *
+ * @throws RuntimeError with `code: "LOGIN_TIMEOUT"`, `statusCode: 408` if no callback is received within two minutes.
+ * @throws RuntimeError with `code: "INTERNAL_ERROR"`, `statusCode: 500` if the server fails to start or its address cannot be resolved.
+ */
 export function createLoopbackCallbackListener(): Promise<LoopbackCallbackListener> {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -168,6 +188,12 @@ export function createLoopbackCallbackListener(): Promise<LoopbackCallbackListen
   });
 }
 
+/**
+ * Attempts to open the provided URL in the user's default web browser.
+ *
+ * @param url - The URL to open in the browser.
+ * @returns `true` if the OS command to open the URL was spawned successfully, `false` if an error occurred.
+ */
 export async function openBrowserUrl(url: string): Promise<boolean> {
   const platform = process.platform;
 
@@ -270,6 +296,16 @@ function throwRemoteError(
   });
 }
 
+/**
+ * Builds the `login` CLI command that runs a browser-based OAuth flow and stores scoped credentials.
+ *
+ * @param options - Optional overrides for collaborators and storage:
+ *   - `openBrowserUrl`: custom function to open the authorize URL in a browser
+ *   - `createState`: custom state generator for the OAuth request
+ *   - `createCallbackListener`: custom factory for the loopback callback listener
+ *   - `credentialStore`: custom credential store implementation
+ * @returns A `CliCommand` that initiates the login flow, waits for the browser callback, exchanges the authorization code for credentials, and persists an API key profile to the configured credential store.
+ */
 export function createLoginCommand(options: LoginOptions = {}): CliCommand {
   const openUrl = options.openBrowserUrl ?? openBrowserUrl;
   const createState =

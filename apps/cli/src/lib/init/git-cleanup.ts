@@ -5,6 +5,14 @@ import { join } from "node:path";
 
 const HEADER = "# mdcms managed content";
 
+/**
+ * Ensure the .gitignore file in the given working directory contains ignore entries for managed content and a managed-content header.
+ *
+ * Adds a header marker and any missing ignore entries for the `.mdcms` directory and each entry in `managedDirectories` (normalized to a trailing-slash form when added). The file is written only if new entries are required.
+ *
+ * @param cwd - Path to the repository working directory containing the `.gitignore` to update
+ * @param managedDirectories - Directory paths that must be present in `.gitignore`
+ */
 export async function updateGitignore(
   cwd: string,
   managedDirectories: string[],
@@ -61,6 +69,13 @@ export async function updateGitignore(
   await writeFile(gitignorePath, content, "utf8");
 }
 
+/**
+ * Collects git-tracked file paths under the given managed directories within the specified working directory.
+ *
+ * @param cwd - Working directory to run git commands in
+ * @param managedDirectories - Directories (relative to `cwd`) to query for tracked files
+ * @returns An array of tracked file paths (relative to `cwd`) found under the specified directories; empty if `cwd` is not a git work tree or if no tracked files are found
+ */
 export async function detectTrackedFiles(
   cwd: string,
   managedDirectories: string[],
@@ -97,6 +112,16 @@ export async function detectTrackedFiles(
   return tracked;
 }
 
+/**
+ * Removes the specified directories from the Git index and reports which paths were removed.
+ *
+ * This runs `git rm -r --cached <dir>` for each entry in `directories`, collects paths reported
+ * as removed from git's output, and ignores directories that fail (e.g., not tracked).
+ *
+ * @param cwd - Filesystem path of the repository working directory where git commands run
+ * @param directories - List of directories to remove from the index
+ * @returns Array of repository-relative paths that were removed from the index according to git's output
+ */
 export async function untrackFiles(
   cwd: string,
   directories: string[],

@@ -735,6 +735,18 @@ function serializeTypeDefinition(
   };
 }
 
+/**
+ * Produce schema registry type snapshots for a resolved environment in the config.
+ *
+ * Serializes each type defined in the specified resolved environment into a
+ * map whose keys are type names and whose values are `SchemaRegistryTypeSnapshot`
+ * objects; type entries are sorted by name.
+ *
+ * @param config - The parsed MDCMS configuration containing resolved environments
+ * @param environmentName - The name of the resolved environment to serialize
+ * @returns A record mapping type names to their `SchemaRegistryTypeSnapshot`
+ * @throws RuntimeError with code `INVALID_INPUT` if `environmentName` does not refer to a resolved environment in `config.resolvedEnvironments`
+ */
 export function serializeResolvedEnvironmentSchema(
   config: ParsedMdcmsConfig,
   environmentName: string,
@@ -767,6 +779,17 @@ export type SchemaStateFile = {
   serverUrl: string;
 };
 
+/**
+ * Produce a JSON-serializable snapshot of a parsed MDCMS config suitable for storage or transmission.
+ *
+ * The snapshot always includes `project` and `serverUrl`. It includes `environment` only if present on the config,
+ * includes `contentDirectories` only when that array is non-empty, and includes a `locales` object only when
+ * `config.locales.implicit` is `false`. When `locales` is present it contains `default` and `supported`, and
+ * includes `aliases` only if `config.locales.aliases` has at least one key.
+ *
+ * @param config - The parsed MDCMS configuration to convert into a JSON snapshot
+ * @returns A JSON object representing the minimal raw config snapshot with conditional keys as described above
+ */
 export function toRawConfigSnapshot(config: ParsedMdcmsConfig): JsonObject {
   return {
     project: config.project,

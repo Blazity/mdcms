@@ -48,6 +48,18 @@ import {
 import { validateReferenceFieldIdentities } from "./reference-validation.js";
 import { matchesDeletedListVisibility } from "./visibility.js";
 
+/**
+ * Creates a ContentStore implementation backed by the provided Drizzle SQL database.
+ *
+ * The returned store implements content CRUD, versioning, publication, translation and listing
+ * operations for a project/environment scope (e.g., getSchema, create, list, getOverviewCounts,
+ * getById, update, softDelete, restore, listVersions, getVersion, restoreVersion, publish, unpublish).
+ * Update operations support optimistic concurrency via `options.expectedDraftRevision` and many write
+ * operations validate schema sync and enforce path/translation conflicts and reference integrity.
+ *
+ * @param options - Factory options containing the Drizzle `db` instance used for all persistence.
+ * @returns A ContentStore that performs content operations against the given database.
+ */
 export function createDatabaseContentStore(
   options: CreateDatabaseContentStoreOptions,
 ): ContentStore {

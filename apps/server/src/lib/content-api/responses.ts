@@ -167,6 +167,13 @@ export function toContentDocument(
   };
 }
 
+/**
+ * Create a ContentVersionDocument from a documentVersions row and the given scope.
+ *
+ * @param scope - Content scope containing `project` and `environment`
+ * @param row - A row selected from the `documentVersions` table
+ * @returns A ContentVersionDocument containing identifiers, project/environment, versioning and routing fields, content format, ISO-formatted `publishedAt`, `publishedBy`, optional `changeSummary`, `frontmatter`, and `body`
+ */
 export function toContentVersionDocument(
   scope: ContentScope,
   row: typeof documentVersions.$inferSelect,
@@ -189,6 +196,15 @@ export function toContentVersionDocument(
   };
 }
 
+/**
+ * Filter frontmatter to only the keys declared in a schema's fields.
+ *
+ * If `schema` is `undefined`, the original `frontmatter` is returned unchanged.
+ *
+ * @param frontmatter - The frontmatter object to filter
+ * @param schema - Schema snapshot whose `fields` define allowed keys; when omitted, no filtering is performed
+ * @returns The filtered frontmatter containing only keys present in `schema.fields`, or the original `frontmatter` if `schema` is `undefined`
+ */
 export function stripUnknownFrontmatterFields(
   frontmatter: Record<string, unknown>,
   schema: SchemaRegistryTypeSnapshot | undefined,
@@ -206,6 +222,15 @@ export function stripUnknownFrontmatterFields(
   return stripped;
 }
 
+/**
+ * Create a RuntimeError representing a content path conflict for a given path and locale.
+ *
+ * @param input - Details about the conflicting content
+ * @param input.path - The content path that conflicts with an existing document
+ * @param input.locale - The locale of the conflicting content
+ * @param input.conflictDocumentId - Optional identifier of the existing conflicting document
+ * @returns A RuntimeError with code `CONTENT_PATH_CONFLICT`, HTTP status 409, and `details` containing `conflictDocumentId`, `path`, and `locale`
+ */
 export function buildContentPathConflict(input: {
   path: string;
   locale: string;

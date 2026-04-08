@@ -107,6 +107,14 @@ const DEFAULT_COMMANDS: CliCommand[] = [
   createStatusCommand(),
 ];
 
+/**
+ * Validates and normalizes an optional CLI flag value.
+ *
+ * @param value - The raw flag value to normalize; may be `undefined`.
+ * @param flag - The flag name used in error messages when the value is invalid.
+ * @returns The trimmed string, or `undefined` if `value` was `undefined`.
+ * @throws RuntimeError with code `INVALID_INPUT` if `value` is empty after trimming.
+ */
 function parseOptionalValue(
   value: string | undefined,
   flag: string,
@@ -269,6 +277,26 @@ export function createCommandRegistry(
   return registry;
 }
 
+/**
+ * Determine the effective server URL, project, environment, and API key for CLI execution.
+ *
+ * The values are resolved in this priority order: explicit CLI flags in `input.global`, environment
+ * variables from `input.env` (parsed via `parseOptionalValue`), then `input.config` fields.
+ * When `resolveStoredApiKey` is provided and both project and environment are resolved, it will be
+ * consulted to obtain a stored API key which is used only if no API key is provided via flags or env.
+ *
+ * @param input - Resolution inputs and options:
+ *   - `global`: CLI global flags that take highest precedence.
+ *   - `env`: process environment variables (MDCMS_*).
+ *   - `config`: parsed CLI config file values.
+ *   - `resolveStoredApiKey`: optional callback to retrieve a stored API key for a given server/project/environment; only invoked when both project and environment are present.
+ *   - `requiresTarget`: when true, the function enforces that `serverUrl`, `project`, and `environment` are present.
+ *
+ * @returns An object with resolved `serverUrl`, `project`, `environment`, and optionally `apiKey`.
+ *
+ * @throws RuntimeError with code `INVALID_CONFIG` when `requiresTarget` is true and no server URL can be resolved.
+ * @throws RuntimeError with code `MISSING_TARGET` when `requiresTarget` is true and either project or environment (or both) cannot be resolved; the error message describes how to supply the missing values.
+ */
 export async function resolveExecutionContext(input: {
   global: CliGlobalOptions;
   env: NodeJS.ProcessEnv;
@@ -371,6 +399,11 @@ function writeCliError(stderr: Writer, error: unknown): void {
   stderr.write(`${envelope.code}: ${envelope.message}\n`);
 }
 
+/**
+ * Prompts the user to confirm an action with a Yes/No choice.
+ *
+ * @returns `true` if the user selects Yes, `false` if the user selects No or when stdin is not a TTY.
+ */
 async function defaultConfirmPrompt(message: string): Promise<boolean> {
   if (!processStdin.isTTY) {
     return false;
@@ -385,6 +418,15 @@ async function defaultConfirmPrompt(message: string): Promise<boolean> {
   });
 }
 
+/**
+ * Prompts the user to select multiple choices from a labeled list.
+ *
+ * If the process stdin is not a TTY, returns an empty array without prompting.
+ *
+ * @param message - The prompt message displayed to the user
+ * @param choices - Array of choices where `label` is shown to the user and `value` is returned when selected
+ * @returns An array of selected choice values (empty if none selected or when stdin is not a TTY)
+ */
 async function defaultMultiSelectPrompt<T extends string>(
   message: string,
   choices: Array<{ label: string; value: T }>,
@@ -399,6 +441,14 @@ async function defaultMultiSelectPrompt<T extends string>(
   });
 }
 
+/**
+ * Runs each preflight hook in order, awaiting each before proceeding.
+ *
+ * Executes the provided hooks sequentially with the given `context`. If a hook throws a `RuntimeError`, it is rethrown unchanged. If a hook throws any other error, this function throws a `RuntimeError` with code `CLI_PREFLIGHT_FAILED`, status code `500`, and `details` containing the failing `hookId` and, when available, the original error `cause` message.
+ *
+ * @param hooks - Array of preflight hooks to run, invoked in sequence.
+ * @param context - Input passed to each hook, containing `actionId` and arbitrary `input`.
+ */
 async function runPreflightHooks(
   hooks: readonly CliPreflightHook[],
   context: { actionId: string; input: unknown },
@@ -429,6 +479,13 @@ async function runPreflightHooks(
   }
 }
 
+/**
+ * Parse CLI arguments, resolve runtime/config/target, run preflight hooks, and execute the selected command.
+ *
+ * @param argv - The command-line arguments to parse (typically process.argv.slice(2)).
+ * @param options - Optional dependency-injection overrides and runtime options used by the CLI.
+ * @returns The process exit code: `0` on success, `1` for CLI-level errors or invalid usage, or another numeric code returned by the executed command.
+ */
 export async function runMdcmsCli(
   argv: string[],
   options: RunMdcmsCliOptions = {},

@@ -275,6 +275,19 @@ export function parseRestoreTargetStatus(
   });
 }
 
+/**
+ * Validates a content path and returns the trimmed value.
+ *
+ * Ensures the path is non-empty, does not start or end with a slash, and does not contain path-traversal segments (`..`).
+ *
+ * @param path - The raw content path to validate
+ * @returns The trimmed path string
+ * @throws RuntimeError with `code: "INVALID_INPUT"` and `statusCode: 400` when:
+ *   - the path is empty (details: `{ field: "path" }`),
+ *   - the path ends with a trailing slash (details include `{ field: "path", value }`),
+ *   - the path starts with a leading slash (details include `{ field: "path", value }`),
+ *   - the path contains `..` path-traversal segments (details include `{ field: "path", value }`).
+ */
 export function validateContentPath(path: string): string {
   const trimmed = path.trim();
 

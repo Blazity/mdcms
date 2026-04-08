@@ -33,6 +33,12 @@ function toScopeKey(project: string, environment: string): string {
   return `${project}::${environment}`;
 }
 
+/**
+ * Creates an in-memory ContentStore implementation backed by per-scope maps.
+ *
+ * @param options - Optional settings for the in-memory store. Currently supports `schemaScopes` to preload schema snapshots per project/environment.
+ * @returns A ContentStore implementation that manages documents, published snapshots, schemas, and supports scoped create, read, update, delete, versioning, publish/unpublish, and listing operations. 
+ */
 export function createInMemoryContentStore(
   options: CreateInMemoryContentStoreOptions = {},
 ): ContentStore {

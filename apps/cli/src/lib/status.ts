@@ -50,6 +50,11 @@ type DriftEntry = {
   serverRevision?: number;
 };
 
+/**
+ * Render the help text for the `mdcms status` CLI command.
+ *
+ * @returns The multi-line help string shown when running `mdcms status --help` or `mdcms status -h`
+ */
 export function renderStatusHelp(): string {
   return [
     "Usage: mdcms status",
@@ -62,6 +67,12 @@ export function renderStatusHelp(): string {
   ].join("\n");
 }
 
+/**
+ * Builds HTTP request headers for API calls using values from the CLI context.
+ *
+ * @param context - CLI command context containing project, environment, and optional apiKey
+ * @returns A Headers object containing `content-type`, `x-mdcms-project`, `x-mdcms-environment`, and `authorization` if `apiKey` is present
+ */
 function toRequestHeaders(context: CliCommandContext): Headers {
   const headers = new Headers({
     "content-type": "application/json",
@@ -76,6 +87,16 @@ function toRequestHeaders(context: CliCommandContext): Headers {
   return headers;
 }
 
+/**
+ * Builds a URL-encoded query string for fetching scoped content.
+ *
+ * @param input.project - The project identifier to include in the scope
+ * @param input.environment - The environment name to include in the scope
+ * @param input.draft - Whether to include draft documents (`true` → "true", `false` → "false")
+ * @param input.limit - Maximum number of items per page
+ * @param input.offset - Pagination offset
+ * @returns A URL-encoded query string containing `project`, `environment`, `draft`, `limit`, and `offset`
+ */
 function encodeScopeQuery(input: {
   project: string;
   environment: string;
@@ -92,6 +113,15 @@ function encodeScopeQuery(input: {
   return query.toString();
 }
 
+/**
+ * Fetches a single paginated page of content documents from the server for the current project and environment.
+ *
+ * @param context - CLI context containing server URL, project, environment, and fetcher
+ * @param input.draft - If `true`, request draft content; if `false`, request published content
+ * @param input.offset - Zero-based index of the first item to return
+ * @param input.limit - Maximum number of items to return
+ * @returns An object with `data`, an array of content document payloads, and `pagination` containing `hasMore`, `offset`, `limit`, and `total`
+ */
 async function fetchContentPage(
   context: CliCommandContext,
   input: {
@@ -152,6 +182,12 @@ async function fetchContentPage(
   };
 }
 
+/**
+ * Fetches all content documents from the server for the specified draft scope.
+ *
+ * @param input - Options for the fetch operation; `draft` determines whether to request draft documents (`true`) or published documents (`false`)
+ * @returns The aggregated list of content document payloads retrieved across all paginated server responses
+ */
 async function fetchAllContent(
   context: CliCommandContext,
   input: { draft: boolean },
@@ -178,6 +214,19 @@ async function fetchAllContent(
   return rows;
 }
 
+/**
+ * Compute the expected local filesystem path for a server content document using the configured type mapping.
+ *
+ * Resolves the document's path and format into a local filename, applying locale-based filename suffix when the
+ * content type is configured as localized.
+ *
+ * @param document - Server document payload; uses `type`, `path`, `format`, and `locale` to construct the path.
+ * @returns The relative local path (no leading slashes) including file extension, and `<locale>` inserted before the
+ * extension for localized types (e.g. `path/to/file.en.md`).
+ * @throws RuntimeError with code `TYPE_MAPPING_MISSING` if the document's type has no mapping in the CLI config.
+ * @throws RuntimeError with code `INVALID_REMOTE_DOCUMENT` if a localized type is expected but the document's `locale`
+ * is empty.
+ */
 function resolveLocalPathForDocument(
   context: CliCommandContext,
   document: ContentDocumentPayload,
@@ -217,6 +266,13 @@ function resolveLocalPathForDocument(
   return `${basePath}.${extension}`;
 }
 
+/**
+ * Compute the content hash for the file at the given absolute filesystem path.
+ *
+ * @param absolutePath - Absolute filesystem path of the file to read
+ * @returns The content hash string, or `undefined` if the file does not exist
+ * @throws Propagates filesystem errors other than "file not found" (ENOENT)
+ */
 async function readLocalFileHash(
   absolutePath: string,
 ): Promise<string | undefined> {
@@ -231,6 +287,20 @@ async function readLocalFileHash(
   }
 }
 
+/**
+ * Computes content drift between local manifest state and server documents.
+ *
+ * Compares each server document to the provided scoped manifest and local files,
+ * producing one DriftEntry per observed difference (or unchanged item). Entries
+ * classify documents into categories such as `unchanged`, `modified_locally`,
+ * `modified_on_server`, `both_modified`, `new_on_server`, `deleted_on_server`,
+ * and `moved_renamed`.
+ *
+ * @param input.context - CLI command context (used to resolve local paths and CWD)
+ * @param input.serverDocuments - Server-side content documents to compare
+ * @param input.manifest - Scoped manifest mapping document IDs to local manifest entries
+ * @returns An array of DriftEntry objects describing the synchronization status for each document
+ */
 async function computeDriftAsync(input: {
   context: CliCommandContext;
   serverDocuments: ContentDocumentPayload[];
@@ -350,6 +420,12 @@ const DISPLAY_ORDER: DriftCategory[] = [
   "unchanged",
 ];
 
+/**
+ * Group drift entries by their `DriftCategory`.
+ *
+ * @param entries - The list of drift entries to group
+ * @returns A Map where each key is a `DriftCategory` and each value is an array of `DriftEntry` items in that category
+ */
 function groupByCategory(
   entries: DriftEntry[],
 ): Map<DriftCategory, DriftEntry[]> {
@@ -364,6 +440,14 @@ function groupByCategory(
   return groups;
 }
 
+/**
+ * Format a single-line human-readable detail for a drift entry.
+ *
+ * Chooses a display label in the order `localPath`, `serverPath`, then `documentId`, and appends revision or path-change details appropriate to the entry's category.
+ *
+ * @param entry - The drift entry to format
+ * @returns A single-line string (prefixed with four spaces) describing the entry and any relevant revision or path information
+ */
 function formatEntryDetail(entry: DriftEntry): string {
   const path = entry.localPath ?? entry.serverPath ?? entry.documentId;
 
@@ -385,10 +469,27 @@ function formatEntryDetail(entry: DriftEntry): string {
   }
 }
 
+/**
+ * Indents a revision/detail string for aligned display in the report output.
+ *
+ * @param info - The revision or detail text to indent
+ * @returns The input string prefixed with seven spaces
+ */
 function padRevisionInfo(info: string): string {
   return `       ${info}`;
 }
 
+/**
+ * Render a grouped content drift report to the CLI's stdout.
+ *
+ * Groups the provided drift entries by category, prints a "Content" header,
+ * and for each non-empty category (in DISPLAY_ORDER) writes a count and
+ * per-entry details to `context.stdout`. The `unchanged` category is shown
+ * as a single summary line with a file count.
+ *
+ * @param context - The CLI command context providing the `stdout` stream used for output
+ * @param entries - Array of drift entries to include in the report
+ */
 function renderDriftReport(
   context: CliCommandContext,
   entries: DriftEntry[],
@@ -420,6 +521,12 @@ function renderDriftReport(
 
 type SchemaDriftStatus = "in_sync" | "drifted" | "no_state";
 
+/**
+ * Determines whether the local schema has diverged from the last saved schema state.
+ *
+ * @param context - CLI context (provides `cwd`, `project`, `environment`, and `config`) used to locate saved state and compute the current schema hash
+ * @returns `{ status: 'in_sync', syncedAt }` if the current schema hash matches the saved state; `{ status: 'drifted' }` if the hashes differ; `{ status: 'no_state' }` if no saved state exists or the current hash cannot be computed
+ */
 async function detectSchemaDrift(
   context: CliCommandContext,
 ): Promise<{ status: SchemaDriftStatus; syncedAt?: string }> {
@@ -450,6 +557,15 @@ async function detectSchemaDrift(
   return { status: "drifted" };
 }
 
+/**
+ * Writes a human-readable schema synchronization report to the CLI output.
+ *
+ * @param context - CLI execution context whose stdout is used for printing the report
+ * @param result - Schema drift check result; `status` is one of:
+ *   - `"in_sync"`: schema matches the last synced state (optionally provides `syncedAt`)
+ *   - `"drifted"`: local schema differs from the last synced state
+ *   - `"no_state"`: no previously synced schema state was found
+ */
 function renderSchemaReport(
   context: CliCommandContext,
   result: { status: SchemaDriftStatus; syncedAt?: string },
@@ -474,6 +590,12 @@ function renderSchemaReport(
   }
 }
 
+/**
+ * Execute the `status` CLI command: fetch remote draft content, compare with local manifest/files and schema, and print a drift report.
+ *
+ * @param context - CLI execution context (provides server, project, environment, working directory, args, and IO streams); used to fetch remote content, load the scoped manifest, read local files, and write reports to stdout.
+ * @returns `0` when neither content nor schema drift is detected, `1` if any content or schema drift is found.
+ */
 export async function runStatusCommand(
   context: CliCommandContext,
 ): Promise<number> {
@@ -515,6 +637,11 @@ export async function runStatusCommand(
   return hasContentDrift || hasSchemaDrift ? 1 : 0;
 }
 
+/**
+ * Create the CLI status command descriptor used to register the `status` command.
+ *
+ * @returns A `CliCommand` object with name `"status"`, a brief description, and the `run` handler.
+ */
 export function createStatusCommand(): CliCommand {
   return {
     name: "status",

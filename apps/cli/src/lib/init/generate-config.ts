@@ -10,18 +10,38 @@ export type GenerateConfigInput = {
   localeConfig: LocaleConfig | null;
 };
 
+/**
+ * Determine whether any field in the provided inferred types represents a reference.
+ *
+ * @param types - The inferred types to scan for reference-typed fields
+ * @returns `true` if any field's `zodType` begins with `"reference("`, `false` otherwise
+ */
 function hasReferences(types: InferredType[]): boolean {
   return types.some((t) =>
     Object.values(t.fields).some((f) => f.zodType.startsWith("reference(")),
   );
 }
 
+/**
+ * Determines whether any field across the provided types uses a `z.` Zod type.
+ *
+ * @param types - Array of inferred types to scan for Zod-typed fields
+ * @returns `true` if at least one field's `zodType` starts with `"z."`, `false` otherwise
+ */
 function hasZodFields(types: InferredType[]): boolean {
   return types.some((t) =>
     Object.values(t.fields).some((f) => f.zodType.startsWith("z.")),
   );
 }
 
+/**
+ * Render the expression string for a field's Zod type, appending `.optional()` when the field is optional.
+ *
+ * @param field - Object containing the field's Zod expression and optionality
+ *   - `zodType`: The Zod type expression as a string (e.g., `"z.string()"`)
+ *   - `optional`: Whether the field should be marked optional
+ * @returns The `zodType` string with `.optional()` appended if `optional` is `true`, otherwise the original `zodType`
+ */
 function renderFieldValue(field: {
   zodType: string;
   optional: boolean;
@@ -33,6 +53,12 @@ function renderFieldValue(field: {
   return base;
 }
 
+/**
+ * Render a `defineType(...)` block for an inferred content type.
+ *
+ * @param type - The inferred type to render; its `name`, `directory`, optional `localized` flag, and `fields` map are used to build the block.
+ * @returns A formatted string containing a `defineType("<name>", { ... })` entry (including `directory`, optional `localized`, and `fields`) suitable for insertion into the generated config `types` array.
+ */
 function renderType(type: InferredType): string {
   const lines: string[] = [];
   lines.push(`    defineType("${type.name}", {`);
@@ -54,6 +80,14 @@ function renderType(type: InferredType): string {
   return lines.join("\n");
 }
 
+/**
+ * Generate a TypeScript source string for an MDCMS CLI configuration from the given input.
+ *
+ * Builds a complete `export default defineConfig({ ... })` source including conditional imports (`reference`, `z`), project/environment/serverUrl, contentDirectories, optional `locales` (default, supported, aliases), an `environments` entry for the given environment, and a `types` array rendered from the provided inferred types.
+ *
+ * @param input - Configuration input containing project metadata, content directories, inferred types, and optional locale settings
+ * @returns The generated TypeScript source text for the configuration file
+ */
 export function generateConfigSource(input: GenerateConfigInput): string {
   const lines: string[] = [];
 

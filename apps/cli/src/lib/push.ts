@@ -90,6 +90,15 @@ type ContentDocumentPayload = Pick<
   | "publishedVersion"
 >;
 
+/**
+ * Parse CLI tokens for the `push` command into a PushOptions object.
+ *
+ * Recognizes `--force`, `--published`, `--validate`, and help flags (`--help`, `-h`).
+ *
+ * @param args - The array of CLI tokens supplied to the `push` command
+ * @returns An object with boolean flags: `force`, `published`, and `validate`
+ * @throws RuntimeError with code `INVALID_INPUT` when an unknown flag is encountered
+ */
 function parsePushOptions(args: string[]): PushOptions {
   for (const token of args) {
     if (
@@ -118,6 +127,11 @@ function parsePushOptions(args: string[]): PushOptions {
   };
 }
 
+/**
+ * Render the help and usage text for the `mdcms push` CLI command.
+ *
+ * @returns A multi-line string describing command usage, behavior, and available options.
+ */
 function renderPushHelp(): string {
   return [
     "Usage: mdcms push [--force] [--validate] [--published]",
@@ -139,6 +153,13 @@ function renderPushHelp(): string {
   ].join("\n");
 }
 
+/**
+ * Builds HTTP headers for API requests including project, environment, schema hash, and optional authorization.
+ *
+ * @param context - CLI command context containing `project`, `environment`, and optional `apiKey`
+ * @param schemaHash - Local schema hash to include in `x-mdcms-schema-hash`
+ * @returns A Headers instance with `content-type: application/json`, `x-mdcms-project`, `x-mdcms-environment`, `x-mdcms-schema-hash`, and `authorization: Bearer <apiKey>` when `context.apiKey` is present
+ */
 function toRequestHeaders(
   context: CliCommandContext,
   schemaHash: string,
@@ -157,10 +178,22 @@ function toRequestHeaders(
   return headers;
 }
 
+/**
+ * Compute the SHA-256 digest of the provided content as a lowercase hexadecimal string.
+ *
+ * @returns The lowercase hex-encoded SHA-256 digest of `content`
+ */
 export function hashContent(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
+/**
+ * Determine the markdown file format from a file path.
+ *
+ * @param path - The filesystem path or filename to inspect
+ * @returns `"md"` if the path ends with `.md`, `"mdx"` if the path ends with `.mdx`
+ * @throws RuntimeError with code `UNSUPPORTED_EXTENSION` when the file extension is not `.md` or `.mdx`
+ */
 export function parseFileFormat(path: string): "md" | "mdx" {
   const extension = extname(path).toLowerCase();
 
@@ -180,6 +213,13 @@ export function parseFileFormat(path: string): "md" | "mdx" {
   });
 }
 
+/**
+ * Parses a Markdown/MDX file into its YAML frontmatter and body.
+ *
+ * @param content - The full text content of a Markdown or MDX file
+ * @returns An object with `frontmatter` containing parsed YAML key/value pairs (or `{}` if absent) and `body` containing the remaining document text after the frontmatter block
+ * @throws {RuntimeError} `INVALID_LOCAL_DOCUMENT` if a starting `---` frontmatter is not closed or if the YAML frontmatter does not parse to an object map
+ */
 export function parseMarkdownDocument(content: string): {
   frontmatter: Record<string, unknown>;
   body: string;
@@ -226,6 +266,12 @@ export function parseMarkdownDocument(content: string): {
   };
 }
 
+/**
+ * Normalizes a directory path by removing any leading or trailing slashes.
+ *
+ * @param directory - The directory path which may include leading or trailing slashes; pass `undefined` to represent no directory.
+ * @returns The directory path without leading or trailing slashes, or an empty string if `directory` is `undefined` or empty.
+ */
 function normalizeDirectory(directory: string | undefined): string {
   if (!directory) {
     return "";
@@ -234,6 +280,14 @@ function normalizeDirectory(directory: string | undefined): string {
   return directory.replace(/^\/+/, "").replace(/\/+$/, "");
 }
 
+/**
+ * Selects the content type config that best matches a file path (without extension).
+ *
+ * @param typeConfigs - Available content type configurations to choose from.
+ * @param pathWithoutExtension - File path with directory segments but without the `.md`/`.mdx` extension (e.g., `blog/2020-01-01-post`).
+ * @returns The `CliContentTypeConfig` whose normalized `directory` exactly matches or is the longest prefix of `pathWithoutExtension`; a config with an empty `directory` is used only as a fallback.
+ * @throws RuntimeError with code `TYPE_MAPPING_MISSING` if no type configuration matches the provided path.
+ */
 export function pickTypeConfigForPath(
   typeConfigs: readonly CliContentTypeConfig[],
   pathWithoutExtension: string,
@@ -277,6 +331,21 @@ export function pickTypeConfigForPath(
   return selected;
 }
 
+/**
+ * Resolve the content type, canonical path, and locale for creating a document from a local file path.
+ *
+ * Determines which configured content type maps to `input.path`, strips the `.md`/`.mdx`
+ * extension, and returns the target `type`, normalized `path` (without locale suffix for localized types),
+ * and `locale` (extracted from the filename for localized types, or `"en"` for non-localized types).
+ *
+ * @param input.path - Local file path including the `.md` or `.mdx` extension.
+ * @param input.format - File format, either `"md"` or `"mdx"`.
+ * @param input.types - Available CLI content type configurations used to map the path to a content type.
+ * @returns The resolved `{ type, path, locale }` to use in a create request.
+ * @throws RuntimeError — `UNSUPPORTED_EXTENSION` if `input.path` does not end with `.md` or `.mdx`.
+ * @throws RuntimeError — `TYPE_MAPPING_MISSING` if no type config matches the file path (propagated from `pickTypeConfigForPath`).
+ * @throws RuntimeError — `INVALID_LOCAL_DOCUMENT` if the chosen type is localized but the filename does not include a valid locale segment (expected `<path>.<locale>.<ext>`).
+ */
 export function resolveCreatePayload(input: {
   path: string;
   format: "md" | "mdx";
@@ -409,6 +478,20 @@ function parseRemoteError(
   };
 }
 
+/**
+ * Send an update request for a tracked local document and map server responses to structured outcomes.
+ *
+ * Sends a PUT to the content API with the candidate's format, frontmatter, body, and manifest revisions. Interprets successful responses, 404 (missing), and specific 409 conflict codes into distinct result kinds.
+ *
+ * @param candidate - The tracked document candidate to update (includes documentId, manifestEntry revisions, parsed frontmatter, body, format, and local hash)
+ * @param schemaHash - Local schema hash to attach to request headers for server-side schema validation
+ * @returns One of:
+ *  - `{ kind: "updated", remote: ContentDocumentPayload }` when the server updated the document and returned its representation
+ *  - `{ kind: "missing" }` when the server reports the document ID does not exist
+ *  - `{ kind: "stale", code, message }` when the server rejects the update due to a stale draft revision
+ *  - `{ kind: "schema_mismatch", code, message }` when the server reports the local schema hash does not match the server's expected schema
+ *  - `{ kind: "path_conflict", code, message }` when the server reports the manifest path conflicts with an existing document (advises running `cms pull`)
+ */
 async function updateExistingDocument(
   context: CliCommandContext,
   candidate: PushCandidate,
@@ -498,6 +581,16 @@ async function updateExistingDocument(
   });
 }
 
+/**
+ * Recreates a missing server document from a local tracked file and returns the created remote document or a structured conflict outcome.
+ *
+ * @param context - CLI execution context (used for fetcher, config, and server URL)
+ * @param candidate - Tracked push candidate containing the local file contents, frontmatter, manifest entry, and format
+ * @param schemaHash - Local schema hash propagated to the server via request headers
+ * @returns `{ kind: "created"; remote: ContentDocumentPayload }` when creation succeeds; `{ kind: "schema_mismatch"; code: string; message: string }` when the server rejects the payload due to schema hash mismatch; `{ kind: "path_conflict"; code: string; message: string }` when the target path already exists on the server under a different document ID
+ * @throws {RuntimeError} `TYPE_MAPPING_MISSING` if no type mappings are configured locally
+ * @throws {RuntimeError} for other remote-side errors returned by the server
+ */
 async function createDocumentFromLocalFile(
   context: CliCommandContext,
   candidate: PushCandidate,
@@ -577,6 +670,14 @@ async function createDocumentFromLocalFile(
   return { kind: "created", remote: parseRemoteDocument(body) };
 }
 
+/**
+ * Create a new content document on the server from an untracked local file candidate.
+ *
+ * @param candidate - Untracked local file candidate containing resolved `resolvedType`, `resolvedPath`, `resolvedLocale`, `format`, `frontmatter`, and `body`
+ * @param schemaHash - Local schema hash included in the request headers to inform server-side validation
+ * @returns `{ kind: "created", remote }` when creation succeeds; `{ kind: "schema_mismatch", code, message }` when the server rejects the payload due to a schema hash mismatch; `{ kind: "path_conflict", code, message }` when the target path already exists on the server
+ * @throws RuntimeError - If the server returns an error not mapped to `schema_mismatch` or `path_conflict`; the error includes the server-provided code, message, and statusCode
+ */
 async function createNewDocument(
   context: CliCommandContext,
   candidate: NewFileCandidate,
@@ -640,6 +741,14 @@ async function createNewDocument(
   return { kind: "created", remote: parseRemoteDocument(body) };
 }
 
+/**
+ * Delete a remote content document by its document ID.
+ *
+ * @param documentId - The ID of the document to delete
+ * @param schemaHash - Schema hash to include in the request headers for server-side schema validation
+ * @returns `{ kind: "deleted" }` if the deletion succeeded, `{ kind: "already_gone" }` if the document was not found
+ * @throws RuntimeError when the server responds with an error; the error's `code`, `message`, and `statusCode` mirror the remote error
+ */
 async function deleteDocument(
   context: CliCommandContext,
   documentId: string,
@@ -671,6 +780,14 @@ async function deleteDocument(
   });
 }
 
+/**
+ * Prints a human-readable push plan summarizing changed, new, deleted, and unchanged documents for the current project/environment.
+ *
+ * @param candidates - Tracked documents that have local changes and are candidates for update on the server.
+ * @param newCandidates - Untracked local files discovered under content directories that are candidates for creation.
+ * @param deletionCandidates - Tracked manifest entries whose local files are missing and are candidates for deletion on the server.
+ * @param summary - Aggregate counts: `trackedCount` is the total number of tracked documents in the manifest; `unchangedCount` is the number of tracked documents with no local changes.
+ */
 function printPushPlan(
   context: CliCommandContext,
   candidates: PushCandidate[],
@@ -715,6 +832,18 @@ function printPushPlan(
   context.stdout.write(`Unchanged (skipped): ${summary.unchangedCount}\n`);
 }
 
+/**
+ * Prints a concise per-document validation summary to the CLI output streams.
+ *
+ * Writes a header line indicating the number of validated documents, then for each
+ * `DocumentValidationResult` prints:
+ * - a success line to stdout when there are no errors or warnings,
+ * - an error summary line to stderr when there are errors (each error printed to stderr),
+ * - a warning summary line to stdout when there are warnings (each warning printed to stdout).
+ *
+ * @param context - CLI context whose stdout and stderr streams will be used for output
+ * @param results - Array of validation results containing `path`, `errors`, and `warnings`
+ */
 function printValidationResults(
   context: CliCommandContext,
   results: DocumentValidationResult[],
@@ -744,6 +873,12 @@ function printValidationResults(
   }
 }
 
+/**
+ * Prints a formatted summary of push operation outcomes and follow-up guidance for common failure reasons.
+ *
+ * @param context - CLI context used for writing output
+ * @param results - Ordered list of per-document push results to display
+ */
 function printPushResults(
   context: CliCommandContext,
   results: PushResult[],
@@ -792,6 +927,21 @@ function printPushResults(
   }
 }
 
+/**
+ * Builds a push plan by comparing the scoped manifest to local workspace files and by scanning configured content directories for untracked or missing files.
+ *
+ * The returned plan groups:
+ * - changed candidates: tracked files whose local content differs from the manifest,
+ * - new candidates: untracked local files that could be created on the server (type/locale/path resolution may fail and those files are skipped),
+ * - deletion candidates: manifest-tracked entries whose local file is missing,
+ * and includes counts of tracked and unchanged items.
+ *
+ * This function may write warnings to `context.stderr` for untracked files that cannot be mapped to a content type.
+ *
+ * @param context - CLI command context (used for cwd, config, and stderr)
+ * @param manifest - The currently loaded scoped manifest to compare against
+ * @returns A PushPlan with `changedCandidates`, `newCandidates`, `deletionCandidates`, `trackedCount`, and `unchangedCount`
+ */
 async function buildPushPlan(
   context: CliCommandContext,
   manifest: ScopedManifest,
@@ -910,6 +1060,19 @@ async function buildPushPlan(
   };
 }
 
+/**
+ * Execute the prepared push plan against the server and persist manifest changes.
+ *
+ * Performs three phases in order: update tracked changed documents, create selected new documents, and delete selected documents that are missing locally. After each successful per-document operation the local scoped manifest is updated and flushed atomically to disk. Each operation contributes a `PushResult` entry; failures are counted but processing continues for remaining items.
+ *
+ * @param manifestPath - Filesystem path to the scoped manifest that will be updated
+ * @param manifest - The currently loaded scoped manifest snapshot used as the starting state
+ * @param candidates - Tracked document candidates that have local changes to update on the server
+ * @param newCandidates - Untracked local file candidates selected for creation on the server
+ * @param deletionCandidates - Tracked manifest entries selected for deletion on the server because the local file is missing
+ * @param schemaHash - Resolved local schema hash to include with server requests for schema-aware conflict handling
+ * @returns An object with `results`, the ordered per-document outcomes, and `failures`, the count of operations that failed
+ */
 async function applyPush(
   context: CliCommandContext,
   manifestPath: string,
@@ -1179,6 +1342,13 @@ async function applyPush(
   };
 }
 
+/**
+ * Execute the `mdcms push` CLI command: build and present a push plan, optionally validate frontmatter, interactively (or forcibly) select new/deletion candidates, perform server updates/creates/deletes in phases with incremental manifest updates, and print results.
+ *
+ * @param context - CLI execution context (arguments, I/O, config, and workspace info)
+ * @returns `0` when the push completed without failures; `1` when validation failed or any push operations failed
+ * @throws RuntimeError when CLI input is invalid, the local schema state is missing, or the user cancels the push
+ */
 export async function runPushCommand(
   context: CliCommandContext,
 ): Promise<number> {

@@ -22,6 +22,13 @@ const FRONTMATTER_LOCALE_KEYS = ["locale", "lang", "language"] as const;
 
 const LOCALE_PATTERN = /^[a-z]{2,3}(?:[-_][a-z]{2,4})?$/i;
 
+/**
+ * Determines a locale hint for a content file using frontmatter, filename suffix, or folder segment.
+ *
+ * @param relativePath - The file path relative to the scanned root (forward-slash separated).
+ * @param frontmatter - Parsed frontmatter object from the file.
+ * @returns A `LocaleHint` (`{ source: "frontmatter" | "suffix" | "folder"; rawValue: string }`) when a locale token is found, or `null` if none is detected.
+ */
 function detectLocaleHint(
   relativePath: string,
   frontmatter: Record<string, unknown>,
@@ -58,6 +65,17 @@ function detectLocaleHint(
   return null;
 }
 
+/**
+ * Recursively walks `dir`, discovers `.md` and `.mdx` files, and appends structured discovery entries to `results`.
+ *
+ * Discovered entries include a normalized forward-slash `relativePath` (relative to `rootDir`), detected `format`
+ * (`"md"` or `"mdx"`), parsed `frontmatter` (empty if parsing fails), the `frontmatterKeys` array, and a `localeHint`
+ * if one can be inferred. Directories listed in `SKIP_DIRS` are skipped.
+ *
+ * @param dir - Directory path to traverse
+ * @param rootDir - Root directory used to compute relative paths for discovered files
+ * @param results - Array that will be mutated: discovered file entries are pushed into this array
+ */
 async function walkDirectory(
   dir: string,
   rootDir: string,
@@ -110,6 +128,12 @@ async function walkDirectory(
   }
 }
 
+/**
+ * Scan a directory tree for Markdown and MDX files and return metadata about each discovered file.
+ *
+ * @param cwd - Root directory path to scan
+ * @returns An array of discovered files (each including `relativePath`, `format`, parsed `frontmatter`, `frontmatterKeys`, and optional `localeHint`), sorted by `relativePath`
+ */
 export async function scanContentFiles(cwd: string): Promise<DiscoveredFile[]> {
   const results: DiscoveredFile[] = [];
   await walkDirectory(cwd, cwd, results);

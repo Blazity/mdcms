@@ -39,6 +39,14 @@ export type LoadedCliConfig = CliConfig &
     types: CliContentTypeConfig[];
   };
 
+/**
+ * Load and parse the CLI configuration file from the given working directory.
+ *
+ * @param options.cwd - Directory used to resolve the configuration file
+ * @param options.configPath - Optional path to the config file relative to `cwd`; defaults to `"mdcms.config.ts"`
+ * @returns An object containing `config`: the parsed CLI configuration and `configPath`: the resolved absolute path to the loaded config file
+ * @throws {RuntimeError} When the config file does not exist (`code: "CONFIG_NOT_FOUND"`, `statusCode: 404`) or when importing the file fails (`code: "CONFIG_LOAD_FAILED"`, `statusCode: 400`)
+ */
 export async function loadCliConfig(options: {
   cwd: string;
   configPath?: string;

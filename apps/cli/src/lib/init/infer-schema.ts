@@ -31,6 +31,12 @@ const KNOWN_SINGULARS: Record<string, string> = {
 
 const LOCALE_KEYS = new Set(["locale", "lang", "language"]);
 
+/**
+ * Derives a singular form from a collection name using known mappings and simple English suffix rules.
+ *
+ * @param name - The collection name to singularize (case-insensitive)
+ * @returns The singular lowercase form of `name` (e.g., `posts` → `post`, `categories` → `category`)
+ */
 function singularize(name: string): string {
   const lower = name.toLowerCase();
   if (KNOWN_SINGULARS[lower] !== undefined) {
@@ -45,6 +51,12 @@ function singularize(name: string): string {
   return lower;
 }
 
+/**
+ * Infer a Zod type expression string from a runtime value.
+ *
+ * @param value - The runtime value to inspect. If `value` is an array, the first non-null/undefined element is used to infer the element type.
+ * @returns One of the following Zod expressions as a string: `z.string()`, `z.number()`, `z.boolean()`, `z.array(z.<primitive>())`, or `z.unknown()`. For arrays, if no supported primitive element is found, `z.array(z.string())` is returned.
+ */
 function inferZodType(value: unknown): string {
   if (typeof value === "string") return "z.string()";
   if (typeof value === "number") return "z.number()";
@@ -59,6 +71,12 @@ function inferZodType(value: unknown): string {
   return "z.unknown()";
 }
 
+/**
+ * Infer schema types from the frontmatter of discovered files grouped by the provided directories.
+ *
+ * @param files - Discovered files whose `frontmatter` will be analyzed for field keys and sample values.
+ * @param selectedDirectories - Directories to group files by and for which to produce inferred types.
+ * @returns An array of `InferredType` objects for each directory that contains files; each entry includes the inferred singular `name`, `directory` path, `localized` flag (always `false`), `fields` mapping (each field contains a `zodType`, `optional: true`, and `samples` count), and `fileCount`.
 export function inferSchema(
   files: DiscoveredFile[],
   selectedDirectories: string[],

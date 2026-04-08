@@ -76,8 +76,10 @@ export type ServerRequestHandlerWithModulesResult = {
 };
 
 /**
- * createServerRequestHandlerWithModules composes the server runtime with
- * compile-time local module loading from @mdcms/modules.
+ * Build a server request handler wired with database, auth, stores, and locally loaded server modules.
+ *
+ * @param options - Optional configuration for environment, logging, module loading, module dependencies, and server handler options
+ * @returns An object containing `handler` (the ServerRequestHandler), `moduleLoadReport`, `dbConnection`, and `dal`
  */
 export function createServerRequestHandlerWithModules(
   options: CreateServerRequestHandlerWithModulesOptions = {},

@@ -103,6 +103,21 @@ function parseOverviewTypes(request: Request): string[] {
   });
 }
 
+/**
+ * Registers the content management HTTP routes on the given application/router.
+ *
+ * Mounts handlers under /api/v1/content (and subpaths) that implement listing,
+ * retrieval, versioning, creation, update, restoration, publishing, duplication,
+ * and deletion of content. Handlers perform authorization checks, CSRF
+ * verification where required, and convert store results to API responses;
+ * runtime errors are normalized by the internal error handler.
+ *
+ * @param app - An application or router object exposing optional `get`, `post`,
+ *   `put`, and `delete` methods used to register route handlers.
+ * @param options - Mount configuration and collaborators required by handlers
+ *   (for example: `store`, `authorize`, `requireCsrf`, `getWriteSchemaSyncState`,
+ *   `resolveUsers`, etc.).
+ */
 export function mountContentApiRoutes(
   app: unknown,
   options: MountContentApiRoutesOptions,

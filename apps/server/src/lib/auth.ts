@@ -1704,6 +1704,12 @@ function resolveAdminAllowlist(env: NodeJS.ProcessEnv): {
   };
 }
 
+/**
+ * Map an API key operation scope to its corresponding RBAC action.
+ *
+ * @param requiredScope - The API key operation scope to map
+ * @returns The RBAC action that corresponds to `requiredScope`, or `null` if no mapping exists
+ */
 function toRbacAction(requiredScope: ApiKeyOperationScope): RbacAction | null {
   if (requiredScope === "content:read") {
     return "content:read";
@@ -1942,6 +1948,14 @@ export type CreateAuthServiceOptions = {
   isAdminSession?: (session: StudioSession) => boolean | Promise<boolean>;
 };
 
+/**
+ * Creates and configures the authentication/authorization service used by the server.
+ *
+ * Initializes Better Auth with DB adapters, SSO (OIDC/SAML) plugins and normalization hooks, CSRF handling, API key issuance/validation, CLI login flow, RBAC-based permission checks, and helper utilities for mounting HTTP routes.
+ *
+ * @param options - Runtime configuration and dependencies required to initialize the service (database connection, environment overrides, and optional helpers).
+ * @returns An AuthService exposing methods for session management, SSO flows, API key management, CLI login, CSRF issuance/verification, and authorization checks.
+ */
 export function createAuthService(
   options: CreateAuthServiceOptions,
 ): AuthService {

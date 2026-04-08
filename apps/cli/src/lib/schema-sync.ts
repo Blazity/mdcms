@@ -5,6 +5,13 @@ import { buildSchemaSyncPayload } from "@mdcms/shared/server";
 import type { CliCommand, CliCommandContext } from "./framework.js";
 import { writeSchemaState } from "./schema-state.js";
 
+/**
+ * Uploads local content type definitions to the server, persists the resulting schema state, and reports outcome to the CLI streams.
+ *
+ * @param context - CLI command context containing configuration, project/environment identifiers, API key, fetcher, IO streams, and current working directory
+ * @returns `0` when the schema was successfully synced, `1` on failure
+ * @throws RuntimeError with code `NO_TYPES_DEFINED` and status 400 if `config.types` is empty
+ */
 async function runSchemaSync(context: CliCommandContext): Promise<number> {
   const {
     config,
@@ -102,6 +109,11 @@ async function runSchemaSync(context: CliCommandContext): Promise<number> {
   return 0;
 }
 
+/**
+ * Create the CLI command for uploading the local schema to the server.
+ *
+ * @returns A `CliCommand` configured with name `"schema sync"`, a short description, and `run` set to the schema sync handler.
+ */
 export function createSchemaSyncCommand(): CliCommand {
   return {
     name: "schema sync",

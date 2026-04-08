@@ -20,6 +20,16 @@ export type DocumentValidationResult = {
   warnings: string[];
 };
 
+/**
+ * Validate a frontmatter object against a schema snapshot.
+ *
+ * Validates each field defined in `typeSnapshot.fields`, collecting per-field error messages,
+ * and emits warnings for any keys present in `frontmatter` that are not defined on the snapshot.
+ *
+ * @param frontmatter - The document frontmatter to validate
+ * @param typeSnapshot - Schema snapshot describing the expected fields and their schemas
+ * @returns A ValidationResult containing `errors` (field-specific error messages) and `warnings` (unknown-field notices)
+ */
 export function validateFrontmatter(
   frontmatter: Record<string, unknown>,
   typeSnapshot: SchemaRegistryTypeSnapshot,
@@ -44,6 +54,13 @@ export function validateFrontmatter(
   return { errors, warnings };
 }
 
+/**
+ * Validate an array of document candidates against a resolved schema and produce per-document validation results.
+ *
+ * @param candidates - Documents to validate, each containing `path`, `typeName`, and `frontmatter`
+ * @param resolvedSchema - Mapping from content type names to their schema snapshots used for validation
+ * @returns An array of validation results where each entry contains the document `path`, an `errors` list, and a `warnings` list. If a candidate's `typeName` is not found in `resolvedSchema`, its result will contain a single error indicating the missing content type.
+ */
 export function validateCandidates(
   candidates: ValidateCandidate[],
   resolvedSchema: Record<string, SchemaRegistryTypeSnapshot>,
@@ -74,6 +91,19 @@ export function validateCandidates(
   });
 }
 
+/**
+ * Validate a single frontmatter field value against its field schema and return any validation errors.
+ *
+ * @param value - The field value to validate (may be `undefined` or `null`)
+ * @param schema - The field schema snapshot describing kind, nullability, requirement, default, and nested item/fields
+ * @param path - The dotted/bracketed path used in error messages (e.g., `author.name` or `tags[0]`)
+ * @returns An array of validation error messages for the given field; empty if the value is valid
+ *
+ * Validation notes:
+ * - If `value` is `null` and `schema.nullable` is `false`, returns an error stating null is not allowed.
+ * - If `value` is `undefined`, `schema.required` is `true`, and `schema.default` is `undefined`, returns an error stating the required field is missing.
+ * - If a present, non-`null` value is provided, performs kind-specific validation and returns any resulting errors.
+ */
 function validateField(
   value: unknown,
   schema: SchemaRegistryFieldSnapshot,
@@ -99,6 +129,14 @@ function validateField(
   return kindErrors;
 }
 
+/**
+ * Validate a value against the field schema's declared kind and produce any validation error messages.
+ *
+ * @param value - The value to validate.
+ * @param schema - The field schema snapshot that declares the expected kind and related constraints.
+ * @param path - The field path used in constructed error messages (e.g., `frontmatter.title` or `items[0].name`).
+ * @returns An array of error message strings describing kind or constraint violations; empty when the value conforms to the schema.
+ */
 function validateKind(
   value: unknown,
   schema: SchemaRegistryFieldSnapshot,
@@ -148,6 +186,14 @@ function validateKind(
   }
 }
 
+/**
+ * Validate that a value is an array and validate each element against the field's item schema.
+ *
+ * @param value - The value to validate.
+ * @param schema - Field schema snapshot; if `schema.item` is provided each array element is validated against it.
+ * @param path - Field path used in error messages; element paths are formed by appending `[index]`.
+ * @returns An array of validation error messages for the array and its elements; empty if there are no errors.
+ */
 function validateArrayField(
   value: unknown,
   schema: SchemaRegistryFieldSnapshot,
@@ -168,6 +214,14 @@ function validateArrayField(
   return errors;
 }
 
+/**
+ * Validates that `value` is a non-null, non-array object and validates its nested fields against `schema.fields`, returning any validation errors.
+ *
+ * @param value - The value to validate as an object
+ * @param schema - The field schema snapshot describing expected nested fields
+ * @param path - The dotted path used to identify the field in returned error messages
+ * @returns An array of error messages describing any validation failures; empty if the value and all nested fields are valid
+ */
 function validateObjectField(
   value: unknown,
   schema: SchemaRegistryFieldSnapshot,

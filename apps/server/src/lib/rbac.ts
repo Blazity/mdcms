@@ -118,6 +118,12 @@ function assertGrantScopeCompatibility(grant: RbacGrant): void {
   }
 }
 
+/**
+ * Normalize a path prefix by trimming whitespace and ensuring it ends with a trailing slash, or return an empty string for empty input.
+ *
+ * @param input - The raw path prefix which may include leading/trailing whitespace
+ * @returns The trimmed path prefix guaranteed to end with `/`, or `""` if the input is empty after trimming
+ */
 function normalizePathPrefix(input: string): string {
   const trimmed = input.trim();
   if (trimmed.length === 0) {
@@ -127,6 +133,12 @@ function normalizePathPrefix(input: string): string {
   return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
 }
 
+/**
+ * Normalizes a path by resolving `.` and `..` segments and removing empty segments.
+ *
+ * @param input - The path string to normalize (may contain `/`, `.` and `..` segments)
+ * @returns The collapsed path with `.` segments and empty segments removed, `..` segments applied by removing the previous segment, and remaining segments joined by `/`. The result does not include a leading or trailing `/`.
+ */
 function collapsePathTraversal(input: string): string {
   const segments: string[] = [];
   for (const segment of input.split("/")) {
@@ -139,6 +151,15 @@ function collapsePathTraversal(input: string): string {
   return segments.join("/");
 }
 
+/**
+ * Checks whether a resource path falls within a folder prefix.
+ *
+ * Both inputs are normalized before comparison: `path` has leading slashes removed and path traversal (`.`/`..`) collapsed; `prefix` is normalized to end with a trailing `/` and has leading slashes removed. An empty `prefix` matches every `path`.
+ *
+ * @param path - The resource path to test (may contain `.`/`..` or leading slashes)
+ * @param prefix - The folder prefix to match against (may be empty or contain leading/trailing slashes)
+ * @returns `true` if `path` equals the prefix (ignoring the prefix's trailing slash) or is located inside the prefix, `false` otherwise.
+ */
 function pathMatchesPrefix(path: string, prefix: string): boolean {
   const normalizedPath = collapsePathTraversal(path.trim().replace(/^\/+/, ""));
   const normalizedPrefix = normalizePathPrefix(prefix).replace(/^\/+/, "");

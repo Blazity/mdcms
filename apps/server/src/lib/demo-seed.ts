@@ -31,6 +31,13 @@ function createMissingConfigError(input: {
   );
 }
 
+/**
+ * Loads and validates the demo server configuration for the given environment.
+ *
+ * @param options - Loading options; `cwd` sets the working directory, `configPath` overrides the config file path, and `environment` is used for error context if loading fails.
+ * @returns An object containing the parsed `config` and the resolved `configPath`.
+ * @throws Error if the configuration cannot be found or loaded for the requested environment.
+ */
 async function loadDemoConfig(
   options: Pick<
     EnsureDemoScopeProvisionedOptions,
@@ -55,6 +62,12 @@ async function loadDemoConfig(
   return loaded;
 }
 
+/**
+ * Ensure the project and environment scope for a demo exists in the database.
+ *
+ * @param options - Options specifying the database handle (`db`), target `project` id, target `environment` name, and optional `cwd` or `configPath` used to locate the demo config.
+ * @throws If the demo config cannot be loaded or if a non-default `environment` is not defined in the loaded config.
+ */
 export async function ensureDemoScopeProvisioned(
   options: EnsureDemoScopeProvisionedOptions,
 ): Promise<void> {
