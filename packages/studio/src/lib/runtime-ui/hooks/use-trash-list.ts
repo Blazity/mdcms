@@ -75,8 +75,9 @@ export function mapTrashFiltersToQuery(
     query.type = filters.type;
   }
 
-  if (filters.q) {
-    query.q = filters.q;
+  const q = filters.q?.trim();
+  if (q) {
+    query.q = q;
   }
 
   switch (filters.sort) {
