@@ -389,6 +389,42 @@ export function createLoginCommand(options: LoginOptions = {}): CliCommand {
         }
 
         const exchanged = parseExchangeResponse(exchangeBody);
+
+        const projectsResponse = await context.fetcher(
+          `${context.serverUrl}/api/v1/projects`,
+          {
+            headers: {
+              "content-type": "application/json",
+              authorization: `Bearer ${exchanged.key}`,
+            },
+          },
+        );
+        if (projectsResponse.ok) {
+          const projectsBody = (await projectsResponse.json()) as {
+            data: Array<{ slug: string }>;
+          };
+          const exists = projectsBody.data.some(
+            (p) => p.slug === context.project,
+          );
+          if (!exists) {
+            await context
+              .fetcher(
+                `${context.serverUrl}/api/v1/auth/api-keys/self/revoke`,
+                {
+                  method: "POST",
+                  headers: {
+                    authorization: `Bearer ${exchanged.key}`,
+                  },
+                },
+              )
+              .catch(() => undefined);
+            context.stderr.write(
+              `Project "${context.project}" does not exist on ${context.serverUrl}. Run "cms init" to create it.\n`,
+            );
+            return 1;
+          }
+        }
+
         const nowIso = new Date().toISOString();
 
         await store.setProfile(

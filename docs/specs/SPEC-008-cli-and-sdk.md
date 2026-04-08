@@ -363,6 +363,7 @@ export const migration: Migration = {
 
 - `cms login` starts a browser-based authorization code flow via `/api/v1/auth/cli/login/*`. It requires a config file (`mdcms.config.ts`) so that `project` and `environment` are known.
 - CLI starts a local loopback callback listener (`127.0.0.1`) and exchanges a one-time code for an API key scoped to `(serverUrl, project, environment)`. Both `project` and `environment` are required in the login challenge.
+- After obtaining the key, `cms login` verifies the project exists on the server (`GET /api/v1/projects`). If the project does not exist, the key is revoked (`POST /api/v1/auth/api-keys/self/revoke`) and the command exits with an error directing the user to run `cms init`.
 - The credential store is keyed by server URL, project, and environment and supports one active profile per tuple.
 - In interactive mode, credentials are stored in the OS credential store when available (fallback to `~/.mdcms/credentials.json` with `0600` permissions).
 - Login-generated API keys default to scopes: `projects:read`, `projects:write`, `schema:read`, `schema:write`, `content:read`, `content:read:draft`, `content:write`.
