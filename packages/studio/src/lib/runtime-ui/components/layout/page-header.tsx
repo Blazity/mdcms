@@ -166,7 +166,7 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
   };
 
   const handleEnvironmentChange = (environmentName: string) => {
-    mountInfo.hostBridge?.onNavigate?.({ environment: environmentName });
+    mountInfo.setEnvironment(environmentName);
   };
 
   return (
@@ -178,7 +178,7 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
         {/* Right side - Controls */}
         <div className="flex items-center gap-3">
           {/* Environment selector */}
-          {mountInfo.environments.length > 0 ? (
+          {mountInfo.environments.length > 1 ? (
             <Select
               value={mountInfo.environment ?? undefined}
               onValueChange={handleEnvironmentChange}

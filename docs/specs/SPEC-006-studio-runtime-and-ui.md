@@ -344,6 +344,25 @@ Each embedded Studio instance is configured with a specific project through `mdc
 
 For users who manage multiple projects, the Studio header provides a project switcher that links to the other Studio instances they are allowed to access.
 
+### Environment Scope and Switching
+
+The active environment is Studio-owned state. The host app provides the initial
+environment through `documentRoute.environment` at mount time. Once mounted,
+Studio owns the active environment and can switch it through an in-shell
+environment selector without host involvement or page reload.
+
+Normative behavior:
+
+- The shell header displays an environment selector when the environment list API
+  returns more than one environment for the current project.
+- Selecting a different environment updates Studio-internal state. All
+  environment-scoped API queries (capabilities, schema, content, trash) re-fetch
+  against the new environment automatically.
+- When only one environment exists, the header shows a read-only environment
+  badge instead of a selector.
+- Environment switching does not require host bridge cooperation. The host bridge
+  does not define an environment navigation callback.
+
 ### Target-Scoped Capabilities and Schema Recovery
 
 Studio uses `GET /api/v1/me/capabilities` as the canonical source for

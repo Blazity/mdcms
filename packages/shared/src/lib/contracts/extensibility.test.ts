@@ -751,23 +751,12 @@ test("assertStudioMountContext rejects invalid extracted mdx prop shapes", () =>
   );
 });
 
-test("assertHostBridgeV1 accepts a bridge with onNavigate callback", () => {
-  assert.doesNotThrow(() =>
+test("assertHostBridgeV1 rejects a bridge with unknown extra keys", () => {
+  assert.throws(() =>
     assertHostBridgeV1({
       ...validHostBridge,
       onNavigate: () => {},
     }),
-  );
-});
-
-test("assertHostBridgeV1 rejects a bridge with non-function onNavigate", () => {
-  assert.throws(
-    () =>
-      assertHostBridgeV1({
-        ...validHostBridge,
-        onNavigate: "not-a-function",
-      }),
-    /onNavigate/,
   );
 });
 

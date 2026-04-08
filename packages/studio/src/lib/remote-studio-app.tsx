@@ -522,6 +522,7 @@ export function RemoteStudioApp({
                 value={{
                   project: context.documentRoute?.project ?? null,
                   environment: context.documentRoute?.environment ?? null,
+                  setEnvironment: () => {},
                   apiBaseUrl: context.apiBaseUrl,
                   auth: context.auth,
                   environments: [],

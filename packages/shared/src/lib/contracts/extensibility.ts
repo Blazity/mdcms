@@ -128,7 +128,6 @@ export type HostBridgeV1 = {
     props: Record<string, unknown>;
     key: string;
   }) => () => void;
-  onNavigate?: (target: { environment: string }) => void;
 };
 
 export type StudioDocumentRouteWriteContext =
@@ -372,7 +371,6 @@ const hostBridgeV1Schema = z
     ),
     resolveComponent: functionSchema,
     renderMdxPreview: functionSchema,
-    onNavigate: functionSchema.optional(),
   })
   .strict();
 
