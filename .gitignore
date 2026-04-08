@@ -42,9 +42,6 @@ Thumbs.db
 .nx/workspace-data
 **/.next
 .mdcms/manifests/
-.mdcms/schema/
-
-.claude/
 .worktrees/
 docs/superpowers/
 apps/studio-review/.generated/

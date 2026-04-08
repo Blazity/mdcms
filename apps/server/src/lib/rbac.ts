@@ -127,8 +127,20 @@ function normalizePathPrefix(input: string): string {
   return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
 }
 
+function collapsePathTraversal(input: string): string {
+  const segments: string[] = [];
+  for (const segment of input.split("/")) {
+    if (segment === "..") {
+      segments.pop();
+    } else if (segment !== "" && segment !== ".") {
+      segments.push(segment);
+    }
+  }
+  return segments.join("/");
+}
+
 function pathMatchesPrefix(path: string, prefix: string): boolean {
-  const normalizedPath = path.trim().replace(/^\/+/, "");
+  const normalizedPath = collapsePathTraversal(path.trim().replace(/^\/+/, ""));
   const normalizedPrefix = normalizePathPrefix(prefix).replace(/^\/+/, "");
   if (!normalizedPrefix) {
     return true;
