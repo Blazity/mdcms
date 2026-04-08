@@ -248,11 +248,11 @@ export default function DashboardPage() {
 
         {/* Content Types & Recent Documents */}
         <div className="grid gap-6 lg:grid-cols-2">
-          {/* Content Types */}
+          {/* Content */}
           <Card className="border-border">
-            <CardHeader className="flex flex-row items-center justify-between pb-4">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-lg font-semibold">
-                Content Types
+                Content
               </CardTitle>
               <Link
                 href="/admin/content"
@@ -261,7 +261,7 @@ export default function DashboardPage() {
                 View all <ChevronRight className="h-4 w-4" />
               </Link>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-1">
               {data.contentTypes.length === 0 ? (
                 <p className="text-sm text-foreground-muted py-4 text-center">
                   No schema types synced yet.
@@ -323,7 +323,7 @@ export default function DashboardPage() {
           <Card className="border-border">
             <CardHeader className="flex flex-row items-center justify-between pb-4">
               <CardTitle className="text-lg font-semibold">
-                Recently Updated
+                Recently updated
               </CardTitle>
               <Link
                 href="/admin/content"
