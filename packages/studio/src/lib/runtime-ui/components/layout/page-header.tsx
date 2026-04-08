@@ -246,7 +246,7 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                  variant="destructive"
                   onClick={handleSignOut}
                 >
                   <LogOut className="mr-2 h-4 w-4" />
