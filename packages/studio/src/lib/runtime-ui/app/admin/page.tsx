@@ -338,11 +338,12 @@ export default function DashboardPage() {
                   No documents yet.
                 </p>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-1">
                   {data.recentDocuments.map((doc) => (
-                    <div
+                    <Link
                       key={doc.documentId}
-                      className="flex items-start gap-3"
+                      href={`/admin/content/${doc.type}/${doc.documentId}`}
+                      className="flex items-start gap-3 rounded-lg p-2 transition-colors hover:bg-background-subtle"
                     >
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent/10">
                         <FileText className="h-4 w-4 text-accent" />
@@ -369,7 +370,7 @@ export default function DashboardPage() {
                         <Clock className="h-3 w-3" />
                         {formatRelativeTime(doc.updatedAt)}
                       </span>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               )}
