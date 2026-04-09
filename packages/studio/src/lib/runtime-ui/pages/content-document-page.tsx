@@ -2285,17 +2285,44 @@ export default function ContentDocumentPage({
     );
 
     try {
-      const sourceFrontmatter =
-        "frontmatter" in currentState.document
-          ? (currentState.document as ContentDocumentResponse).frontmatter
-          : {};
+      // When prefilling, load the source document's content. If the source
+      // is the currently open document we can read it from state; otherwise
+      // fetch it so frontmatter/body/format come from the correct variant.
+      let sourceBody = "";
+      let sourceFrontmatter: Record<string, unknown> = {};
+      let sourceFormat: "md" | "mdx" = "mdx";
+
+      if (prefill) {
+        if (sourceDocumentId === currentState.documentId) {
+          sourceBody = currentState.draftBody;
+          sourceFrontmatter =
+            "frontmatter" in currentState.document
+              ? (currentState.document as ContentDocumentResponse).frontmatter
+              : {};
+          sourceFormat =
+            "format" in currentState.document
+              ? ((currentState.document as ContentDocumentResponse).format ??
+                "mdx")
+              : "mdx";
+        } else {
+          const sourceDoc = await api.loadDraft({
+            documentId: sourceDocumentId,
+            type: currentState.typeId,
+            locale: currentState.variantCreation.sourceLocale,
+          });
+          sourceBody = sourceDoc.body ?? "";
+          sourceFrontmatter = sourceDoc.frontmatter ?? {};
+          sourceFormat = sourceDoc.format ?? "mdx";
+        }
+      }
+
       const result = await api.create({
         type: currentState.typeId,
         path: currentState.document.path,
         locale: targetLocale,
-        format: "mdx",
+        format: sourceFormat,
         frontmatter: prefill ? sourceFrontmatter : {},
-        body: prefill ? currentState.draftBody : "",
+        body: prefill ? sourceBody : "",
         sourceDocumentId,
         schemaHash: route?.write.canWrite ? route.write.schemaHash : undefined,
       });
