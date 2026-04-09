@@ -395,6 +395,8 @@ export function createLoginCommand(options: LoginOptions = {}): CliCommand {
             headers: {
               "content-type": "application/json",
               authorization: `Bearer ${exchanged.key}`,
+              "x-mdcms-project": context.project,
+              "x-mdcms-environment": context.environment,
             },
           },
         );

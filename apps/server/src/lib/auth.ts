@@ -3451,45 +3451,31 @@ export function createAuthService(
           });
         }
 
-        if (requirement.project || requirement.environment) {
-          if (!requirement.project || !requirement.environment) {
-            throw new RuntimeError({
-              code: "FORBIDDEN",
-              message:
-                "API key authorization requires explicit project/environment routing context.",
-              statusCode: 403,
-            });
-          }
+        if (!requirement.project || !requirement.environment) {
+          throw new RuntimeError({
+            code: "FORBIDDEN",
+            message:
+              "API key authorization requires explicit project/environment routing context.",
+            statusCode: 403,
+          });
+        }
 
-          if (metadata.contextAllowlist.length === 0) {
-            throw new RuntimeError({
-              code: "FORBIDDEN",
-              message:
-                "API key has an empty context allowlist and cannot target any project/environment.",
-              statusCode: 403,
-            });
-          }
+        const isContextAllowed = apiKeyAllowsTarget(metadata.contextAllowlist, {
+          project: requirement.project,
+          environment: requirement.environment,
+        });
 
-          const isContextAllowed = apiKeyAllowsTarget(
-            metadata.contextAllowlist,
-            {
+        if (!isContextAllowed) {
+          throw new RuntimeError({
+            code: "FORBIDDEN",
+            message:
+              "API key is not allowed for the requested project/environment context.",
+            statusCode: 403,
+            details: {
               project: requirement.project,
               environment: requirement.environment,
             },
-          );
-
-          if (!isContextAllowed) {
-            throw new RuntimeError({
-              code: "FORBIDDEN",
-              message:
-                "API key is not allowed for the requested project/environment context.",
-              statusCode: 403,
-              details: {
-                project: requirement.project,
-                environment: requirement.environment,
-              },
-            });
-          }
+          });
         }
 
         await touchApiKeyLastUsed(row.id);

@@ -318,6 +318,8 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
       const authHeaders: Record<string, string> = {
         authorization: `Bearer ${apiKey}`,
         "content-type": "application/json",
+        "x-mdcms-project": projectName,
+        "x-mdcms-environment": envName,
       };
 
       const s3 = prompter.spinner();

@@ -3,7 +3,11 @@ import {
   type CreateServerRequestHandlerOptions,
   type ServerRequestHandler,
 } from "./server.js";
-import { createConsoleLogger, type Logger } from "@mdcms/shared";
+import {
+  createConsoleLogger,
+  resolveRequestTargetRouting,
+  type Logger,
+} from "@mdcms/shared";
 import { and, eq, inArray } from "drizzle-orm";
 import { parseServerEnv } from "./env.js";
 import { createDatabaseConnection, type DatabaseConnection } from "./db.js";
@@ -196,14 +200,26 @@ export function createServerRequestHandlerWithModules(
       });
       mountProjectApiRoutes(app, {
         store: projectStore,
-        authorizeRead: (request) =>
-          authService
-            .authorizeRequest(request, { requiredScope: "projects:read" })
-            .then(() => undefined),
-        authorizeWrite: (request) =>
-          authService
-            .authorizeRequest(request, { requiredScope: "projects:write" })
-            .then(() => undefined),
+        authorizeRead: (request) => {
+          const routing = resolveRequestTargetRouting(request);
+          return authService
+            .authorizeRequest(request, {
+              requiredScope: "projects:read",
+              project: routing.project,
+              environment: routing.environment,
+            })
+            .then(() => undefined);
+        },
+        authorizeWrite: (request) => {
+          const routing = resolveRequestTargetRouting(request);
+          return authService
+            .authorizeRequest(request, {
+              requiredScope: "projects:write",
+              project: routing.project,
+              environment: routing.environment,
+            })
+            .then(() => undefined);
+        },
       });
       mountCollaborationRoutes(app, {
         authService,
