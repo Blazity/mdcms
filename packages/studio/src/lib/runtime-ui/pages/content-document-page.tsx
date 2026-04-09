@@ -807,8 +807,17 @@ export async function loadContentDocumentPageState(input: {
       });
       translationVariants = variantsResponse.data;
     } catch {
-      // Degrade gracefully — switcher shows all locales as potentially missing
-      translationVariants = [];
+      // Degrade gracefully — include the current document so its locale
+      // is never shown as missing, even when the variants fetch fails.
+      translationVariants = [
+        {
+          documentId: readyState.documentId,
+          locale: readyState.locale,
+          path: readyState.document.path,
+          publishedVersion: readyState.document.publishedVersion,
+          hasUnpublishedChanges: readyState.document.hasUnpublishedChanges,
+        },
+      ];
     }
   }
 
@@ -1601,6 +1610,9 @@ export function ContentDocumentPageView({
                     const hasVariant = state.translationVariants.some(
                       (v) => v.locale === loc,
                     );
+                    // Read-only users can switch between existing variants
+                    // but cannot create missing ones
+                    if (!hasVariant && !state.canWrite) return null;
                     return (
                       <SelectItem key={loc} value={loc}>
                         {hasVariant ? loc : `+ ${loc}`}
@@ -2169,6 +2181,16 @@ export default function ContentDocumentPage({
       currentState.draftBody !== currentState.document.body
     ) {
       await saveDraft();
+
+      // Abort switch if save failed — edits would be lost
+      const afterSave = stateRef.current;
+      if (
+        afterSave.status === "ready" &&
+        afterSave.saveState !== "saved" &&
+        afterSave.draftBody !== afterSave.document.body
+      ) {
+        return;
+      }
     }
 
     // Check if variant exists
@@ -2189,7 +2211,11 @@ export default function ContentDocumentPage({
       return;
     }
 
-    // No variant exists — show creation prompt
+    // No variant exists — show creation prompt (only if user can write)
+    if (!currentState.canWrite) {
+      return;
+    }
+
     setState((current) =>
       current.status === "ready"
         ? {
@@ -2212,7 +2238,8 @@ export default function ContentDocumentPage({
     if (
       !api ||
       currentState.status !== "ready" ||
-      !currentState.variantCreation
+      !currentState.variantCreation ||
+      !currentState.canWrite
     ) {
       return;
     }
