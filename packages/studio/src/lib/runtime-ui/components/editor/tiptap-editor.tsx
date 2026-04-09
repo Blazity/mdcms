@@ -326,13 +326,16 @@ export function TipTapEditor({
     const pendingContent = content;
     isExternalSyncRef.current = true;
     queueMicrotask(() => {
-      if (!editor.isDestroyed) {
-        editor.commands.setContent(pendingContent, {
-          contentType: "markdown",
-        });
-        lastEmittedMarkdownRef.current = extractMarkdownFromEditor(editor);
+      try {
+        if (!editor.isDestroyed) {
+          editor.commands.setContent(pendingContent, {
+            contentType: "markdown",
+          });
+          lastEmittedMarkdownRef.current = extractMarkdownFromEditor(editor);
+        }
+      } finally {
+        isExternalSyncRef.current = false;
       }
-      isExternalSyncRef.current = false;
     });
   }, [content, editor]);
 
