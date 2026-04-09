@@ -161,10 +161,10 @@ export function TipTapEditor({
   const lastPublishedSelectionRef =
     useRef<PublishedMdxComponentSelectionSnapshot | null>(null);
   const lastEmittedMarkdownRef = useRef<string | null>(null);
-  const isExternalSyncRef = useRef(false);
+  const externalSyncTokenRef = useRef(0);
   const handleEditorUpdate = useEffectEvent(
     (nextEditor: TipTapEditorInstance) => {
-      if (isExternalSyncRef.current) {
+      if (externalSyncTokenRef.current > 0) {
         return;
       }
 
@@ -324,7 +324,7 @@ export function TipTapEditor({
     // "flushSync was called from inside a lifecycle method" warning.
     // TipTap's ProseMirror internals call flushSync during setContent.
     const pendingContent = content;
-    isExternalSyncRef.current = true;
+    const syncToken = ++externalSyncTokenRef.current;
     queueMicrotask(() => {
       try {
         if (!editor.isDestroyed) {
@@ -334,7 +334,10 @@ export function TipTapEditor({
           lastEmittedMarkdownRef.current = extractMarkdownFromEditor(editor);
         }
       } finally {
-        isExternalSyncRef.current = false;
+        // Only clear the guard if no newer sync was queued
+        if (externalSyncTokenRef.current === syncToken) {
+          externalSyncTokenRef.current = 0;
+        }
       }
     });
   }, [content, editor]);
