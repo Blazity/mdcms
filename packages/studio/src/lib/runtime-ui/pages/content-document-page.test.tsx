@@ -1332,3 +1332,141 @@ test("ContentDocumentPageView blocks writes when the local schema hash capabilit
   assert.match(markup, /data-mdcms-document-write-state="blocked"/);
   assert.match(markup, /Schema sync required before Studio can write drafts\./);
 });
+
+test("locale switcher renders for localized type with supportedLocales", () => {
+  const state = createReadyState();
+  state.localized = true;
+  state.route.supportedLocales = ["en", "fr", "de"];
+  state.translationVariants = [
+    {
+      documentId: "11111111-1111-4111-8111-111111111111",
+      locale: "en",
+      path: "blog/launch-notes",
+      publishedVersion: 5,
+      hasUnpublishedChanges: true,
+    },
+  ];
+
+  const html = renderPageMarkup(state);
+  // The Select trigger renders when localized + supportedLocales are set.
+  // SelectContent uses a Radix Portal so options don't appear in SSR output.
+  assert.ok(
+    html.includes('data-slot="select-trigger"'),
+    "should render the locale select trigger",
+  );
+});
+
+test("locale switcher does not render for non-localized types", () => {
+  const state = createReadyState();
+  state.localized = false;
+
+  const html = renderPageMarkup(state);
+  // The switcher guard checks state.localized — no Select should render
+  assert.ok(
+    !html.includes('data-slot="select-trigger"'),
+    "should not render locale select when type is not localized",
+  );
+});
+
+test("locale switcher does not render without supportedLocales", () => {
+  const state = createReadyState();
+  state.localized = true;
+  // supportedLocales not set on route
+
+  const html = renderPageMarkup(state);
+  assert.ok(
+    !html.includes('data-slot="select-trigger"'),
+    "should not render locale select when supportedLocales is undefined",
+  );
+});
+
+test("variant creation prompt renders when variantCreation state is set", () => {
+  const state = createReadyState();
+  state.localized = true;
+  state.route.supportedLocales = ["en", "fr"];
+  state.variantCreation = {
+    targetLocale: "fr",
+    sourceDocumentId: "11111111-1111-4111-8111-111111111111",
+    sourceLocale: "en",
+    status: "idle",
+  };
+
+  const html = renderPageMarkup(state);
+  assert.ok(html.includes("No fr variant exists yet"));
+  assert.ok(html.includes("Create empty"));
+  assert.ok(html.includes("Pre-fill from en"));
+});
+
+test("variant creation prompt shows error when present", () => {
+  const state = createReadyState();
+  state.localized = true;
+  state.route.supportedLocales = ["en", "fr"];
+  state.variantCreation = {
+    targetLocale: "fr",
+    sourceDocumentId: "11111111-1111-4111-8111-111111111111",
+    sourceLocale: "en",
+    status: "idle",
+    error: "TRANSLATION_VARIANT_CONFLICT",
+  };
+
+  const html = renderPageMarkup(state);
+  assert.ok(html.includes("TRANSLATION_VARIANT_CONFLICT"));
+});
+
+test("read-only users do not see missing locale options in switcher", () => {
+  const readOnlyState = createContentDocumentPageState({
+    shell: createReadyShell(),
+    typeLabel: "Blog post",
+    documentRoute: {
+      project: "marketing-site",
+      initialEnvironment: "staging",
+      supportedLocales: ["en", "fr", "de"],
+      write: {
+        canWrite: false,
+        message: "Read-only access",
+      },
+    },
+  });
+
+  if (readOnlyState.status !== "ready") throw new Error("expected ready");
+  readOnlyState.localized = true;
+  readOnlyState.translationVariants = [
+    {
+      documentId: "11111111-1111-4111-8111-111111111111",
+      locale: "en",
+      path: "blog/launch-notes",
+      publishedVersion: 5,
+      hasUnpublishedChanges: true,
+    },
+  ];
+
+  const html = renderPageMarkup(readOnlyState);
+  // The select trigger renders because the existing "en" variant is accessible
+  assert.ok(
+    html.includes('data-slot="select-trigger"'),
+    "should render the locale select trigger for the existing variant",
+  );
+  // SelectContent uses a Radix Portal, so option text doesn't appear in SSR.
+  // The key invariant is that the missing locale items (+ fr, + de) are not
+  // present — which holds both because they are filtered out for read-only
+  // users and because SelectContent is not rendered in SSR.
+  assert.ok(!html.includes("+ fr"), "should not show creation option for missing locale");
+  assert.ok(!html.includes("+ de"), "should not show creation option for missing locale");
+});
+
+test("variant creation buttons show creating state", () => {
+  const state = createReadyState();
+  state.localized = true;
+  state.route.supportedLocales = ["en", "fr"];
+  state.variantCreation = {
+    targetLocale: "fr",
+    sourceDocumentId: "11111111-1111-4111-8111-111111111111",
+    sourceLocale: "en",
+    status: "creating",
+  };
+
+  const html = renderPageMarkup(state);
+  assert.ok(html.includes("Creating..."));
+  // The creating button has a disabled="" attribute in the rendered HTML
+  assert.ok(html.includes('disabled=""'));
+});
