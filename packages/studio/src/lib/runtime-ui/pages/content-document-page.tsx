@@ -161,6 +161,12 @@ export type ContentDocumentPageReadyState = {
   localized: boolean;
   variantsFetchFailed: boolean;
   variantCreation?: ContentDocumentVariantCreationState;
+  viewingVersion?: {
+    version: number;
+    body: string;
+    status: "loading" | "ready" | "error";
+    error?: string;
+  };
 };
 
 export type ContentDocumentPageState =
@@ -228,6 +234,8 @@ type ContentDocumentPageViewProps = {
     side: "left" | "right",
     version?: number,
   ) => void;
+  onViewVersion?: (version: number) => void;
+  onBackToDraft?: () => void;
   onLocaleSwitch?: (locale: string) => void;
   onCreateVariant?: (prefill: boolean) => void;
   onCancelVariantCreation?: () => void;
@@ -1209,100 +1217,6 @@ function ContentDocumentPageStatusView(props: {
   );
 }
 
-function renderVersionDiffContent(state: ContentDocumentPageReadyState) {
-  switch (state.versionDiff.status) {
-    case "idle":
-      return (
-        <p className="text-sm text-foreground-muted">
-          Select two versions to compare.
-        </p>
-      );
-    case "loading":
-      return (
-        <p className="text-sm text-foreground-muted">Loading comparison...</p>
-      );
-    case "error":
-      return (
-        <p className="text-sm text-destructive">{state.versionDiff.message}</p>
-      );
-    case "ready": {
-      const { diff } = state.versionDiff;
-
-      return (
-        <div className="space-y-3">
-          <div>
-            <p className="text-sm font-medium">
-              Comparing v{diff.leftVersion} to v{diff.rightVersion}
-            </p>
-            {state.selectedComparison.leftVersion &&
-            state.selectedComparison.rightVersion ? (
-              <p className="text-xs text-foreground-muted">
-                Selected versions: v{state.selectedComparison.leftVersion} and v
-                {state.selectedComparison.rightVersion}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="space-y-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
-              Path
-            </p>
-            <p className="text-sm text-foreground-muted">{diff.path.before}</p>
-            <p className="text-sm">{diff.path.after}</p>
-          </div>
-
-          <div className="space-y-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
-              Frontmatter
-            </p>
-            {diff.frontmatter.changes.length === 0 ? (
-              <p className="text-sm text-foreground-muted">
-                No frontmatter changes.
-              </p>
-            ) : (
-              diff.frontmatter.changes.map((change) => (
-                <div
-                  key={change.path}
-                  className="rounded-md border border-border p-2"
-                >
-                  <p className="text-xs text-foreground-muted">{change.path}</p>
-                  <p className="text-sm">{String(change.after ?? "")}</p>
-                </div>
-              ))
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
-              Body
-            </p>
-            {diff.body.lines.length === 0 ? (
-              <p className="text-sm text-foreground-muted">No body changes.</p>
-            ) : (
-              <div className="space-y-1 rounded-md border border-border p-2">
-                {diff.body.lines.map((line, index) => (
-                  <div
-                    key={`${line.leftLineNumber}:${line.rightLineNumber}:${index}`}
-                    className="grid grid-cols-[56px_56px_1fr] gap-2 text-xs"
-                  >
-                    <span className="text-foreground-muted">
-                      {line.leftLineNumber ?? ""}
-                    </span>
-                    <span className="text-foreground-muted">
-                      {line.rightLineNumber ?? ""}
-                    </span>
-                    <span>{line.rightText ?? line.leftText ?? ""}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      );
-    }
-  }
-}
-
 function renderSchemaRecoveryBanner(input: {
   state: ContentDocumentPageReadyState;
   onSchemaSync?: () => void;
@@ -1464,12 +1378,24 @@ function SidebarPropertiesTab(props: { state: ContentDocumentPageReadyState }) {
 
 function SidebarHistoryTab(props: {
   state: ContentDocumentPageReadyState;
-  onOpenDiffModal?: () => void;
+  onViewVersion?: (version: number) => void;
+  onBackToDraft?: () => void;
 }) {
-  const { versionHistory } = props.state;
+  const { versionHistory, viewingVersion } = props.state;
 
   return (
     <div className="p-4">
+      {viewingVersion ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="mb-4 w-full text-xs"
+          onClick={() => props.onBackToDraft?.()}
+        >
+          Back to draft
+        </Button>
+      ) : null}
+
       {versionHistory.status === "idle" ||
       versionHistory.status === "loading" ? (
         <p className="text-sm text-foreground-muted">
@@ -1484,37 +1410,46 @@ function SidebarHistoryTab(props: {
           No published versions yet.
         </p>
       ) : (
-        <>
-          {versionHistory.versions.length >= 2 ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="mb-4 w-full text-xs"
-              onClick={() => props.onOpenDiffModal?.()}
-            >
-              Compare versions
-            </Button>
-          ) : null}
+        <div className="relative border-l-2 border-border pl-4">
+          {versionHistory.versions.map((version) => {
+            const isViewing = viewingVersion?.version === version.version;
 
-          <div className="relative border-l-2 border-border pl-4">
-            {versionHistory.versions.map((version) => (
-              <div
+            return (
+              <button
                 key={version.version}
+                type="button"
                 data-mdcms-version={version.version}
-                className="relative mb-4 last:mb-0"
+                className={cn(
+                  "relative mb-4 w-full rounded-md px-2 py-1.5 text-left transition-colors last:mb-0",
+                  isViewing ? "bg-accent/10" : "hover:bg-background-subtle",
+                )}
+                onClick={() => {
+                  if (isViewing) {
+                    props.onBackToDraft?.();
+                  } else {
+                    props.onViewVersion?.(version.version);
+                  }
+                }}
               >
-                <div className="absolute -left-[21px] top-0.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-accent" />
-                <p className="text-sm font-medium">v{version.version}</p>
+                <div className="absolute -left-[21px] top-2.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-accent" />
+                <p className="text-sm font-medium">
+                  v{version.version}
+                  {isViewing ? (
+                    <span className="ml-1.5 text-xs font-normal text-accent">
+                      viewing
+                    </span>
+                  ) : null}
+                </p>
                 <p className="mt-0.5 text-xs text-foreground-muted">
                   {version.changeSummary ?? "No summary"}
                 </p>
                 <p className="mt-0.5 text-xs text-foreground-muted">
                   {formatRelativeTime(version.publishedAt)}
                 </p>
-              </div>
-            ))}
-          </div>
-        </>
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -1522,127 +1457,59 @@ function SidebarHistoryTab(props: {
 
 function ContentDocumentPageSidebar(props: {
   state: ContentDocumentPageReadyState;
-  onSelectComparisonVersion?: (
-    side: "left" | "right",
-    version?: number,
-  ) => void;
-  onPublishDialogOpenChange?: (open: boolean) => void;
+  onViewVersion?: (version: number) => void;
+  onBackToDraft?: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<"properties" | "history">(
     "properties",
   );
-  const [diffModalOpen, setDiffModalOpen] = useState(false);
 
   return (
-    <>
-      <aside
-        data-mdcms-editor-pane="sidebar"
-        className="flex w-80 shrink-0 flex-col border-l border-border bg-background"
-      >
-        {/* Tabs */}
-        <div className="flex border-b border-border">
-          <button
-            type="button"
-            className={cn(
-              "flex-1 py-2.5 text-center text-xs font-semibold transition-colors",
-              activeTab === "properties"
-                ? "border-b-2 border-accent text-accent"
-                : "text-foreground-muted hover:text-foreground",
-            )}
-            onClick={() => setActiveTab("properties")}
-          >
-            Properties
-          </button>
-          <button
-            type="button"
-            className={cn(
-              "flex-1 py-2.5 text-center text-xs font-semibold transition-colors",
-              activeTab === "history"
-                ? "border-b-2 border-accent text-accent"
-                : "text-foreground-muted hover:text-foreground",
-            )}
-            onClick={() => setActiveTab("history")}
-          >
-            History
-          </button>
-        </div>
-
-        {/* Tab content */}
-        <div className="flex-1 overflow-y-auto">
-          {activeTab === "properties" ? (
-            <SidebarPropertiesTab state={props.state} />
-          ) : (
-            <SidebarHistoryTab
-              state={props.state}
-              onOpenDiffModal={() => setDiffModalOpen(true)}
-            />
+    <aside
+      data-mdcms-editor-pane="sidebar"
+      className="flex w-80 shrink-0 flex-col border-l border-border bg-background"
+    >
+      {/* Tabs */}
+      <div className="flex border-b border-border">
+        <button
+          type="button"
+          className={cn(
+            "flex-1 py-2.5 text-center text-xs font-semibold transition-colors",
+            activeTab === "properties"
+              ? "border-b-2 border-accent text-accent"
+              : "text-foreground-muted hover:text-foreground",
           )}
-        </div>
-      </aside>
+          onClick={() => setActiveTab("properties")}
+        >
+          Properties
+        </button>
+        <button
+          type="button"
+          className={cn(
+            "flex-1 py-2.5 text-center text-xs font-semibold transition-colors",
+            activeTab === "history"
+              ? "border-b-2 border-accent text-accent"
+              : "text-foreground-muted hover:text-foreground",
+          )}
+          onClick={() => setActiveTab("history")}
+        >
+          History
+        </button>
+      </div>
 
-      {/* Version diff modal */}
-      <Dialog open={diffModalOpen} onOpenChange={setDiffModalOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Compare versions</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <label className="space-y-1 text-xs font-medium text-foreground-muted">
-                <span>From</span>
-                <select
-                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
-                  value={String(
-                    props.state.selectedComparison.leftVersion ?? "",
-                  )}
-                  onChange={(event) => {
-                    props.onSelectComparisonVersion?.(
-                      "left",
-                      parseSelectedComparisonVersionValue(
-                        event.currentTarget.value,
-                      ),
-                    );
-                  }}
-                >
-                  <option value="">Select version</option>
-                  {props.state.versionHistory.versions.map((v) => (
-                    <option key={`left-${v.version}`} value={v.version}>
-                      Version {v.version}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="space-y-1 text-xs font-medium text-foreground-muted">
-                <span>To</span>
-                <select
-                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
-                  value={String(
-                    props.state.selectedComparison.rightVersion ?? "",
-                  )}
-                  onChange={(event) => {
-                    props.onSelectComparisonVersion?.(
-                      "right",
-                      parseSelectedComparisonVersionValue(
-                        event.currentTarget.value,
-                      ),
-                    );
-                  }}
-                >
-                  <option value="">Select version</option>
-                  {props.state.versionHistory.versions.map((v) => (
-                    <option key={`right-${v.version}`} value={v.version}>
-                      Version {v.version}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            {renderVersionDiffContent(props.state)}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
+      {/* Tab content */}
+      <div className="flex-1 overflow-y-auto">
+        {activeTab === "properties" ? (
+          <SidebarPropertiesTab state={props.state} />
+        ) : (
+          <SidebarHistoryTab
+            state={props.state}
+            onViewVersion={props.onViewVersion}
+            onBackToDraft={props.onBackToDraft}
+          />
+        )}
+      </div>
+    </aside>
   );
 }
 
@@ -1677,6 +1544,8 @@ export function ContentDocumentPageView({
   onPublishSubmit,
   onSchemaSync,
   onSelectComparisonVersion,
+  onViewVersion,
+  onBackToDraft,
   onLocaleSwitch,
   onCreateVariant,
   onCancelVariantCreation,
@@ -1905,12 +1774,41 @@ export function ContentDocumentPageView({
                     </div>
                   ) : null}
 
+                  {state.viewingVersion ? (
+                    <div className="mb-3 flex items-center justify-between rounded-md border border-accent/30 bg-accent/5 px-4 py-2.5">
+                      <p className="text-sm font-medium">
+                        Viewing version {state.viewingVersion.version}
+                        {state.viewingVersion.status === "loading"
+                          ? " — Loading..."
+                          : null}
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => onBackToDraft?.()}
+                      >
+                        Back to draft
+                      </Button>
+                    </div>
+                  ) : null}
+
+                  {state.viewingVersion?.status === "error" ? (
+                    <div className="mb-3 rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                      {state.viewingVersion.error}
+                    </div>
+                  ) : null}
+
                   <TipTapEditor
-                    content={state.draftBody}
+                    content={
+                      state.viewingVersion?.status === "ready"
+                        ? state.viewingVersion.body
+                        : state.draftBody
+                    }
                     context={context}
                     onChange={onDraftChange}
                     onActiveMdxComponentChange={onActiveMdxComponentChange}
-                    readOnly={!state.canWrite}
+                    readOnly={!state.canWrite || !!state.viewingVersion}
                     forbidden={false}
                   />
                 </div>
@@ -1921,7 +1819,8 @@ export function ContentDocumentPageView({
           {state.status === "ready" && sidebarOpen ? (
             <ContentDocumentPageSidebar
               state={state}
-              onSelectComparisonVersion={onSelectComparisonVersion}
+              onViewVersion={onViewVersion}
+              onBackToDraft={onBackToDraft}
             />
           ) : null}
         </div>
@@ -2479,6 +2378,70 @@ export default function ContentDocumentPage({
     );
   });
 
+  const handleViewVersion = useEffectEvent(async (version: number) => {
+    const currentState = stateRef.current;
+    const api = createRouteApi();
+
+    if (!api || currentState.status !== "ready") return;
+
+    setState((current) =>
+      current.status === "ready"
+        ? {
+            ...current,
+            viewingVersion: { version, body: "", status: "loading" },
+          }
+        : current,
+    );
+
+    try {
+      const versionDoc = await api.getVersion({
+        documentId: currentState.documentId,
+        locale: currentState.document.locale,
+        version,
+      });
+
+      setState((current) =>
+        current.status === "ready" &&
+        current.viewingVersion?.version === version
+          ? {
+              ...current,
+              viewingVersion: {
+                version,
+                body: versionDoc.body ?? "",
+                status: "ready",
+              },
+            }
+          : current,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to load version.";
+
+      setState((current) =>
+        current.status === "ready" &&
+        current.viewingVersion?.version === version
+          ? {
+              ...current,
+              viewingVersion: {
+                version,
+                body: "",
+                status: "error",
+                error: message,
+              },
+            }
+          : current,
+      );
+    }
+  });
+
+  const handleBackToDraft = useEffectEvent(() => {
+    setState((current) =>
+      current.status === "ready"
+        ? { ...current, viewingVersion: undefined }
+        : current,
+    );
+  });
+
   useEffect(() => {
     void loadDocument();
   }, [context, documentId, route, typeId, typeLabel]);
@@ -2640,6 +2603,10 @@ export default function ContentDocumentPage({
         void handleCreateVariant(prefill);
       }}
       onCancelVariantCreation={handleCancelVariantCreation}
+      onViewVersion={(version) => {
+        void handleViewVersion(version);
+      }}
+      onBackToDraft={handleBackToDraft}
     />
   );
 }
