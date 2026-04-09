@@ -24,6 +24,7 @@ import {
   type CreateDatabaseContentStoreOptions,
   type SortField,
   type SortOrder,
+  sortVariantSummaries,
 } from "./types.js";
 import {
   assertJsonObject,
@@ -1771,6 +1772,45 @@ export function createDatabaseContentStore(
       }
 
       return toContentDocument(scope, updated);
+    },
+
+    async listVariants(scope, documentId) {
+      const scopeIds = await resolveScopeIds(scope, false);
+
+      if (!scopeIds) {
+        return undefined;
+      }
+
+      const doc = await db.query.documents.findFirst({
+        where: and(
+          eq(documents.projectId, scopeIds.projectId),
+          eq(documents.environmentId, scopeIds.environmentId),
+          eq(documents.documentId, documentId),
+        ),
+      });
+
+      if (!doc || doc.isDeleted) {
+        return undefined;
+      }
+
+      const rows = await db.query.documents.findMany({
+        where: and(
+          eq(documents.projectId, scopeIds.projectId),
+          eq(documents.environmentId, scopeIds.environmentId),
+          eq(documents.translationGroupId, doc.translationGroupId),
+          eq(documents.isDeleted, false),
+        ),
+      });
+
+      return sortVariantSummaries(
+        rows.map((row) => ({
+          documentId: row.documentId,
+          locale: row.locale,
+          path: row.path,
+          publishedVersion: row.publishedVersion,
+          hasUnpublishedChanges: row.hasUnpublishedChanges,
+        })),
+      );
     },
   };
 }

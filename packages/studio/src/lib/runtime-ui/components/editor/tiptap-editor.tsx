@@ -59,7 +59,6 @@ import {
   replaceSlashTriggerWithMdxComponent,
   type MdxComponentSlashTrigger,
 } from "./mdx-component-slash.js";
-import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
 import { Separator } from "../ui/separator.js";
 import { cn } from "../../lib/utils.js";
@@ -161,9 +160,22 @@ export function TipTapEditor({
     useState<MdxComponentSlashTrigger | null>(null);
   const lastPublishedSelectionRef =
     useRef<PublishedMdxComponentSelectionSnapshot | null>(null);
+  const lastEmittedMarkdownRef = useRef<string | null>(null);
+  const externalSyncTokenRef = useRef(0);
   const handleEditorUpdate = useEffectEvent(
     (nextEditor: TipTapEditorInstance) => {
-      onChange?.(extractMarkdownFromEditor(nextEditor));
+      if (externalSyncTokenRef.current > 0) {
+        return;
+      }
+
+      const nextMarkdown = extractMarkdownFromEditor(nextEditor);
+
+      if (nextMarkdown === lastEmittedMarkdownRef.current) {
+        return;
+      }
+
+      lastEmittedMarkdownRef.current = nextMarkdown;
+      onChange?.(nextMarkdown);
     },
   );
   const syncSlashTrigger = useEffectEvent(
@@ -295,14 +307,38 @@ export function TipTapEditor({
       return;
     }
 
+    // Seed the ref with TipTap's normalized output so the first focus/click
+    // does not produce a spurious onChange from parse normalization.
+    if (lastEmittedMarkdownRef.current === null) {
+      lastEmittedMarkdownRef.current = extractMarkdownFromEditor(editor);
+    }
+
     const currentMarkdown = extractMarkdownFromEditor(editor);
 
     if (currentMarkdown === content) {
+      lastEmittedMarkdownRef.current = currentMarkdown;
       return;
     }
 
-    editor.commands.setContent(content, {
-      contentType: "markdown",
+    // Defer setContent out of the React lifecycle to avoid the
+    // "flushSync was called from inside a lifecycle method" warning.
+    // TipTap's ProseMirror internals call flushSync during setContent.
+    const pendingContent = content;
+    const syncToken = ++externalSyncTokenRef.current;
+    queueMicrotask(() => {
+      try {
+        if (!editor.isDestroyed) {
+          editor.commands.setContent(pendingContent, {
+            contentType: "markdown",
+          });
+          lastEmittedMarkdownRef.current = extractMarkdownFromEditor(editor);
+        }
+      } finally {
+        // Only clear the guard if no newer sync was queued
+        if (externalSyncTokenRef.current === syncToken) {
+          externalSyncTokenRef.current = 0;
+        }
+      }
     });
   }, [content, editor]);
 
@@ -545,12 +581,6 @@ export function TipTapEditor({
               ))}
             </div>
           ))}
-
-          <div className="ml-auto">
-            <Badge variant="outline" className="bg-background">
-              TipTap
-            </Badge>
-          </div>
         </div>
 
         {toolbar.secondaryItems.length > 0 ? (

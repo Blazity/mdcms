@@ -4,6 +4,7 @@ import {
   type ContentDocumentResponse,
   type ContentVersionDocumentResponse,
   type ContentVersionSummaryResponse,
+  type TranslationVariantsResponse,
 } from "@mdcms/shared";
 
 import type { MdcmsConfig } from "./studio-component.js";
@@ -67,6 +68,7 @@ export type StudioDocumentRouteCreateInput = {
   format?: "md" | "mdx";
   frontmatter?: Record<string, unknown>;
   body?: string;
+  sourceDocumentId?: string;
   schemaHash?: string;
   signal?: AbortSignal;
 };
@@ -132,6 +134,10 @@ export type StudioDocumentRouteApi = {
   restore: (
     input: StudioDocumentRouteRestoreInput,
   ) => Promise<ContentDocumentResponse>;
+  listVariants: (input: {
+    documentId: string;
+    signal?: AbortSignal;
+  }) => Promise<TranslationVariantsResponse>;
 };
 
 type StudioDocumentRoutePayload = {
@@ -492,6 +498,44 @@ function toContentVersionDocumentResponse(
   );
 }
 
+function toTranslationVariantsResponse(
+  operation: string,
+  payload: unknown,
+  fallbackMessage: string,
+): TranslationVariantsResponse {
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    !("data" in payload) ||
+    !Array.isArray((payload as Record<string, unknown>).data)
+  ) {
+    throw toInvalidRouteResponseError(operation, fallbackMessage, payload);
+  }
+
+  const data = (payload as Record<string, unknown>).data as unknown[];
+
+  for (const row of data) {
+    if (
+      !row ||
+      typeof row !== "object" ||
+      typeof (row as Record<string, unknown>).documentId !== "string" ||
+      typeof (row as Record<string, unknown>).locale !== "string" ||
+      typeof (row as Record<string, unknown>).path !== "string" ||
+      typeof (row as Record<string, unknown>).hasUnpublishedChanges !==
+        "boolean"
+    ) {
+      throw toInvalidRouteResponseError(operation, fallbackMessage, payload);
+    }
+
+    const publishedVersion = (row as Record<string, unknown>).publishedVersion;
+    if (publishedVersion !== null && typeof publishedVersion !== "number") {
+      throw toInvalidRouteResponseError(operation, fallbackMessage, payload);
+    }
+  }
+
+  return payload as TranslationVariantsResponse;
+}
+
 async function requestRouteJson(
   config: StudioDocumentRouteConfig,
   options: StudioDocumentRouteApiOptions,
@@ -832,6 +876,9 @@ export function createStudioDocumentRouteApi(
           format: input.format ?? "mdx",
           frontmatter: input.frontmatter ?? {},
           body: input.body ?? "",
+          ...(input.sourceDocumentId
+            ? { sourceDocumentId: input.sourceDocumentId }
+            : {}),
         },
       });
 
@@ -897,6 +944,32 @@ export function createStudioDocumentRouteApi(
         "POST /api/v1/content/:documentId/restore",
         payload,
         "Failed to restore document.",
+      );
+    },
+    async listVariants(input) {
+      const payload = await requestContentRouteJson(
+        options,
+        buildUrl(
+          config,
+          `/api/v1/content/${encodeURIComponent(input.documentId)}/variants`,
+        ),
+        {
+          method: "GET",
+          signal: input.signal,
+          headers: withContentRouteHeaders(
+            mergeHeaders({
+              "x-mdcms-project": config.project,
+              "x-mdcms-environment": config.environment,
+            }),
+            {},
+          ),
+        },
+      );
+
+      return toTranslationVariantsResponse(
+        "GET /api/v1/content/:documentId/variants",
+        payload,
+        "Failed to load translation variants.",
       );
     },
   };

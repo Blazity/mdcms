@@ -49,6 +49,7 @@ If all types are non-localized, `locales` may be omitted. In that implicit singl
 ### Editor UX
 
 - A **locale switcher dropdown** is shown only for localized types (`localized: true`).
+  The locale switcher is populated by merging two data sources: `GET /api/v1/content/:documentId/variants` (which locales already have variants) and the project's `locales.supported` configuration (the full set of available locales). Locales without an existing variant are shown with a creation indicator.
 - Switching to an untranslated locale shows an option to create the variant (optionally pre-filled with the default locale's content).
   Variant creation uses `POST /api/v1/content` with the full create payload plus
   `sourceDocumentId` pointing at an existing non-deleted document in the same

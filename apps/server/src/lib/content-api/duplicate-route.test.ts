@@ -89,6 +89,7 @@ function createStore(overrides?: Partial<ContentStore>): ContentStore {
     restoreVersion: async () => baseDocument,
     publish: async () => baseDocument,
     unpublish: async () => baseDocument,
+    listVariants: async () => undefined,
     ...overrides,
   };
 }

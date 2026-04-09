@@ -19,6 +19,11 @@ export default async function AdminCatchAllPage() {
       preparedComponents={extractPreparedStudioComponentMetadata(
         preparedConfig,
       )}
+      schemaHash={
+        "_schemaHash" in preparedConfig
+          ? (preparedConfig._schemaHash as string)
+          : undefined
+      }
     />
   );
 }
