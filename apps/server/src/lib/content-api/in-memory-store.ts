@@ -10,6 +10,7 @@ import {
   type ContentPublishedSnapshot,
   type ContentScope,
   type ContentStore,
+  type ContentVariantSummary,
   type ContentVersionDocument,
   type ContentVersionSummary,
   type ContentWriteOperationOptions,
@@ -1056,6 +1057,34 @@ export function createInMemoryContentStore(
 
       store.set(normalizedDocumentId, updated);
       return updated;
+    },
+
+    async listVariants(scope, documentId) {
+      const store = getScopeStore(scope);
+      const doc = store.get(documentId);
+
+      if (!doc || doc.isDeleted) {
+        return undefined;
+      }
+
+      const variants: ContentVariantSummary[] = [];
+
+      for (const candidate of store.values()) {
+        if (
+          candidate.translationGroupId === doc.translationGroupId &&
+          !candidate.isDeleted
+        ) {
+          variants.push({
+            documentId: candidate.documentId,
+            locale: candidate.locale,
+            path: candidate.path,
+            publishedVersion: candidate.publishedVersion,
+            hasUnpublishedChanges: candidate.hasUnpublishedChanges,
+          });
+        }
+      }
+
+      return variants;
     },
   };
 }

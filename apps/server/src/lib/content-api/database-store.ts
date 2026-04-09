@@ -1772,5 +1772,9 @@ export function createDatabaseContentStore(
 
       return toContentDocument(scope, updated);
     },
+
+    async listVariants(_scope, _documentId) {
+      throw new Error("listVariants: implemented in Task 3");
+    },
   };
 }

@@ -2086,3 +2086,99 @@ test("CMS-151: omitting draftRevision skips concurrency check (backward compat)"
 
   assert.equal(updateResponse.status, 200);
 });
+
+test("in-memory store listVariants returns sibling locale variants", async () => {
+  const scope = {
+    project: "cms63-in-memory-variants",
+    environment: "production",
+  };
+  const store = createInMemoryContentStore({
+    schemaScopes: [
+      {
+        project: scope.project,
+        environment: scope.environment,
+        schemas: createCms26ResolvedSchemas(),
+      },
+    ],
+  });
+
+  const source = await store.create(scope, {
+    path: "blog/variant-test",
+    type: "BlogPost",
+    locale: "en",
+    format: "md",
+    frontmatter: { slug: "variant-test" },
+    body: "english body",
+  });
+
+  await store.create(scope, {
+    path: "blog/variant-test",
+    type: "BlogPost",
+    locale: "fr",
+    format: "md",
+    frontmatter: { slug: "variant-test" },
+    body: "french body",
+    sourceDocumentId: source.documentId,
+  });
+
+  const variants = await store.listVariants(scope, source.documentId);
+
+  assert.ok(variants !== undefined);
+  assert.equal(variants.length, 2);
+  const locales = variants.map((v) => v.locale).sort();
+  assert.deepEqual(locales, ["en", "fr"]);
+  assert.ok(variants.every((v) => v.path === "blog/variant-test"));
+});
+
+test("in-memory store listVariants returns undefined for missing document", async () => {
+  const scope = {
+    project: "cms63-in-memory-variants-missing",
+    environment: "production",
+  };
+  const store = createInMemoryContentStore();
+
+  const result = await store.listVariants(scope, "nonexistent-id");
+  assert.equal(result, undefined);
+});
+
+test("in-memory store listVariants excludes soft-deleted variants", async () => {
+  const scope = {
+    project: "cms63-in-memory-variants-deleted",
+    environment: "production",
+  };
+  const store = createInMemoryContentStore({
+    schemaScopes: [
+      {
+        project: scope.project,
+        environment: scope.environment,
+        schemas: createCms26ResolvedSchemas(),
+      },
+    ],
+  });
+
+  const source = await store.create(scope, {
+    path: "blog/delete-variant-test",
+    type: "BlogPost",
+    locale: "en",
+    format: "md",
+    frontmatter: { slug: "delete-variant-test" },
+    body: "english body",
+  });
+
+  const variant = await store.create(scope, {
+    path: "blog/delete-variant-test",
+    type: "BlogPost",
+    locale: "fr",
+    format: "md",
+    frontmatter: { slug: "delete-variant-test" },
+    body: "french body",
+    sourceDocumentId: source.documentId,
+  });
+
+  await store.softDelete(scope, variant.documentId);
+
+  const variants = await store.listVariants(scope, source.documentId);
+  assert.ok(variants !== undefined);
+  assert.equal(variants.length, 1);
+  assert.equal(variants[0].locale, "en");
+});

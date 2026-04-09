@@ -82,6 +82,14 @@ export type ContentListQuery = {
   q?: string;
 };
 
+export type ContentVariantSummary = {
+  documentId: string;
+  locale: string;
+  path: string;
+  publishedVersion: number | null;
+  hasUnpublishedChanges: boolean;
+};
+
 export type ContentWritePayload = {
   path?: string;
   type?: string;
@@ -196,6 +204,10 @@ export type ContentStore = {
       actorId?: string;
     },
   ) => Promise<ContentDocument>;
+  listVariants: (
+    scope: ContentScope,
+    documentId: string,
+  ) => Promise<ContentVariantSummary[] | undefined>;
 };
 
 export type CreateDatabaseContentStoreOptions = {
