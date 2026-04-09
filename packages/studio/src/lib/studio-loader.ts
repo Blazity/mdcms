@@ -237,7 +237,18 @@ async function createDocumentRouteMountContext(
     return undefined;
   }
 
-  const capability = await resolveStudioDocumentRouteSchemaCapability(config);
+  // When the host app pre-computes the schema hash on the server (where
+  // the full config with Zod types is available), skip the client-side
+  // capability derivation that would fail without serializable types.
+  const precomputedSchemaHash =
+    typeof (config as Record<string, unknown>)._schemaHash === "string"
+      ? ((config as Record<string, unknown>)._schemaHash as string)
+      : undefined;
+
+  const capability = precomputedSchemaHash
+    ? { canWrite: true as const, schemaHash: precomputedSchemaHash }
+    : await resolveStudioDocumentRouteSchemaCapability(config);
+
   let supportedLocales: string[] | undefined;
   let defaultLocale: string | undefined;
 

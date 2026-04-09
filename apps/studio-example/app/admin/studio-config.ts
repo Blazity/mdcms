@@ -30,6 +30,7 @@ export function extractPreparedStudioComponentMetadata(
 
 export function createClientStudioConfig(
   preparedComponents: PreparedStudioComponentMetadata[],
+  schemaHash?: string,
 ): MdcmsConfig {
   const extractedPropsByName = new Map(
     preparedComponents.map((component) => [
@@ -45,6 +46,9 @@ export function createClientStudioConfig(
     project: studioExampleProject,
     environment: studioExampleEnvironment,
     serverUrl: studioExampleServerUrl,
+    // Pre-computed schema hash from the server component where the full
+    // config (with Zod types/environments) is available for derivation.
+    ...(schemaHash ? { _schemaHash: schemaHash } : {}),
     components: clientComponents.map((component) => {
       const extractedProps = extractedPropsByName.get(component.name);
 
@@ -55,5 +59,5 @@ export function createClientStudioConfig(
             extractedProps,
           };
     }),
-  };
+  } as MdcmsConfig;
 }

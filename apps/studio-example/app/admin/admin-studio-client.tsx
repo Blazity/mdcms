@@ -9,8 +9,12 @@ import {
 
 export function AdminStudioClient(props: {
   preparedComponents: PreparedStudioComponentMetadata[];
+  schemaHash?: string;
 }) {
-  const config = createClientStudioConfig(props.preparedComponents);
+  const config = createClientStudioConfig(
+    props.preparedComponents,
+    props.schemaHash,
+  );
 
   return <Studio config={config} basePath="/admin" />;
 }
