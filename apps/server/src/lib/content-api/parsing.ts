@@ -306,6 +306,15 @@ export function validateContentPath(path: string): string {
     });
   }
 
+  if (/(^|\/)\.\.(\/|$)/.test(trimmed)) {
+    throw new RuntimeError({
+      code: "INVALID_INPUT",
+      message: 'Field "path" must not contain path traversal segments ("..").',
+      statusCode: 400,
+      details: { field: "path", value: trimmed },
+    });
+  }
+
   return trimmed;
 }
 

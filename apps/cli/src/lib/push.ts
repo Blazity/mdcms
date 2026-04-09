@@ -2,9 +2,21 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 
+import { discoverUntrackedFiles } from "./discover.js";
+
 import type { ContentDocumentResponse } from "@mdcms/shared";
-import { RuntimeError } from "@mdcms/shared";
+import {
+  RuntimeError,
+  serializeResolvedEnvironmentSchema,
+  type ParsedMdcmsConfig,
+} from "@mdcms/shared";
+import { buildSchemaSyncPayload } from "@mdcms/shared/server";
 import { parse as parseYaml } from "yaml";
+import { readSchemaState } from "./schema-state.js";
+import {
+  validateCandidates,
+  type DocumentValidationResult,
+} from "./validate.js";
 
 import type { CliContentTypeConfig } from "./config.js";
 import type { CliCommand, CliCommandContext } from "./framework.js";
@@ -17,9 +29,10 @@ import {
 } from "./manifest.js";
 
 type PushOptions = {
-  dryRun: boolean;
   force: boolean;
   published: boolean;
+  validate: boolean;
+  dryRun: boolean;
 };
 
 type PushCandidate = {
@@ -31,18 +44,40 @@ type PushCandidate = {
   hash: string;
 };
 
+type DeletionCandidate = {
+  documentId: string;
+  path: string;
+  format: "md" | "mdx";
+  draftRevision: number;
+  publishedVersion: number | null;
+};
+
+type NewFileCandidate = {
+  path: string;
+  format: "md" | "mdx";
+  frontmatter: Record<string, unknown>;
+  body: string;
+  hash: string;
+  resolvedType: string;
+  resolvedLocale: string;
+  resolvedPath: string;
+};
+
 type PushPlan = {
   changedCandidates: PushCandidate[];
+  newCandidates: NewFileCandidate[];
+  deletionCandidates: DeletionCandidate[];
   trackedCount: number;
   unchangedCount: number;
 };
 
 type PushResult = {
-  status: "updated" | "created" | "failed";
+  status: "updated" | "created" | "deleted" | "failed";
   documentId: string;
   nextDocumentId?: string;
   path: string;
   message: string;
+  reasonCode?: string;
 };
 
 type ContentDocumentPayload = Pick<
@@ -61,6 +96,7 @@ function parsePushOptions(args: string[]): PushOptions {
     if (
       token === "--published" ||
       token === "--force" ||
+      token === "--validate" ||
       token === "--dry-run"
     ) {
       continue;
@@ -78,29 +114,44 @@ function parsePushOptions(args: string[]): PushOptions {
   }
 
   return {
-    dryRun: args.includes("--dry-run"),
     force: args.includes("--force"),
     published: args.includes("--published"),
+    validate: args.includes("--validate"),
+    dryRun: args.includes("--dry-run"),
   };
 }
 
 function renderPushHelp(): string {
   return [
-    "Usage: mdcms push [--force] [--dry-run] [--published]",
+    "Usage: mdcms push [--force] [--dry-run] [--validate] [--published]",
+    "",
+    "Upload local markdown files to CMS as draft content.",
+    "",
+    "Behavior:",
+    "  - Changed manifest-tracked files are updated on the server.",
+    "  - New local files (in content directories, not yet tracked) are",
+    "    detected and offered for upload via interactive selection.",
+    "  - Locally-deleted files (in manifest but missing on disk) are",
+    "    detected and offered for server-side deletion via interactive selection.",
     "",
     "Options:",
-    "  --force       Skip confirmation prompt before applying push",
+    "  --force       Skip all prompts; auto-select all new/deleted files",
     "  --dry-run     Show push plan only (no API writes)",
+    "  --validate    Validate frontmatter against local schema before pushing",
     "  --published   Reserved for future behavior (unsupported in demo mode)",
     "",
   ].join("\n");
 }
 
-function toRequestHeaders(context: CliCommandContext): Headers {
+function toRequestHeaders(
+  context: CliCommandContext,
+  schemaHash: string,
+): Headers {
   const headers = new Headers({
     "content-type": "application/json",
     "x-mdcms-project": context.project,
     "x-mdcms-environment": context.environment,
+    "x-mdcms-schema-hash": schemaHash,
   });
 
   if (context.apiKey) {
@@ -110,11 +161,11 @@ function toRequestHeaders(context: CliCommandContext): Headers {
   return headers;
 }
 
-function hashContent(content: string): string {
+export function hashContent(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
-function parseFileFormat(path: string): "md" | "mdx" {
+export function parseFileFormat(path: string): "md" | "mdx" {
   const extension = extname(path).toLowerCase();
 
   if (extension === ".md") {
@@ -133,7 +184,7 @@ function parseFileFormat(path: string): "md" | "mdx" {
   });
 }
 
-function parseMarkdownDocument(content: string): {
+export function parseMarkdownDocument(content: string): {
   frontmatter: Record<string, unknown>;
   body: string;
 } {
@@ -187,7 +238,7 @@ function normalizeDirectory(directory: string | undefined): string {
   return directory.replace(/^\/+/, "").replace(/\/+$/, "");
 }
 
-function pickTypeConfigForPath(
+export function pickTypeConfigForPath(
   typeConfigs: readonly CliContentTypeConfig[],
   pathWithoutExtension: string,
 ): CliContentTypeConfig {
@@ -230,7 +281,7 @@ function pickTypeConfigForPath(
   return selected;
 }
 
-function resolveCreatePayload(input: {
+export function resolveCreatePayload(input: {
   path: string;
   format: "md" | "mdx";
   types: readonly CliContentTypeConfig[];
@@ -365,6 +416,7 @@ function parseRemoteError(
 async function updateExistingDocument(
   context: CliCommandContext,
   candidate: PushCandidate,
+  schemaHash: string,
 ): Promise<
   | {
       kind: "updated";
@@ -373,16 +425,33 @@ async function updateExistingDocument(
   | {
       kind: "missing";
     }
+  | {
+      kind: "stale";
+      code: string;
+      message: string;
+    }
+  | {
+      kind: "schema_mismatch";
+      code: string;
+      message: string;
+    }
+  | {
+      kind: "path_conflict";
+      code: string;
+      message: string;
+    }
 > {
   const response = await context.fetcher(
     `${context.serverUrl}/api/v1/content/${candidate.documentId}`,
     {
       method: "PUT",
-      headers: toRequestHeaders(context),
+      headers: toRequestHeaders(context, schemaHash),
       body: JSON.stringify({
         format: candidate.format,
         frontmatter: candidate.frontmatter,
         body: candidate.body,
+        draftRevision: candidate.manifestEntry.draftRevision,
+        publishedVersion: candidate.manifestEntry.publishedVersion,
       }),
     },
   );
@@ -401,6 +470,31 @@ async function updateExistingDocument(
   }
 
   const remoteError = parseRemoteError(body, response.status);
+
+  if (response.status === 409 && remoteError.code === "STALE_DRAFT_REVISION") {
+    return {
+      kind: "stale",
+      code: remoteError.code,
+      message: remoteError.message,
+    };
+  }
+
+  if (response.status === 409 && remoteError.code === "SCHEMA_HASH_MISMATCH") {
+    return {
+      kind: "schema_mismatch",
+      code: remoteError.code,
+      message: remoteError.message,
+    };
+  }
+
+  if (response.status === 409 && remoteError.code === "CONTENT_PATH_CONFLICT") {
+    return {
+      kind: "path_conflict",
+      code: remoteError.code,
+      message: `Path conflict for "${candidate.manifestEntry.path}". The manifest references a stale document ID. Run 'cms pull' to re-sync.`,
+    };
+  }
+
   throw new RuntimeError({
     code: remoteError.code,
     message: remoteError.message,
@@ -411,7 +505,12 @@ async function updateExistingDocument(
 async function createDocumentFromLocalFile(
   context: CliCommandContext,
   candidate: PushCandidate,
-): Promise<ContentDocumentPayload> {
+  schemaHash: string,
+): Promise<
+  | { kind: "created"; remote: ContentDocumentPayload }
+  | { kind: "schema_mismatch"; code: string; message: string }
+  | { kind: "path_conflict"; code: string; message: string }
+> {
   const types = context.config.types ?? [];
 
   if (types.length === 0) {
@@ -433,7 +532,7 @@ async function createDocumentFromLocalFile(
     `${context.serverUrl}/api/v1/content`,
     {
       method: "POST",
-      headers: toRequestHeaders(context),
+      headers: toRequestHeaders(context, schemaHash),
       body: JSON.stringify({
         type: createTarget.type,
         path: createTarget.path,
@@ -449,6 +548,29 @@ async function createDocumentFromLocalFile(
 
   if (!response.ok) {
     const remoteError = parseRemoteError(body, response.status);
+
+    if (
+      response.status === 409 &&
+      remoteError.code === "SCHEMA_HASH_MISMATCH"
+    ) {
+      return {
+        kind: "schema_mismatch",
+        code: remoteError.code,
+        message: remoteError.message,
+      };
+    }
+
+    if (
+      response.status === 409 &&
+      remoteError.code === "CONTENT_PATH_CONFLICT"
+    ) {
+      return {
+        kind: "path_conflict",
+        code: remoteError.code,
+        message: `Path "${createTarget.path}" already exists on server under a different document ID. Run 'cms pull' to re-sync your manifest.`,
+      };
+    }
+
     throw new RuntimeError({
       code: remoteError.code,
       message: remoteError.message,
@@ -456,12 +578,122 @@ async function createDocumentFromLocalFile(
     });
   }
 
-  return parseRemoteDocument(body);
+  return { kind: "created", remote: parseRemoteDocument(body) };
+}
+
+async function createNewDocument(
+  context: CliCommandContext,
+  candidate: NewFileCandidate,
+  schemaHash: string,
+): Promise<
+  | { kind: "created"; remote: ContentDocumentPayload }
+  | { kind: "schema_mismatch"; code: string; message: string }
+  | { kind: "path_conflict"; code: string; message: string }
+> {
+  const response = await context.fetcher(
+    `${context.serverUrl}/api/v1/content`,
+    {
+      method: "POST",
+      headers: toRequestHeaders(context, schemaHash),
+      body: JSON.stringify({
+        type: candidate.resolvedType,
+        path: candidate.resolvedPath,
+        locale: candidate.resolvedLocale,
+        format: candidate.format,
+        frontmatter: candidate.frontmatter,
+        body: candidate.body,
+      }),
+    },
+  );
+
+  const body = (await response.json().catch(() => undefined)) as unknown;
+
+  if (!response.ok) {
+    const remoteError = parseRemoteError(body, response.status);
+
+    if (
+      response.status === 409 &&
+      remoteError.code === "SCHEMA_HASH_MISMATCH"
+    ) {
+      return {
+        kind: "schema_mismatch",
+        code: remoteError.code,
+        message: remoteError.message,
+      };
+    }
+
+    // Issue #10: handle path conflict with actionable message
+    if (
+      response.status === 409 &&
+      remoteError.code === "CONTENT_PATH_CONFLICT"
+    ) {
+      return {
+        kind: "path_conflict",
+        code: remoteError.code,
+        message: `Path "${candidate.resolvedPath}" already exists on server. Run 'cms pull' to sync, then resolve the duplicate.`,
+      };
+    }
+
+    throw new RuntimeError({
+      code: remoteError.code,
+      message: remoteError.message,
+      statusCode: remoteError.statusCode,
+    });
+  }
+
+  return { kind: "created", remote: parseRemoteDocument(body) };
+}
+
+async function deleteDocument(
+  context: CliCommandContext,
+  candidate: DeletionCandidate,
+  schemaHash: string,
+): Promise<
+  { kind: "deleted" } | { kind: "already_gone" } | { kind: "conflict" }
+> {
+  const headers = toRequestHeaders(context, schemaHash);
+  headers.set("x-mdcms-draft-revision", String(candidate.draftRevision));
+  if (candidate.publishedVersion !== null) {
+    headers.set(
+      "x-mdcms-published-version",
+      String(candidate.publishedVersion),
+    );
+  }
+  const response = await context.fetcher(
+    `${context.serverUrl}/api/v1/content/${candidate.documentId}`,
+    {
+      method: "DELETE",
+      headers,
+    },
+  );
+
+  if (response.ok) {
+    return { kind: "deleted" };
+  }
+
+  if (response.status === 404) {
+    return { kind: "already_gone" };
+  }
+
+  if (response.status === 409) {
+    return { kind: "conflict" };
+  }
+
+  const body = (await response.json().catch(() => undefined)) as unknown;
+  const remoteError = parseRemoteError(body, response.status);
+
+  throw new RuntimeError({
+    code: remoteError.code,
+    message: remoteError.message,
+    statusCode: remoteError.statusCode,
+  });
 }
 
 function printPushPlan(
   context: CliCommandContext,
   candidates: PushCandidate[],
+  newCandidates: NewFileCandidate[],
+  deletionCandidates: DeletionCandidate[],
   summary: {
     trackedCount: number;
     unchangedCount: number;
@@ -471,13 +703,63 @@ function printPushPlan(
     `Push plan for ${context.project}/${context.environment} (${candidates.length} changed / ${summary.trackedCount} tracked document(s)):\n`,
   );
 
-  for (const candidate of candidates) {
-    context.stdout.write(
-      `  - ${candidate.documentId} -> ${candidate.manifestEntry.path} (${candidate.format})\n`,
-    );
+  if (candidates.length > 0) {
+    context.stdout.write("  Changed:\n");
+    for (const candidate of candidates) {
+      context.stdout.write(
+        `    - ${candidate.documentId} -> ${candidate.manifestEntry.path} (${candidate.format})\n`,
+      );
+    }
+  }
+
+  if (newCandidates.length > 0) {
+    context.stdout.write("  New (untracked):\n");
+    for (const candidate of newCandidates) {
+      context.stdout.write(
+        `    - ${candidate.path} (${candidate.resolvedType})\n`,
+      );
+    }
+  }
+
+  if (deletionCandidates.length > 0) {
+    context.stdout.write("  Deleted (missing locally):\n");
+    for (const candidate of deletionCandidates) {
+      context.stdout.write(
+        `    - ${candidate.documentId} -> ${candidate.path}\n`,
+      );
+    }
   }
 
   context.stdout.write(`Unchanged (skipped): ${summary.unchangedCount}\n`);
+}
+
+function printValidationResults(
+  context: CliCommandContext,
+  results: DocumentValidationResult[],
+): void {
+  context.stdout.write(
+    `Validating ${results.length} document(s) against local schema...\n`,
+  );
+
+  for (const result of results) {
+    if (result.errors.length === 0 && result.warnings.length === 0) {
+      context.stdout.write(`  v ${result.path}\n`);
+      continue;
+    }
+
+    if (result.errors.length > 0) {
+      context.stderr.write(`  x ${result.path}\n`);
+    } else {
+      context.stdout.write(`  ~ ${result.path}\n`);
+    }
+
+    for (const error of result.errors) {
+      context.stderr.write(`    - ${error}\n`);
+    }
+    for (const warning of result.warnings) {
+      context.stdout.write(`    - [warn] ${warning}\n`);
+    }
+  }
 }
 
 function printPushResults(
@@ -496,6 +778,36 @@ function printPushResults(
       `  - [${result.status.toUpperCase()}] ${idLabel} (${result.path}) ${result.message}\n`,
     );
   }
+
+  const staleCount = results.filter(
+    (r) => r.reasonCode === "stale_draft_revision",
+  ).length;
+
+  if (staleCount > 0) {
+    context.stdout.write(
+      `\nSome documents were rejected as stale. Run 'cms pull' to get the latest drafts, then re-apply your local changes.\n`,
+    );
+  }
+
+  const schemaMismatchCount = results.filter(
+    (r) => r.reasonCode === "schema_hash_mismatch",
+  ).length;
+
+  if (schemaMismatchCount > 0) {
+    context.stdout.write(
+      `\nSome documents were rejected due to schema mismatch. Run 'cms schema sync' to update the server schema, then retry.\n`,
+    );
+  }
+
+  const pathConflictCount = results.filter(
+    (r) => r.reasonCode === "content_path_conflict",
+  ).length;
+
+  if (pathConflictCount > 0) {
+    context.stdout.write(
+      `\nSome documents were rejected due to path conflicts. Run 'cms pull' to sync with server, then resolve duplicates.\n`,
+    );
+  }
 }
 
 async function buildPushPlan(
@@ -503,6 +815,7 @@ async function buildPushPlan(
   manifest: ScopedManifest,
 ): Promise<PushPlan> {
   const changedCandidates: PushCandidate[] = [];
+  const deletionCandidates: DeletionCandidate[] = [];
   let trackedCount = 0;
   let unchangedCount = 0;
   const orderedDocumentIds = Object.keys(manifest).sort((left, right) =>
@@ -521,19 +834,22 @@ async function buildPushPlan(
     const absolutePath = join(context.cwd, manifestEntry.path);
     const raw = await readFile(absolutePath, "utf8").catch((error) => {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new RuntimeError({
-          code: "LOCAL_FILE_MISSING",
-          message: `Manifest-tracked file is missing: "${manifestEntry.path}".`,
-          statusCode: 400,
-          details: {
-            documentId,
-            path: manifestEntry.path,
-          },
-        });
+        return null;
       }
 
       throw error;
     });
+
+    if (raw === null) {
+      deletionCandidates.push({
+        documentId,
+        path: manifestEntry.path,
+        format: manifestEntry.format,
+        draftRevision: manifestEntry.draftRevision,
+        publishedVersion: manifestEntry.publishedVersion,
+      });
+      continue;
+    }
 
     const currentHash = hashContent(raw);
     const manifestHash = manifestEntry.hash.trim();
@@ -556,8 +872,64 @@ async function buildPushPlan(
     });
   }
 
+  const contentDirectories = context.config.contentDirectories ?? [];
+  const newCandidates: NewFileCandidate[] = [];
+
+  if (contentDirectories.length > 0) {
+    const untrackedFiles = await discoverUntrackedFiles({
+      cwd: context.cwd,
+      contentDirectories,
+      manifest,
+    });
+
+    const types = context.config.types ?? [];
+
+    for (const file of untrackedFiles) {
+      const format = parseFileFormat(file.path);
+      const absolutePath = join(context.cwd, file.path);
+      const raw = await readFile(absolutePath, "utf8");
+      const currentHash = hashContent(raw);
+      const parsed = parseMarkdownDocument(raw);
+
+      try {
+        const resolved = resolveCreatePayload({
+          path: file.path,
+          format,
+          types,
+        });
+
+        newCandidates.push({
+          path: file.path,
+          format,
+          frontmatter: parsed.frontmatter,
+          body: parsed.body,
+          hash: currentHash,
+          resolvedType: resolved.type,
+          resolvedLocale: resolved.locale,
+          resolvedPath: resolved.path,
+        });
+      } catch (error) {
+        if (
+          error instanceof RuntimeError &&
+          error.code === "TYPE_MAPPING_MISSING"
+        ) {
+          const dir = file.path.split("/").slice(0, -1).join("/");
+          context.stderr.write(
+            `Warning: skipping "${file.path}" — no content type maps to directory "${dir}".\n` +
+              `  Define a type with this directory in mdcms.config.ts, e.g.:\n` +
+              `  defineType("myType", { directory: "${dir}", fields: { ... } })\n\n`,
+          );
+        } else {
+          throw error;
+        }
+      }
+    }
+  }
+
   return {
     changedCandidates,
+    newCandidates,
+    deletionCandidates,
     trackedCount,
     unchangedCount,
   };
@@ -568,14 +940,31 @@ async function applyPush(
   manifestPath: string,
   manifest: ScopedManifest,
   candidates: PushCandidate[],
+  newCandidates: NewFileCandidate[],
+  deletionCandidates: DeletionCandidate[],
+  schemaHash: string,
 ): Promise<{ results: PushResult[]; failures: number }> {
   const nextManifest: ScopedManifest = { ...manifest };
   const results: PushResult[] = [];
   let failures = 0;
+  let manifestDirty = false;
 
+  // Helper: flush manifest after each successful operation (issue #6)
+  async function flushManifest(): Promise<void> {
+    if (manifestDirty) {
+      await writeScopedManifestAtomic(manifestPath, nextManifest);
+      manifestDirty = false;
+    }
+  }
+
+  // Phase 1: Update changed documents
   for (const candidate of candidates) {
     try {
-      const updateResult = await updateExistingDocument(context, candidate);
+      const updateResult = await updateExistingDocument(
+        context,
+        candidate,
+        schemaHash,
+      );
 
       if (updateResult.kind === "updated") {
         nextManifest[candidate.documentId] = {
@@ -585,6 +974,8 @@ async function applyPush(
           publishedVersion: updateResult.remote.publishedVersion,
           hash: candidate.hash,
         };
+        manifestDirty = true;
+        await flushManifest();
 
         results.push({
           status: "updated",
@@ -596,7 +987,64 @@ async function applyPush(
         continue;
       }
 
-      const created = await createDocumentFromLocalFile(context, candidate);
+      if (updateResult.kind === "stale") {
+        failures += 1;
+        results.push({
+          status: "failed",
+          documentId: candidate.documentId,
+          path: candidate.manifestEntry.path,
+          message: `${updateResult.code}: ${updateResult.message}`,
+          reasonCode: updateResult.code.toLowerCase(),
+        });
+        continue;
+      }
+
+      if (updateResult.kind === "schema_mismatch") {
+        failures += 1;
+        results.push({
+          status: "failed",
+          documentId: candidate.documentId,
+          path: candidate.manifestEntry.path,
+          message: `${updateResult.code}: ${updateResult.message}`,
+          reasonCode: updateResult.code.toLowerCase(),
+        });
+        continue;
+      }
+
+      if (updateResult.kind === "path_conflict") {
+        failures += 1;
+        results.push({
+          status: "failed",
+          documentId: candidate.documentId,
+          path: candidate.manifestEntry.path,
+          message: `${updateResult.code}: ${updateResult.message}`,
+          reasonCode: updateResult.code.toLowerCase(),
+        });
+        continue;
+      }
+
+      const createResult = await createDocumentFromLocalFile(
+        context,
+        candidate,
+        schemaHash,
+      );
+
+      if (
+        createResult.kind === "schema_mismatch" ||
+        createResult.kind === "path_conflict"
+      ) {
+        failures += 1;
+        results.push({
+          status: "failed",
+          documentId: candidate.documentId,
+          path: candidate.manifestEntry.path,
+          message: `${createResult.code}: ${createResult.message}`,
+          reasonCode: createResult.code.toLowerCase(),
+        });
+        continue;
+      }
+
+      const created = createResult.remote;
       delete nextManifest[candidate.documentId];
       nextManifest[created.documentId] = {
         path: candidate.manifestEntry.path,
@@ -605,6 +1053,8 @@ async function applyPush(
         publishedVersion: created.publishedVersion,
         hash: candidate.hash,
       };
+      manifestDirty = true;
+      await flushManifest();
 
       results.push({
         status: "created",
@@ -636,7 +1086,125 @@ async function applyPush(
     }
   }
 
-  await writeScopedManifestAtomic(manifestPath, nextManifest);
+  // Phase 2: Create new documents
+  for (const candidate of newCandidates) {
+    try {
+      const createResult = await createNewDocument(
+        context,
+        candidate,
+        schemaHash,
+      );
+
+      if (
+        createResult.kind === "schema_mismatch" ||
+        createResult.kind === "path_conflict"
+      ) {
+        failures += 1;
+        results.push({
+          status: "failed",
+          documentId: "(new)",
+          path: candidate.path,
+          message: `${createResult.code}: ${createResult.message}`,
+          reasonCode: createResult.code.toLowerCase(),
+        });
+        continue;
+      }
+
+      const created = createResult.remote;
+      nextManifest[created.documentId] = {
+        path: candidate.path,
+        format: candidate.format,
+        draftRevision: created.draftRevision,
+        publishedVersion: created.publishedVersion,
+        hash: candidate.hash,
+      };
+      manifestDirty = true;
+      await flushManifest();
+
+      results.push({
+        status: "created",
+        documentId: created.documentId,
+        path: candidate.path,
+        message: `(draft=${created.draftRevision}, published=${created.publishedVersion ?? "-"})`,
+      });
+    } catch (error) {
+      failures += 1;
+      const runtimeError =
+        error instanceof RuntimeError
+          ? error
+          : new RuntimeError({
+              code: "INTERNAL_ERROR",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Unexpected create failure.",
+              statusCode: 500,
+            });
+
+      results.push({
+        status: "failed",
+        documentId: "(new)",
+        path: candidate.path,
+        message: `${runtimeError.code}: ${runtimeError.message}`,
+      });
+    }
+  }
+
+  // Phase 3: Delete documents
+  for (const candidate of deletionCandidates) {
+    try {
+      const deleteResult = await deleteDocument(context, candidate, schemaHash);
+
+      if (deleteResult.kind === "conflict") {
+        failures += 1;
+        results.push({
+          status: "failed",
+          documentId: candidate.documentId,
+          path: candidate.path,
+          message:
+            "Conflict: document was modified on the server since last pull. Run `mdcms pull` first.",
+        });
+        continue;
+      }
+
+      delete nextManifest[candidate.documentId];
+      manifestDirty = true;
+      await flushManifest();
+
+      results.push({
+        status: "deleted",
+        documentId: candidate.documentId,
+        path: candidate.path,
+        message:
+          deleteResult.kind === "already_gone"
+            ? "(already deleted on server)"
+            : "(soft-deleted)",
+      });
+    } catch (error) {
+      failures += 1;
+      const runtimeError =
+        error instanceof RuntimeError
+          ? error
+          : new RuntimeError({
+              code: "INTERNAL_ERROR",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Unexpected delete failure.",
+              statusCode: 500,
+            });
+
+      results.push({
+        status: "failed",
+        documentId: candidate.documentId,
+        path: candidate.path,
+        message: `${runtimeError.code}: ${runtimeError.message}`,
+      });
+    }
+  }
+
+  // Final flush in case any trailing writes
+  await flushManifest();
 
   return {
     results,
@@ -662,6 +1230,25 @@ export async function runPushCommand(
     });
   }
 
+  const schemaState = await readSchemaState({
+    cwd: context.cwd,
+    project: context.project,
+    environment: context.environment,
+  });
+
+  if (!schemaState) {
+    throw new RuntimeError({
+      code: "SCHEMA_STATE_MISSING",
+      message:
+        `No local schema state found for ${context.project}/${context.environment}.\n` +
+        `If you just cloned this repo, run these commands to get started:\n` +
+        `  1. mdcms schema sync   (sync schema to server)\n` +
+        `  2. mdcms pull          (download content from server)\n\n` +
+        `Otherwise, run: mdcms schema sync`,
+      statusCode: 400,
+    });
+  }
+
   const manifestPath = resolveScopedManifestPath({
     cwd: context.cwd,
     project: context.project,
@@ -670,32 +1257,203 @@ export async function runPushCommand(
   const manifest = await loadScopedManifest(manifestPath);
   const pushPlan = await buildPushPlan(context, manifest);
 
-  if (pushPlan.trackedCount === 0) {
-    context.stdout.write(
-      `No manifest-tracked documents found for ${context.project}/${context.environment}.\n`,
-    );
+  const hasAnything =
+    pushPlan.trackedCount > 0 || pushPlan.newCandidates.length > 0;
+
+  if (!hasAnything) {
+    const contentDirs = context.config.contentDirectories ?? [];
+    const types = context.config.types ?? [];
+
+    if (contentDirs.length === 0) {
+      context.stderr.write(
+        `No content directories configured in mdcms.config.ts.\n` +
+          `Add directories to scan, e.g.:\n\n` +
+          `  contentDirectories: ["content/posts"]\n\n`,
+      );
+    } else if (types.length === 0) {
+      context.stderr.write(
+        `No content types defined in mdcms.config.ts.\n` +
+          `Define at least one type that maps to your content directory, e.g.:\n\n` +
+          `  const post = defineType("post", {\n` +
+          `    directory: "content/posts",\n` +
+          `    fields: { title: z.string() },\n` +
+          `  });\n\n` +
+          `Then pass it to defineConfig: types: [post]\n\n`,
+      );
+    } else {
+      context.stdout.write(
+        `No documents found for ${context.project}/${context.environment}.\n`,
+      );
+    }
     return 0;
   }
 
-  printPushPlan(context, pushPlan.changedCandidates, {
-    trackedCount: pushPlan.trackedCount,
-    unchangedCount: pushPlan.unchangedCount,
-  });
+  printPushPlan(
+    context,
+    pushPlan.changedCandidates,
+    pushPlan.newCandidates,
+    pushPlan.deletionCandidates,
+    {
+      trackedCount: pushPlan.trackedCount,
+      unchangedCount: pushPlan.unchangedCount,
+    },
+  );
 
   if (options.dryRun) {
+    context.stdout.write("Dry run complete. No changes were pushed.\n");
     return 0;
   }
 
-  if (pushPlan.changedCandidates.length === 0) {
+  // Interactive selection for new files
+  // Issue #8: in non-interactive mode without --force, skip new/deleted but still push changed
+  let selectedNewCandidates: NewFileCandidate[] = [];
+  if (pushPlan.newCandidates.length > 0) {
+    if (options.force) {
+      selectedNewCandidates = pushPlan.newCandidates;
+    } else {
+      const selectedPaths = await context.multiSelect(
+        "Select new files to upload:",
+        pushPlan.newCandidates.map((c) => ({
+          label: `${c.path} (${c.resolvedType})`,
+          value: c.path,
+        })),
+      );
+      selectedNewCandidates = pushPlan.newCandidates.filter((c) =>
+        selectedPaths.includes(c.path),
+      );
+
+      if (selectedPaths.length === 0 && pushPlan.newCandidates.length > 0) {
+        context.stdout.write(
+          `Hint: ${pushPlan.newCandidates.length} new file(s) skipped. Use --force to include them in non-interactive mode.\n`,
+        );
+      }
+    }
+  }
+
+  // Interactive selection for deletions
+  let selectedDeletionCandidates: DeletionCandidate[] = [];
+  if (pushPlan.deletionCandidates.length > 0) {
+    if (options.force) {
+      selectedDeletionCandidates = pushPlan.deletionCandidates;
+    } else {
+      const selectedIds = await context.multiSelect(
+        "Select files to delete from server:",
+        pushPlan.deletionCandidates.map((c) => ({
+          label: `${c.path} (${c.documentId})`,
+          value: c.documentId,
+        })),
+      );
+      selectedDeletionCandidates = pushPlan.deletionCandidates.filter((c) =>
+        selectedIds.includes(c.documentId),
+      );
+
+      if (selectedIds.length === 0 && pushPlan.deletionCandidates.length > 0) {
+        context.stdout.write(
+          `Hint: ${pushPlan.deletionCandidates.length} deletion(s) skipped. Use --force to include them in non-interactive mode.\n`,
+        );
+      }
+    }
+  }
+
+  if (options.validate) {
+    const resolvedSchema = serializeResolvedEnvironmentSchema(
+      context.config as ParsedMdcmsConfig,
+      context.environment,
+    );
+
+    const schemaSyncState = await readSchemaState({
+      cwd: context.cwd,
+      project: context.project,
+      environment: context.environment,
+    });
+
+    if (schemaSyncState) {
+      const currentPayload = buildSchemaSyncPayload(
+        context.config as ParsedMdcmsConfig,
+        context.environment,
+      );
+      if (schemaSyncState.schemaHash !== currentPayload.schemaHash) {
+        context.stderr.write(
+          "Warning: Local schema differs from last synced schema. Run `cms schema sync` to update the server.\n",
+        );
+      }
+    }
+
+    const changedValidationCandidates = pushPlan.changedCandidates.map(
+      (candidate) => {
+        const pathWithoutExtension = candidate.manifestEntry.path.replace(
+          /\.(md|mdx)$/i,
+          "",
+        );
+        const typeConfig = pickTypeConfigForPath(
+          context.config.types ?? [],
+          pathWithoutExtension,
+        );
+        return {
+          path: candidate.manifestEntry.path,
+          typeName: typeConfig.name,
+          frontmatter: candidate.frontmatter,
+        };
+      },
+    );
+
+    const newValidationCandidates = selectedNewCandidates.map((candidate) => ({
+      path: candidate.path,
+      typeName: candidate.resolvedType,
+      frontmatter: candidate.frontmatter,
+    }));
+
+    const validationResults = validateCandidates(
+      [...changedValidationCandidates, ...newValidationCandidates],
+      resolvedSchema,
+    );
+    printValidationResults(context, validationResults);
+
+    const totalErrors = validationResults.reduce(
+      (sum, r) => sum + r.errors.length,
+      0,
+    );
+    const failedDocs = validationResults.filter(
+      (r) => r.errors.length > 0,
+    ).length;
+
+    if (totalErrors > 0) {
+      context.stderr.write(
+        `\nValidation failed: ${totalErrors} error(s) in ${failedDocs} document(s).\n`,
+      );
+      return 1;
+    }
+
+    context.stdout.write("Validation passed.\n");
+  }
+
+  const hasWork =
+    pushPlan.changedCandidates.length > 0 ||
+    selectedNewCandidates.length > 0 ||
+    selectedDeletionCandidates.length > 0;
+
+  if (!hasWork) {
     context.stdout.write(
-      `No changed manifest-tracked documents to push for ${context.project}/${context.environment}.\n`,
+      `No changes to push for ${context.project}/${context.environment}.\n`,
     );
     return 0;
   }
 
+  // Issue #8: in non-interactive mode, auto-confirm changed files (already tracked)
+  // but still require --force for new/deleted. Only block if nothing to do.
   if (!options.force) {
+    const parts: string[] = [];
+    if (pushPlan.changedCandidates.length > 0) {
+      parts.push(`${pushPlan.changedCandidates.length} changed`);
+    }
+    if (selectedNewCandidates.length > 0) {
+      parts.push(`${selectedNewCandidates.length} new`);
+    }
+    if (selectedDeletionCandidates.length > 0) {
+      parts.push(`${selectedDeletionCandidates.length} to delete`);
+    }
     const confirmed = await context.confirm(
-      `Push ${pushPlan.changedCandidates.length} changed document(s) to ${context.project}/${context.environment}?`,
+      `Push ${parts.join(", ")} document(s) to ${context.project}/${context.environment}?`,
     );
 
     if (!confirmed) {
@@ -712,6 +1470,9 @@ export async function runPushCommand(
     manifestPath,
     manifest,
     pushPlan.changedCandidates,
+    selectedNewCandidates,
+    selectedDeletionCandidates,
+    schemaState.schemaHash,
   );
   printPushResults(context, results);
 

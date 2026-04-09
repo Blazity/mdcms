@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { inflateRawSync } from "node:zlib";
 
+import { DiscoveryError, discoverOIDCConfig, sso } from "@better-auth/sso";
 import {
   RuntimeError,
   assertRequestTargetRouting,
@@ -10,11 +11,10 @@ import {
   type CurrentPrincipalCapabilities,
   type CurrentPrincipalCapabilitiesResponse,
 } from "@mdcms/shared";
-import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthMiddleware } from "better-auth/api";
-import { DiscoveryError, discoverOIDCConfig, sso } from "@better-auth/sso";
+import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import type { DrizzleDatabase } from "./db.js";
@@ -22,19 +22,13 @@ import {
   apiKeys,
   authAccounts,
   authLoginBackoffs,
-  authUsers,
   authSessions,
+  authUsers,
   authVerifications,
   cliLoginChallenges,
   rbacGrants,
   type ApiKeyScopeTuple,
 } from "./db/schema.js";
-import {
-  evaluatePermission,
-  type RbacAction,
-  type RbacGrant,
-  type RbacRole,
-} from "./rbac.js";
 import {
   parseServerEnv,
   type OidcProviderConfig,
@@ -45,6 +39,12 @@ import {
   createJsonResponse,
   executeWithRuntimeErrorsHandled,
 } from "./http-utils.js";
+import {
+  evaluatePermission,
+  type RbacAction,
+  type RbacGrant,
+  type RbacRole,
+} from "./rbac.js";
 
 export const API_KEY_OPERATION_SCOPES = [
   "content:read",
@@ -62,6 +62,8 @@ export const API_KEY_OPERATION_SCOPES = [
   "environments:clone",
   "environments:promote",
   "migrations:run",
+  "projects:read",
+  "projects:write",
 ] as const;
 
 const API_KEY_PREFIX = "mdcms_key_";
@@ -80,6 +82,9 @@ const CLI_LOGIN_DEFAULT_SCOPES: readonly ApiKeyOperationScope[] = [
   "content:read",
   "content:read:draft",
   "content:write",
+  "content:delete",
+  "schema:read",
+  "schema:write",
 ];
 
 export type ApiKeyOperationScope = (typeof API_KEY_OPERATION_SCOPES)[number];
@@ -1728,6 +1733,14 @@ function toRbacAction(requiredScope: ApiKeyOperationScope): RbacAction | null {
 
   if (requiredScope === "schema:write") {
     return "schema:write";
+  }
+
+  if (requiredScope === "projects:read") {
+    return "projects:read";
+  }
+
+  if (requiredScope === "projects:write") {
+    return "projects:write";
   }
 
   return null;
@@ -3709,17 +3722,19 @@ export function createAuthService(
         });
       }
 
+      const authContextAllowlist: ApiKeyScopeTuple[] = [
+        {
+          project: challenge.project,
+          environment: challenge.environment,
+        },
+      ];
+
       await assertSessionCanIssueApiKeyScopes(
         session,
         normalizeRequestedCliScopes(
           challenge.requestedScopes as ApiKeyOperationScope[],
         ),
-        [
-          {
-            project: challenge.project,
-            environment: challenge.environment,
-          },
-        ],
+        authContextAllowlist,
       );
 
       const code = randomBytes(24).toString("base64url");
@@ -3781,18 +3796,20 @@ export function createAuthService(
         });
       }
 
+      const label = `cli:${challenge.project}/${challenge.environment}`;
+      const contextAllowlist: ApiKeyScopeTuple[] = [
+        {
+          project: challenge.project,
+          environment: challenge.environment,
+        },
+      ];
       const created = await createApiKeyForUser({
         userId: challenge.userId,
-        label: `cli:${challenge.project}/${challenge.environment}`,
+        label,
         scopes: normalizeRequestedCliScopes(
           challenge.requestedScopes as ApiKeyOperationScope[],
         ),
-        contextAllowlist: [
-          {
-            project: challenge.project,
-            environment: challenge.environment,
-          },
-        ],
+        contextAllowlist,
       });
 
       await options.db

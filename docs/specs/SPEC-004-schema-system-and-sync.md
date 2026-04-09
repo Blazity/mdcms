@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-11
+last_updated: 2026-03-31
 ---
 
 # SPEC-004 Schema System and Sync
@@ -238,6 +238,26 @@ Inspired by Payload CMS's dev/prod split:
 
 This ensures schemas only change through deliberate, reviewable actions.
 
+### Local Schema State File
+
+`cms schema sync` persists a local schema state file after each successful sync. This file is the canonical source of `x-mdcms-schema-hash` for all CLI and SDK write operations (see ADR-006).
+
+**Location:** `.mdcms/schema/<project>.<environment>.json`
+
+```json
+{
+  "schemaHash": "<hash>",
+  "syncedAt": "<ISO 8601>",
+  "serverUrl": "<url>"
+}
+```
+
+- Written atomically by `cms schema sync` using the write-temp-then-rename pattern.
+- One file per `(project, environment)` tuple.
+- `.gitignore`d — local to each developer's machine, not a shared artifact.
+- `cms schema sync` is the sole writer of this file. No other command or process may create or update it.
+- Write clients (`cms push`, future SDK write methods) read the `schemaHash` value from this file and send it as the `x-mdcms-schema-hash` header. If the file does not exist, the write command fails immediately with an actionable error directing the developer to run `cms schema sync`.
+
 ### Reference Field Identity
 
 `reference('Type')` fields store the target document's **environment-local `document_id` string**. The persisted value is a plain UUID string, not a `{$ref, type}` object; target type metadata remains schema-owned through `reference('Type')`. Write-time reference validation failures continue to use `INVALID_INPUT` (`400`); `resolve` remains read-time only.
@@ -247,6 +267,32 @@ This ensures schemas only change through deliberate, reviewable actions.
 - If a reference cannot be remapped, the clone/promote operation fails atomically.
 
 ---
+
+## Project and Environment Management Endpoints
+
+### `GET /api/v1/projects`
+
+- **Auth**: Bearer token, scope `projects:read`
+- **Response**: `{ "data": [{ "id": "uuid", "slug": "my-blog", "name": "my-blog", "environmentCount": 3, "createdAt": "ISO8601" }] }`
+- Returns projects accessible to the authenticated user.
+
+### `POST /api/v1/projects`
+
+- **Auth**: Bearer token, scope `projects:write`
+- **Body**: `{ "name": "awesome-docs" }`
+- Slug auto-generated from name. Creates default "production" environment.
+- **Response**: `{ "data": { "id": "uuid", "slug": "awesome-docs", "name": "awesome-docs", "environments": [{ "id": "uuid", "name": "production" }] } }`
+
+### `GET /api/v1/projects/:slug/environments`
+
+- **Auth**: Bearer token, scope `projects:read`
+- **Response**: `{ "data": [{ "id": "uuid", "name": "production" }, { "id": "uuid", "name": "staging" }] }`
+
+### `POST /api/v1/projects/:slug/environments`
+
+- **Auth**: Bearer token, scope `projects:write`
+- **Body**: `{ "name": "development" }`
+- **Response**: `{ "data": { "id": "uuid", "name": "development" } }`
 
 ## Schema Endpoints
 

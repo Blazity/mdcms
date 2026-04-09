@@ -14,8 +14,10 @@ import {
   assertSchemaRegistryEntry,
   assertSchemaRegistrySyncPayload,
   serializeResolvedEnvironmentSchema,
+  toRawConfigSnapshot,
   type SchemaRegistryEntry,
 } from "./schema.js";
+import { buildSchemaSyncPayload } from "./schema-hash.js";
 
 function expectInvalidInput(fn: () => unknown, path: string, message?: RegExp) {
   assert.throws(fn, (error) => {
@@ -303,4 +305,177 @@ test("serializeResolvedEnvironmentSchema rejects unsupported executable validato
     "resolvedEnvironments.staging.types.Post.fields.title.checks[0]",
     /unsupported executable validator feature/i,
   );
+});
+
+test("toRawConfigSnapshot includes project, serverUrl and omits implicit locales", () => {
+  const parsed = parseMdcmsConfig(
+    defineConfig({
+      project: "my-site",
+      serverUrl: "http://localhost:4000",
+      contentDirectories: ["content"],
+      types: [
+        defineType("Post", {
+          directory: "content/posts",
+          fields: { title: z.string() },
+        }),
+      ],
+      environments: { production: {} },
+    }),
+  );
+
+  const snapshot = toRawConfigSnapshot(parsed);
+
+  assert.equal(snapshot.project, "my-site");
+  assert.equal(snapshot.serverUrl, "http://localhost:4000");
+  assert.deepEqual(snapshot.contentDirectories, ["content"]);
+  assert.equal(snapshot.locales, undefined);
+});
+
+test("toRawConfigSnapshot includes explicit locales with aliases when configured", () => {
+  const parsed = parseMdcmsConfig(
+    defineConfig({
+      project: "i18n-site",
+      serverUrl: "http://localhost:4000",
+      contentDirectories: ["content"],
+      types: [
+        defineType("Page", {
+          directory: "content/pages",
+          localized: true,
+          fields: { title: z.string() },
+        }),
+      ],
+      locales: {
+        default: "en",
+        supported: ["en", "de"],
+        aliases: { deutsch: "de" },
+      },
+      environments: { production: {} },
+    }),
+  );
+
+  const snapshot = toRawConfigSnapshot(parsed);
+
+  assert.deepEqual(snapshot.locales, {
+    default: "en",
+    supported: ["en", "de"],
+    aliases: { deutsch: "de" },
+  });
+});
+
+test("toRawConfigSnapshot omits locale aliases when none are configured", () => {
+  const parsed = parseMdcmsConfig(
+    defineConfig({
+      project: "i18n-site",
+      serverUrl: "http://localhost:4000",
+      contentDirectories: ["content"],
+      types: [
+        defineType("Page", {
+          directory: "content/pages",
+          localized: true,
+          fields: { title: z.string() },
+        }),
+      ],
+      locales: {
+        default: "en",
+        supported: ["en", "fr"],
+      },
+      environments: { production: {} },
+    }),
+  );
+
+  const snapshot = toRawConfigSnapshot(parsed);
+
+  assert.ok(snapshot.locales != null);
+  const locales = snapshot.locales as Record<string, unknown>;
+  assert.equal(locales.aliases, undefined);
+});
+
+test("toRawConfigSnapshot omits contentDirectories when empty", () => {
+  const parsed = parseMdcmsConfig(
+    defineConfig({
+      project: "my-site",
+      serverUrl: "http://localhost:4000",
+      types: [
+        defineType("Post", {
+          fields: { title: z.string() },
+        }),
+      ],
+      environments: { production: {} },
+    }),
+  );
+
+  const snapshot = toRawConfigSnapshot(parsed);
+
+  assert.equal(snapshot.contentDirectories, undefined);
+});
+
+test("buildSchemaSyncPayload returns rawConfigSnapshot, resolvedSchema and a deterministic hash", () => {
+  const parsed = parseMdcmsConfig(
+    defineConfig({
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+      contentDirectories: ["content"],
+      types: [
+        defineType("Post", {
+          directory: "content/posts",
+          fields: { title: z.string() },
+        }),
+      ],
+      environments: { production: {} },
+    }),
+  );
+
+  const payload = buildSchemaSyncPayload(parsed, "production");
+
+  assert.equal(payload.rawConfigSnapshot.project, "marketing-site");
+  assert.ok(payload.resolvedSchema.Post != null);
+  assert.equal(typeof payload.schemaHash, "string");
+  assert.equal(payload.schemaHash.length, 64);
+});
+
+test("buildSchemaSyncPayload produces the same hash for the same inputs", () => {
+  const parsed = parseMdcmsConfig(
+    defineConfig({
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+      contentDirectories: ["content"],
+      types: [
+        defineType("Post", {
+          directory: "content/posts",
+          fields: { title: z.string() },
+        }),
+      ],
+      environments: { production: {} },
+    }),
+  );
+
+  const first = buildSchemaSyncPayload(parsed, "production");
+  const second = buildSchemaSyncPayload(parsed, "production");
+
+  assert.equal(first.schemaHash, second.schemaHash);
+});
+
+test("buildSchemaSyncPayload produces different hashes for different environments", () => {
+  const parsed = parseMdcmsConfig(
+    defineConfig({
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+      contentDirectories: ["content"],
+      types: [
+        defineType("Post", {
+          directory: "content/posts",
+          fields: {
+            title: z.string(),
+            featured: z.boolean().env("staging"),
+          },
+        }),
+      ],
+      environments: { production: {}, staging: {} },
+    }),
+  );
+
+  const production = buildSchemaSyncPayload(parsed, "production");
+  const staging = buildSchemaSyncPayload(parsed, "staging");
+
+  assert.notEqual(production.schemaHash, staging.schemaHash);
 });

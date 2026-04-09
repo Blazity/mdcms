@@ -1100,6 +1100,10 @@ export function createDatabaseContentStore(
                 eq(documents.projectId, scopeIds.projectId),
                 eq(documents.environmentId, scopeIds.environmentId),
                 eq(documents.documentId, normalizedDocumentId),
+                eq(documents.isDeleted, false),
+                ...(options?.expectedDraftRevision !== undefined
+                  ? [eq(documents.draftRevision, options.expectedDraftRevision)]
+                  : []),
               ),
             )
             .returning();
@@ -1108,10 +1112,34 @@ export function createDatabaseContentStore(
         });
 
         if (!updated) {
+          if (options?.expectedDraftRevision !== undefined) {
+            const stillExists = await resolveHeadRow(
+              scopeIds,
+              normalizedDocumentId,
+            );
+
+            if (stillExists && !stillExists.isDeleted) {
+              throw new RuntimeError({
+                code: "STALE_DRAFT_REVISION",
+                message:
+                  "Draft has been modified since your last pull. Run 'cms pull' to get the latest version.",
+                statusCode: 409,
+                details: {
+                  documentId: normalizedDocumentId,
+                  expectedDraftRevision: options.expectedDraftRevision,
+                  currentDraftRevision: Number(stillExists.draftRevision),
+                },
+              });
+            }
+          }
+
           throw new RuntimeError({
             code: "NOT_FOUND",
             message: "Document not found.",
             statusCode: 404,
+            details: {
+              documentId: normalizedDocumentId,
+            },
           });
         }
 

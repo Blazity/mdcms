@@ -1,12 +1,13 @@
-import { stdin as processStdin, stdout as processStdout } from "node:process";
 import { resolve } from "node:path";
-import { createInterface } from "node:readline/promises";
+import { stdin as processStdin } from "node:process";
 
+import { checkbox, select } from "@inquirer/prompts";
 import { RuntimeError, type CliPreflightHook } from "@mdcms/shared";
 
 import { formatCliErrorEnvelope } from "./cli.js";
-import { type CliConfig, loadCliConfig } from "./config.js";
+import { loadCliConfig, type CliConfig } from "./config.js";
 import { createCredentialStore, type CredentialStore } from "./credentials.js";
+import { createInitCommand } from "./init.js";
 import { createLoginCommand } from "./login.js";
 import { createLogoutCommand } from "./logout.js";
 import { createPullCommand } from "./pull.js";
@@ -15,12 +16,19 @@ import {
   createCliRuntimeContextWithModules,
   type CliRuntimeContextWithModules,
 } from "./runtime-with-modules.js";
+import { createSchemaSyncCommand } from "./schema-sync.js";
+import { createStatusCommand } from "./status.js";
 
 export type Writer = {
   write: (chunk: string) => unknown;
 };
 
 type ConfirmPrompt = (message: string) => Promise<boolean>;
+
+export type MultiSelectPrompt = <T extends string>(
+  message: string,
+  choices: Array<{ label: string; value: T }>,
+) => Promise<T[]>;
 
 export type CliGlobalOptions = {
   help: boolean;
@@ -50,6 +58,7 @@ export type CliCommandContext = {
   args: string[];
   fetcher: typeof fetch;
   confirm: ConfirmPrompt;
+  multiSelect: MultiSelectPrompt;
   stdout: Writer;
   stderr: Writer;
 };
@@ -84,14 +93,18 @@ export type RunMdcmsCliOptions = {
   credentialStore?: CredentialStore;
   fetcher?: typeof fetch;
   confirm?: ConfirmPrompt;
+  multiSelect?: MultiSelectPrompt;
   runtimeWithModules?: CliRuntimeContextWithModules;
 };
 
 const DEFAULT_COMMANDS: CliCommand[] = [
+  createInitCommand(),
   createLoginCommand(),
   createLogoutCommand(),
   createPullCommand(),
   createPushCommand(),
+  createSchemaSyncCommand(),
+  createStatusCommand(),
 ];
 
 function parseOptionalValue(
@@ -275,7 +288,7 @@ export async function resolveExecutionContext(input: {
   const serverUrl =
     input.global.serverUrl ?? envServerUrl ?? input.config.serverUrl;
 
-  if (!serverUrl) {
+  if (!serverUrl && input.requiresTarget) {
     throw new RuntimeError({
       code: "INVALID_CONFIG",
       message:
@@ -289,10 +302,19 @@ export async function resolveExecutionContext(input: {
     input.global.environment ?? envEnvironment ?? input.config.environment;
 
   if (input.requiresTarget && (!project || !environment)) {
+    const missing =
+      !project && !environment
+        ? "project and environment"
+        : !project
+          ? "project"
+          : "environment";
     throw new RuntimeError({
       code: "MISSING_TARGET",
       message:
-        "Both project and environment are required. Provide --project/--environment, MDCMS_PROJECT/MDCMS_ENVIRONMENT, or config defaults.",
+        `Missing ${missing}. Provide via:\n` +
+        `  - CLI flags: --project <slug> --environment <name>\n` +
+        `  - Env vars: MDCMS_PROJECT / MDCMS_ENVIRONMENT\n` +
+        `  - Config:   project / environment fields in mdcms.config.ts`,
       statusCode: 400,
     });
   }
@@ -310,7 +332,7 @@ export async function resolveExecutionContext(input: {
   const apiKey = input.global.apiKey ?? envApiKey ?? storedApiKey;
 
   return {
-    serverUrl,
+    serverUrl: serverUrl ?? "",
     project: resolvedProject,
     environment: resolvedEnvironment,
     apiKey,
@@ -354,18 +376,27 @@ async function defaultConfirmPrompt(message: string): Promise<boolean> {
     return false;
   }
 
-  const reader = createInterface({
-    input: processStdin,
-    output: processStdout,
+  return select({
+    message,
+    choices: [
+      { name: "Yes", value: true },
+      { name: "No", value: false },
+    ],
   });
+}
 
-  try {
-    const answer = await reader.question(`${message} [y/N] `);
-    const normalized = answer.trim().toLowerCase();
-    return normalized === "y" || normalized === "yes";
-  } finally {
-    reader.close();
+async function defaultMultiSelectPrompt<T extends string>(
+  message: string,
+  choices: Array<{ label: string; value: T }>,
+): Promise<T[]> {
+  if (!processStdin.isTTY) {
+    return [];
   }
+
+  return checkbox({
+    message,
+    choices: choices.map((c) => ({ name: c.label, value: c.value })),
+  });
 }
 
 async function runPreflightHooks(
@@ -409,6 +440,7 @@ export async function runMdcmsCli(
   const commands = options.commands ?? DEFAULT_COMMANDS;
   const fetcher = options.fetcher ?? fetch;
   const confirm = options.confirm ?? defaultConfirmPrompt;
+  const multiSelect = options.multiSelect ?? defaultMultiSelectPrompt;
   const runtimeWithModules =
     options.runtimeWithModules ?? createCliRuntimeContextWithModules(env);
   const credentialStore =
@@ -436,12 +468,26 @@ export async function runMdcmsCli(
     return 1;
   }
 
-  const command = registry.get(invocation.commandName);
+  const multiWordName =
+    invocation.commandArgs.length > 0
+      ? `${invocation.commandName} ${invocation.commandArgs[0]}`
+      : undefined;
+
+  let command = multiWordName ? registry.get(multiWordName) : undefined;
+  let commandArgs = command
+    ? invocation.commandArgs.slice(1)
+    : invocation.commandArgs;
 
   if (!command) {
-    stderr.write(
-      `INVALID_USAGE: Unknown command "${invocation.commandName}".\n\n`,
-    );
+    command = registry.get(invocation.commandName);
+  }
+
+  if (!command) {
+    const displayName =
+      multiWordName && !registry.has(invocation.commandName!)
+        ? multiWordName
+        : invocation.commandName;
+    stderr.write(`INVALID_USAGE: Unknown command "${displayName}".\n\n`);
     stderr.write(renderHelp(commands));
     return 1;
   }
@@ -489,7 +535,7 @@ export async function runMdcmsCli(
       actionId: command.name,
       input: {
         commandName: command.name,
-        args: invocation.commandArgs,
+        args: commandArgs,
         target: {
           project: resolved.project,
           environment: resolved.environment,
@@ -507,9 +553,10 @@ export async function runMdcmsCli(
       project: resolved.project,
       environment: resolved.environment,
       apiKey: resolved.apiKey,
-      args: invocation.commandArgs,
+      args: commandArgs,
       fetcher,
       confirm,
+      multiSelect,
       stdout,
       stderr,
     });

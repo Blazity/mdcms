@@ -3,7 +3,11 @@ import {
   type CreateServerRequestHandlerOptions,
   type ServerRequestHandler,
 } from "./server.js";
-import { createConsoleLogger, type Logger } from "@mdcms/shared";
+import {
+  createConsoleLogger,
+  resolveRequestTargetRouting,
+  type Logger,
+} from "@mdcms/shared";
 import { and, eq, inArray } from "drizzle-orm";
 import { parseServerEnv } from "./env.js";
 import { createDatabaseConnection, type DatabaseConnection } from "./db.js";
@@ -27,6 +31,10 @@ import {
   createDatabaseEnvironmentStore,
   mountEnvironmentApiRoutes,
 } from "./environments-api.js";
+import {
+  createDatabaseProjectStore,
+  mountProjectApiRoutes,
+} from "./projects-api.js";
 import { loadServerConfig } from "./config.js";
 import type { ParsedMdcmsConfig } from "@mdcms/shared";
 import {
@@ -118,6 +126,7 @@ export function createServerRequestHandlerWithModules(
     db: dbConnection.db,
     getConfig,
   });
+  const projectStore = createDatabaseProjectStore({ db: dbConnection.db });
   const actions = collectServerModuleActions(moduleLoadReport);
   const moduleDeps = { ...(options.moduleDeps ?? {}), dal };
 
@@ -188,6 +197,29 @@ export function createServerRequestHandlerWithModules(
         store: environmentStore,
         authorizeAdmin: (request) => authService.requireAdminSession(request),
         requireCsrf: (request) => authService.requireCsrfProtection(request),
+      });
+      mountProjectApiRoutes(app, {
+        store: projectStore,
+        authorizeRead: (request) => {
+          const routing = resolveRequestTargetRouting(request);
+          return authService
+            .authorizeRequest(request, {
+              requiredScope: "projects:read",
+              project: routing.project,
+              environment: routing.environment,
+            })
+            .then(() => undefined);
+        },
+        authorizeWrite: (request) => {
+          const routing = resolveRequestTargetRouting(request);
+          return authService
+            .authorizeRequest(request, {
+              requiredScope: "projects:write",
+              project: routing.project,
+              environment: routing.environment,
+            })
+            .then(() => undefined);
+        },
       });
       mountCollaborationRoutes(app, {
         authService,

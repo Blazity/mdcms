@@ -1,11 +1,22 @@
 import { spawn } from "node:child_process";
-import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
+import { createServer } from "node:http";
 
 import { RuntimeError } from "@mdcms/shared";
 
 import { createCredentialStore, type CredentialStore } from "./credentials.js";
 import type { CliCommand, CliCommandContext } from "./framework.js";
+
+const DEFAULT_CLI_LOGIN_SCOPES = [
+  "projects:read",
+  "projects:write",
+  "schema:read",
+  "schema:write",
+  "content:read",
+  "content:read:draft",
+  "content:write",
+  "content:delete",
+] as const;
 
 type LoginOptions = {
   credentialStore?: CredentialStore;
@@ -14,7 +25,7 @@ type LoginOptions = {
   createCallbackListener?: () => Promise<LoopbackCallbackListener>;
 };
 
-type LoopbackCallbackListener = {
+export type LoopbackCallbackListener = {
   redirectUri: string;
   waitForCallback: () => Promise<{ code: string; state: string }>;
   close: () => Promise<void>;
@@ -59,7 +70,7 @@ function renderLoginHelp(): string {
   ].join("\n");
 }
 
-function createLoopbackCallbackListener(): Promise<LoopbackCallbackListener> {
+export function createLoopbackCallbackListener(): Promise<LoopbackCallbackListener> {
   return new Promise((resolve, reject) => {
     let settled = false;
     const server = createServer();
@@ -168,7 +179,7 @@ function createLoopbackCallbackListener(): Promise<LoopbackCallbackListener> {
   });
 }
 
-async function openBrowserUrl(url: string): Promise<boolean> {
+export async function openBrowserUrl(url: string): Promise<boolean> {
   const platform = process.platform;
 
   try {
@@ -282,7 +293,7 @@ export function createLoginCommand(options: LoginOptions = {}): CliCommand {
     name: "login",
     description: "Authenticate via browser flow and store scoped credentials",
     requiresTarget: true,
-    requiresConfig: false,
+    requiresConfig: true,
     run: async (context: CliCommandContext): Promise<number> => {
       const store =
         options.credentialStore ??
@@ -307,10 +318,11 @@ export function createLoginCommand(options: LoginOptions = {}): CliCommand {
               "content-type": "application/json",
             },
             body: JSON.stringify({
-              project: context.project,
-              environment: context.environment,
               redirectUri: listener.redirectUri,
               state,
+              project: context.project,
+              environment: context.environment,
+              scopes: DEFAULT_CLI_LOGIN_SCOPES,
             }),
           },
         );
@@ -376,6 +388,44 @@ export function createLoginCommand(options: LoginOptions = {}): CliCommand {
         }
 
         const exchanged = parseExchangeResponse(exchangeBody);
+
+        const projectsResponse = await context.fetcher(
+          `${context.serverUrl}/api/v1/projects`,
+          {
+            headers: {
+              "content-type": "application/json",
+              authorization: `Bearer ${exchanged.key}`,
+              "x-mdcms-project": context.project,
+              "x-mdcms-environment": context.environment,
+            },
+          },
+        );
+        if (projectsResponse.ok) {
+          const projectsBody = (await projectsResponse.json()) as {
+            data: Array<{ slug: string }>;
+          };
+          const exists = projectsBody.data.some(
+            (p) => p.slug === context.project,
+          );
+          if (!exists) {
+            await context
+              .fetcher(
+                `${context.serverUrl}/api/v1/auth/api-keys/self/revoke`,
+                {
+                  method: "POST",
+                  headers: {
+                    authorization: `Bearer ${exchanged.key}`,
+                  },
+                },
+              )
+              .catch(() => undefined);
+            context.stderr.write(
+              `Project "${context.project}" does not exist on ${context.serverUrl}. Run "cms init" to create it.\n`,
+            );
+            return 1;
+          }
+        }
+
         const nowIso = new Date().toISOString();
 
         await store.setProfile(

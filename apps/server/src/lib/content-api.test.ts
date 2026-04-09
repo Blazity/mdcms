@@ -8,6 +8,7 @@ import {
 } from "./content-api.js";
 import {
   baseEnv,
+  createContentDocument,
   createDatabaseTestContext,
   createHandler,
   createCms26ResolvedSchemas,
@@ -1963,4 +1964,125 @@ test("createDatabaseTestContext closes dbConnection if setup fails before return
   );
 
   assert.equal(closed, true);
+});
+
+test("CMS-151: stale draftRevision is rejected with 409 STALE_DRAFT_REVISION", async () => {
+  const handler = createHandler();
+  const noopCsrf = (headers: Record<string, string> = {}) => headers;
+
+  const created = await createContentDocument(handler, noopCsrf, scopeHeaders, {
+    path: "blog/cms151-stale",
+    type: "BlogPost",
+    locale: "en",
+    format: "md",
+    frontmatter: { slug: "cms151-stale" },
+    body: "original body",
+  });
+
+  const firstUpdateResponse = await handler(
+    new Request(`http://localhost/api/v1/content/${created.documentId}`, {
+      method: "PUT",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        body: "updated body",
+      }),
+    }),
+  );
+  assert.equal(firstUpdateResponse.status, 200);
+
+  const staleUpdateResponse = await handler(
+    new Request(`http://localhost/api/v1/content/${created.documentId}`, {
+      method: "PUT",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        body: "stale body",
+        draftRevision: 1,
+      }),
+    }),
+  );
+  const staleBody = (await staleUpdateResponse.json()) as {
+    code: string;
+    details: {
+      expectedDraftRevision: number;
+      currentDraftRevision: number;
+    };
+  };
+
+  assert.equal(staleUpdateResponse.status, 409);
+  assert.equal(staleBody.code, "STALE_DRAFT_REVISION");
+  assert.equal(staleBody.details.expectedDraftRevision, 1);
+  assert.equal(staleBody.details.currentDraftRevision, 2);
+});
+
+test("CMS-151: correct draftRevision succeeds and increments revision", async () => {
+  const handler = createHandler();
+  const noopCsrf = (headers: Record<string, string> = {}) => headers;
+
+  const created = await createContentDocument(handler, noopCsrf, scopeHeaders, {
+    path: "blog/cms151-correct",
+    type: "BlogPost",
+    locale: "en",
+    format: "md",
+    frontmatter: { slug: "cms151-correct" },
+    body: "original body",
+  });
+
+  assert.equal(created.draftRevision, 1);
+
+  const updateResponse = await handler(
+    new Request(`http://localhost/api/v1/content/${created.documentId}`, {
+      method: "PUT",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        body: "updated body",
+        draftRevision: 1,
+      }),
+    }),
+  );
+  const updateBody = (await updateResponse.json()) as {
+    data: {
+      draftRevision: number;
+    };
+  };
+
+  assert.equal(updateResponse.status, 200);
+  assert.equal(updateBody.data.draftRevision, 2);
+});
+
+test("CMS-151: omitting draftRevision skips concurrency check (backward compat)", async () => {
+  const handler = createHandler();
+  const noopCsrf = (headers: Record<string, string> = {}) => headers;
+
+  const created = await createContentDocument(handler, noopCsrf, scopeHeaders, {
+    path: "blog/cms151-no-revision",
+    type: "BlogPost",
+    locale: "en",
+    format: "md",
+    frontmatter: { slug: "cms151-no-revision" },
+    body: "original body",
+  });
+
+  const updateResponse = await handler(
+    new Request(`http://localhost/api/v1/content/${created.documentId}`, {
+      method: "PUT",
+      headers: {
+        ...scopeHeaders,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        body: "updated body",
+      }),
+    }),
+  );
+
+  assert.equal(updateResponse.status, 200);
 });

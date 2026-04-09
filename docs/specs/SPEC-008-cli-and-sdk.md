@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-26
+last_updated: 2026-04-08
 ---
 
 # SPEC-008 CLI and SDK
@@ -88,7 +88,7 @@ The SDK follows the same reference-resolution contract documented in SPEC-003. R
 | `cms push --validate`        | Validate content against schema before pushing                              |
 | `cms schema sync`            | Sync `mdcms.config.ts` schema to the server registry                        |
 | `cms migrate`                | Generate and apply content migrations for schema changes                    |
-| `cms status`                 | Show sync status (local vs server versions)                                 |
+| `cms status`                 | Show content drift and schema drift (local vs server)                       |
 | `cms action list`            | List available backend actions from `/actions` (with permissions metadata). |
 | `cms action run <actionId>`  | Execute a command/query action via the generic action runner.               |
 | `cms <module-defined alias>` | Optional local alias mapped to `actionId` by bundled module CLI surface.    |
@@ -99,17 +99,23 @@ CLI extensibility in v1 is intentionally action-based: aliases, formatters, and 
 
 ### `cms init` — Interactive Wizard
 
-The setup wizard walks through:
+The setup wizard uses `@inquirer/prompts` for the interactive TUI and walks through:
 
-1. **Server URL** — Prompt for the MDCMS server URL.
-2. **Authentication** — Open browser for login, store credentials.
-3. **Directory scanning** — Scan the project for directories containing `.md`/`.mdx` files and collect locale hints from frontmatter, filename suffixes, and locale folder segments.
-4. **Directory selection** — Let the developer choose which directories to manage.
-5. **Schema inference** — Analyze existing frontmatter across files to suggest schema types/fields and infer per-type localization mode (`localized: false` when no locale evidence exists, `localized: true` when two or more distinct locales are detected).
-6. **Schema + locale confirmation** — Present inferred schema and locale mapping plan, let developer adjust. Locale detection precedence is `frontmatter > filename suffix > folder segment`; frontmatter keys checked are `locale`, `lang`, and `language`.
-7. **Config generation** — Generate `mdcms.config.ts` with the confirmed schema, server URL, and settings. If localized types are present, generate `locales.default`, `locales.supported`, and persisted remaps in `locales.aliases`. The wizard recommends `locales.default` as the most frequently detected locale and prompts for confirmation/override.
-8. **Initial import** — Push all selected content to the CMS server with explicit `locale` and `content_format` per document.
-9. **Gitignore + untracking update** — Add managed content directories to `.gitignore` and explicitly remove already tracked managed content files from the Git index (`git rm -r --cached <dir>`), so they are no longer tracked.
+1. **Server URL** — Prompt for the MDCMS server URL + health check (`GET /healthz`).
+2. **Project + environment names** — Prompt for project name and environment name (default: `"production"`). These are collected before authentication so the login challenge can scope the API key to `(project, environment)`.
+3. **Authentication** — Open browser for login via OAuth flow. The login challenge includes the project and environment from step 2. Scopes: `projects:write`, `schema:write`, `content:read`, `content:read:draft`, `content:write`. The resulting API key has `contextAllowlist: [{project, environment}]`.
+4. **Project creation** — `POST /api/v1/projects` with the project name from step 2. Slug is auto-generated from name; a default "production" environment is created automatically. If the server returns `409` (project already exists), the wizard exits with an error.
+5. **Environment creation** — If the environment already exists in the project-create response, the wizard skips creation; otherwise `POST /api/v1/projects/:slug/environments`.
+6. **Directory scanning** — Scan the project for directories containing `.md`/`.mdx` files and collect locale hints from frontmatter, filename suffixes, and locale folder segments. Root-level files (no parent directory) are excluded.
+7. **Directory selection** — Let the developer choose which directories to manage. If no content files are found, the wizard prompts for a content directory name, scaffolds a type with `title` and `slug` fields, and creates an example post (`example.md`).
+8. **Schema inference** — Analyze existing frontmatter across files to suggest schema types/fields and infer per-type localization mode (`localized: false` when no locale evidence exists, `localized: true` when two or more distinct locales are detected).
+9. **Schema + locale confirmation** — Present inferred schema and locale mapping plan, let developer adjust. Locale detection precedence is `frontmatter > filename suffix > folder segment`; frontmatter keys checked are `locale`, `lang`, and `language`.
+10. **Config generation** — Generate `mdcms.config.ts` with the confirmed schema, server URL, and settings. If localized types are present, generate `locales.default`, `locales.supported`, and persisted remaps in `locales.aliases`. The wizard recommends `locales.default` as the most frequently detected locale and prompts for confirmation/override.
+11. **Schema sync** — Sync schema to server via `PUT /api/v1/schema`. Persist the server-returned `schemaHash` to `.mdcms/schema/<project>.<environment>.json`. Skipped if no content types are defined.
+12. **Initial import** — Push all selected content to the CMS server with explicit `locale` and `content_format` per document. On `409` path conflict, the wizard falls back to `PUT` (update) using the `conflictDocumentId` from the error response. Manifest entries are written to `.mdcms/manifests/<project>.<environment>.json` on success.
+13. **Gitignore + untracking update** — Add managed content directories to `.gitignore` and explicitly remove already tracked managed content files from the Git index (`git rm -r --cached <dir>`), so they are no longer tracked.
+
+After the credential exchange, the wizard stores the API key in the credential store (keyed by `serverUrl`, `project`, `environment`) for use by subsequent commands.
 
 If the selected managed directories are inside a Git repository and contain tracked files, the wizard must:
 
@@ -154,40 +160,74 @@ For each candidate file discovered during `cms init`:
 - Downloads the latest **draft state** from the CMS as `.md`/`.mdx` files into the filesystem (draft-first default).
 - Pull preserves extension from server `content_format` (`md` or `mdx`).
 - Always syncs the full content tree (no selective path filtering).
-- **Dry-run by default:** Before writing anything, the CLI compares local files against the server state and prints a summary of all changes that will be applied:
+- **Plan-first:** Before writing anything, the CLI compares local files against the server state and prints a summary of all changes that will be applied. `cms pull --dry-run` prints the plan and exits without writing.
 
-```
+#### Change Categories
+
+The pull plan classifies each document into one of the following categories:
+
+| Category                                | Meaning                                                                          | Action                                                                                    |
+| --------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| **Both modified**                       | Local file changed AND server draft revision advanced since last sync.           | Overwrites local file (requires confirmation).                                            |
+| **Modified**                            | Server draft revision advanced but local file matches the manifest hash.         | Overwrites local file (no confirmation needed).                                           |
+| **Locally modified (server unchanged)** | Local file differs from manifest hash but server draft revision has not changed. | Skipped — file is not written. Guidance printed: "Use `cms push` to upload your changes." |
+| **New**                                 | Document exists on server but has no manifest entry.                             | Written to disk.                                                                          |
+| **Moved/Renamed (locally modified)**    | Server path/format changed AND local file at the old path was edited.            | Old file deleted, new file written (requires confirmation).                               |
+| **Moved/Renamed**                       | Server path/format changed, local file unmodified.                               | Old file deleted, new file written.                                                       |
+| **Deleted on server**                   | Manifest entry exists but document is absent from server response.               | Local file deleted (requires confirmation).                                               |
+| **Skipped (unknown type)**              | Document type is not defined in local config.                                    | Skipped with a warning to stderr.                                                         |
+| **Unchanged**                           | Hash, draft revision, and published version all match.                           | No action.                                                                                |
+
+#### Plan Output Example
+
+```text
 $ cms pull
 
-Fetching content from http://localhost:4000 (production)...
-Project: marketing-site
+Pull plan:
 
-  Modified (server is newer):
-    blog/hello-world.en.md       (local: r12, server: r15)
-    blog/getting-started.en.md   (local: r4, server: r5)
+Both modified (1)
+  - pages/about.en.md (draft=8, published=-)
 
-  Locally modified (will be overwritten):
-    pages/about.en.md            (local file differs from r8)
+Modified (2)
+  - blog/hello-world.en.md (draft=15, published=3)
+  - blog/getting-started.en.md (draft=5, published=-)
 
-  New (will be created):
-    blog/new-post.en.md          (server: r1)
+Locally modified (server unchanged) (1)
+  - pages/faq.en.md (draft=2, published=-)
 
-  Moved/Renamed:
-    blog/old-slug.en.md → blog/new-slug.en.md  (server: r9)
+New (1)
+  - blog/new-post.en.md (draft=1, published=-)
 
-  Deleted on server (local file will be removed):
-    blog/deprecated-post.en.md
+Moved/Renamed (1)
+  - blog/old-slug.en.md -> blog/new-slug.en.md (draft=9, published=-)
 
-  Unchanged: 42 files
+Deleted on server (1)
+  - blog/deprecated-post.en.md (draft=3, published=-)
 
-  ⚠  2 local files will be overwritten. Continue? [y/N]
+Unchanged (42)
+  - (not listed individually)
+
+Note: 1 file(s) modified locally but unchanged on server. Use 'cms push' to upload your changes.
+
+Warning: 1 file(s) modified both locally and on server. Pull will overwrite local changes.
+Consider backing up local changes before proceeding, then re-apply after pull.
+
+This will overwrite locally modified files that also changed on server, and delete local files removed on server. Continue? [y/N]
 ```
 
-- **Locally modified detection:** The CLI hashes each local file and compares it against the content at the draft revision recorded in the manifest. If the local file has been edited since the last pull/push, it is flagged as "locally modified" with a warning that changes will be lost.
-- If there are no locally modified files, the pull proceeds without confirmation.
+#### Confirmation Logic
+
+- Pull requires confirmation when any of the following categories are present: **Both modified**, **Moved/Renamed (locally modified)**, or **Deleted on server**.
+- If none of these destructive categories are present, pull proceeds automatically.
 - `cms pull --force` skips the confirmation prompt.
-- **Detects moves/renames:** Compares the manifest's `document_id` → `{ path, format }` mapping against the server. If a document's path and/or format changed (renamed slug, moved folder, or `.md`/`.mdx` extension change), the old local file is deleted and the new file is written at the new deterministic path.
-- **Detects deletions:** If a document was soft-deleted on the server, the corresponding local file is removed.
+
+#### Change Detection
+
+- **Locally modified detection:** The CLI hashes each local file and compares it against the `hash` recorded in the manifest. If the local file has been edited since the last pull/push, it is flagged as locally modified.
+- **Remote change detection:** Compares the server's `draftRevision` and `publishedVersion` against the manifest, plus a content hash comparison.
+- **Detects moves/renames:** Compares the manifest's `document_id` → `{ path, format }` mapping against the server. If a document's path and/or format changed (renamed slug, moved folder, or `.md`/`.mdx` extension change), the old local file is deleted and the new file is written at the new deterministic path. If the old file was locally modified, the change is flagged as **Moved/Renamed (locally modified)**.
+- **Detects deletions:** If a document in the manifest is absent from the server response, the corresponding local file is removed.
+- **Unknown types:** Documents whose type is not defined in the local config are skipped with a warning to stderr summarizing the count per type.
 - Records draft revision, published version, content format, and content hash for each document in a scoped manifest (`.mdcms/manifests/<project>.<environment>.json`).
 - The manifest maps `document_id` → `{ path, format, draftRevision, publishedVersion, hash }` and is used by `cms push` for optimistic concurrency checks and by `cms pull` for local modification detection. The manifest is not committed to git.
 - `cms pull --published` is available when developers want published snapshots instead of drafts.
@@ -204,24 +244,90 @@ Project: marketing-site
 
 ### `cms push`
 
-- Uploads only changed manifest-tracked `.md`/`.mdx` files to the CMS server as draft updates (publish is explicit and separate).
+- Uploads changed, new, and deleted local `.md`/`.mdx` files to the CMS server as draft updates (publish is explicit and separate).
 - `cms push` derives `content_format` from file extension (`.md` => `md`, `.mdx` => `mdx`) and rejects unsupported extensions with a deterministic error.
 - For known documents, identity is resolved from manifest `document_id`; file path is treated as mutable state that can rename/move without changing document identity.
 - Sends the base draft revision token and latest published version (from the manifest) with each document.
 - Change detection is hash-based against `.mdcms/manifests/<project>.<environment>.json`; unchanged documents are skipped and not sent.
 - If a manifest entry has a missing/empty hash, that document is treated as changed and the hash is repaired on successful push.
-- **Draft optimistic concurrency:** If the server's current `draft_revision` differs from the base draft revision in the manifest, the push is **rejected** for that document. The developer must `cms pull` first, then re-apply their changes.
+
+#### New file detection
+
+- After processing manifest entries, `cms push` scans all `contentDirectories` (from `mdcms.config.ts`) recursively for `.md`/`.mdx` files whose relative paths are not present in the manifest.
+- Each untracked file is mapped to a content type via the type directory config (`pickTypeConfigForPath`). Files that cannot be mapped are skipped with a warning.
+- In interactive mode, untracked files are presented as a checkbox selection ("Select new files to upload:"). Only selected files are created on the server via `POST /api/v1/content`.
+- On successful creation, a new manifest entry is added keyed by the server-returned `documentId`.
+
+#### Deleted file detection
+
+- During manifest iteration, if a tracked file is missing on disk (ENOENT), it is collected as a deletion candidate instead of causing a hard error.
+- In interactive mode, deletion candidates are presented as a checkbox selection ("Select files to delete from server:"). Only selected files are soft-deleted on the server via `DELETE /api/v1/content/:documentId`.
+- On successful deletion (or if the server returns 404, meaning it was already deleted), the manifest entry is removed.
+
+#### Interactive selection and `--force`
+
+- Without `--force`, two separate checkbox prompts are shown (if applicable): one for new files, one for deletions. A final confirmation prompt summarizes the total action ("Push N changed, N new, N to delete?").
+- With `--force`, all new files are auto-selected for upload, all deletions are auto-selected for removal, and all confirmation prompts are skipped. This is the recommended mode for CI/scripted usage.
+- In non-TTY environments without `--force`, checkbox prompts return empty selections (no new files uploaded, no deletions performed). Changed manifest-tracked files are still pushed normally. A hint is printed: "Run with --force to include new/deleted files in non-interactive mode."
+
+#### Update fallback on 404
+
+When a `PUT` update returns `404` (document was deleted on the server but the manifest still references it), `cms push` falls back to `POST` to recreate the document under a new `documentId`. The old manifest entry is replaced by the newly created one. This avoids hard failures when the server-side state has diverged.
+
+#### Manifest flush
+
+The manifest is flushed atomically (via `writeScopedManifestAtomic`) after each successful individual operation (update, create, or delete) rather than once at the end. This ensures that a crash or network failure mid-push does not lose track of documents that were already successfully synced.
+
+#### Schema and validation
+
+- **Schema hash requirement:** Before sending any content write request, `cms push` reads the schema hash from `.mdcms/schema/<project>.<environment>.json` (see SPEC-004 "Local Schema State File"). If the file does not exist, push fails immediately with an actionable multi-line error that distinguishes fresh-clone scenarios from missing-sync scenarios (exit code 1). The hash is sent as `x-mdcms-schema-hash` on every `POST`, `PUT`, and `DELETE` content request.
+- **Schema mismatch handling:** If the server returns `SCHEMA_HASH_MISMATCH` (`409`) for a document, that document is reported as failed with reason code `schema_hash_mismatch`. Other documents in the same push run continue (partial success). The exit summary directs the developer to run `cms schema sync` before retrying.
+- **Path conflict handling:** If the server returns `CONTENT_PATH_CONFLICT` (`409`) for a document (update, create, or new-file), that document is reported as failed with reason code `content_path_conflict`. The exit summary directs the developer to run `cms pull` to re-sync the manifest.
+- **Draft optimistic concurrency:** If the server's current `draft_revision` differs from the base draft revision in the manifest, the push is **rejected** for that document with reason code `stale_draft_revision`. The developer must `cms pull` first, then re-apply their changes.
 - On success, the server updates `documents`, increments `draft_revision`, and does not create new `document_versions` rows.
-- Optional `--validate` flag runs schema validation locally before pushing.
+- Optional `--validate` flag runs schema validation locally before pushing. Validation covers both changed and selected new documents. If the local schema hash differs from the last synced hash, a warning is printed before validation proceeds.
 
 ### `cms schema sync`
 
 `cms schema sync` synchronizes the current `mdcms.config.ts` schema to the server for a specific `(project, environment)` target.
 
-- Uploads raw schema snapshot + resolved environment schema.
-- Validates schema compatibility at sync time.
+- Parses `mdcms.config.ts` and resolves per-environment overlays.
+- Builds schema payload (types + fields, excluding MDX component registrations and prop metadata).
+- Uploads raw schema snapshot + resolved environment schema via `PUT /api/v1/schema`.
+- Validates schema compatibility at sync time; incompatibilities produce actionable error output.
 - Does not mutate content rows.
-- Intended to run before content writes when Studio reports schema mismatch.
+- On success, persists the server-returned `schemaHash` to `.mdcms/schema/<project>.<environment>.json` using atomic file writes (see SPEC-004 "Local Schema State File"). This file is read by `cms push` and future SDK write methods to satisfy the `x-mdcms-schema-hash` write gate.
+- Supports `--project` and `--environment` overrides; defaults from config.
+
+### `cms status`
+
+`cms status` compares local content and schema state against the server and reports drift.
+
+#### Content Drift
+
+Fetches all draft documents from the server and compares against the local manifest and file hashes. Each document is classified into one of these drift categories:
+
+| Category               | Meaning                                                            |
+| ---------------------- | ------------------------------------------------------------------ |
+| **Modified on server** | Server `draftRevision` advanced; local file matches manifest hash. |
+| **Modified locally**   | Local file hash differs from manifest; server revision unchanged.  |
+| **Both modified**      | Both local file and server revision have changed since last sync.  |
+| **New on server**      | Document exists on server but has no manifest entry.               |
+| **Deleted on server**  | Manifest entry exists but document is absent from server.          |
+| **Moved/Renamed**      | Server path differs from manifest path for the same `documentId`.  |
+| **Unchanged**          | Hash, draft revision, and published version all match.             |
+
+#### Schema Drift
+
+Reads the local schema state file (`.mdcms/schema/<project>.<environment>.json`) and compares the stored `schemaHash` against a freshly computed hash from the current `mdcms.config.ts`. Reports one of:
+
+- **In sync** — local schema matches last synced hash, with `syncedAt` timestamp.
+- **Drifted** — local schema differs; guidance to run `cms schema sync`.
+- **No state** — no schema state file found; guidance for fresh-clone setup (`cms schema sync && cms pull`).
+
+#### Exit Code
+
+Returns exit code `1` if any content drift or schema drift is detected; `0` if everything is in sync.
 
 ### `cms migrate`
 
@@ -255,11 +361,12 @@ export const migration: Migration = {
 
 ### Authentication
 
-- `cms login` starts a browser-based authorization code flow via `/api/v1/auth/cli/login/*`.
-- CLI starts a local loopback callback listener (`127.0.0.1`) and exchanges a one-time code for an API key scoped to `(serverUrl, project, environment)`.
+- `cms login` starts a browser-based authorization code flow via `/api/v1/auth/cli/login/*`. It requires a config file (`mdcms.config.ts`) so that `project` and `environment` are known.
+- CLI starts a local loopback callback listener (`127.0.0.1`) and exchanges a one-time code for an API key scoped to `(serverUrl, project, environment)`. Both `project` and `environment` are required in the login challenge.
+- After obtaining the key, `cms login` verifies the project exists on the server (`GET /api/v1/projects`). If the project does not exist, the key is revoked (`POST /api/v1/auth/api-keys/self/revoke`) and the command exits with an error directing the user to run `cms init`.
 - The credential store is keyed by server URL, project, and environment and supports one active profile per tuple.
 - In interactive mode, credentials are stored in the OS credential store when available (fallback to `~/.mdcms/credentials.json` with `0600` permissions).
-- Login-generated API keys default to scopes: `content:read`, `content:read:draft`, `content:write`.
+- Login-generated API keys default to scopes: `projects:read`, `projects:write`, `schema:read`, `schema:write`, `content:read`, `content:read:draft`, `content:write`.
 - CLI auth precedence is: `--api-key` > `MDCMS_API_KEY` > stored profile.
 - `cms logout` always clears the local profile for the current tuple and performs best-effort remote self-revoke of the active API key.
 

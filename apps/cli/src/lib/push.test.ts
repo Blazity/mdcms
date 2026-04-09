@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import { test } from "node:test";
 
 import type { ContentDocumentResponse } from "@mdcms/shared";
+import { z } from "zod";
+import { defineConfig, defineType, parseMdcmsConfig } from "@mdcms/shared";
 
 import { runMdcmsCli } from "./framework.js";
 
@@ -49,6 +51,24 @@ function hashRawContent(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
+async function writeSchemaStateFile(
+  cwd: string,
+  project: string,
+  environment: string,
+): Promise<void> {
+  const dir = join(cwd, ".mdcms", "schema");
+  await mkdir(dir, { recursive: true });
+  await writeFile(
+    join(dir, `${project}.${environment}.json`),
+    JSON.stringify({
+      schemaHash: "test-schema-hash-" + "a".repeat(48),
+      syncedAt: "2026-03-31T12:00:00.000Z",
+      serverUrl: "http://localhost:4000",
+    }),
+    "utf8",
+  );
+}
+
 test("push updates an existing manifest-tracked document via PUT", async () => {
   await withTempDir(async (cwd) => {
     const manifestPath = join(
@@ -58,6 +78,7 @@ test("push updates an existing manifest-tracked document via PUT", async () => {
       "marketing-site.staging.json",
     );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
     await writeFile(
       manifestPath,
       JSON.stringify(
@@ -93,14 +114,24 @@ test("push updates an existing manifest-tracked document via PUT", async () => {
         assert.equal(String(input).endsWith("/api/v1/content/doc-1"), true);
         assert.equal(init?.method, "PUT");
 
+        const headers = new Headers(init?.headers as Record<string, string>);
+        assert.ok(
+          headers.get("x-mdcms-schema-hash"),
+          "x-mdcms-schema-hash header must be present",
+        );
+
         const body = JSON.parse(String(init?.body)) as {
           format: string;
           body: string;
           frontmatter: Record<string, unknown>;
+          draftRevision: number;
+          publishedVersion: number | null;
         };
         assert.equal(body.format, "md");
         assert.equal(body.body.includes("Updated draft body"), true);
         assert.equal(body.frontmatter.title, "Hello World");
+        assert.equal(body.draftRevision, 1);
+        assert.equal(body.publishedVersion, 1);
 
         return createSuccessResponse({
           documentId: "doc-1",
@@ -157,6 +188,7 @@ test("push falls back to POST and rewrites manifest key when PUT target is missi
       "marketing-site.staging.json",
     );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
     await writeFile(
       manifestPath,
       JSON.stringify(
@@ -275,6 +307,7 @@ test("push sends only changed documents and skips unchanged manifest entries", a
       "marketing-site.staging.json",
     );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
     await mkdir(join(cwd, "content", "blog"), { recursive: true });
 
     const changedContent = "# Changed\n";
@@ -390,6 +423,7 @@ test("push exits successfully without API calls when no changed documents are fo
       "marketing-site.staging.json",
     );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
     await mkdir(join(cwd, "content", "blog"), { recursive: true });
 
     const localContent = "# Stable document\n";
@@ -456,10 +490,7 @@ test("push exits successfully without API calls when no changed documents are fo
     assert.equal(exitCode, 0);
     assert.equal(requestCount, 0);
     assert.equal(confirmCount, 0);
-    assert.equal(
-      stdout.includes("No changed manifest-tracked documents to push"),
-      true,
-    );
+    assert.equal(stdout.includes("No changes to push"), true);
   });
 });
 
@@ -472,6 +503,7 @@ test("push treats missing manifest hash as changed and repairs hash after succes
       "marketing-site.staging.json",
     );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
     await mkdir(join(cwd, "content", "blog"), { recursive: true });
 
     const localContent = "# Missing hash compatibility\n";
@@ -554,6 +586,7 @@ test("push fails with deterministic error on unsupported file extension", async 
       "marketing-site.staging.json",
     );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
     await writeFile(
       manifestPath,
       JSON.stringify(
@@ -611,7 +644,7 @@ test("push fails with deterministic error on unsupported file extension", async 
   });
 });
 
-test("push --dry-run prints plan without performing API calls", async () => {
+test("push reports stale document as failed and continues pushing remaining documents", async () => {
   await withTempDir(async (cwd) => {
     const manifestPath = join(
       cwd,
@@ -620,16 +653,24 @@ test("push --dry-run prints plan without performing API calls", async () => {
       "marketing-site.staging.json",
     );
     await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
     await writeFile(
       manifestPath,
       JSON.stringify(
         {
-          "doc-1": {
-            path: "content/blog/hello-world.en.md",
+          "doc-stale": {
+            path: "content/blog/stale-post.en.md",
             format: "md",
             draftRevision: 1,
             publishedVersion: null,
-            hash: "old-hash",
+            hash: "old-hash-1",
+          },
+          "doc-fresh": {
+            path: "content/blog/fresh-post.en.md",
+            format: "md",
+            draftRevision: 3,
+            publishedVersion: 2,
+            hash: "old-hash-2",
           },
         },
         null,
@@ -640,19 +681,46 @@ test("push --dry-run prints plan without performing API calls", async () => {
 
     await mkdir(join(cwd, "content", "blog"), { recursive: true });
     await writeFile(
-      join(cwd, "content/blog/hello-world.en.md"),
-      "# Hello\n",
+      join(cwd, "content/blog/stale-post.en.md"),
+      '---\ntitle: "Stale"\n---\nstale body\n',
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, "content/blog/fresh-post.en.md"),
+      '---\ntitle: "Fresh"\n---\nfresh body\n',
       "utf8",
     );
 
+    const stdoutChunks: string[] = [];
     let requestCount = 0;
-    let stdout = "";
-    const exitCode = await runMdcmsCli(["push", "--dry-run"], {
+
+    const exitCode = await runMdcmsCli(["push", "--force"], {
       cwd,
       env: {} as NodeJS.ProcessEnv,
-      fetcher: async () => {
+      fetcher: async (input) => {
         requestCount += 1;
-        throw new Error("fetch should not be called");
+        const url = String(input);
+
+        if (url.endsWith("/api/v1/content/doc-stale")) {
+          return new Response(
+            JSON.stringify({
+              code: "STALE_DRAFT_REVISION",
+              message: "Draft has been modified since your last pull.",
+              statusCode: 409,
+            }),
+            { status: 409, headers: { "content-type": "application/json" } },
+          );
+        }
+
+        return createSuccessResponse({
+          documentId: "doc-fresh",
+          type: "BlogPost",
+          locale: "en",
+          path: "content/blog/fresh-post",
+          format: "md",
+          draftRevision: 4,
+          publishedVersion: 2,
+        });
       },
       loadConfig: async () => ({
         config: {
@@ -670,7 +738,554 @@ test("push --dry-run prints plan without performing API calls", async () => {
         configPath: join(cwd, "mdcms.config.ts"),
       }),
       stdout: {
-        write: (chunk) => {
+        write: (chunk: string) => {
+          stdoutChunks.push(chunk);
+        },
+      },
+      stderr: { write: () => undefined },
+      confirm: async () => true,
+    });
+
+    // Exit code 1 because there is at least one failure
+    assert.equal(exitCode, 1);
+    // Both documents were sent
+    assert.equal(requestCount, 2);
+
+    const output = stdoutChunks.join("");
+
+    // Stale doc reported as failed
+    assert.ok(output.includes("[FAILED]"));
+    assert.ok(output.includes("doc-stale"));
+    assert.ok(output.includes("STALE_DRAFT_REVISION"));
+
+    // Fresh doc reported as updated
+    assert.ok(output.includes("[UPDATED]"));
+    assert.ok(output.includes("doc-fresh"));
+
+    // Actionable summary printed
+    assert.ok(output.includes("cms pull"));
+
+    // Manifest updated for fresh doc, stale doc unchanged
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+      string,
+      { draftRevision: number; hash: string }
+    >;
+    assert.equal(manifest["doc-fresh"]?.draftRevision, 4);
+    assert.equal(manifest["doc-stale"]?.draftRevision, 1);
+    assert.equal(manifest["doc-stale"]?.hash, "old-hash-1");
+  });
+});
+
+test("push reports schema-mismatch document as failed and continues pushing remaining documents", async () => {
+  await withTempDir(async (cwd) => {
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "marketing-site.staging.json",
+    );
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
+    await writeFile(
+      manifestPath,
+      JSON.stringify(
+        {
+          "doc-mismatch": {
+            path: "content/blog/mismatch-post.en.md",
+            format: "md",
+            draftRevision: 1,
+            publishedVersion: null,
+            hash: "old-hash-1",
+          },
+          "doc-ok": {
+            path: "content/blog/ok-post.en.md",
+            format: "md",
+            draftRevision: 3,
+            publishedVersion: 2,
+            hash: "old-hash-2",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await mkdir(join(cwd, "content", "blog"), { recursive: true });
+    await writeFile(
+      join(cwd, "content/blog/mismatch-post.en.md"),
+      '---\ntitle: "Mismatch"\n---\nmismatch body\n',
+      "utf8",
+    );
+    await writeFile(
+      join(cwd, "content/blog/ok-post.en.md"),
+      '---\ntitle: "OK"\n---\nok body\n',
+      "utf8",
+    );
+
+    const stdoutChunks: string[] = [];
+    let requestCount = 0;
+
+    const exitCode = await runMdcmsCli(["push", "--force"], {
+      cwd,
+      env: {} as NodeJS.ProcessEnv,
+      fetcher: async (input) => {
+        requestCount += 1;
+        const url = String(input);
+
+        if (url.endsWith("/api/v1/content/doc-mismatch")) {
+          return new Response(
+            JSON.stringify({
+              code: "SCHEMA_HASH_MISMATCH",
+              message: "Schema hash does not match the server schema.",
+              statusCode: 409,
+            }),
+            { status: 409, headers: { "content-type": "application/json" } },
+          );
+        }
+
+        return createSuccessResponse({
+          documentId: "doc-ok",
+          type: "BlogPost",
+          locale: "en",
+          path: "content/blog/ok-post",
+          format: "md",
+          draftRevision: 4,
+          publishedVersion: 2,
+        });
+      },
+      loadConfig: async () => ({
+        config: {
+          serverUrl: "http://localhost:4000",
+          project: "marketing-site",
+          environment: "staging",
+          types: [
+            {
+              name: "BlogPost",
+              directory: "content/blog",
+              localized: true,
+            },
+          ],
+        },
+        configPath: join(cwd, "mdcms.config.ts"),
+      }),
+      stdout: {
+        write: (chunk: string) => {
+          stdoutChunks.push(chunk);
+        },
+      },
+      stderr: { write: () => undefined },
+      confirm: async () => true,
+    });
+
+    // Exit code 1 because there is at least one failure
+    assert.equal(exitCode, 1);
+    // Both documents were sent
+    assert.equal(requestCount, 2);
+
+    const output = stdoutChunks.join("");
+
+    // Mismatch doc reported as failed
+    assert.ok(output.includes("[FAILED]"));
+    assert.ok(output.includes("doc-mismatch"));
+    assert.ok(output.includes("SCHEMA_HASH_MISMATCH"));
+
+    // OK doc reported as updated
+    assert.ok(output.includes("[UPDATED]"));
+    assert.ok(output.includes("doc-ok"));
+
+    // Actionable summary printed
+    assert.ok(output.includes("cms schema sync"));
+
+    // Manifest updated for ok doc, mismatch doc unchanged
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+      string,
+      { draftRevision: number; hash: string }
+    >;
+    assert.equal(manifest["doc-ok"]?.draftRevision, 4);
+    assert.equal(manifest["doc-mismatch"]?.draftRevision, 1);
+    assert.equal(manifest["doc-mismatch"]?.hash, "old-hash-1");
+  });
+});
+
+test("push --validate blocks push on validation errors", async () => {
+  await withTempDir(async (cwd) => {
+    await writeSchemaStateFile(cwd, "test-project", "staging");
+    const config = parseMdcmsConfig(
+      defineConfig({
+        serverUrl: "http://localhost:4000",
+        project: "test-project",
+        environment: "staging",
+        contentDirectories: ["content"],
+        types: [
+          defineType("Post", {
+            directory: "content/posts",
+            localized: false,
+            fields: {
+              title: z.string(),
+            },
+          }),
+        ],
+        environments: { staging: {} },
+      }),
+    );
+
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "test-project.staging.json",
+    );
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        "doc-1": {
+          path: "content/posts/bad.md",
+          format: "md",
+          draftRevision: 1,
+          publishedVersion: null,
+          hash: "old-hash",
+        },
+      }),
+      "utf8",
+    );
+
+    await mkdir(join(cwd, "content", "posts"), { recursive: true });
+    await writeFile(
+      join(cwd, "content/posts/bad.md"),
+      "---\n---\nBody\n",
+      "utf8",
+    );
+
+    let requestCount = 0;
+
+    const exitCode = await runMdcmsCli(["push", "--validate", "--force"], {
+      cwd,
+      env: {} as NodeJS.ProcessEnv,
+      fetcher: async () => {
+        requestCount += 1;
+        throw new Error("fetch should not be called");
+      },
+      loadConfig: async () => ({
+        config,
+        configPath: join(cwd, "mdcms.config.ts"),
+      }),
+      stdout: { write: () => undefined },
+      stderr: { write: () => undefined },
+      confirm: async () => true,
+    });
+
+    assert.equal(exitCode, 1);
+    assert.equal(requestCount, 0);
+  });
+});
+
+test("push --force auto-selects all new files and creates them via POST", async () => {
+  await withTempDir(async (cwd) => {
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "marketing-site.staging.json",
+    );
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
+
+    // Empty manifest — no tracked documents
+    await writeFile(manifestPath, JSON.stringify({}), "utf8");
+
+    // One new untracked file
+    await mkdir(join(cwd, "content", "blog"), { recursive: true });
+    await writeFile(
+      join(cwd, "content/blog/new-post.en.md"),
+      '---\ntitle: "New"\n---\nNew body\n',
+      "utf8",
+    );
+
+    let postCalls = 0;
+    const exitCode = await runMdcmsCli(["push", "--force"], {
+      cwd,
+      env: {} as NodeJS.ProcessEnv,
+      fetcher: async (input, init) => {
+        const url = String(input);
+        assert.ok(url.endsWith("/api/v1/content"));
+        assert.equal(init?.method, "POST");
+        postCalls += 1;
+
+        const body = JSON.parse(String(init?.body)) as {
+          type: string;
+          locale: string;
+          path: string;
+          format: string;
+          frontmatter: Record<string, unknown>;
+          body: string;
+        };
+        assert.equal(body.type, "BlogPost");
+        assert.equal(body.locale, "en");
+        assert.equal(body.path, "content/blog/new-post");
+        assert.equal(body.format, "md");
+        assert.equal(body.frontmatter.title, "New");
+
+        return createSuccessResponse({
+          documentId: "doc-new-1",
+          type: "BlogPost",
+          locale: "en",
+          path: "content/blog/new-post",
+          format: "md",
+          draftRevision: 1,
+          publishedVersion: null,
+        });
+      },
+      loadConfig: async () => ({
+        config: {
+          serverUrl: "http://localhost:4000",
+          project: "marketing-site",
+          environment: "staging",
+          contentDirectories: ["content"],
+          types: [
+            {
+              name: "BlogPost",
+              directory: "content/blog",
+              localized: true,
+            },
+          ],
+        },
+        configPath: join(cwd, "mdcms.config.ts"),
+      }),
+      stdout: { write: () => undefined },
+      stderr: { write: () => undefined },
+      confirm: async () => true,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(postCalls, 1);
+
+    // Manifest should now contain the new document
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+      string,
+      { path: string; draftRevision: number }
+    >;
+    assert.equal(manifest["doc-new-1"]?.path, "content/blog/new-post.en.md");
+    assert.equal(manifest["doc-new-1"]?.draftRevision, 1);
+  });
+});
+
+test("push --force deletes locally-missing files via DELETE and removes from manifest", async () => {
+  await withTempDir(async (cwd) => {
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "marketing-site.staging.json",
+    );
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
+
+    // File exists in manifest but NOT on disk
+    await writeFile(
+      manifestPath,
+      JSON.stringify(
+        {
+          "doc-to-delete": {
+            path: "content/blog/old-post.en.md",
+            format: "md",
+            draftRevision: 5,
+            publishedVersion: 3,
+            hash: "some-hash",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    // Create content dir so scanning works, but no files
+    await mkdir(join(cwd, "content", "blog"), { recursive: true });
+
+    let deleteCalls = 0;
+    const exitCode = await runMdcmsCli(["push", "--force"], {
+      cwd,
+      env: {} as NodeJS.ProcessEnv,
+      fetcher: async (input, init) => {
+        const url = String(input);
+        assert.ok(url.endsWith("/api/v1/content/doc-to-delete"));
+        assert.equal(init?.method, "DELETE");
+        deleteCalls += 1;
+
+        return createSuccessResponse({
+          documentId: "doc-to-delete",
+          type: "BlogPost",
+          locale: "en",
+          path: "content/blog/old-post",
+          format: "md",
+          draftRevision: 5,
+          publishedVersion: 3,
+        });
+      },
+      loadConfig: async () => ({
+        config: {
+          serverUrl: "http://localhost:4000",
+          project: "marketing-site",
+          environment: "staging",
+          contentDirectories: ["content"],
+          types: [
+            {
+              name: "BlogPost",
+              directory: "content/blog",
+              localized: true,
+            },
+          ],
+        },
+        configPath: join(cwd, "mdcms.config.ts"),
+      }),
+      stdout: { write: () => undefined },
+      stderr: { write: () => undefined },
+      confirm: async () => true,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(deleteCalls, 1);
+
+    // Manifest should no longer contain the deleted document
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    assert.equal(manifest["doc-to-delete"], undefined);
+  });
+});
+
+test("push --force handles mixed changed + new + deleted documents in one run", async () => {
+  await withTempDir(async (cwd) => {
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "marketing-site.staging.json",
+    );
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
+
+    await mkdir(join(cwd, "content", "blog"), { recursive: true });
+
+    // Changed file (exists in manifest, content differs)
+    await writeFile(
+      join(cwd, "content/blog/changed.en.md"),
+      '---\ntitle: "Changed"\n---\nUpdated body\n',
+      "utf8",
+    );
+
+    // New file (not in manifest)
+    await writeFile(
+      join(cwd, "content/blog/brand-new.en.md"),
+      '---\ntitle: "Brand New"\n---\nNew body\n',
+      "utf8",
+    );
+
+    // Deleted file (in manifest, not on disk)
+    // content/blog/deleted.en.md intentionally does NOT exist
+
+    await writeFile(
+      manifestPath,
+      JSON.stringify(
+        {
+          "doc-changed": {
+            path: "content/blog/changed.en.md",
+            format: "md",
+            draftRevision: 1,
+            publishedVersion: null,
+            hash: "old-hash",
+          },
+          "doc-to-delete": {
+            path: "content/blog/deleted.en.md",
+            format: "md",
+            draftRevision: 3,
+            publishedVersion: 1,
+            hash: "delete-hash",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    let putCalls = 0;
+    let postCalls = 0;
+    let deleteCalls = 0;
+    let stdout = "";
+
+    const exitCode = await runMdcmsCli(["push", "--force"], {
+      cwd,
+      env: {} as NodeJS.ProcessEnv,
+      fetcher: async (input, init) => {
+        const url = String(input);
+        const method = init?.method;
+
+        if (method === "PUT" && url.endsWith("/api/v1/content/doc-changed")) {
+          putCalls += 1;
+          return createSuccessResponse({
+            documentId: "doc-changed",
+            type: "BlogPost",
+            locale: "en",
+            path: "content/blog/changed",
+            format: "md",
+            draftRevision: 2,
+            publishedVersion: null,
+          });
+        }
+
+        if (method === "POST" && url.endsWith("/api/v1/content")) {
+          postCalls += 1;
+          return createSuccessResponse({
+            documentId: "doc-brand-new",
+            type: "BlogPost",
+            locale: "en",
+            path: "content/blog/brand-new",
+            format: "md",
+            draftRevision: 1,
+            publishedVersion: null,
+          });
+        }
+
+        if (
+          method === "DELETE" &&
+          url.endsWith("/api/v1/content/doc-to-delete")
+        ) {
+          deleteCalls += 1;
+          return createSuccessResponse({
+            documentId: "doc-to-delete",
+            type: "BlogPost",
+            locale: "en",
+            path: "content/blog/deleted",
+            format: "md",
+            draftRevision: 3,
+            publishedVersion: 1,
+          });
+        }
+
+        throw new Error(`Unexpected request: ${method} ${url}`);
+      },
+      loadConfig: async () => ({
+        config: {
+          serverUrl: "http://localhost:4000",
+          project: "marketing-site",
+          environment: "staging",
+          contentDirectories: ["content"],
+          types: [
+            {
+              name: "BlogPost",
+              directory: "content/blog",
+              localized: true,
+            },
+          ],
+        },
+        configPath: join(cwd, "mdcms.config.ts"),
+      }),
+      stdout: {
+        write: (chunk: string) => {
           stdout += chunk;
         },
       },
@@ -679,7 +1294,23 @@ test("push --dry-run prints plan without performing API calls", async () => {
     });
 
     assert.equal(exitCode, 0);
-    assert.equal(requestCount, 0);
-    assert.equal(stdout.includes("Unchanged (skipped): 0"), true);
+    assert.equal(putCalls, 1);
+    assert.equal(postCalls, 1);
+    assert.equal(deleteCalls, 1);
+
+    assert.ok(stdout.includes("[UPDATED]"));
+    assert.ok(stdout.includes("[CREATED]"));
+    assert.ok(stdout.includes("[DELETED]"));
+
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+      string,
+      { path: string; draftRevision: number }
+    >;
+    assert.equal(manifest["doc-changed"]?.draftRevision, 2);
+    assert.equal(
+      manifest["doc-brand-new"]?.path,
+      "content/blog/brand-new.en.md",
+    );
+    assert.equal(manifest["doc-to-delete"], undefined);
   });
 });

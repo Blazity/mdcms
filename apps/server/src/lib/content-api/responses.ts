@@ -2,6 +2,7 @@ import type {
   ContentDocumentResponse,
   ContentVersionDocumentResponse,
   ContentVersionSummaryResponse,
+  SchemaRegistryTypeSnapshot,
 } from "@mdcms/shared";
 import { RuntimeError } from "@mdcms/shared";
 
@@ -186,6 +187,23 @@ export function toContentVersionDocument(
     frontmatter: row.frontmatter as Record<string, unknown>,
     body: row.body,
   };
+}
+
+export function stripUnknownFrontmatterFields(
+  frontmatter: Record<string, unknown>,
+  schema: SchemaRegistryTypeSnapshot | undefined,
+): Record<string, unknown> {
+  if (!schema) {
+    return frontmatter;
+  }
+
+  const stripped: Record<string, unknown> = {};
+  for (const key of Object.keys(frontmatter)) {
+    if (key in schema.fields) {
+      stripped[key] = frontmatter[key];
+    }
+  }
+  return stripped;
 }
 
 export function buildContentPathConflict(input: {

@@ -760,3 +760,31 @@ export function serializeResolvedEnvironmentSchema(
       ]),
   );
 }
+
+export type SchemaStateFile = {
+  schemaHash: string;
+  syncedAt: string;
+  serverUrl: string;
+};
+
+export function toRawConfigSnapshot(config: ParsedMdcmsConfig): JsonObject {
+  return {
+    project: config.project,
+    serverUrl: config.serverUrl,
+    ...(config.environment ? { environment: config.environment } : {}),
+    ...(config.contentDirectories.length > 0
+      ? { contentDirectories: config.contentDirectories }
+      : {}),
+    ...(config.locales.implicit
+      ? {}
+      : {
+          locales: {
+            default: config.locales.default,
+            supported: config.locales.supported,
+            ...(Object.keys(config.locales.aliases).length > 0
+              ? { aliases: config.locales.aliases }
+              : {}),
+          },
+        }),
+  };
+}

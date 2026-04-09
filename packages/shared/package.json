@@ -22,6 +22,13 @@
       "import": "./dist/lib/contracts/action-catalog-contract.js",
       "default": "./dist/lib/contracts/action-catalog-contract.js"
     },
+    "./server": {
+      "@mdcms/source": "./src/lib/contracts/schema-hash.ts",
+      "bun": "./src/lib/contracts/schema-hash.ts",
+      "types": "./dist/lib/contracts/schema-hash.d.ts",
+      "import": "./dist/lib/contracts/schema-hash.js",
+      "default": "./dist/lib/contracts/schema-hash.js"
+    },
     ".": {
       "@mdcms/source": "./src/index.ts",
       "bun": "./src/index.ts",

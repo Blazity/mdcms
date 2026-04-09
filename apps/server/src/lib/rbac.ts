@@ -47,6 +47,8 @@ export type RbacAction =
   | "content:delete"
   | "schema:read"
   | "schema:write"
+  | "projects:read"
+  | "projects:write"
   | "user:manage"
   | "settings:manage";
 
@@ -58,7 +60,7 @@ const ROLE_RANK: Record<RbacRole, number> = {
 };
 
 const ROLE_ACTIONS: Record<RbacRole, readonly RbacAction[]> = {
-  viewer: ["content:read", "schema:read"],
+  viewer: ["content:read", "schema:read", "projects:read"],
   editor: [
     "content:read",
     "content:read:draft",
@@ -67,6 +69,7 @@ const ROLE_ACTIONS: Record<RbacRole, readonly RbacAction[]> = {
     "content:unpublish",
     "content:delete",
     "schema:read",
+    "projects:read",
   ],
   admin: [
     "content:read",
@@ -77,6 +80,8 @@ const ROLE_ACTIONS: Record<RbacRole, readonly RbacAction[]> = {
     "content:delete",
     "schema:read",
     "schema:write",
+    "projects:read",
+    "projects:write",
     "user:manage",
     "settings:manage",
   ],
@@ -89,6 +94,8 @@ const ROLE_ACTIONS: Record<RbacRole, readonly RbacAction[]> = {
     "content:delete",
     "schema:read",
     "schema:write",
+    "projects:read",
+    "projects:write",
     "user:manage",
     "settings:manage",
   ],
@@ -120,8 +127,20 @@ function normalizePathPrefix(input: string): string {
   return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
 }
 
+function collapsePathTraversal(input: string): string {
+  const segments: string[] = [];
+  for (const segment of input.split("/")) {
+    if (segment === "..") {
+      segments.pop();
+    } else if (segment !== "" && segment !== ".") {
+      segments.push(segment);
+    }
+  }
+  return segments.join("/");
+}
+
 function pathMatchesPrefix(path: string, prefix: string): boolean {
-  const normalizedPath = path.trim().replace(/^\/+/, "");
+  const normalizedPath = collapsePathTraversal(path.trim().replace(/^\/+/, ""));
   const normalizedPrefix = normalizePathPrefix(prefix).replace(/^\/+/, "");
   if (!normalizedPrefix) {
     return true;

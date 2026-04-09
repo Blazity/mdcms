@@ -245,9 +245,10 @@ test("pull handles move/rename and deleted-on-server cleanup", async () => {
   });
 });
 
-test("pull fails fast when type localization metadata is missing", async () => {
+test("pull gracefully skips documents with unknown types", async () => {
   await withTempDir(async (cwd) => {
     let stderr = "";
+    let stdout = "";
     const exitCode = await runMdcmsCli(["pull", "--dry-run"], {
       cwd,
       env: {} as NodeJS.ProcessEnv,
@@ -278,7 +279,9 @@ test("pull fails fast when type localization metadata is missing", async () => {
         configPath: join(cwd, "mdcms.config.ts"),
       }),
       stdout: {
-        write: () => undefined,
+        write: (chunk) => {
+          stdout += chunk;
+        },
       },
       stderr: {
         write: (chunk) => {
@@ -287,7 +290,11 @@ test("pull fails fast when type localization metadata is missing", async () => {
       },
     });
 
-    assert.equal(exitCode, 1);
-    assert.equal(stderr.includes("TYPE_MAPPING_MISSING"), true);
+    assert.equal(exitCode, 0);
+    assert.equal(
+      stderr.includes('Skipping 1 document(s) of type "MissingType"'),
+      true,
+    );
+    assert.equal(stdout.includes("Skipped (unknown type)"), true);
   });
 });
