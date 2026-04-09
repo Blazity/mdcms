@@ -71,13 +71,6 @@
       "when": 1774395811363,
       "tag": "0009_peaceful_living_tribunal",
       "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1775039005652,
-      "tag": "0010_keen_blockbuster",
-      "breakpoints": true
     }
   ]
 }

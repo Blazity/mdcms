@@ -32,6 +32,7 @@ type PushOptions = {
   force: boolean;
   published: boolean;
   validate: boolean;
+  dryRun: boolean;
 };
 
 type PushCandidate = {
@@ -95,7 +96,8 @@ function parsePushOptions(args: string[]): PushOptions {
     if (
       token === "--published" ||
       token === "--force" ||
-      token === "--validate"
+      token === "--validate" ||
+      token === "--dry-run"
     ) {
       continue;
     }
@@ -115,12 +117,13 @@ function parsePushOptions(args: string[]): PushOptions {
     force: args.includes("--force"),
     published: args.includes("--published"),
     validate: args.includes("--validate"),
+    dryRun: args.includes("--dry-run"),
   };
 }
 
 function renderPushHelp(): string {
   return [
-    "Usage: mdcms push [--force] [--validate] [--published]",
+    "Usage: mdcms push [--force] [--dry-run] [--validate] [--published]",
     "",
     "Upload local markdown files to CMS as draft content.",
     "",
@@ -133,6 +136,7 @@ function renderPushHelp(): string {
     "",
     "Options:",
     "  --force       Skip all prompts; auto-select all new/deleted files",
+    "  --dry-run     Show push plan only (no API writes)",
     "  --validate    Validate frontmatter against local schema before pushing",
     "  --published   Reserved for future behavior (unsupported in demo mode)",
     "",
@@ -1294,6 +1298,11 @@ export async function runPushCommand(
       unchangedCount: pushPlan.unchangedCount,
     },
   );
+
+  if (options.dryRun) {
+    context.stdout.write("Dry run complete. No changes were pushed.\n");
+    return 0;
+  }
 
   // Interactive selection for new files
   // Issue #8: in non-interactive mode without --force, skip new/deleted but still push changed

@@ -82,7 +82,6 @@ const CLI_LOGIN_DEFAULT_SCOPES: readonly ApiKeyOperationScope[] = [
   "content:read",
   "content:read:draft",
   "content:write",
-  "content:write:draft",
   "content:delete",
   "schema:read",
   "schema:write",
@@ -3452,11 +3451,25 @@ export function createAuthService(
           });
         }
 
-        if (
-          metadata.contextAllowlist.length > 0 &&
-          requirement.project &&
-          requirement.environment
-        ) {
+        if (requirement.project || requirement.environment) {
+          if (!requirement.project || !requirement.environment) {
+            throw new RuntimeError({
+              code: "FORBIDDEN",
+              message:
+                "API key authorization requires explicit project/environment routing context.",
+              statusCode: 403,
+            });
+          }
+
+          if (metadata.contextAllowlist.length === 0) {
+            throw new RuntimeError({
+              code: "FORBIDDEN",
+              message:
+                "API key has an empty context allowlist and cannot target any project/environment.",
+              statusCode: 403,
+            });
+          }
+
           const isContextAllowed = apiKeyAllowsTarget(
             metadata.contextAllowlist,
             {
@@ -3477,16 +3490,6 @@ export function createAuthService(
               },
             });
           }
-        } else if (
-          metadata.contextAllowlist.length === 0 &&
-          (requirement.project || requirement.environment)
-        ) {
-          throw new RuntimeError({
-            code: "FORBIDDEN",
-            message:
-              "API key has an empty context allowlist and cannot target any project/environment.",
-            statusCode: 403,
-          });
         }
 
         await touchApiKeyLastUsed(row.id);
@@ -3733,14 +3736,12 @@ export function createAuthService(
         });
       }
 
-      const authContextAllowlist: ApiKeyScopeTuple[] = challenge.project
-        ? [
-            {
-              project: challenge.project,
-              environment: challenge.environment ?? "*",
-            },
-          ]
-        : [];
+      const authContextAllowlist: ApiKeyScopeTuple[] = [
+        {
+          project: challenge.project,
+          environment: challenge.environment,
+        },
+      ];
 
       await assertSessionCanIssueApiKeyScopes(
         session,
@@ -3809,19 +3810,13 @@ export function createAuthService(
         });
       }
 
-      const label = challenge.project
-        ? `cli:${challenge.project}/${challenge.environment ?? "all"}`
-        : "cli:user-level";
-      const contextAllowlist = challenge.project
-        ? challenge.environment
-          ? [
-              {
-                project: challenge.project,
-                environment: challenge.environment,
-              },
-            ]
-          : []
-        : [];
+      const label = `cli:${challenge.project}/${challenge.environment}`;
+      const contextAllowlist: ApiKeyScopeTuple[] = [
+        {
+          project: challenge.project,
+          environment: challenge.environment,
+        },
+      ];
       const created = await createApiKeyForUser({
         userId: challenge.userId,
         label,

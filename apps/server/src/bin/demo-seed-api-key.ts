@@ -20,7 +20,6 @@ const DEMO_KEY_SCOPES = [
   "content:read",
   "content:read:draft",
   "content:write",
-  "content:write:draft",
   "content:delete",
   "schema:read",
   "schema:write",

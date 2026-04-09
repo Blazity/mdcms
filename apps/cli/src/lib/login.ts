@@ -15,7 +15,6 @@ const DEFAULT_CLI_LOGIN_SCOPES = [
   "content:read",
   "content:read:draft",
   "content:write",
-  "content:write:draft",
   "content:delete",
 ] as const;
 
@@ -429,9 +428,9 @@ export function createLoginCommand(options: LoginOptions = {}): CliCommand {
 
         await store.setProfile(
           {
-            serverUrl: context.serverUrl!,
-            project: context.project ?? "*",
-            environment: context.environment ?? "*",
+            serverUrl: context.serverUrl,
+            project: context.project,
+            environment: context.environment,
           },
           {
             authMode: "api_key",
@@ -443,7 +442,7 @@ export function createLoginCommand(options: LoginOptions = {}): CliCommand {
         );
 
         context.stdout.write(
-          `Login successful for ${context.project ?? "*"}/${context.environment ?? "*"}. Credentials stored.\n`,
+          `Login successful for ${context.project}/${context.environment}. Credentials stored.\n`,
         );
         context.stdout.write(
           `MDCMS_DEMO_API_KEY="${exchanged.key}" (use this value for demo app requests if needed).\n`,

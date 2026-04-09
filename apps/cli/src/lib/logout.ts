@@ -55,7 +55,7 @@ export function createLogoutCommand(options: LogoutOptions = {}): CliCommand {
       }
 
       const tuple = {
-        serverUrl: context.serverUrl!,
+        serverUrl: context.serverUrl,
         project: context.project,
         environment: context.environment,
       };
