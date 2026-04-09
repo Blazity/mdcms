@@ -239,15 +239,18 @@ async function createDocumentRouteMountContext(
 
   const capability = await resolveStudioDocumentRouteSchemaCapability(config);
   let supportedLocales: string[] | undefined;
+  let defaultLocale: string | undefined;
 
   try {
     const parsedConfig = parseMdcmsConfig(config);
-    supportedLocales = parsedConfig.locales.implicit
-      ? undefined
-      : [...parsedConfig.locales.supported];
+    if (!parsedConfig.locales.implicit) {
+      supportedLocales = [...parsedConfig.locales.supported];
+      defaultLocale = parsedConfig.locales.default;
+    }
   } catch (error) {
     if (error instanceof RuntimeError && error.code === "INVALID_CONFIG") {
       supportedLocales = undefined;
+      defaultLocale = undefined;
     } else {
       throw error;
     }
@@ -257,7 +260,7 @@ async function createDocumentRouteMountContext(
     project,
     initialEnvironment: environment,
     ...(supportedLocales && supportedLocales.length > 0
-      ? { supportedLocales }
+      ? { supportedLocales, defaultLocale }
       : {}),
     write: capability.canWrite
       ? {

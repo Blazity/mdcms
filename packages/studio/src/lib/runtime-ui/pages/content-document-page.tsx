@@ -162,6 +162,7 @@ export type ContentDocumentPageReadyState = {
   versionDiff: ContentDocumentVersionDiffState;
   translationVariants: TranslationVariantSummary[];
   localized: boolean;
+  variantsFetchFailed: boolean;
   variantCreation?: ContentDocumentVariantCreationState;
 };
 
@@ -360,6 +361,7 @@ function createReadyState(input: {
     },
     translationVariants: [],
     localized: false,
+    variantsFetchFailed: false,
     ...(writeAccess.writeMessage
       ? { writeMessage: writeAccess.writeMessage }
       : {}),
@@ -786,6 +788,7 @@ export async function loadContentDocumentPageState(input: {
 
   let translationVariants: TranslationVariantSummary[] = [];
   let localized = false;
+  let variantsFetchFailed = false;
 
   if (schemaState.status === "ready") {
     const typeEntry = schemaState.entries.find((e) => e.type === input.typeId);
@@ -808,7 +811,8 @@ export async function loadContentDocumentPageState(input: {
       translationVariants = variantsResponse.data;
     } catch {
       // Degrade gracefully — include the current document so its locale
-      // is never shown as missing, even when the variants fetch fails.
+      // is never shown as missing, and flag the failure so the UI
+      // suppresses creation affordances for unverified locales.
       translationVariants = [
         {
           documentId: readyState.documentId,
@@ -818,6 +822,7 @@ export async function loadContentDocumentPageState(input: {
           hasUnpublishedChanges: readyState.document.hasUnpublishedChanges,
         },
       ];
+      variantsFetchFailed = true;
     }
   }
 
@@ -833,6 +838,7 @@ export async function loadContentDocumentPageState(input: {
     ...readyState,
     translationVariants,
     localized,
+    variantsFetchFailed,
     ...versionState,
   };
 }
@@ -1610,9 +1616,13 @@ export function ContentDocumentPageView({
                     const hasVariant = state.translationVariants.some(
                       (v) => v.locale === loc,
                     );
-                    // Read-only users can switch between existing variants
-                    // but cannot create missing ones
-                    if (!hasVariant && !state.canWrite) return null;
+                    // Hide missing locales when: user is read-only, or
+                    // variants fetch failed (we can't confirm what exists)
+                    if (
+                      !hasVariant &&
+                      (!state.canWrite || state.variantsFetchFailed)
+                    )
+                      return null;
                     return (
                       <SelectItem key={loc} value={loc}>
                         {hasVariant ? loc : `+ ${loc}`}
@@ -2216,14 +2226,29 @@ export default function ContentDocumentPage({
       return;
     }
 
+    // Prefer the default locale variant as the prefill source per SPEC-009.
+    // Fall back to the current variant if the default locale variant is
+    // not available (e.g., not yet created or current doc is the default).
+    const defaultLocale = route?.defaultLocale;
+    const defaultVariant =
+      defaultLocale && defaultLocale !== currentState.locale
+        ? currentState.translationVariants.find(
+            (v) => v.locale === defaultLocale,
+          )
+        : undefined;
+
+    const sourceDocumentId =
+      defaultVariant?.documentId ?? currentState.documentId;
+    const sourceLocale = defaultVariant?.locale ?? currentState.locale;
+
     setState((current) =>
       current.status === "ready"
         ? {
             ...current,
             variantCreation: {
               targetLocale,
-              sourceDocumentId: current.documentId,
-              sourceLocale: current.locale,
+              sourceDocumentId,
+              sourceLocale,
               status: "idle",
             },
           }
