@@ -795,6 +795,18 @@ export async function loadContentDocumentPageState(input: {
     localized = typeEntry?.localized ?? false;
   }
 
+  // Fallback: if schema entries are empty (e.g., SCHEMA_NOT_SYNCED) but the
+  // document has a real locale and supportedLocales is configured, infer the
+  // type is localized so the switcher still appears for read-only navigation.
+  if (
+    !localized &&
+    route.supportedLocales &&
+    route.supportedLocales.length > 0 &&
+    readyState.locale !== "__mdcms_default__"
+  ) {
+    localized = true;
+  }
+
   if (
     localized &&
     route.supportedLocales &&
