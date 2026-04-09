@@ -1942,9 +1942,10 @@ export default function ContentDocumentPage({
   const stateRef = useRef(state);
   const loadRequestIdRef = useRef(0);
 
-  useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
+  // Sync ref immediately so event handlers and async callbacks always
+  // see the latest committed state — not deferred to a useEffect which
+  // can lag behind when promises resolve between commit and effect.
+  stateRef.current = state;
 
   function createRouteApi(): StudioDocumentRouteApi | undefined {
     if (!context || !route) {
