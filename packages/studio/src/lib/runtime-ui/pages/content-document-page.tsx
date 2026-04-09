@@ -239,7 +239,7 @@ type ContentDocumentPageViewProps = {
 type CreateContentDocumentPageHistoryApi = (input: {
   context: StudioMountContext;
   route: StudioDocumentRouteMountContext;
-}) => Pick<StudioDocumentRouteApi, "listVersions">;
+}) => Pick<StudioDocumentRouteApi, "listVersions" | "listVariants">;
 
 function createLoadingState(input: {
   typeId: string;
@@ -801,7 +801,7 @@ export async function loadContentDocumentPageState(input: {
     route.supportedLocales.length > 0
   ) {
     try {
-      const routeApi = createContentDocumentRouteApi({
+      const routeApi = routeApiFactory({
         context: input.context,
         route,
       });
@@ -1514,6 +1514,23 @@ function ContentDocumentPageSidebar(props: {
   );
 }
 
+export function filterLocaleOptions(input: {
+  supportedLocales: string[];
+  translationVariants: TranslationVariantSummary[];
+  canWrite: boolean;
+  variantsFetchFailed: boolean;
+}): Array<{ locale: string; hasVariant: boolean }> {
+  return input.supportedLocales
+    .map((loc) => ({
+      locale: loc,
+      hasVariant: input.translationVariants.some((v) => v.locale === loc),
+    }))
+    .filter(
+      (item) =>
+        item.hasVariant || (input.canWrite && !input.variantsFetchFailed),
+    );
+}
+
 export function ContentDocumentPageView({
   state,
   context,
@@ -1612,23 +1629,16 @@ export function ContentDocumentPageView({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {state.route.supportedLocales.map((loc) => {
-                    const hasVariant = state.translationVariants.some(
-                      (v) => v.locale === loc,
-                    );
-                    // Hide missing locales when: user is read-only, or
-                    // variants fetch failed (we can't confirm what exists)
-                    if (
-                      !hasVariant &&
-                      (!state.canWrite || state.variantsFetchFailed)
-                    )
-                      return null;
-                    return (
-                      <SelectItem key={loc} value={loc}>
-                        {hasVariant ? loc : `+ ${loc}`}
-                      </SelectItem>
-                    );
-                  })}
+                  {filterLocaleOptions({
+                    supportedLocales: state.route.supportedLocales,
+                    translationVariants: state.translationVariants,
+                    canWrite: state.canWrite,
+                    variantsFetchFailed: state.variantsFetchFailed,
+                  }).map(({ locale: loc, hasVariant }) => (
+                    <SelectItem key={loc} value={loc}>
+                      {hasVariant ? loc : `+ ${loc}`}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             ) : null}

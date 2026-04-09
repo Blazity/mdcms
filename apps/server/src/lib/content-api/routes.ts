@@ -256,8 +256,12 @@ export function mountContentApiRoutes(
               documentPath: variant.path,
             });
             authorized.push(variant);
-          } catch {
+          } catch (error) {
             // Silently omit variants the caller cannot access.
+            // Rethrow non-auth errors so outages surface.
+            if (!(error instanceof RuntimeError) || error.statusCode !== 403) {
+              throw error;
+            }
           }
         }
 

@@ -498,6 +498,23 @@ function toContentVersionDocumentResponse(
   );
 }
 
+function toTranslationVariantsResponse(
+  operation: string,
+  payload: unknown,
+  fallbackMessage: string,
+): TranslationVariantsResponse {
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    !("data" in payload) ||
+    !Array.isArray((payload as Record<string, unknown>).data)
+  ) {
+    throw toInvalidRouteResponseError(operation, fallbackMessage, payload);
+  }
+
+  return payload as TranslationVariantsResponse;
+}
+
 async function requestRouteJson(
   config: StudioDocumentRouteConfig,
   options: StudioDocumentRouteApiOptions,
@@ -928,7 +945,11 @@ export function createStudioDocumentRouteApi(
         },
       );
 
-      return payload as TranslationVariantsResponse;
+      return toTranslationVariantsResponse(
+        "GET /api/v1/content/:documentId/variants",
+        payload,
+        "Failed to load translation variants.",
+      );
     },
   };
 }

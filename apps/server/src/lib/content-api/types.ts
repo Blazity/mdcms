@@ -4,6 +4,7 @@ import type {
   ContentVersionDocumentResponse,
   ContentVersionSummaryResponse,
   SchemaRegistryTypeSnapshot,
+  TranslationVariantSummary,
 } from "@mdcms/shared";
 import type { AuthorizationRequirement } from "../auth.js";
 import type { DrizzleDatabase } from "../db.js";
@@ -82,13 +83,7 @@ export type ContentListQuery = {
   q?: string;
 };
 
-export type ContentVariantSummary = {
-  documentId: string;
-  locale: string;
-  path: string;
-  publishedVersion: number | null;
-  hasUnpublishedChanges: boolean;
-};
+export type ContentVariantSummary = TranslationVariantSummary;
 
 export type ContentWritePayload = {
   path?: string;

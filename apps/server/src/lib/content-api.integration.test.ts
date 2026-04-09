@@ -3604,6 +3604,9 @@ testWithDatabase(
         }),
       );
       assert.equal(variantResponse.status, 200);
+      const variantCreated = (await variantResponse.json()) as {
+        data: { documentId: string };
+      };
 
       const listResponse = await handler(
         new Request(
@@ -3623,6 +3626,11 @@ testWithDatabase(
       assert.equal(listBody.data.length, 2);
       const locales = listBody.data.map((v) => v.locale).sort();
       assert.deepEqual(locales, ["en", "fr"]);
+      const documentIds = listBody.data.map((v) => v.documentId).sort();
+      assert.deepEqual(
+        documentIds,
+        [sourceCreated.data.documentId, variantCreated.data.documentId].sort(),
+      );
     } finally {
       await dbConnection.close();
     }
@@ -3648,6 +3656,10 @@ testWithDatabase(
         ),
       );
       assert.equal(response.status, 404);
+      const body = (await response.json()) as {
+        error?: { code?: string };
+      };
+      assert.equal(body.error?.code, "NOT_FOUND");
     } finally {
       await dbConnection.close();
     }

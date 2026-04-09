@@ -552,7 +552,20 @@ const studioDocumentRouteContextSchema = z
     defaultLocale: nonEmptyStringSchema.optional(),
     write: studioDocumentRouteWriteSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((data, ctx) => {
+    if (
+      data.defaultLocale &&
+      data.supportedLocales &&
+      !data.supportedLocales.includes(data.defaultLocale)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `defaultLocale "${data.defaultLocale}" must be included in supportedLocales`,
+        path: ["defaultLocale"],
+      });
+    }
+  });
 
 const studioMountContextSchema = z
   .object({

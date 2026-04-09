@@ -17,6 +17,7 @@ import {
   applySchemaStateToReadyState,
   ContentDocumentPageView,
   createContentDocumentPageState,
+  filterLocaleOptions,
   loadContentDocumentPageState,
   loadContentDocumentVersionDiff,
   parseSelectedComparisonVersionValue,
@@ -431,6 +432,7 @@ test("loadContentDocumentPageState applies the schema mismatch guard before retu
           hasMore: false,
         },
       }),
+      listVariants: async () => ({ data: [] }),
     }),
   } as any);
 
@@ -616,6 +618,7 @@ test("loadContentDocumentPageState loads the routed draft and version history", 
           },
         };
       },
+      listVariants: async () => ({ data: [] }),
     }),
   });
 
@@ -1120,6 +1123,7 @@ test("loadContentDocumentPageState seeds arbitrary version comparison and diff s
           hasMore: false,
         },
       }),
+      listVariants: async () => ({ data: [] }),
     }),
   });
 
@@ -1413,51 +1417,67 @@ test("variant creation prompt shows error when present", () => {
   assert.ok(html.includes("TRANSLATION_VARIANT_CONFLICT"));
 });
 
-test("read-only users do not see missing locale options in switcher", () => {
-  const readOnlyState = createContentDocumentPageState({
-    shell: createReadyShell(),
-    typeLabel: "Blog post",
-    documentRoute: {
-      project: "marketing-site",
-      initialEnvironment: "staging",
-      supportedLocales: ["en", "fr", "de"],
-      write: {
-        canWrite: false,
-        message: "Read-only access",
+test("filterLocaleOptions hides missing locales for read-only users", () => {
+  const result = filterLocaleOptions({
+    supportedLocales: ["en", "fr", "de"],
+    translationVariants: [
+      {
+        documentId: "11111111-1111-4111-8111-111111111111",
+        locale: "en",
+        path: "blog/launch-notes",
+        publishedVersion: 5,
+        hasUnpublishedChanges: true,
       },
-    },
+    ],
+    canWrite: false,
+    variantsFetchFailed: false,
   });
 
-  if (readOnlyState.status !== "ready") throw new Error("expected ready");
-  readOnlyState.localized = true;
-  readOnlyState.translationVariants = [
-    {
-      documentId: "11111111-1111-4111-8111-111111111111",
-      locale: "en",
-      path: "blog/launch-notes",
-      publishedVersion: 5,
-      hasUnpublishedChanges: true,
-    },
-  ];
+  assert.equal(result.length, 1);
+  assert.equal(result[0].locale, "en");
+  assert.equal(result[0].hasVariant, true);
+});
 
-  const html = renderPageMarkup(readOnlyState);
-  // The select trigger renders because the existing "en" variant is accessible
-  assert.ok(
-    html.includes('data-slot="select-trigger"'),
-    "should render the locale select trigger for the existing variant",
-  );
-  // SelectContent uses a Radix Portal, so option text doesn't appear in SSR.
-  // The key invariant is that the missing locale items (+ fr, + de) are not
-  // present — which holds both because they are filtered out for read-only
-  // users and because SelectContent is not rendered in SSR.
-  assert.ok(
-    !html.includes("+ fr"),
-    "should not show creation option for missing locale",
-  );
-  assert.ok(
-    !html.includes("+ de"),
-    "should not show creation option for missing locale",
-  );
+test("filterLocaleOptions hides missing locales when variants fetch failed", () => {
+  const result = filterLocaleOptions({
+    supportedLocales: ["en", "fr", "de"],
+    translationVariants: [
+      {
+        documentId: "11111111-1111-4111-8111-111111111111",
+        locale: "en",
+        path: "blog/launch-notes",
+        publishedVersion: 5,
+        hasUnpublishedChanges: true,
+      },
+    ],
+    canWrite: true,
+    variantsFetchFailed: true,
+  });
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0].locale, "en");
+});
+
+test("filterLocaleOptions shows missing locales with + prefix for writable users", () => {
+  const result = filterLocaleOptions({
+    supportedLocales: ["en", "fr", "de"],
+    translationVariants: [
+      {
+        documentId: "11111111-1111-4111-8111-111111111111",
+        locale: "en",
+        path: "blog/launch-notes",
+        publishedVersion: 5,
+        hasUnpublishedChanges: true,
+      },
+    ],
+    canWrite: true,
+    variantsFetchFailed: false,
+  });
+
+  assert.equal(result.length, 3);
+  assert.equal(result[0].hasVariant, true);
+  assert.equal(result[1].hasVariant, false);
+  assert.equal(result[2].hasVariant, false);
 });
 
 test("variant creation buttons show creating state", () => {
