@@ -9,6 +9,9 @@ import {
   Shield,
   Trash2,
   LogOut,
+  Loader2,
+  AlertCircle,
+  Users,
 } from "lucide-react";
 import { Button } from "../../components/ui/button.js";
 import { Badge } from "../../components/ui/badge.js";
@@ -48,7 +51,9 @@ import {
 import { Switch } from "../../components/ui/switch.js";
 import { Label } from "../../components/ui/label.js";
 import { PageHeader } from "../../components/layout/page-header.js";
-import { mockUsers, formatRelativeTime } from "../../lib/mock-data.js";
+import { useToast } from "../../components/toast.js";
+import { useUserList } from "../../hooks/use-user-list.js";
+import type { UserWithGrants } from "../../../users-api.js";
 import { cn } from "../../lib/utils.js";
 
 const roleConfig = {
@@ -70,6 +75,39 @@ const roleConfig = {
   },
 };
 
+function getHighestRole(
+  grants: UserWithGrants["grants"],
+): "owner" | "admin" | "editor" | "viewer" {
+  const roleRank = { owner: 3, admin: 2, editor: 1, viewer: 0 };
+  let highest: "owner" | "admin" | "editor" | "viewer" = "viewer";
+  for (const grant of grants) {
+    const role = grant.role as keyof typeof roleRank;
+    if (roleRank[role] !== undefined && roleRank[role] > roleRank[highest]) {
+      highest = role;
+    }
+  }
+  return highest;
+}
+
+function getScopeLabel(grants: UserWithGrants["grants"]): string {
+  if (grants.some((g) => g.scopeKind === "global")) return "Global";
+  const projects = [
+    ...new Set(grants.map((g) => g.project).filter(Boolean)),
+  ];
+  if (projects.length === 0) return "None";
+  if (projects.length === 1) return projects[0]!;
+  return `${projects.length} projects`;
+}
+
+function formatJoinedDate(isoString: string): string {
+  const date = new Date(isoString);
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 export default function UsersPage() {
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [inviteData, setInviteData] = useState({
@@ -77,6 +115,71 @@ export default function UsersPage() {
     role: "editor",
     globalAccess: true,
   });
+  const [inviteError, setInviteError] = useState<string | null>(null);
+
+  const toast = useToast();
+  const {
+    status,
+    users,
+    errorMessage,
+    refresh,
+    inviteUser,
+    isInviting,
+    removeUser,
+    isRemoving,
+    revokeSessions,
+    isRevokingSessions,
+  } = useUserList();
+
+  async function handleInvite() {
+    setInviteError(null);
+    try {
+      await inviteUser({
+        email: inviteData.email,
+        grants: [
+          {
+            role: inviteData.role,
+            scopeKind: inviteData.globalAccess ? "global" : "project",
+          },
+        ],
+      });
+      setInviteDialogOpen(false);
+      setInviteData({ email: "", role: "editor", globalAccess: true });
+      toast.success("Invitation sent successfully.");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to send invitation.";
+      setInviteError(message);
+    }
+  }
+
+  async function handleRevokeSessions(userId: string, userName: string) {
+    try {
+      await revokeSessions(userId);
+      toast.success(`Sessions revoked for ${userName}.`);
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Failed to revoke sessions.";
+      toast.error(message);
+    }
+  }
+
+  async function handleRemoveUser(userId: string, userName: string) {
+    const confirmed = window.confirm(
+      `Are you sure you want to remove ${userName}? This action cannot be undone.`,
+    );
+    if (!confirmed) return;
+    try {
+      await removeUser(userId);
+      toast.success(`${userName} has been removed.`);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to remove user.";
+      toast.error(message);
+    }
+  }
 
   return (
     <div className="min-h-screen">
@@ -154,6 +257,11 @@ export default function UsersPage() {
                     }
                   />
                 </div>
+
+                {/* Invite error */}
+                {inviteError && (
+                  <p className="text-sm text-destructive">{inviteError}</p>
+                )}
               </div>
               <DialogFooter>
                 <Button
@@ -164,118 +272,161 @@ export default function UsersPage() {
                 </Button>
                 <Button
                   className="bg-accent hover:bg-accent-hover text-white"
-                  onClick={() => setInviteDialogOpen(false)}
+                  disabled={isInviting || !inviteData.email}
+                  onClick={handleInvite}
                 >
-                  Send Invitation
+                  {isInviting ? "Sending..." : "Send Invitation"}
                 </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
 
+        {/* Loading state */}
+        {status === "loading" && (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="h-6 w-6 animate-spin text-foreground-muted" />
+          </div>
+        )}
+
+        {/* Error state */}
+        {status === "error" && (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <AlertCircle className="mb-4 h-8 w-8 text-destructive" />
+            <h3 className="mb-2 text-lg font-semibold">
+              Failed to load users
+            </h3>
+            <p className="mb-4 text-sm text-foreground-muted">
+              {errorMessage}
+            </p>
+            <Button variant="outline" onClick={refresh}>
+              Try again
+            </Button>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {status === "empty" && (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="mb-4 rounded-full bg-background-subtle p-4">
+              <Users className="h-8 w-8 text-foreground-muted" />
+            </div>
+            <h3 className="mb-2 text-lg font-semibold">No users found</h3>
+            <p className="text-sm text-foreground-muted">
+              Invite someone to get started.
+            </p>
+          </div>
+        )}
+
         {/* Users Table */}
-        <div className="rounded-lg border border-border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>User</TableHead>
-                <TableHead className="w-28">Role</TableHead>
-                <TableHead className="w-32">Scope</TableHead>
-                <TableHead className="w-32">Last Active</TableHead>
-                <TableHead className="w-28">Joined</TableHead>
-                <TableHead className="w-14"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {mockUsers.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <div className="relative">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback>
-                            {user.name
-                              .split(" ")
-                              .map((n) => n[0])
-                              .join("")}
-                          </AvatarFallback>
-                        </Avatar>
-                        {user.isOnline && (
-                          <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-success ring-2 ring-background" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="font-medium">{user.name}</p>
-                        <p className="text-sm text-foreground-muted">
-                          {user.email}
-                        </p>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={cn("text-xs", roleConfig[user.role].className)}
-                    >
-                      {roleConfig[user.role].label}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm text-foreground-muted">
-                    Global
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {user.isOnline && (
-                        <span className="h-2 w-2 rounded-full bg-success" />
-                      )}
-                      <span className="text-sm text-foreground-muted">
-                        {user.isOnline
-                          ? "Online now"
-                          : user.lastActive
-                            ? formatRelativeTime(user.lastActive)
-                            : "Never"}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm text-foreground-muted">
-                    Jan 15, 2024
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem>
-                          <Edit className="mr-2 h-4 w-4" />
-                          Edit role
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <Shield className="mr-2 h-4 w-4" />
-                          Edit permissions
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <LogOut className="mr-2 h-4 w-4" />
-                          Revoke sessions
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          disabled={user.role === "owner"}
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Remove user
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
+        {status === "ready" && (
+          <div className="rounded-lg border border-border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>User</TableHead>
+                  <TableHead className="w-28">Role</TableHead>
+                  <TableHead className="w-32">Scope</TableHead>
+                  <TableHead className="w-32">Last Active</TableHead>
+                  <TableHead className="w-28">Joined</TableHead>
+                  <TableHead className="w-14"></TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {users.map((user) => {
+                  const role = getHighestRole(user.grants);
+                  return (
+                    <TableRow key={user.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-8 w-8">
+                            <AvatarFallback>
+                              {user.name
+                                .split(" ")
+                                .map((n) => n[0])
+                                .join("")}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-medium">{user.name}</p>
+                            <p className="text-sm text-foreground-muted">
+                              {user.email}
+                            </p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-xs",
+                            roleConfig[role].className,
+                          )}
+                        >
+                          {roleConfig[role].label}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-foreground-muted">
+                        {getScopeLabel(user.grants)}
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm text-foreground-muted">
+                          &mdash;
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-sm text-foreground-muted">
+                        {formatJoinedDate(user.createdAt)}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem>
+                              <Edit className="mr-2 h-4 w-4" />
+                              Edit role
+                            </DropdownMenuItem>
+                            <DropdownMenuItem>
+                              <Shield className="mr-2 h-4 w-4" />
+                              Edit permissions
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={isRevokingSessions}
+                              onClick={() =>
+                                handleRevokeSessions(user.id, user.name)
+                              }
+                            >
+                              <LogOut className="mr-2 h-4 w-4" />
+                              Revoke sessions
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              disabled={role === "owner" || isRemoving}
+                              onClick={() =>
+                                handleRemoveUser(user.id, user.name)
+                              }
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Remove user
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </div>
     </div>
   );

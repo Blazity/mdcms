@@ -147,6 +147,9 @@ const ServerEnvExtensionSchema = z.object({
     .string()
     .optional()
     .transform((value) => value?.trim() || "mdcms-server"),
+  SMTP_HOST: z.string().trim().min(1).optional(),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional().default(1025),
+  SMTP_FROM: z.string().trim().min(1).optional(),
 });
 
 export type OidcProviderId = (typeof OIDC_PROVIDER_IDS)[number];
@@ -197,6 +200,9 @@ export type SamlProviderConfig = {
 export type ServerEnv = CoreEnv & {
   PORT: number;
   SERVICE_NAME: string;
+  SMTP_HOST?: string;
+  SMTP_PORT: number;
+  SMTP_FROM?: string;
   /**
    * Operator kill switch for Studio runtime publication. Enable via env and
    * restart/redeploy; there is no public mutation endpoint in v1.

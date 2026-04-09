@@ -14,7 +14,7 @@ import {
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthMiddleware } from "better-auth/api";
-import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import type { DrizzleDatabase } from "./db.js";
@@ -26,6 +26,7 @@ import {
   authUsers,
   authVerifications,
   cliLoginChallenges,
+  invites,
   rbacGrants,
   type ApiKeyScopeTuple,
 } from "./db/schema.js";
@@ -39,7 +40,9 @@ import {
   createJsonResponse,
   executeWithRuntimeErrorsHandled,
 } from "./http-utils.js";
+import type { EmailService } from "./email.js";
 import {
+  assertOwnerMutationAllowed,
   evaluatePermission,
   type RbacAction,
   type RbacGrant,
@@ -246,6 +249,63 @@ export type AuthService = {
   handleSamlMetadata: (request: Request) => Promise<Response>;
   handleAuthRequest: (request: Request) => Promise<Response>;
   listSsoProviders: () => Array<{ id: string; name: string }>;
+  listUsers: (request: Request) => Promise<UserWithGrants[]>;
+  getUser: (request: Request, userId: string) => Promise<UserWithGrants>;
+  inviteUser: (
+    request: Request,
+    input: InviteUserInput,
+  ) => Promise<{
+    id: string;
+    token: string;
+    email: string;
+    expiresAt: string;
+  }>;
+  updateUserGrants: (
+    request: Request,
+    userId: string,
+    grants: InviteUserInput["grants"],
+  ) => Promise<UserWithGrants>;
+  removeUser: (
+    request: Request,
+    userId: string,
+  ) => Promise<{ removed: true }>;
+  acceptInvite: (
+    token: string,
+    input: AcceptInviteInput,
+  ) => Promise<{ userId: string }>;
+};
+
+export type UserWithGrants = {
+  id: string;
+  name: string;
+  email: string;
+  image: string | null;
+  createdAt: string;
+  grants: Array<{
+    id: string;
+    role: string;
+    scopeKind: string;
+    project: string | null;
+    environment: string | null;
+    pathPrefix: string | null;
+    createdAt: string;
+  }>;
+};
+
+export type InviteUserInput = {
+  email: string;
+  grants: Array<{
+    role: string;
+    scopeKind: string;
+    project?: string;
+    environment?: string;
+    pathPrefix?: string;
+  }>;
+};
+
+export type AcceptInviteInput = {
+  name: string;
+  password: string;
 };
 
 type BetterAuthLikeSession = {
@@ -276,6 +336,8 @@ type PasswordLoginResult =
 type AuthRouteApp = {
   get?: (path: string, handler: (ctx: any) => unknown) => AuthRouteApp;
   post?: (path: string, handler: (ctx: any) => unknown) => AuthRouteApp;
+  patch?: (path: string, handler: (ctx: any) => unknown) => AuthRouteApp;
+  delete?: (path: string, handler: (ctx: any) => unknown) => AuthRouteApp;
 };
 
 type StaticOidcProvider = {
@@ -1939,6 +2001,7 @@ export type CreateAuthServiceOptions = {
   db: DrizzleDatabase;
   env?: NodeJS.ProcessEnv;
   isAdminSession?: (session: StudioSession) => boolean | Promise<boolean>;
+  emailService?: EmailService;
 };
 
 export function createAuthService(
@@ -3336,6 +3399,37 @@ export function createAuthService(
     }
   }
 
+  async function loadUserWithGrants(
+    userId: string,
+  ): Promise<UserWithGrants | undefined> {
+    const user = await options.db.query.authUsers.findFirst({
+      where: eq(authUsers.id, userId),
+    });
+    if (!user) return undefined;
+
+    const activeGrants = await options.db
+      .select()
+      .from(rbacGrants)
+      .where(and(eq(rbacGrants.userId, userId), isNull(rbacGrants.revokedAt)));
+
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      image: user.image,
+      createdAt: user.createdAt.toISOString(),
+      grants: activeGrants.map((g) => ({
+        id: g.id,
+        role: g.role,
+        scopeKind: g.scopeKind,
+        project: g.project,
+        environment: g.environment,
+        pathPrefix: g.pathPrefix,
+        createdAt: g.createdAt.toISOString(),
+      })),
+    };
+  }
+
   return {
     async login(request, email, password) {
       return loginWithEmailPassword(request, email, password);
@@ -4103,6 +4197,377 @@ export function createAuthService(
 
       return providers;
     },
+
+    async listUsers(request) {
+      await assertAdminSession(request);
+      const users = await options.db.query.authUsers.findMany({
+        orderBy: (users, { asc }) => [asc(users.createdAt)],
+      });
+      const activeGrants = await options.db
+        .select()
+        .from(rbacGrants)
+        .where(isNull(rbacGrants.revokedAt));
+      const grantsByUserId = new Map<
+        string,
+        (typeof activeGrants)[number][]
+      >();
+      for (const grant of activeGrants) {
+        const existing = grantsByUserId.get(grant.userId) ?? [];
+        existing.push(grant);
+        grantsByUserId.set(grant.userId, existing);
+      }
+      return users.map((user) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        image: user.image,
+        createdAt: user.createdAt.toISOString(),
+        grants: (grantsByUserId.get(user.id) ?? []).map((g) => ({
+          id: g.id,
+          role: g.role,
+          scopeKind: g.scopeKind,
+          project: g.project,
+          environment: g.environment,
+          pathPrefix: g.pathPrefix,
+          createdAt: g.createdAt.toISOString(),
+        })),
+      }));
+    },
+
+    async getUser(request, userId) {
+      await assertAdminSession(request);
+      const normalizedId = assertNonEmptyString(userId, "userId");
+      const user = await loadUserWithGrants(normalizedId);
+      if (!user) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "User not found.",
+          statusCode: 404,
+        });
+      }
+      return user;
+    },
+
+    async inviteUser(request, input) {
+      const session = await assertAdminSession(request);
+      const email = assertNonEmptyString(input.email, "email")
+        .toLowerCase()
+        .trim();
+      if (!Array.isArray(input.grants) || input.grants.length === 0) {
+        throw new RuntimeError({
+          code: "VALIDATION_ERROR",
+          message: "At least one grant is required.",
+          statusCode: 400,
+        });
+      }
+      // Validate grants
+      for (const grant of input.grants) {
+        const role = assertNonEmptyString(grant.role, "role");
+        const scopeKind = assertNonEmptyString(grant.scopeKind, "scopeKind");
+        if (role === "owner") {
+          throw new RuntimeError({
+            code: "FORBIDDEN",
+            message: "Cannot invite with owner role.",
+            statusCode: 403,
+          });
+        }
+        if (role === "admin" && scopeKind !== "global") {
+          throw new RuntimeError({
+            code: "VALIDATION_ERROR",
+            message: "Admin role must be global scope.",
+            statusCode: 400,
+          });
+        }
+      }
+      // Check for existing pending invite
+      const existingInvite = await options.db.query.invites.findFirst({
+        where: and(
+          eq(invites.email, email),
+          isNull(invites.acceptedAt),
+          isNull(invites.revokedAt),
+          gt(invites.expiresAt, new Date()),
+        ),
+      });
+      if (existingInvite) {
+        throw new RuntimeError({
+          code: "INVITE_ALREADY_PENDING",
+          message: "An active invitation already exists for this email.",
+          statusCode: 409,
+        });
+      }
+      // Check if user already exists
+      const existingUser = await options.db.query.authUsers.findFirst({
+        where: eq(authUsers.email, email),
+      });
+      if (existingUser) {
+        throw new RuntimeError({
+          code: "EMAIL_ALREADY_REGISTERED",
+          message: "A user with this email already exists.",
+          statusCode: 409,
+        });
+      }
+      // Generate token and insert
+      const token = randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const [inserted] = await options.db
+        .insert(invites)
+        .values({
+          token,
+          email,
+          grants: input.grants,
+          createdByUserId: session.userId,
+          expiresAt,
+        })
+        .returning();
+      // Send email
+      if (!options.emailService) {
+        throw new RuntimeError({
+          code: "EMAIL_NOT_CONFIGURED",
+          message: "Email service is not configured. Cannot send invite.",
+          statusCode: 500,
+        });
+      }
+      // Get inviter name
+      const inviter = await options.db.query.authUsers.findFirst({
+        where: eq(authUsers.id, session.userId),
+      });
+      const studioUrl = resolveAuthBaseUrl(rawEnv);
+      await options.emailService.sendInviteEmail({
+        to: email,
+        inviterName: inviter?.name ?? "An administrator",
+        studioUrl,
+        token,
+      });
+      return {
+        id: inserted.id,
+        token: inserted.token,
+        email: inserted.email,
+        expiresAt: inserted.expiresAt.toISOString(),
+      };
+    },
+
+    async updateUserGrants(request, userId, newGrants) {
+      await assertAdminSession(request);
+      const normalizedId = assertNonEmptyString(userId, "userId");
+      if (!Array.isArray(newGrants) || newGrants.length === 0) {
+        throw new RuntimeError({
+          code: "VALIDATION_ERROR",
+          message: "At least one grant is required.",
+          statusCode: 400,
+        });
+      }
+      // Validate grants
+      for (const grant of newGrants) {
+        const role = assertNonEmptyString(grant.role, "role");
+        const scopeKind = assertNonEmptyString(grant.scopeKind, "scopeKind");
+        if ((role === "admin" || role === "owner") && scopeKind !== "global") {
+          throw new RuntimeError({
+            code: "VALIDATION_ERROR",
+            message: `${role} role must be global scope.`,
+            statusCode: 400,
+          });
+        }
+      }
+      const user = await options.db.query.authUsers.findFirst({
+        where: eq(authUsers.id, normalizedId),
+      });
+      if (!user) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "User not found.",
+          statusCode: 404,
+        });
+      }
+      // Check owner invariant: if user currently has owner grant and new grants don't include owner
+      const currentGrants = await options.db
+        .select()
+        .from(rbacGrants)
+        .where(
+          and(
+            eq(rbacGrants.userId, normalizedId),
+            isNull(rbacGrants.revokedAt),
+          ),
+        );
+      const isCurrentlyOwner = currentGrants.some((g) => g.role === "owner");
+      const willBeOwner = newGrants.some((g) => g.role === "owner");
+      if (isCurrentlyOwner && !willBeOwner) {
+        const ownerCountRow = await options.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(rbacGrants)
+          .where(
+            and(eq(rbacGrants.role, "owner"), isNull(rbacGrants.revokedAt)),
+          );
+        assertOwnerMutationAllowed({
+          activeOwnerCount: ownerCountRow[0]?.count ?? 0,
+          intent: "demote_owner",
+        });
+      }
+      // Soft-revoke existing grants
+      await options.db
+        .update(rbacGrants)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            eq(rbacGrants.userId, normalizedId),
+            isNull(rbacGrants.revokedAt),
+          ),
+        );
+      // Insert new grants
+      const sessionForGrants = await requireSession(request);
+      for (const grant of newGrants) {
+        await options.db.insert(rbacGrants).values({
+          userId: normalizedId,
+          role: grant.role,
+          scopeKind: grant.scopeKind,
+          project: grant.project ?? null,
+          environment: grant.environment ?? null,
+          pathPrefix: grant.pathPrefix ?? null,
+          createdByUserId: sessionForGrants.userId,
+        });
+      }
+      const updated = await loadUserWithGrants(normalizedId);
+      return updated!;
+    },
+
+    async removeUser(request, userId) {
+      await assertAdminSession(request);
+      const normalizedId = assertNonEmptyString(userId, "userId");
+      const user = await options.db.query.authUsers.findFirst({
+        where: eq(authUsers.id, normalizedId),
+      });
+      if (!user) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "User not found.",
+          statusCode: 404,
+        });
+      }
+      // Check owner invariant
+      const userGrants = await options.db
+        .select()
+        .from(rbacGrants)
+        .where(
+          and(
+            eq(rbacGrants.userId, normalizedId),
+            isNull(rbacGrants.revokedAt),
+          ),
+        );
+      const isOwner = userGrants.some((g) => g.role === "owner");
+      if (isOwner) {
+        const ownerCountRow = await options.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(rbacGrants)
+          .where(
+            and(eq(rbacGrants.role, "owner"), isNull(rbacGrants.revokedAt)),
+          );
+        assertOwnerMutationAllowed({
+          activeOwnerCount: ownerCountRow[0]?.count ?? 0,
+          intent: "remove_owner",
+        });
+      }
+      // Revoke all grants
+      await options.db
+        .update(rbacGrants)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            eq(rbacGrants.userId, normalizedId),
+            isNull(rbacGrants.revokedAt),
+          ),
+        );
+      // Revoke all sessions
+      await revokeAllUserSessions(normalizedId);
+      // Delete user (cascades sessions/accounts)
+      await options.db
+        .delete(authUsers)
+        .where(eq(authUsers.id, normalizedId));
+      return { removed: true as const };
+    },
+
+    async acceptInvite(token, input) {
+      const normalizedToken = assertNonEmptyString(token, "token");
+      const name = assertNonEmptyString(input.name, "name");
+      const password = assertNonEmptyString(input.password, "password");
+      const invite = await options.db.query.invites.findFirst({
+        where: eq(invites.token, normalizedToken),
+      });
+      if (!invite) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Invitation not found.",
+          statusCode: 404,
+        });
+      }
+      if (invite.acceptedAt) {
+        throw new RuntimeError({
+          code: "INVITE_ALREADY_ACCEPTED",
+          message: "This invitation has already been accepted.",
+          statusCode: 409,
+        });
+      }
+      if (invite.revokedAt) {
+        throw new RuntimeError({
+          code: "INVITE_REVOKED",
+          message: "This invitation has been revoked.",
+          statusCode: 410,
+        });
+      }
+      if (new Date() > invite.expiresAt) {
+        throw new RuntimeError({
+          code: "INVITE_EXPIRED",
+          message: "This invitation has expired.",
+          statusCode: 410,
+        });
+      }
+      // Check email not already registered
+      const existingUser = await options.db.query.authUsers.findFirst({
+        where: eq(authUsers.email, invite.email),
+      });
+      if (existingUser) {
+        throw new RuntimeError({
+          code: "EMAIL_ALREADY_REGISTERED",
+          message: "A user with this email already exists.",
+          statusCode: 409,
+        });
+      }
+      // Create user
+      const userId = crypto.randomUUID();
+      await options.db.insert(authUsers).values({
+        id: userId,
+        name,
+        email: invite.email,
+        emailVerified: true,
+      });
+      // Create account with password
+      const { hashPassword } = await import("better-auth/crypto");
+      const hashedPassword = await hashPassword(password);
+      await options.db.insert(authAccounts).values({
+        id: crypto.randomUUID(),
+        accountId: userId,
+        providerId: "credential",
+        userId,
+        password: hashedPassword,
+      });
+      // Apply grants from invite
+      for (const grant of invite.grants) {
+        await options.db.insert(rbacGrants).values({
+          userId,
+          role: grant.role,
+          scopeKind: grant.scopeKind,
+          project: grant.project ?? null,
+          environment: grant.environment ?? null,
+          pathPrefix: grant.pathPrefix ?? null,
+          source: `invite:${invite.id}`,
+          createdByUserId: invite.createdByUserId,
+        });
+      }
+      // Mark invite as accepted
+      await options.db
+        .update(invites)
+        .set({ acceptedAt: new Date() })
+        .where(eq(invites.id, invite.id));
+      return { userId };
+    },
   };
 }
 
@@ -4292,6 +4757,68 @@ export function mountAuthRoutes(
         data: result,
       };
     }),
+  );
+
+  authApp.get?.("/api/v1/auth/users", ({ request }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () => {
+      const users = await options.authService.listUsers(request);
+      return { data: users };
+    }),
+  );
+
+  authApp.post?.("/api/v1/auth/users/invite", ({ request, body }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () => {
+      await options.authService.requireCsrfProtection(request);
+      const payload = (body ?? {}) as InviteUserInput;
+      const result = await options.authService.inviteUser(request, payload);
+      return { data: result };
+    }),
+  );
+
+  authApp.get?.("/api/v1/auth/users/:userId", ({ request, params }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () => {
+      const user = await options.authService.getUser(request, params.userId);
+      return { data: user };
+    }),
+  );
+
+  authApp.patch?.(
+    "/api/v1/auth/users/:userId/grants",
+    ({ request, params, body }: any) =>
+      executeWithRuntimeErrorsHandled(request, async () => {
+        await options.authService.requireCsrfProtection(request);
+        const payload = (body ?? {}) as { grants: InviteUserInput["grants"] };
+        const user = await options.authService.updateUserGrants(
+          request,
+          params.userId,
+          payload.grants,
+        );
+        return { data: user };
+      }),
+  );
+
+  authApp.delete?.("/api/v1/auth/users/:userId", ({ request, params }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () => {
+      await options.authService.requireCsrfProtection(request);
+      const result = await options.authService.removeUser(
+        request,
+        params.userId,
+      );
+      return { data: result };
+    }),
+  );
+
+  authApp.post?.(
+    "/api/v1/auth/invites/:token/accept",
+    ({ request, params, body }: any) =>
+      executeWithRuntimeErrorsHandled(request, async () => {
+        const payload = (body ?? {}) as AcceptInviteInput;
+        const result = await options.authService.acceptInvite(
+          params.token,
+          payload,
+        );
+        return { data: result };
+      }),
   );
 
   authApp.post?.("/api/v1/auth/cli/login/start", ({ request, body }: any) =>

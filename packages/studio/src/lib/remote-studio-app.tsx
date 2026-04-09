@@ -20,6 +20,7 @@ import SettingsPage from "./runtime-ui/app/admin/settings-page.js";
 import TrashPage from "./runtime-ui/app/admin/trash-page.js";
 import UsersPage from "./runtime-ui/app/admin/users-page.js";
 import WorkflowsPage from "./runtime-ui/app/admin/workflows-page.js";
+import InviteAcceptPage from "./runtime-ui/app/invite/invite-accept-page.js";
 import LoginPage from "./runtime-ui/app/admin/login-page.js";
 import { StudioSessionProvider } from "./runtime-ui/app/admin/session-context.js";
 import { StudioMountInfoProvider } from "./runtime-ui/app/admin/mount-info-context.js";
@@ -40,6 +41,13 @@ const RUNTIME_ROUTES: readonly StudioRuntimeRouteDefinition[] = [
     id: "login",
     path: "/login",
     render: () => <LoginPage />,
+  },
+  {
+    id: "invite.accept",
+    path: "/invite/:token",
+    render: (context) => (
+      <InviteAcceptPage serverUrl={context.apiBaseUrl} />
+    ),
   },
   {
     id: "dashboard",
@@ -527,7 +535,9 @@ export function RemoteStudioApp({
           data-mdcms-active-route={activeRoute?.id ?? "unknown"}
           className="mdcms-studio-runtime"
         >
-          {activeRoute?.id === "login" ? (
+          {activeRoute?.id === "invite.accept" ? (
+            renderRouteContent(activeRoute, context)
+          ) : activeRoute?.id === "login" ? (
             <StudioSessionProvider value={{ status: "unauthenticated" }}>
               <StudioMountInfoProvider
                 value={{

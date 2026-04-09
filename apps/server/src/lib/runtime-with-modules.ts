@@ -26,6 +26,7 @@ import {
   mountAuthRoutes,
   resolveStartupOidcProviders,
 } from "./auth.js";
+import { createEmailService } from "./email.js";
 import { mountCollaborationRoutes } from "./collaboration-auth.js";
 import {
   createDatabaseEnvironmentStore,
@@ -106,7 +107,14 @@ export function createServerRequestHandlerWithModules(
 
   const dbConnection = createDatabaseConnection({ env: rawEnv });
   const dal = createContentDAL({ db: dbConnection.db });
-  const authService = createAuthService({ db: dbConnection.db, env: rawEnv });
+  const emailService = env.SMTP_HOST
+    ? createEmailService(env)
+    : undefined;
+  const authService = createAuthService({
+    db: dbConnection.db,
+    env: rawEnv,
+    emailService,
+  });
   const contentStore = createDatabaseContentStore({ db: dbConnection.db });
   const schemaStore = createDatabaseSchemaStore({ db: dbConnection.db });
   let configPromise: Promise<ParsedMdcmsConfig | undefined> | undefined;
