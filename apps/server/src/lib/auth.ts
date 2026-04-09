@@ -2011,7 +2011,7 @@ export function createAuthService(
         name: CSRF_COOKIE_NAME,
         value: token,
         path: "/",
-        sameSite: "None",
+        sameSite: useSecureCookies ? "None" : "Lax",
         secure: useSecureCookies,
         maxAge: SESSION_INACTIVITY_TIMEOUT_SECONDS,
       }),
@@ -2023,7 +2023,7 @@ export function createAuthService(
       name: CSRF_COOKIE_NAME,
       value: "",
       path: "/",
-      sameSite: "None",
+      sameSite: useSecureCookies ? "None" : "Lax",
       secure: useSecureCookies,
       maxAge: 0,
     });
@@ -2379,7 +2379,7 @@ export function createAuthService(
       defaultCookieAttributes: {
         path: "/",
         httpOnly: true,
-        sameSite: "none",
+        sameSite: useSecureCookies ? "none" : "lax",
         secure: useSecureCookies,
       },
     },

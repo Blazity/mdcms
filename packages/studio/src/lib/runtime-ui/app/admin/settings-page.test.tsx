@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ThemeProvider } from "../../adapters/next-themes.js";
 import { StudioNavigationProvider } from "../../navigation.js";
@@ -16,52 +17,59 @@ function renderSettingsPage(input: {
   basePath?: string;
   capabilities?: Partial<AdminCapabilitiesValue>;
 }): string {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return renderToStaticMarkup(
     createElement(
-      ThemeProvider,
-      null,
+      QueryClientProvider,
+      { client: queryClient },
       createElement(
-        StudioNavigationProvider,
-        {
-          value: {
-            pathname: "/admin/settings",
-            params: {},
-            basePath: input.basePath ?? "/admin",
-            push: () => {},
-            replace: () => {},
-            back: () => {},
-          },
-        },
+        ThemeProvider,
+        null,
         createElement(
-          AdminCapabilitiesProvider,
+          StudioNavigationProvider,
           {
             value: {
-              canReadSchema: true,
-              canCreateContent: false,
-              canPublishContent: false,
-              canUnpublishContent: false,
-              canDeleteContent: false,
-              canManageUsers: false,
-              canManageSettings: false,
-              ...input.capabilities,
+              pathname: "/admin/settings",
+              params: {},
+              basePath: input.basePath ?? "/admin",
+              push: () => {},
+              replace: () => {},
+              back: () => {},
             },
           },
-          createElement(SettingsPage, {
-            initialTab: input.initialTab,
-          }),
+          createElement(
+            AdminCapabilitiesProvider,
+            {
+              value: {
+                canReadSchema: true,
+                canCreateContent: false,
+                canPublishContent: false,
+                canUnpublishContent: false,
+                canDeleteContent: false,
+                canManageUsers: false,
+                canManageSettings: false,
+                ...input.capabilities,
+              },
+            },
+            createElement(SettingsPage, {
+              initialTab: input.initialTab,
+            }),
+          ),
         ),
       ),
     ),
   );
 }
 
-test("SettingsPage renders the API keys table", () => {
+test("SettingsPage renders the API keys tab header and create button", () => {
   const markup = renderSettingsPage({
     initialTab: "api-keys",
   });
 
   assert.match(markup, /Create API Key/);
-  assert.match(markup, /CI\/CD Pipeline/);
+  assert.match(markup, /Manage API keys for external integrations/);
 });
 
 test("SettingsPage hides the schema browser CTA when schema.read is unavailable", () => {

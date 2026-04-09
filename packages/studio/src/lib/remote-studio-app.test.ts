@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import type { ActionCatalogItem, StudioMountContext } from "@mdcms/shared";
 
@@ -345,38 +346,45 @@ test("RemoteStudioApp renders the expanded admin route surfaces", () => {
 });
 
 test("SettingsPage links the schema tab to the live schema browser instead of rendering a mock viewer", () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const markup = renderToStaticMarkup(
     createElement(
-      ThemeProvider,
-      null,
+      QueryClientProvider,
+      { client: queryClient },
       createElement(
-        StudioNavigationProvider,
-        {
-          value: {
-            pathname: "/admin/settings",
-            params: {},
-            basePath: "/admin",
-            push: () => {},
-            replace: () => {},
-            back: () => {},
-          },
-        },
+        ThemeProvider,
+        null,
         createElement(
-          AdminCapabilitiesProvider,
+          StudioNavigationProvider,
           {
             value: {
-              canReadSchema: true,
-              canCreateContent: false,
-              canPublishContent: false,
-              canUnpublishContent: false,
-              canDeleteContent: false,
-              canManageUsers: false,
-              canManageSettings: false,
+              pathname: "/admin/settings",
+              params: {},
+              basePath: "/admin",
+              push: () => {},
+              replace: () => {},
+              back: () => {},
             },
           },
-          createElement(SettingsPage, {
-            initialTab: "schema",
-          }),
+          createElement(
+            AdminCapabilitiesProvider,
+            {
+              value: {
+                canReadSchema: true,
+                canCreateContent: false,
+                canPublishContent: false,
+                canUnpublishContent: false,
+                canDeleteContent: false,
+                canManageUsers: false,
+                canManageSettings: false,
+              },
+            },
+            createElement(SettingsPage, {
+              initialTab: "schema",
+            }),
+          ),
         ),
       ),
     ),
