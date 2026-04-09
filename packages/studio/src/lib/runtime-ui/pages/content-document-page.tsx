@@ -2071,6 +2071,12 @@ export default function ContentDocumentPage({
         return;
       }
 
+      // If publish normalized the body, rehydrate the editor.
+      const publishedBody = nextState.document.body;
+      if (publishedBody !== currentState.draftBody) {
+        editorRef.current?.setContent(publishedBody);
+      }
+
       setState((current) =>
         current.status === "ready" &&
         current.documentId === currentState.documentId
