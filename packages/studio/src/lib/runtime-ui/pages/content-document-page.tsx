@@ -2424,6 +2424,16 @@ export default function ContentDocumentPage({
 
       const versionBody = versionDoc.body ?? "";
 
+      // Only update the editor if this version is still the one the UI expects.
+      // A newer version click may have fired while this fetch was in-flight.
+      const afterFetch = stateRef.current;
+      if (
+        afterFetch.status !== "ready" ||
+        afterFetch.viewingVersion?.version !== version
+      ) {
+        return;
+      }
+
       editorRef.current?.setContent(versionBody);
 
       setState((current) =>
