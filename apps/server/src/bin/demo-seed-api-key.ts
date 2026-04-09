@@ -374,11 +374,13 @@ async function ensureDemoRbacGrant(input: {
     ),
   });
 
+  // admin/owner roles require global scope per RBAC rules.
+  // A global admin grant covers all projects including the demo one.
   if (existing) {
-    if (existing.role !== "admin") {
+    if (existing.role !== "admin" || existing.scopeKind !== "global") {
       await input.db
         .update(rbacGrants)
-        .set({ role: "admin" })
+        .set({ role: "admin", scopeKind: "global", project: null })
         .where(eq(rbacGrants.id, existing.id));
     }
     return;
@@ -387,8 +389,7 @@ async function ensureDemoRbacGrant(input: {
   await input.db.insert(rbacGrants).values({
     userId: input.userId,
     role: "admin",
-    scopeKind: "project",
-    project: input.project,
+    scopeKind: "global",
     source: "demo-seed",
     createdByUserId: input.userId,
   });

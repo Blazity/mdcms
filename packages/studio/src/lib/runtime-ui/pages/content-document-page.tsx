@@ -2194,9 +2194,10 @@ export default function ContentDocumentPage({
       return;
     }
 
-    // Unsaved changes guard: save before switching
+    // Unsaved changes guard: save before switching (covers both unsaved
+    // edits and in-flight saves that haven't persisted yet)
     if (
-      currentState.saveState === "unsaved" &&
+      currentState.saveState !== "saved" &&
       currentState.canWrite &&
       currentState.draftBody !== currentState.document.body
     ) {
