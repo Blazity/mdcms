@@ -1029,7 +1029,10 @@ testWithDatabase(
             label: "content-csrf-write",
             scopes: ["content:write"],
             contextAllowlist: [
-              { project: "marketing-site", environment: "production" },
+              {
+                project: scopeHeaders["x-mdcms-project"],
+                environment: "production",
+              },
             ],
           }),
         }),

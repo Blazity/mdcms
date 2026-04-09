@@ -102,7 +102,7 @@ const dbAvailable = await canConnectToDatabase();
 export const testWithDatabase = dbAvailable ? test : test.skip;
 
 export const scopeHeaders = {
-  "x-mdcms-project": "marketing-site",
+  "x-mdcms-project": "_test-marketing-site",
   "x-mdcms-environment": "production",
 };
 
