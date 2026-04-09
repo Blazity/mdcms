@@ -1383,19 +1383,10 @@ function SidebarHistoryTab(props: {
 }) {
   const { versionHistory, viewingVersion } = props.state;
 
+  const isViewingLatest = !viewingVersion;
+
   return (
     <div className="p-4">
-      {viewingVersion ? (
-        <Button
-          variant="outline"
-          size="sm"
-          className="mb-4 w-full text-xs"
-          onClick={() => props.onBackToDraft?.()}
-        >
-          Back to draft
-        </Button>
-      ) : null}
-
       {versionHistory.status === "idle" ||
       versionHistory.status === "loading" ? (
         <p className="text-sm text-foreground-muted">
@@ -1411,6 +1402,34 @@ function SidebarHistoryTab(props: {
         </p>
       ) : (
         <div className="relative border-l-2 border-border pl-4">
+          {/* Latest (current draft) entry */}
+          <button
+            type="button"
+            className={cn(
+              "relative mb-4 w-full rounded-md px-2 py-1.5 text-left transition-colors",
+              isViewingLatest ? "bg-accent/10" : "hover:bg-background-subtle",
+            )}
+            onClick={() => {
+              if (!isViewingLatest) {
+                props.onBackToDraft?.();
+              }
+            }}
+          >
+            <div className="absolute -left-[21px] top-2.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-accent" />
+            <p className="text-sm font-medium">
+              Latest
+              {isViewingLatest ? (
+                <span className="ml-1.5 text-xs font-normal text-accent">
+                  viewing
+                </span>
+              ) : null}
+            </p>
+            <p className="mt-0.5 text-xs text-foreground-muted">
+              Current draft
+            </p>
+          </button>
+
+          {/* Published versions */}
           {versionHistory.versions.map((version) => {
             const isViewing = viewingVersion?.version === version.version;
 
@@ -1788,7 +1807,7 @@ export function ContentDocumentPageView({
                         className="text-xs"
                         onClick={() => onBackToDraft?.()}
                       >
-                        Back to draft
+                        View latest
                       </Button>
                     </div>
                   ) : null}
