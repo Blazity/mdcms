@@ -1558,7 +1558,7 @@ export function ContentDocumentPageView({
         data-mdcms-document-write-state={writeState}
         className="flex h-screen min-w-0 flex-col overflow-x-hidden"
       >
-        <header className="sticky top-0 z-30 flex min-w-0 flex-wrap items-center gap-3 border-b border-border bg-background px-4 py-3">
+        <header className="sticky top-0 z-30 flex h-14 min-w-0 items-center gap-3 border-b border-border bg-background px-4">
           <div className="flex min-w-0 flex-1 items-center gap-4">
             <BreadcrumbTrail
               className="flex-1"
