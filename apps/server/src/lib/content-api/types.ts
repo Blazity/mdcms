@@ -85,6 +85,22 @@ export type ContentListQuery = {
 
 export type ContentVariantSummary = TranslationVariantSummary;
 
+export function sortVariantSummaries(
+  variants: ContentVariantSummary[],
+): ContentVariantSummary[] {
+  return variants.sort((a, b) =>
+    a.locale < b.locale
+      ? -1
+      : a.locale > b.locale
+        ? 1
+        : a.documentId < b.documentId
+          ? -1
+          : a.documentId > b.documentId
+            ? 1
+            : 0,
+  );
+}
+
 export type ContentWritePayload = {
   path?: string;
   type?: string;

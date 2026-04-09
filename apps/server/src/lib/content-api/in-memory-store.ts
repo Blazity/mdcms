@@ -15,6 +15,7 @@ import {
   type ContentVersionSummary,
   type ContentWriteOperationOptions,
   type CreateInMemoryContentStoreOptions,
+  sortVariantSummaries,
 } from "./types.js";
 import {
   assertJsonObject,
@@ -1084,17 +1085,7 @@ export function createInMemoryContentStore(
         }
       }
 
-      variants.sort((a, b) =>
-        a.locale < b.locale
-          ? -1
-          : a.locale > b.locale
-            ? 1
-            : a.documentId < b.documentId
-              ? -1
-              : a.documentId > b.documentId
-                ? 1
-                : 0,
-      );
+      sortVariantSummaries(variants);
 
       return variants;
     },

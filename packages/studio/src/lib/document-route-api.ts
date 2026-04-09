@@ -512,6 +512,27 @@ function toTranslationVariantsResponse(
     throw toInvalidRouteResponseError(operation, fallbackMessage, payload);
   }
 
+  const data = (payload as Record<string, unknown>).data as unknown[];
+
+  for (const row of data) {
+    if (
+      !row ||
+      typeof row !== "object" ||
+      typeof (row as Record<string, unknown>).documentId !== "string" ||
+      typeof (row as Record<string, unknown>).locale !== "string" ||
+      typeof (row as Record<string, unknown>).path !== "string" ||
+      typeof (row as Record<string, unknown>).hasUnpublishedChanges !==
+        "boolean"
+    ) {
+      throw toInvalidRouteResponseError(operation, fallbackMessage, payload);
+    }
+
+    const publishedVersion = (row as Record<string, unknown>).publishedVersion;
+    if (publishedVersion !== null && typeof publishedVersion !== "number") {
+      throw toInvalidRouteResponseError(operation, fallbackMessage, payload);
+    }
+  }
+
   return payload as TranslationVariantsResponse;
 }
 

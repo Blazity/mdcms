@@ -809,6 +809,23 @@ export async function loadContentDocumentPageState(input: {
         documentId: input.documentId,
       });
       translationVariants = variantsResponse.data;
+
+      // Ensure the current document always appears in the variants list
+      // even if RBAC path filtering omitted it from the server response.
+      if (
+        !translationVariants.some((v) => v.documentId === readyState.documentId)
+      ) {
+        translationVariants = [
+          {
+            documentId: readyState.documentId,
+            locale: readyState.locale,
+            path: readyState.document.path,
+            publishedVersion: readyState.document.publishedVersion,
+            hasUnpublishedChanges: readyState.document.hasUnpublishedChanges,
+          },
+          ...translationVariants,
+        ];
+      }
     } catch {
       // Degrade gracefully — include the current document so its locale
       // is never shown as missing, and flag the failure so the UI
@@ -1623,6 +1640,7 @@ export function ContentDocumentPageView({
               <Select
                 value={state.variantCreation?.targetLocale ?? state.locale}
                 onValueChange={(value) => onLocaleSwitch?.(value)}
+                disabled={state.variantCreation?.status === "creating"}
               >
                 <SelectTrigger className="h-8 w-auto min-w-[100px] gap-1.5 text-xs">
                   <Globe className="h-3.5 w-3.5 shrink-0" />

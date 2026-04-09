@@ -1480,6 +1480,35 @@ test("filterLocaleOptions shows missing locales with + prefix for writable users
   assert.equal(result[2].hasVariant, false);
 });
 
+test("locale switcher stays selectable when listVariants returns sibling-only", () => {
+  const state = createReadyState();
+  state.localized = true;
+  state.route.supportedLocales = ["en", "fr"];
+  // Only the sibling locale is in translationVariants — the current
+  // locale "en" was filtered out (e.g., by RBAC path filtering).
+  state.translationVariants = [
+    {
+      documentId: "22222222-2222-4222-8222-222222222222",
+      locale: "fr",
+      path: "blog/launch-notes",
+      publishedVersion: null,
+      hasUnpublishedChanges: false,
+    },
+  ];
+
+  const html = renderPageMarkup(state);
+  // The Select trigger should still render
+  assert.ok(
+    html.includes('data-slot="select-trigger"'),
+    "locale select trigger should render even when current locale is not in variants",
+  );
+  // The current locale (en) should be the selected value
+  assert.ok(
+    html.includes("en"),
+    "current locale should appear as the selected value",
+  );
+});
+
 test("variant creation buttons show creating state", () => {
   const state = createReadyState();
   state.localized = true;

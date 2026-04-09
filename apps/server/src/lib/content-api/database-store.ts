@@ -24,6 +24,7 @@ import {
   type CreateDatabaseContentStoreOptions,
   type SortField,
   type SortOrder,
+  sortVariantSummaries,
 } from "./types.js";
 import {
   assertJsonObject,
@@ -1801,13 +1802,15 @@ export function createDatabaseContentStore(
         ),
       });
 
-      return rows.map((row) => ({
-        documentId: row.documentId,
-        locale: row.locale,
-        path: row.path,
-        publishedVersion: row.publishedVersion,
-        hasUnpublishedChanges: row.hasUnpublishedChanges,
-      }));
+      return sortVariantSummaries(
+        rows.map((row) => ({
+          documentId: row.documentId,
+          locale: row.locale,
+          path: row.path,
+          publishedVersion: row.publishedVersion,
+          hasUnpublishedChanges: row.hasUnpublishedChanges,
+        })),
+      );
     },
   };
 }

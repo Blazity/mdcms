@@ -162,8 +162,13 @@ export function TipTapEditor({
   const lastPublishedSelectionRef =
     useRef<PublishedMdxComponentSelectionSnapshot | null>(null);
   const lastEmittedMarkdownRef = useRef<string | null>(null);
+  const isExternalSyncRef = useRef(false);
   const handleEditorUpdate = useEffectEvent(
     (nextEditor: TipTapEditorInstance) => {
+      if (isExternalSyncRef.current) {
+        return;
+      }
+
       const nextMarkdown = extractMarkdownFromEditor(nextEditor);
 
       if (nextMarkdown === lastEmittedMarkdownRef.current) {
@@ -316,10 +321,12 @@ export function TipTapEditor({
       return;
     }
 
+    isExternalSyncRef.current = true;
     editor.commands.setContent(content, {
       contentType: "markdown",
     });
     lastEmittedMarkdownRef.current = extractMarkdownFromEditor(editor);
+    isExternalSyncRef.current = false;
   }, [content, editor]);
 
   useEffect(() => {
