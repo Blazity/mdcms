@@ -36,7 +36,10 @@ import {
 } from "../../document-version-diff.js";
 import { useParams, useRouter } from "../adapters/next-navigation.js";
 import { type MdxPropsPanelSelection } from "../components/editor/mdx-props-panel.js";
-import { TipTapEditor } from "../components/editor/tiptap-editor.js";
+import {
+  TipTapEditor,
+  type TipTapEditorHandle,
+} from "../components/editor/tiptap-editor.js";
 import { BreadcrumbTrail } from "../components/layout/page-header.js";
 import { Badge } from "../components/ui/badge.js";
 import { Button } from "../components/ui/button.js";
@@ -234,6 +237,7 @@ type ContentDocumentPageViewProps = {
     side: "left" | "right",
     version?: number,
   ) => void;
+  editorRef?: React.Ref<TipTapEditorHandle>;
   onViewVersion?: (version: number) => void;
   onBackToDraft?: () => void;
   onLocaleSwitch?: (locale: string) => void;
@@ -1563,6 +1567,7 @@ export function ContentDocumentPageView({
   onPublishSubmit,
   onSchemaSync,
   onSelectComparisonVersion,
+  editorRef,
   onViewVersion,
   onBackToDraft,
   onLocaleSwitch,
@@ -1819,11 +1824,8 @@ export function ContentDocumentPageView({
                   ) : null}
 
                   <TipTapEditor
-                    content={
-                      state.viewingVersion?.status === "ready"
-                        ? state.viewingVersion.body
-                        : state.draftBody
-                    }
+                    ref={editorRef}
+                    initialContent={state.draftBody}
                     context={context}
                     onChange={onDraftChange}
                     onActiveMdxComponentChange={onActiveMdxComponentChange}
@@ -1934,6 +1936,7 @@ export default function ContentDocumentPage({
         }),
   );
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const editorRef = useRef<TipTapEditorHandle>(null);
   const [activeMdxComponent, setActiveMdxComponent] =
     useState<MdxPropsPanelSelection | null>(null);
   const stateRef = useRef(state);
@@ -2419,6 +2422,10 @@ export default function ContentDocumentPage({
         version,
       });
 
+      const versionBody = versionDoc.body ?? "";
+
+      editorRef.current?.setContent(versionBody);
+
       setState((current) =>
         current.status === "ready" &&
         current.viewingVersion?.version === version
@@ -2426,7 +2433,7 @@ export default function ContentDocumentPage({
               ...current,
               viewingVersion: {
                 version,
-                body: versionDoc.body ?? "",
+                body: versionBody,
                 status: "ready",
               },
             }
@@ -2454,6 +2461,12 @@ export default function ContentDocumentPage({
   });
 
   const handleBackToDraft = useEffectEvent(() => {
+    const currentState = stateRef.current;
+
+    if (currentState.status === "ready") {
+      editorRef.current?.setContent(currentState.draftBody);
+    }
+
     setState((current) =>
       current.status === "ready"
         ? { ...current, viewingVersion: undefined }
@@ -2622,6 +2635,7 @@ export default function ContentDocumentPage({
         void handleCreateVariant(prefill);
       }}
       onCancelVariantCreation={handleCancelVariantCreation}
+      editorRef={editorRef}
       onViewVersion={(version) => {
         void handleViewVersion(version);
       }}
