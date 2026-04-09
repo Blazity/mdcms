@@ -229,26 +229,6 @@ export function mountContentApiRoutes(
           environment: scope.environment,
         });
 
-        // Load the source document to obtain its path for folder-level
-        // RBAC, matching the authorization pattern of GET /:documentId.
-        const document = await options.store.getById(scope, params.documentId);
-
-        if (!document || document.isDeleted) {
-          throw new RuntimeError({
-            code: "NOT_FOUND",
-            message: "Document not found.",
-            statusCode: 404,
-            details: { documentId: params.documentId },
-          });
-        }
-
-        await options.authorize(request, {
-          requiredScope: "content:read",
-          project: scope.project,
-          environment: scope.environment,
-          documentPath: document.path,
-        });
-
         const variants = await options.store.listVariants(
           scope,
           params.documentId,
@@ -263,7 +243,25 @@ export function mountContentApiRoutes(
           });
         }
 
-        return Response.json({ data: variants });
+        // Authorize each variant path individually for folder-level RBAC.
+        // Variants in the same translation group may have divergent paths,
+        // so the caller must be allowed to read each one.
+        const authorized = [];
+        for (const variant of variants) {
+          try {
+            await options.authorize(request, {
+              requiredScope: "content:read",
+              project: scope.project,
+              environment: scope.environment,
+              documentPath: variant.path,
+            });
+            authorized.push(variant);
+          } catch {
+            // Silently omit variants the caller cannot access.
+          }
+        }
+
+        return Response.json({ data: authorized });
       });
     },
   );

@@ -2285,35 +2285,22 @@ export default function ContentDocumentPage({
     );
 
     try {
-      // When prefilling, load the source document's content. If the source
-      // is the currently open document we can read it from state; otherwise
-      // fetch it so frontmatter/body/format come from the correct variant.
+      // Always fetch the source document via loadDraft for prefill.
+      // StudioDocumentShellData does not carry frontmatter or format,
+      // so reading from local state would lose metadata.
       let sourceBody = "";
       let sourceFrontmatter: Record<string, unknown> = {};
       let sourceFormat: "md" | "mdx" = "mdx";
 
       if (prefill) {
-        if (sourceDocumentId === currentState.documentId) {
-          sourceBody = currentState.draftBody;
-          sourceFrontmatter =
-            "frontmatter" in currentState.document
-              ? (currentState.document as ContentDocumentResponse).frontmatter
-              : {};
-          sourceFormat =
-            "format" in currentState.document
-              ? ((currentState.document as ContentDocumentResponse).format ??
-                "mdx")
-              : "mdx";
-        } else {
-          const sourceDoc = await api.loadDraft({
-            documentId: sourceDocumentId,
-            type: currentState.typeId,
-            locale: currentState.variantCreation.sourceLocale,
-          });
-          sourceBody = sourceDoc.body ?? "";
-          sourceFrontmatter = sourceDoc.frontmatter ?? {};
-          sourceFormat = sourceDoc.format ?? "mdx";
-        }
+        const sourceDoc = await api.loadDraft({
+          documentId: sourceDocumentId,
+          type: currentState.typeId,
+          locale: currentState.variantCreation.sourceLocale,
+        });
+        sourceBody = sourceDoc.body ?? "";
+        sourceFrontmatter = sourceDoc.frontmatter ?? {};
+        sourceFormat = sourceDoc.format ?? "mdx";
       }
 
       const result = await api.create({
