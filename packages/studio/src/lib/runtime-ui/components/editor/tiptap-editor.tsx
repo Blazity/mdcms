@@ -312,6 +312,7 @@ export function TipTapEditor({
     const currentMarkdown = extractMarkdownFromEditor(editor);
 
     if (currentMarkdown === content) {
+      lastEmittedMarkdownRef.current = currentMarkdown;
       return;
     }
 
