@@ -3656,10 +3656,8 @@ testWithDatabase(
         ),
       );
       assert.equal(response.status, 404);
-      const body = (await response.json()) as {
-        error?: { code?: string };
-      };
-      assert.equal(body.error?.code, "NOT_FOUND");
+      const body = (await response.json()) as { code: string };
+      assert.equal(body.code, "NOT_FOUND");
     } finally {
       await dbConnection.close();
     }
