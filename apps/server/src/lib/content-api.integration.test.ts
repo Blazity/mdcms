@@ -3555,3 +3555,101 @@ testWithDatabase(
     }
   },
 );
+
+testWithDatabase(
+  "content API DB listVariants returns sibling locale variants",
+  async () => {
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-db-list-variants");
+
+    try {
+      const sourceResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...scopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            path: stableFixturePath("blog", "list-variants-source"),
+            type: "BlogPost",
+            locale: "en",
+            format: "md",
+            frontmatter: { slug: "list-variants-source" },
+            body: "source body",
+          }),
+        }),
+      );
+      assert.equal(sourceResponse.status, 200);
+      const sourceCreated = (await sourceResponse.json()) as {
+        data: { documentId: string; translationGroupId: string };
+      };
+
+      const variantResponse = await handler(
+        new Request("http://localhost/api/v1/content", {
+          method: "POST",
+          headers: csrfHeaders({
+            ...scopeHeaders,
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            path: stableFixturePath("blog", "list-variants-variant"),
+            type: "BlogPost",
+            locale: "fr",
+            format: "md",
+            frontmatter: { slug: "list-variants-variant" },
+            body: "variant body",
+            sourceDocumentId: sourceCreated.data.documentId,
+          }),
+        }),
+      );
+      assert.equal(variantResponse.status, 200);
+
+      const listResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${sourceCreated.data.documentId}/variants`,
+          {
+            method: "GET",
+            headers: csrfHeaders(scopeHeaders),
+          },
+        ),
+      );
+      assert.equal(listResponse.status, 200);
+
+      const listBody = (await listResponse.json()) as {
+        data: Array<{ documentId: string; locale: string; path: string }>;
+      };
+
+      assert.equal(listBody.data.length, 2);
+      const locales = listBody.data.map((v) => v.locale).sort();
+      assert.deepEqual(locales, ["en", "fr"]);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "content API DB listVariants returns 404 for missing document",
+  async () => {
+    const { handler, dbConnection, csrfHeaders } =
+      await createDatabaseTestContext(
+        "test:content-api-db-list-variants-missing",
+      );
+
+    try {
+      const response = await handler(
+        new Request(
+          "http://localhost/api/v1/content/00000000-0000-4000-8000-000000000000/variants",
+          {
+            method: "GET",
+            headers: csrfHeaders(scopeHeaders),
+          },
+        ),
+      );
+      assert.equal(response.status, 404);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);

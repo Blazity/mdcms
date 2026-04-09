@@ -218,6 +218,37 @@ export function mountContentApiRoutes(
   });
 
   contentApp.get?.(
+    "/api/v1/content/:documentId/variants",
+    ({ request, params }: any) => {
+      return executeWithRuntimeErrorsHandled(request, async () => {
+        const scope = pickScope(request);
+
+        await options.authorize(request, {
+          requiredScope: "content:read",
+          project: scope.project,
+          environment: scope.environment,
+        });
+
+        const variants = await options.store.listVariants(
+          scope,
+          params.documentId,
+        );
+
+        if (variants === undefined) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+            details: { documentId: params.documentId },
+          });
+        }
+
+        return Response.json({ data: variants });
+      });
+    },
+  );
+
+  contentApp.get?.(
     "/api/v1/content/:documentId",
     ({ request, params, query }: any) => {
       return executeWithRuntimeErrorsHandled(request, async () => {
