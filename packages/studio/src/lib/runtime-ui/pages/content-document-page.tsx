@@ -2135,7 +2135,7 @@ export default function ContentDocumentPage({
     stateRef.current = nextState;
   });
 
-  const saveDraft = useEffectEvent(async () => {
+  const saveDraft = useEffectEvent(async (): Promise<boolean> => {
     const currentState = stateRef.current;
     const api = createRouteApi();
 
@@ -2147,7 +2147,7 @@ export default function ContentDocumentPage({
       !route.write.canWrite ||
       currentState.status !== "ready"
     ) {
-      return;
+      return false;
     }
 
     if (
@@ -2156,7 +2156,7 @@ export default function ContentDocumentPage({
       currentState.draftBody === currentState.document.body ||
       currentState.saveRequestBody === currentState.draftBody
     ) {
-      return;
+      return false;
     }
 
     const requestBody = currentState.draftBody;
@@ -2186,7 +2186,7 @@ export default function ContentDocumentPage({
             })
           : current,
       );
-      return;
+      return false;
     }
 
     const mutationError = nextState.mutationError;
@@ -2200,7 +2200,7 @@ export default function ContentDocumentPage({
             })
           : current,
       );
-      return;
+      return false;
     }
 
     setState((current) =>
@@ -2213,6 +2213,7 @@ export default function ContentDocumentPage({
           })
         : current,
     );
+    return true;
   });
 
   const handleLocaleSwitch = useEffectEvent(async (targetLocale: string) => {
@@ -2231,15 +2232,9 @@ export default function ContentDocumentPage({
       currentState.canWrite &&
       currentState.draftBody !== currentState.document.body
     ) {
-      await saveDraft();
+      const saved = await saveDraft();
 
-      // Abort switch if save failed — edits would be lost
-      const afterSave = stateRef.current;
-      if (
-        afterSave.status === "ready" &&
-        afterSave.saveState !== "saved" &&
-        afterSave.draftBody !== afterSave.document.body
-      ) {
+      if (!saved) {
         return;
       }
     }
