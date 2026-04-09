@@ -14,6 +14,7 @@ import {
   RuntimeError,
   type StudioDocumentRouteMountContext,
   type StudioMountContext,
+  type TranslationVariantSummary,
 } from "@mdcms/shared";
 
 import {
@@ -60,11 +61,19 @@ import {
 import {
   AlertCircle,
   Check,
+  Globe,
   History,
   PanelRight,
   PanelRightClose,
   Send,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select.js";
 
 const DOCUMENT_SAVE_DEBOUNCE_MS = 5000;
 const SCHEMA_MISMATCH_WRITE_MESSAGE =
@@ -121,6 +130,14 @@ export type ContentDocumentVersionComparison = {
   rightVersion?: number;
 };
 
+export type ContentDocumentVariantCreationState = {
+  targetLocale: string;
+  sourceDocumentId: string;
+  sourceLocale: string;
+  status: "idle" | "creating";
+  error?: string;
+};
+
 export type ContentDocumentPageReadyState = {
   status: "ready";
   typeId: string;
@@ -143,6 +160,9 @@ export type ContentDocumentPageReadyState = {
   versionHistory: ContentDocumentVersionHistoryState;
   selectedComparison: ContentDocumentVersionComparison;
   versionDiff: ContentDocumentVersionDiffState;
+  translationVariants: TranslationVariantSummary[];
+  localized: boolean;
+  variantCreation?: ContentDocumentVariantCreationState;
 };
 
 export type ContentDocumentPageState =
@@ -210,6 +230,9 @@ type ContentDocumentPageViewProps = {
     side: "left" | "right",
     version?: number,
   ) => void;
+  onLocaleSwitch?: (locale: string) => void;
+  onCreateVariant?: (prefill: boolean) => void;
+  onCancelVariantCreation?: () => void;
 };
 
 type CreateContentDocumentPageHistoryApi = (input: {
@@ -335,6 +358,8 @@ function createReadyState(input: {
     versionDiff: {
       status: "idle",
     },
+    translationVariants: [],
+    localized: false,
     ...(writeAccess.writeMessage
       ? { writeMessage: writeAccess.writeMessage }
       : {}),
@@ -1458,6 +1483,9 @@ export function ContentDocumentPageView({
   onPublishSubmit,
   onSchemaSync,
   onSelectComparisonVersion,
+  onLocaleSwitch,
+  onCreateVariant,
+  onCancelVariantCreation,
 }: ContentDocumentPageViewProps) {
   const documentLabel =
     state.status === "ready"
@@ -1526,6 +1554,33 @@ export function ContentDocumentPageView({
           </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-3">
+            {state.status === "ready" &&
+            state.localized &&
+            state.route.supportedLocales &&
+            state.route.supportedLocales.length > 0 ? (
+              <Select
+                value={state.variantCreation?.targetLocale ?? state.locale}
+                onValueChange={(value) => onLocaleSwitch?.(value)}
+              >
+                <SelectTrigger className="h-8 w-auto min-w-[100px] gap-1.5 text-xs">
+                  <Globe className="h-3.5 w-3.5 shrink-0" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {state.route.supportedLocales.map((loc) => {
+                    const hasVariant = state.translationVariants.some(
+                      (v) => v.locale === loc,
+                    );
+                    return (
+                      <SelectItem key={loc} value={loc}>
+                        {hasVariant ? loc : `+ ${loc}`}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            ) : null}
+
             {workflowBadgeLabel ? (
               <Badge variant="outline" className="text-xs">
                 {workflowBadgeLabel}
@@ -1584,6 +1639,42 @@ export function ContentDocumentPageView({
                   state={state}
                   onGoBack={onGoBack}
                 />
+              ) : state.variantCreation ? (
+                <div className="flex min-h-[320px] items-center justify-center p-6">
+                  <div className="max-w-md text-center">
+                    <Globe className="mx-auto mb-4 h-10 w-10 text-foreground-muted" />
+                    <p className="mb-1 text-base font-medium">
+                      No {state.variantCreation.targetLocale} variant exists yet
+                    </p>
+                    <p className="mb-5 text-sm text-foreground-muted">
+                      Create a translation variant for this document to start
+                      editing in {state.variantCreation.targetLocale}.
+                    </p>
+                    {state.variantCreation.error ? (
+                      <div className="mb-4 rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                        {state.variantCreation.error}
+                      </div>
+                    ) : null}
+                    <div className="flex items-center justify-center gap-3">
+                      <Button
+                        variant="outline"
+                        disabled={state.variantCreation.status === "creating"}
+                        onClick={() => onCreateVariant?.(false)}
+                      >
+                        Create empty
+                      </Button>
+                      <Button
+                        className="bg-accent text-white hover:bg-accent-hover"
+                        disabled={state.variantCreation.status === "creating"}
+                        onClick={() => onCreateVariant?.(true)}
+                      >
+                        {state.variantCreation.status === "creating"
+                          ? "Creating..."
+                          : `Pre-fill from ${state.variantCreation.sourceLocale}`}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <div className="space-y-4">
                   {hasSchemaRecoveryMismatch(state.schemaState)
