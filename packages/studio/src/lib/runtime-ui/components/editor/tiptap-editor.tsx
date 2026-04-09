@@ -346,6 +346,11 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             emitUpdate: false,
           });
           lastEmittedMarkdownRef.current = extractMarkdownFromEditor(editor);
+
+          // Refresh derived UI state that onUpdate would normally handle,
+          // since we suppressed the update event above.
+          publishSelectedMdxComponent(editor);
+          syncSlashTrigger(editor);
         },
       }),
       [editor],

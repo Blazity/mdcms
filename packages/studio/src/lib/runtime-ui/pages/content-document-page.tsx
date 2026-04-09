@@ -2071,9 +2071,15 @@ export default function ContentDocumentPage({
         return;
       }
 
-      // If publish normalized the body, rehydrate the editor.
+      // If publish normalized the body, rehydrate the editor — but only
+      // if the user hasn't typed newer edits during the in-flight publish.
       const publishedBody = nextState.document.body;
-      if (publishedBody !== currentState.draftBody) {
+      const latestAfterPublish = stateRef.current;
+      if (
+        publishedBody !== currentState.draftBody &&
+        latestAfterPublish.status === "ready" &&
+        latestAfterPublish.draftBody === currentState.draftBody
+      ) {
         editorRef.current?.setContent(publishedBody);
       }
 
@@ -2232,9 +2238,15 @@ export default function ContentDocumentPage({
     }
 
     // If the server normalized the body (whitespace, etc.), rehydrate the
-    // editor so it matches the canonical persisted draft.
+    // editor — but only if the user hasn't typed newer edits during the
+    // in-flight save. The reducer already preserves newer drafts in state.
     const persistedBody = nextState.document.body;
-    if (persistedBody !== requestBody) {
+    const latestAfterSave = stateRef.current;
+    if (
+      persistedBody !== requestBody &&
+      latestAfterSave.status === "ready" &&
+      latestAfterSave.draftBody === requestBody
+    ) {
       editorRef.current?.setContent(persistedBody);
     }
 
