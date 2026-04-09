@@ -1160,39 +1160,8 @@ test("loadContentDocumentPageState seeds arbitrary version comparison and diff s
   assert.equal(diff.rightVersion, 3);
 });
 
-test("ContentDocumentPageView renders version history states and arbitrary-version diff output", () => {
+test("ContentDocumentPageView renders tabbed sidebar with properties and history", () => {
   const ready = createReadyState();
-  const loadingMarkup = renderPageMarkup({
-    ...ready,
-    versionHistory: {
-      status: "loading",
-      versions: [],
-    },
-    versionDiff: {
-      status: "idle",
-    },
-  });
-  const emptyMarkup = renderPageMarkup({
-    ...ready,
-    versionHistory: {
-      status: "empty",
-      versions: [],
-    },
-    versionDiff: {
-      status: "idle",
-    },
-  });
-  const errorMarkup = renderPageMarkup({
-    ...ready,
-    versionHistory: {
-      status: "error",
-      versions: [],
-      message: "Version history temporarily unavailable.",
-    },
-    versionDiff: {
-      status: "idle",
-    },
-  });
   const readyMarkup = renderPageMarkup({
     ...ready,
     publishDialogOpen: true,
@@ -1255,30 +1224,15 @@ test("ContentDocumentPageView renders version history states and arbitrary-versi
     },
   });
 
-  assert.match(loadingMarkup, /data-mdcms-version-history-state="loading"/);
-  assert.match(loadingMarkup, /Loading version history/);
-  assert.match(emptyMarkup, /data-mdcms-version-history-state="empty"/);
-  assert.match(emptyMarkup, /No published versions yet/);
-  assert.match(errorMarkup, /data-mdcms-version-history-state="error"/);
-  assert.match(errorMarkup, /Version history temporarily unavailable/);
-  assert.match(readyMarkup, /data-mdcms-version-history-state="ready"/);
-  assert.match(readyMarkup, /Version 3/);
-  assert.match(readyMarkup, /33333333-3333-4333-8333-333333333333/);
-  assert.match(readyMarkup, /Ready for launch\./);
+  // The sidebar defaults to the Properties tab. Version history content
+  // is in the History tab and version diff is in a modal, so they are
+  // not present in the default SSR render.
+  assert.match(readyMarkup, /Properties/);
+  assert.match(readyMarkup, /History/);
   assert.match(readyMarkup, /Publish document/);
-  assert.match(readyMarkup, /data-mdcms-version-diff-state="ready"/);
-  assert.match(readyMarkup, /Comparing v1 to v3/);
-  assert.match(readyMarkup, /blog\/launch-notes-updated/);
-  assert.match(readyMarkup, /Launch Notes v3/);
-  assert.match(readyMarkup, /Document workflow/);
-  assert.match(
-    readyMarkup,
-    /This page loads the routed draft, saves draft edits, and publishes the current draft through the live content API\./,
-  );
-  assert.match(
-    readyMarkup,
-    /If Studio cannot derive the local schema hash required for writes, the editor stays read-only until schema recovery completes\./,
-  );
+  // Old sidebar content should be gone
+  assert.doesNotMatch(readyMarkup, /Document workflow/);
+  assert.doesNotMatch(readyMarkup, /This page loads the routed draft/);
   assert.doesNotMatch(readyMarkup, />Unpublish</);
   assert.doesNotMatch(readyMarkup, /Move \/ Rename/);
   assert.doesNotMatch(readyMarkup, /View published version/);
