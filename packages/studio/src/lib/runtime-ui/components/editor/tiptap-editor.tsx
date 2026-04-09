@@ -320,12 +320,20 @@ export function TipTapEditor({
       return;
     }
 
+    // Defer setContent out of the React lifecycle to avoid the
+    // "flushSync was called from inside a lifecycle method" warning.
+    // TipTap's ProseMirror internals call flushSync during setContent.
+    const pendingContent = content;
     isExternalSyncRef.current = true;
-    editor.commands.setContent(content, {
-      contentType: "markdown",
+    queueMicrotask(() => {
+      if (!editor.isDestroyed) {
+        editor.commands.setContent(pendingContent, {
+          contentType: "markdown",
+        });
+        lastEmittedMarkdownRef.current = extractMarkdownFromEditor(editor);
+      }
+      isExternalSyncRef.current = false;
     });
-    lastEmittedMarkdownRef.current = extractMarkdownFromEditor(editor);
-    isExternalSyncRef.current = false;
   }, [content, editor]);
 
   useEffect(() => {
