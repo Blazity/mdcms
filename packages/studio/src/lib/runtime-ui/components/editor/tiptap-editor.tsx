@@ -338,7 +338,13 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             return;
           }
 
-          editor.commands.setContent(markdown, { contentType: "markdown" });
+          // Suppress onUpdate so programmatic syncs (version preview,
+          // back-to-draft, post-save rehydration) don't trigger onChange
+          // and accidentally mark the draft as unsaved / arm autosave.
+          editor.commands.setContent(markdown, {
+            contentType: "markdown",
+            emitUpdate: false,
+          });
           lastEmittedMarkdownRef.current = extractMarkdownFromEditor(editor);
         },
       }),

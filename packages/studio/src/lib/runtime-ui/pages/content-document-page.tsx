@@ -2225,12 +2225,19 @@ export default function ContentDocumentPage({
       return false;
     }
 
+    // If the server normalized the body (whitespace, etc.), rehydrate the
+    // editor so it matches the canonical persisted draft.
+    const persistedBody = nextState.document.body;
+    if (persistedBody !== requestBody) {
+      editorRef.current?.setContent(persistedBody);
+    }
+
     setState((current) =>
       current.status === "ready"
         ? applySuccessfulDraftSaveToReadyState({
             state: current,
             requestBody,
-            persistedBody: nextState.document.body,
+            persistedBody,
             updatedAt: nextState.document.updatedAt,
           })
         : current,
