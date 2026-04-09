@@ -788,13 +788,15 @@ export async function loadContentDocumentPageState(input: {
   let localized = false;
 
   if (schemaState.status === "ready") {
-    const typeEntry = schemaState.entries.find(
-      (e) => e.type === input.typeId,
-    );
+    const typeEntry = schemaState.entries.find((e) => e.type === input.typeId);
     localized = typeEntry?.localized ?? false;
   }
 
-  if (localized && route.supportedLocales && route.supportedLocales.length > 0) {
+  if (
+    localized &&
+    route.supportedLocales &&
+    route.supportedLocales.length > 0
+  ) {
     try {
       const routeApi = createContentDocumentRouteApi({
         context: input.context,
@@ -2181,7 +2183,9 @@ export default function ContentDocumentPage({
           ? { ...current, variantCreation: undefined }
           : current,
       );
-      router.push(`/admin/content/${currentState.typeId}/${existingVariant.documentId}`);
+      router.push(
+        `/admin/content/${currentState.typeId}/${existingVariant.documentId}`,
+      );
       return;
     }
 
@@ -2244,9 +2248,7 @@ export default function ContentDocumentPage({
         schemaHash: route?.write.canWrite ? route.write.schemaHash : undefined,
       });
 
-      router.push(
-        `/admin/content/${currentState.typeId}/${result.documentId}`,
-      );
+      router.push(`/admin/content/${currentState.typeId}/${result.documentId}`);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to create variant.";
