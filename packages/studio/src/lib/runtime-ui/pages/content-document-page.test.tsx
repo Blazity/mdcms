@@ -1450,8 +1450,14 @@ test("read-only users do not see missing locale options in switcher", () => {
   // The key invariant is that the missing locale items (+ fr, + de) are not
   // present — which holds both because they are filtered out for read-only
   // users and because SelectContent is not rendered in SSR.
-  assert.ok(!html.includes("+ fr"), "should not show creation option for missing locale");
-  assert.ok(!html.includes("+ de"), "should not show creation option for missing locale");
+  assert.ok(
+    !html.includes("+ fr"),
+    "should not show creation option for missing locale",
+  );
+  assert.ok(
+    !html.includes("+ de"),
+    "should not show creation option for missing locale",
+  );
 });
 
 test("variant creation buttons show creating state", () => {
