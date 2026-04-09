@@ -4,6 +4,7 @@ import {
   type ContentDocumentResponse,
   type ContentVersionDocumentResponse,
   type ContentVersionSummaryResponse,
+  type TranslationVariantsResponse,
 } from "@mdcms/shared";
 
 import type { MdcmsConfig } from "./studio-component.js";
@@ -67,6 +68,7 @@ export type StudioDocumentRouteCreateInput = {
   format?: "md" | "mdx";
   frontmatter?: Record<string, unknown>;
   body?: string;
+  sourceDocumentId?: string;
   schemaHash?: string;
   signal?: AbortSignal;
 };
@@ -132,6 +134,10 @@ export type StudioDocumentRouteApi = {
   restore: (
     input: StudioDocumentRouteRestoreInput,
   ) => Promise<ContentDocumentResponse>;
+  listVariants: (input: {
+    documentId: string;
+    signal?: AbortSignal;
+  }) => Promise<TranslationVariantsResponse>;
 };
 
 type StudioDocumentRoutePayload = {
@@ -832,6 +838,9 @@ export function createStudioDocumentRouteApi(
           format: input.format ?? "mdx",
           frontmatter: input.frontmatter ?? {},
           body: input.body ?? "",
+          ...(input.sourceDocumentId
+            ? { sourceDocumentId: input.sourceDocumentId }
+            : {}),
         },
       });
 
@@ -898,6 +907,28 @@ export function createStudioDocumentRouteApi(
         payload,
         "Failed to restore document.",
       );
+    },
+    async listVariants(input) {
+      const payload = await requestContentRouteJson(
+        options,
+        buildUrl(
+          config,
+          `/api/v1/content/${encodeURIComponent(input.documentId)}/variants`,
+        ),
+        {
+          method: "GET",
+          signal: input.signal,
+          headers: withContentRouteHeaders(
+            mergeHeaders({
+              "x-mdcms-project": config.project,
+              "x-mdcms-environment": config.environment,
+            }),
+            {},
+          ),
+        },
+      );
+
+      return payload as TranslationVariantsResponse;
     },
   };
 }
