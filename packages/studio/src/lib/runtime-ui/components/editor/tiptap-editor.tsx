@@ -303,6 +303,12 @@ export function TipTapEditor({
       return;
     }
 
+    // Seed the ref with TipTap's normalized output so the first focus/click
+    // does not produce a spurious onChange from parse normalization.
+    if (lastEmittedMarkdownRef.current === null) {
+      lastEmittedMarkdownRef.current = extractMarkdownFromEditor(editor);
+    }
+
     const currentMarkdown = extractMarkdownFromEditor(editor);
 
     if (currentMarkdown === content) {
@@ -312,7 +318,7 @@ export function TipTapEditor({
     editor.commands.setContent(content, {
       contentType: "markdown",
     });
-    lastEmittedMarkdownRef.current = content;
+    lastEmittedMarkdownRef.current = extractMarkdownFromEditor(editor);
   }, [content, editor]);
 
   useEffect(() => {

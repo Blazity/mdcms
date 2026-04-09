@@ -375,6 +375,12 @@ async function ensureDemoRbacGrant(input: {
   });
 
   if (existing) {
+    if (existing.role !== "admin") {
+      await input.db
+        .update(rbacGrants)
+        .set({ role: "admin" })
+        .where(eq(rbacGrants.id, existing.id));
+    }
     return;
   }
 
