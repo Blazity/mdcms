@@ -59,7 +59,6 @@ import {
   replaceSlashTriggerWithMdxComponent,
   type MdxComponentSlashTrigger,
 } from "./mdx-component-slash.js";
-import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
 import { Separator } from "../ui/separator.js";
 import { cn } from "../../lib/utils.js";
@@ -568,12 +567,6 @@ export function TipTapEditor({
               ))}
             </div>
           ))}
-
-          <div className="ml-auto">
-            <Badge variant="outline" className="bg-background">
-              TipTap
-            </Badge>
-          </div>
         </div>
 
         {toolbar.secondaryItems.length > 0 ? (
