@@ -2079,7 +2079,8 @@ export default function ContentDocumentPage({
       if (
         publishedBody !== currentState.draftBody &&
         latestAfterPublish.status === "ready" &&
-        latestAfterPublish.draftBody === currentState.draftBody
+        latestAfterPublish.draftBody === currentState.draftBody &&
+        !latestAfterPublish.viewingVersion
       ) {
         editorRef.current?.setContent(publishedBody);
       }
@@ -2246,7 +2247,8 @@ export default function ContentDocumentPage({
     if (
       persistedBody !== requestBody &&
       latestAfterSave.status === "ready" &&
-      latestAfterSave.draftBody === requestBody
+      latestAfterSave.draftBody === requestBody &&
+      !latestAfterSave.viewingVersion
     ) {
       editorRef.current?.setContent(persistedBody);
     }
