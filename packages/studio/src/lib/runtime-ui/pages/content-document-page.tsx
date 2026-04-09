@@ -784,6 +784,32 @@ export async function loadContentDocumentPageState(input: {
     schemaState,
   });
 
+  let translationVariants: TranslationVariantSummary[] = [];
+  let localized = false;
+
+  if (schemaState.status === "ready") {
+    const typeEntry = schemaState.entries.find(
+      (e) => e.type === input.typeId,
+    );
+    localized = typeEntry?.localized ?? false;
+  }
+
+  if (localized && route.supportedLocales && route.supportedLocales.length > 0) {
+    try {
+      const routeApi = createContentDocumentRouteApi({
+        context: input.context,
+        route,
+      });
+      const variantsResponse = await routeApi.listVariants({
+        documentId: input.documentId,
+      });
+      translationVariants = variantsResponse.data;
+    } catch {
+      // Degrade gracefully — switcher shows all locales as potentially missing
+      translationVariants = [];
+    }
+  }
+
   const versionState = await loadContentDocumentVersionHistoryState({
     api: routeApiFactory({
       context: input.context,
@@ -794,6 +820,8 @@ export async function loadContentDocumentPageState(input: {
 
   return {
     ...readyState,
+    translationVariants,
+    localized,
     ...versionState,
   };
 }
@@ -2123,6 +2151,129 @@ export default function ContentDocumentPage({
     );
   });
 
+  const handleLocaleSwitch = useEffectEvent(async (targetLocale: string) => {
+    const currentState = stateRef.current;
+    if (currentState.status !== "ready") return;
+
+    // If selecting the current locale, clear variant creation state
+    if (targetLocale === currentState.locale && !currentState.variantCreation) {
+      return;
+    }
+
+    // Unsaved changes guard: save before switching
+    if (
+      currentState.saveState === "unsaved" &&
+      currentState.canWrite &&
+      currentState.draftBody !== currentState.document.body
+    ) {
+      await saveDraft();
+    }
+
+    // Check if variant exists
+    const existingVariant = currentState.translationVariants.find(
+      (v) => v.locale === targetLocale,
+    );
+
+    if (existingVariant) {
+      // Clear variant creation state and navigate to the existing variant
+      setState((current) =>
+        current.status === "ready"
+          ? { ...current, variantCreation: undefined }
+          : current,
+      );
+      router.push(`/admin/content/${currentState.typeId}/${existingVariant.documentId}`);
+      return;
+    }
+
+    // No variant exists — show creation prompt
+    setState((current) =>
+      current.status === "ready"
+        ? {
+            ...current,
+            variantCreation: {
+              targetLocale,
+              sourceDocumentId: current.documentId,
+              sourceLocale: current.locale,
+              status: "idle",
+            },
+          }
+        : current,
+    );
+  });
+
+  const handleCreateVariant = useEffectEvent(async (prefill: boolean) => {
+    const currentState = stateRef.current;
+    const api = createRouteApi();
+
+    if (
+      !api ||
+      currentState.status !== "ready" ||
+      !currentState.variantCreation
+    ) {
+      return;
+    }
+
+    const { targetLocale, sourceDocumentId } = currentState.variantCreation;
+
+    setState((current) =>
+      current.status === "ready" && current.variantCreation
+        ? {
+            ...current,
+            variantCreation: {
+              ...current.variantCreation,
+              status: "creating",
+              error: undefined,
+            },
+          }
+        : current,
+    );
+
+    try {
+      const sourceFrontmatter =
+        "frontmatter" in currentState.document
+          ? (currentState.document as ContentDocumentResponse).frontmatter
+          : {};
+      const result = await api.create({
+        type: currentState.typeId,
+        path: currentState.document.path,
+        locale: targetLocale,
+        format: "mdx",
+        frontmatter: prefill ? sourceFrontmatter : {},
+        body: prefill ? currentState.draftBody : "",
+        sourceDocumentId,
+        schemaHash: route?.write.canWrite ? route.write.schemaHash : undefined,
+      });
+
+      router.push(
+        `/admin/content/${currentState.typeId}/${result.documentId}`,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to create variant.";
+
+      setState((current) =>
+        current.status === "ready" && current.variantCreation
+          ? {
+              ...current,
+              variantCreation: {
+                ...current.variantCreation,
+                status: "idle",
+                error: message,
+              },
+            }
+          : current,
+      );
+    }
+  });
+
+  const handleCancelVariantCreation = useEffectEvent(() => {
+    setState((current) =>
+      current.status === "ready"
+        ? { ...current, variantCreation: undefined }
+        : current,
+    );
+  });
+
   useEffect(() => {
     void loadDocument();
   }, [context, documentId, route, typeId, typeLabel]);
@@ -2277,6 +2428,13 @@ export default function ContentDocumentPage({
             : current,
         );
       }}
+      onLocaleSwitch={(locale) => {
+        void handleLocaleSwitch(locale);
+      }}
+      onCreateVariant={(prefill) => {
+        void handleCreateVariant(prefill);
+      }}
+      onCancelVariantCreation={handleCancelVariantCreation}
     />
   );
 }
