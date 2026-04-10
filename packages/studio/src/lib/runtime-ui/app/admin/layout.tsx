@@ -78,28 +78,6 @@ export default function AdminLayout({
   const [canDeleteContent, setCanDeleteContent] = useState(false);
   const [canManageUsers, setCanManageUsers] = useState(false);
   const [canManageSettings, setCanManageSettings] = useState(false);
-  const [activeProject, setActiveProjectRaw] = useState<string | null>(() => {
-    if (typeof window !== "undefined") {
-      const fromQuery = new URLSearchParams(window.location.search).get(
-        "project",
-      );
-      if (fromQuery) return fromQuery;
-    }
-    return context.documentRoute?.project ?? null;
-  });
-
-  const setActiveProject = useCallback((project: string) => {
-    setActiveProjectRaw(project);
-    // Reset environment when switching projects — the previous env may not exist
-    setActiveEnvironmentRaw(null);
-    if (typeof window !== "undefined") {
-      const url = new URL(window.location.href);
-      url.searchParams.set("project", project);
-      url.searchParams.delete("env");
-      window.history.replaceState(null, "", url.toString());
-    }
-  }, []);
-
   const [activeEnvironment, setActiveEnvironmentRaw] = useState<string | null>(
     () => {
       if (typeof window !== "undefined") {
@@ -135,11 +113,12 @@ export default function AdminLayout({
 
   // Fetch capabilities
   useEffect(() => {
+    const project = context.documentRoute?.project;
     const loadInput =
-      activeProject && activeEnvironment
+      project && activeEnvironment
         ? {
             config: {
-              project: activeProject,
+              project,
               environment: activeEnvironment,
               serverUrl: context.apiBaseUrl,
             },
@@ -197,7 +176,7 @@ export default function AdminLayout({
     context.auth.mode,
     context.auth.token,
     activeEnvironment,
-    activeProject,
+    context.documentRoute?.project,
   ]);
 
   // Fetch session
@@ -248,20 +227,17 @@ export default function AdminLayout({
 
   // Fetch environments
   useEffect(() => {
-    if (!activeProject) {
+    const project = context.documentRoute?.project;
+    if (!project || !activeEnvironment) {
       setEnvironments([]);
       return;
     }
 
-    // Use the current environment for the routing header, or fall back to a
-    // placeholder — the list endpoint only needs a valid project.
-    const routingEnv = activeEnvironment ?? "default";
-
     let cancelled = false;
     const envApi = createStudioEnvironmentApi(
       {
-        project: activeProject,
-        environment: routingEnv,
+        project,
+        environment: activeEnvironment,
         serverUrl: context.apiBaseUrl,
       },
       { auth: context.auth },
@@ -272,11 +248,6 @@ export default function AdminLayout({
       .then((list) => {
         if (!cancelled) {
           setEnvironments(list);
-          // Auto-select the first environment when none is active (e.g. after
-          // a project switch).
-          if (!activeEnvironment && list.length > 0) {
-            setActiveEnvironment(list[0]!.name);
-          }
         }
       })
       .catch(() => {
@@ -293,8 +264,7 @@ export default function AdminLayout({
     context.auth.mode,
     context.auth.token,
     activeEnvironment,
-    activeProject,
-    setActiveEnvironment,
+    context.documentRoute?.project,
   ]);
 
   const pathname = usePathname();
@@ -346,9 +316,8 @@ export default function AdminLayout({
   };
 
   const mountInfo = {
-    project: activeProject,
+    project: context.documentRoute?.project ?? null,
     environment: activeEnvironment,
-    setProject: setActiveProject,
     setEnvironment: setActiveEnvironment,
     apiBaseUrl: context.apiBaseUrl,
     auth: context.auth,

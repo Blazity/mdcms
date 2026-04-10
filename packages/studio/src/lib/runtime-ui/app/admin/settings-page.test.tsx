@@ -64,7 +64,6 @@ function renderSettingsPage(input: {
                   auth: { mode: "cookie" as const },
                   environments: [],
                   hostBridge: null,
-                  setProject: () => {},
                   setEnvironment: () => {},
                 },
               },

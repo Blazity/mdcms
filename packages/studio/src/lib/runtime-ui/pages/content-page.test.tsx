@@ -58,7 +58,6 @@ function renderMarkup(
             value: {
               project: "marketing-site",
               environment: "staging",
-              setProject: () => {},
               setEnvironment: () => {},
               apiBaseUrl: "http://localhost:4000",
               auth: { mode: "cookie" },

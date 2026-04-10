@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useState, useEffect } from "react";
 import { useTheme } from "../../adapters/next-themes.js";
 import Link from "../../adapters/next-link.js";
 import { Sun, Moon, ChevronRight, LogOut } from "lucide-react";
@@ -32,10 +31,6 @@ import { cn } from "../../lib/utils.js";
 import { useStudioSession } from "../../app/admin/session-context.js";
 import { useStudioMountInfo } from "../../app/admin/mount-info-context.js";
 import { createStudioSessionApi } from "../../../session-api.js";
-import {
-  createStudioProjectSwitcherApi,
-  type ProjectSwitcherSummary,
-} from "../../../project-switcher-api.js";
 
 export type BreadcrumbItem = { label: string; href?: string };
 
@@ -156,33 +151,6 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
   const sessionState = useStudioSession();
   const mountInfo = useStudioMountInfo();
 
-  const [accessibleProjects, setAccessibleProjects] = useState<
-    ProjectSwitcherSummary[]
-  >([]);
-
-  useEffect(() => {
-    if (sessionState.status !== "authenticated") return;
-
-    let cancelled = false;
-    const api = createStudioProjectSwitcherApi(
-      { serverUrl: mountInfo.apiBaseUrl },
-      { auth: mountInfo.auth },
-    );
-
-    void api
-      .list()
-      .then((list) => {
-        if (!cancelled) setAccessibleProjects(list);
-      })
-      .catch(() => {
-        if (!cancelled) setAccessibleProjects([]);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [mountInfo.apiBaseUrl, mountInfo.auth, sessionState.status]);
-
   const handleSignOut = async () => {
     if (sessionState.status !== "authenticated") return;
 
@@ -232,28 +200,12 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
             </div>
           ) : null}
 
-          {/* Project switcher / badge */}
-          {mountInfo.project && accessibleProjects.length > 1 ? (
-            <Select
-              value={mountInfo.project}
-              onValueChange={(slug) => mountInfo.setProject(slug)}
-            >
-              <SelectTrigger className="w-36 h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {accessibleProjects.map((proj) => (
-                  <SelectItem key={proj.id} value={proj.slug}>
-                    {proj.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : mountInfo.project ? (
+          {/* Project badge (read-only) */}
+          {mountInfo.project && (
             <div className="flex items-center h-9 px-3 rounded-md border border-border text-sm text-foreground-muted">
               {mountInfo.project}
             </div>
-          ) : null}
+          )}
 
           {/* Dark mode toggle */}
           <Tooltip>
