@@ -77,7 +77,7 @@ export function createEmailService(
 
   return {
     async sendInviteEmail(input) {
-      const acceptUrl = `${input.studioUrl}/invite/${input.token}`;
+      const acceptUrl = `${input.studioUrl}/admin/invite/${input.token}`;
       await transporter.sendMail({
         from: fromAddress,
         to: input.to,

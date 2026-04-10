@@ -533,6 +533,8 @@ Schema authorization semantics:
 | GET    | `/api/v1/auth/users`                             | session (admin/owner) | none           | none                | session cookie                                                                          | `200` `{ data: UserWithGrants[] }`                       | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`)                                                                                                                                                     |
 | GET    | `/api/v1/auth/users/:userId`                     | session (admin/owner) | none           | none                | `userId` path param                                                                     | `200` `{ data: UserWithGrants }`                         | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                                                                                                |
 | POST   | `/api/v1/auth/users/invite`                      | session (admin/owner) | none           | none                | JSON: `{ email, grants[] }`                                                             | `200` `{ data: { id, token, email, expiresAt } }`        | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `INVALID_INPUT` (`400`), `CONFLICT` (`409`)                                                                                                        |
+| GET    | `/api/v1/auth/invites`                           | session (admin/owner) | none           | none                | session cookie                                                                          | `200` `{ data: PendingInvite[] }`                        | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`)                                                                                                                                                     |
+| DELETE | `/api/v1/auth/invites/:inviteId`                 | session (admin/owner) | none           | none                | `inviteId` path param                                                                   | `200` `{ data: { revoked: true } }`                      | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `CONFLICT` (`409`)                                                                                                            |
 | PATCH  | `/api/v1/auth/users/:userId/grants`              | session (admin/owner) | none           | none                | JSON: `{ grants[] }`                                                                    | `200` `{ data: UserWithGrants }`                         | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `INVALID_INPUT` (`400`)                                                                                                       |
 | DELETE | `/api/v1/auth/users/:userId`                     | session (admin/owner) | none           | none                | `userId` path param                                                                     | `200` `{ data: { removed: true } }`                      | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                                                                                                |
 | GET    | `/api/v1/auth/api-keys`                          | session               | none           | none                | session cookie                                                                          | `200` `{ data: ApiKeyMetadata[] }`                       | `UNAUTHORIZED` (`401`)                                                                                                                                                                          |
@@ -573,6 +575,18 @@ Schema authorization semantics:
   environment: string | null;
   pathPrefix: string | null;
   createdAt: string;
+}
+```
+
+**PendingInvite:**
+
+```typescript
+{
+  id: string;
+  email: string;
+  grants: GrantInput[];
+  createdAt: string;
+  expiresAt: string;
 }
 ```
 

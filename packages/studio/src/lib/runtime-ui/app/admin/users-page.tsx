@@ -13,6 +13,8 @@ import {
   Loader2,
   AlertCircle,
   Users,
+  X,
+  Clock,
 } from "lucide-react";
 import { Button } from "../../components/ui/button.js";
 import { Badge } from "../../components/ui/badge.js";
@@ -63,6 +65,7 @@ import {
 } from "../../components/ui/tooltip.js";
 import { cn } from "../../lib/utils.js";
 import { useCanManageUsers } from "./capabilities-context.js";
+import { useStudioMountInfo } from "./mount-info-context.js";
 
 const roleConfig = {
   owner: {
@@ -160,6 +163,7 @@ export default function UsersPage() {
   const {
     status,
     users,
+    pendingInvites,
     errorMessage,
     refresh,
     inviteUser,
@@ -170,9 +174,12 @@ export default function UsersPage() {
     isRevokingSessions,
     updateGrants,
     isUpdatingGrants,
+    revokeInvite,
+    isRevokingInvite,
   } = useUserList();
 
   const canManageUsers = useCanManageUsers();
+  const { project: activeProject } = useStudioMountInfo();
 
   if (!canManageUsers) {
     return (
@@ -198,6 +205,7 @@ export default function UsersPage() {
           {
             role: inviteData.role,
             scopeKind: inviteData.globalAccess ? "global" : "project",
+            project: inviteData.globalAccess ? undefined : (activeProject || undefined),
             pathPrefix: inviteData.pathPrefix || undefined,
           },
         ],
@@ -240,6 +248,17 @@ export default function UsersPage() {
     }
   }
 
+  async function handleRevokeInvite(inviteId: string, email: string) {
+    try {
+      await revokeInvite(inviteId);
+      toast.success(`Invitation for ${email} has been revoked.`);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to revoke invitation.";
+      toast.error(message);
+    }
+  }
+
   async function handleEditRole() {
     if (!editRoleTarget) return;
     try {
@@ -247,6 +266,8 @@ export default function UsersPage() {
         {
           role: editRoleValue,
           scopeKind: editRoleTarget.currentGrants[0]?.scopeKind ?? "global",
+          project: editRoleTarget.currentGrants[0]?.project ?? undefined,
+          environment: editRoleTarget.currentGrants[0]?.environment ?? undefined,
           pathPrefix: editRoleTarget.currentGrants[0]?.pathPrefix ?? undefined,
         },
       ]);
@@ -267,6 +288,9 @@ export default function UsersPage() {
         {
           role: currentRole,
           scopeKind: editPermissionsData.scopeKind,
+          project: editPermissionsData.scopeKind === "global"
+            ? undefined
+            : (editPermissionsTarget.currentGrants[0]?.project ?? activeProject ?? undefined),
           pathPrefix: editPermissionsData.pathPrefix || undefined,
         },
       ]);
@@ -433,6 +457,54 @@ export default function UsersPage() {
             <p className="text-sm text-foreground-muted">
               Invite someone to get started.
             </p>
+          </div>
+        )}
+
+        {/* Pending Invitations */}
+        {pendingInvites.length > 0 && (
+          <div className="space-y-3">
+            <h2 className="text-sm font-medium text-foreground-muted">
+              Pending Invitations ({pendingInvites.length})
+            </h2>
+            <div className="rounded-lg border border-border divide-y divide-border">
+              {pendingInvites.map((invite) => (
+                <div
+                  key={invite.id}
+                  className="flex items-center justify-between px-4 py-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-background-subtle">
+                      <Clock className="h-4 w-4 text-foreground-muted" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">{invite.email}</p>
+                      <p className="text-xs text-foreground-muted">
+                        Expires {formatJoinedDate(invite.expiresAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className="text-xs"
+                    >
+                      {invite.grants[0]?.role ?? "editor"}
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-foreground-muted hover:text-destructive"
+                      disabled={isRevokingInvite}
+                      onClick={() =>
+                        handleRevokeInvite(invite.id, invite.email)
+                      }
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

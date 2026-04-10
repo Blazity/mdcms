@@ -43,6 +43,20 @@ export type InviteResult = {
   expiresAt: string;
 };
 
+export type PendingInvite = {
+  id: string;
+  email: string;
+  grants: Array<{
+    role: string;
+    scopeKind: string;
+    project?: string;
+    environment?: string;
+    pathPrefix?: string;
+  }>;
+  createdAt: string;
+  expiresAt: string;
+};
+
 export type StudioUsersApiConfig = {
   serverUrl: string;
 };
@@ -59,6 +73,11 @@ export type StudioUsersApi = {
     input: InviteUserInput,
     csrfToken: string,
   ) => Promise<InviteResult>;
+  listInvites: () => Promise<PendingInvite[]>;
+  revokeInvite: (
+    inviteId: string,
+    csrfToken: string,
+  ) => Promise<{ revoked: true }>;
   updateGrants: (
     userId: string,
     grants: InviteUserInput["grants"],
@@ -221,6 +240,75 @@ export function createStudioUsersApi(
       }
 
       return payload.data as InviteResult;
+    },
+
+    async listInvites(): Promise<PendingInvite[]> {
+      const url = resolveStudioRelativeUrl(
+        "/api/v1/auth/invites",
+        config.serverUrl,
+      );
+      const response = await fetcher(
+        url,
+        applyStudioAuthToRequestInit(options.auth, { method: "GET" }),
+      );
+      const payload = await readResponsePayload(response);
+
+      if (!response.ok) {
+        throw toRouteFailureError(
+          "GET /api/v1/auth/invites",
+          response,
+          payload,
+          "Invites list request failed.",
+        );
+      }
+
+      if (!isRecord(payload) || !Array.isArray(payload.data)) {
+        throw toInvalidResponseError("GET /api/v1/auth/invites", payload);
+      }
+
+      return payload.data as PendingInvite[];
+    },
+
+    async revokeInvite(
+      inviteId: string,
+      csrfToken: string,
+    ): Promise<{ revoked: true }> {
+      const url = resolveStudioRelativeUrl(
+        `/api/v1/auth/invites/${encodeURIComponent(inviteId)}`,
+        config.serverUrl,
+      );
+      const response = await fetcher(
+        url,
+        applyStudioAuthToRequestInit(options.auth, {
+          method: "DELETE",
+          headers: {
+            "x-mdcms-csrf-token": csrfToken,
+          },
+        }),
+      );
+      const payload = await readResponsePayload(response);
+
+      if (!response.ok) {
+        throw toRouteFailureError(
+          `DELETE /api/v1/auth/invites/${inviteId}`,
+          response,
+          payload,
+          "Invite revoke request failed.",
+        );
+      }
+
+      if (
+        !isRecord(payload) ||
+        !isRecord(payload.data) ||
+        (payload.data as Record<string, unknown>).revoked !== true
+      ) {
+        throw toInvalidResponseError(
+          `DELETE /api/v1/auth/invites/${inviteId}`,
+          payload,
+        );
+      }
+
+      return payload.data as { revoked: true };
     },
 
     async updateGrants(

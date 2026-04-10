@@ -106,7 +106,7 @@ test("sendInviteEmail includes token in accept URL", async () => {
   });
 
   assert.ok(
-    calls[0]?.html.includes("https://studio.example.com/invite/my-secret-token"),
+    calls[0]?.html.includes("https://studio.example.com/admin/invite/my-secret-token"),
   );
 });
 

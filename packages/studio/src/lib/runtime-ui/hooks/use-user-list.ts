@@ -8,6 +8,7 @@ import {
   createStudioUsersApi,
   type InviteUserInput,
   type InviteResult,
+  type PendingInvite,
   type UserWithGrants,
 } from "../../users-api.js";
 import { applyStudioAuthToRequestInit } from "../../request-auth.js";
@@ -44,6 +45,16 @@ export function useUserList() {
   });
 
   const users: UserWithGrants[] = query.data ?? [];
+
+  const invitesQuery = useQuery({
+    queryKey: ["invites"],
+    queryFn: async () => {
+      return api!.listInvites();
+    },
+    enabled: api !== null,
+  });
+
+  const pendingInvites: PendingInvite[] = invitesQuery.data ?? [];
 
   const status: UserListStatus = useMemo(() => {
     if (query.isLoading) return "loading";
@@ -83,6 +94,7 @@ export function useUserList() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["users"] });
+      void queryClient.invalidateQueries({ queryKey: ["invites"] });
     },
   });
 
@@ -206,6 +218,29 @@ export function useUserList() {
     },
   });
 
+  const revokeInviteMutation = useMutation({
+    mutationFn: async (inviteId: string): Promise<{ revoked: true }> => {
+      if (!api) {
+        throw new RuntimeError({
+          code: "API_NOT_AVAILABLE",
+          message: "API client is not available.",
+          statusCode: 0,
+        });
+      }
+      if (!csrfToken) {
+        throw new RuntimeError({
+          code: "CSRF_TOKEN_MISSING",
+          message: "CSRF token is not available. You must be authenticated.",
+          statusCode: 0,
+        });
+      }
+      return api.revokeInvite(inviteId, csrfToken);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["invites"] });
+    },
+  });
+
   const inviteUser = useCallback(
     (input: InviteUserInput) => inviteMutation.mutateAsync(input),
     [inviteMutation.mutateAsync],
@@ -227,9 +262,15 @@ export function useUserList() {
     [revokeSessionsMutation.mutateAsync],
   );
 
+  const revokeInvite = useCallback(
+    (inviteId: string) => revokeInviteMutation.mutateAsync(inviteId),
+    [revokeInviteMutation.mutateAsync],
+  );
+
   return {
     status,
     users,
+    pendingInvites,
     errorMessage,
     refresh,
     inviteUser,
@@ -243,5 +284,7 @@ export function useUserList() {
     removeError: removeMutation.error,
     revokeSessions,
     isRevokingSessions: revokeSessionsMutation.isPending,
+    revokeInvite,
+    isRevokingInvite: revokeInviteMutation.isPending,
   };
 }

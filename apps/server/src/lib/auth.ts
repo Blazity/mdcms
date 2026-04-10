@@ -269,6 +269,11 @@ export type AuthService = {
     request: Request,
     userId: string,
   ) => Promise<{ removed: true }>;
+  listInvites: (request: Request) => Promise<PendingInvite[]>;
+  revokeInvite: (
+    request: Request,
+    inviteId: string,
+  ) => Promise<{ revoked: true }>;
   acceptInvite: (
     token: string,
     input: AcceptInviteInput,
@@ -290,6 +295,20 @@ export type UserWithGrants = {
     pathPrefix: string | null;
     createdAt: string;
   }>;
+};
+
+export type PendingInvite = {
+  id: string;
+  email: string;
+  grants: Array<{
+    role: string;
+    scopeKind: string;
+    project?: string;
+    environment?: string;
+    pathPrefix?: string;
+  }>;
+  createdAt: string;
+  expiresAt: string;
 };
 
 export type InviteUserInput = {
@@ -4331,7 +4350,8 @@ export function createAuthService(
       const inviter = await options.db.query.authUsers.findFirst({
         where: eq(authUsers.id, session.userId),
       });
-      const studioUrl = resolveAuthBaseUrl(rawEnv);
+      const studioUrl =
+        parsedEnv.MDCMS_STUDIO_ALLOWED_ORIGINS[0] ?? baseUrl;
       await options.emailService.sendInviteEmail({
         to: email,
         inviterName: inviter?.name ?? "An administrator",
@@ -4419,9 +4439,9 @@ export function createAuthService(
           userId: normalizedId,
           role: grant.role,
           scopeKind: grant.scopeKind,
-          project: grant.project ?? null,
-          environment: grant.environment ?? null,
-          pathPrefix: grant.pathPrefix ?? null,
+          project: grant.project || null,
+          environment: grant.environment || null,
+          pathPrefix: grant.pathPrefix || null,
           createdByUserId: sessionForGrants.userId,
         });
       }
@@ -4477,11 +4497,68 @@ export function createAuthService(
         );
       // Revoke all sessions
       await revokeAllUserSessions(normalizedId);
-      // Delete user (cascades sessions/accounts)
+      // Delete API keys (FK is onDelete: restrict, must remove first)
+      await options.db
+        .delete(apiKeys)
+        .where(eq(apiKeys.createdByUserId, normalizedId));
+      // Delete user (cascades sessions/accounts/invites)
       await options.db
         .delete(authUsers)
         .where(eq(authUsers.id, normalizedId));
       return { removed: true as const };
+    },
+
+    async listInvites(request) {
+      await assertAdminSession(request);
+      const rows = await options.db.query.invites.findMany({
+        where: and(
+          isNull(invites.acceptedAt),
+          isNull(invites.revokedAt),
+          gt(invites.expiresAt, new Date()),
+        ),
+        orderBy: desc(invites.createdAt),
+      });
+      return rows.map((row) => ({
+        id: row.id,
+        email: row.email,
+        grants: row.grants,
+        createdAt: row.createdAt.toISOString(),
+        expiresAt: row.expiresAt.toISOString(),
+      }));
+    },
+
+    async revokeInvite(request, inviteId) {
+      await assertAdminSession(request);
+      const normalizedId = assertNonEmptyString(inviteId, "inviteId");
+      const invite = await options.db.query.invites.findFirst({
+        where: eq(invites.id, normalizedId),
+      });
+      if (!invite) {
+        throw new RuntimeError({
+          code: "NOT_FOUND",
+          message: "Invitation not found.",
+          statusCode: 404,
+        });
+      }
+      if (invite.acceptedAt) {
+        throw new RuntimeError({
+          code: "INVITE_ALREADY_ACCEPTED",
+          message: "This invitation has already been accepted.",
+          statusCode: 409,
+        });
+      }
+      if (invite.revokedAt) {
+        throw new RuntimeError({
+          code: "INVITE_ALREADY_REVOKED",
+          message: "This invitation has already been revoked.",
+          statusCode: 409,
+        });
+      }
+      await options.db
+        .update(invites)
+        .set({ revokedAt: new Date() })
+        .where(eq(invites.id, normalizedId));
+      return { revoked: true as const };
     },
 
     async acceptInvite(token, input) {
@@ -4554,9 +4631,9 @@ export function createAuthService(
           userId,
           role: grant.role,
           scopeKind: grant.scopeKind,
-          project: grant.project ?? null,
-          environment: grant.environment ?? null,
-          pathPrefix: grant.pathPrefix ?? null,
+          project: grant.project || null,
+          environment: grant.environment || null,
+          pathPrefix: grant.pathPrefix || null,
           source: `invite:${invite.id}`,
           createdByUserId: invite.createdByUserId,
         });
@@ -4773,6 +4850,26 @@ export function mountAuthRoutes(
       const result = await options.authService.inviteUser(request, payload);
       return { data: result };
     }),
+  );
+
+  authApp.get?.("/api/v1/auth/invites", ({ request }: any) =>
+    executeWithRuntimeErrorsHandled(request, async () => {
+      const pending = await options.authService.listInvites(request);
+      return { data: pending };
+    }),
+  );
+
+  authApp.delete?.(
+    "/api/v1/auth/invites/:inviteId",
+    ({ request, params }: any) =>
+      executeWithRuntimeErrorsHandled(request, async () => {
+        await options.authService.requireCsrfProtection(request);
+        const result = await options.authService.revokeInvite(
+          request,
+          params.inviteId,
+        );
+        return { data: result };
+      }),
   );
 
   authApp.get?.("/api/v1/auth/users/:userId", ({ request, params }: any) =>

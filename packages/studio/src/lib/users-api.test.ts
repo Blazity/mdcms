@@ -7,6 +7,7 @@ import {
   createStudioUsersApi,
   type InviteUserInput,
   type InviteResult,
+  type PendingInvite,
   type UserWithGrants,
   type StudioUsersApiOptions,
 } from "./users-api.js";
@@ -620,6 +621,171 @@ test("invite throws USERS_RESPONSE_INVALID when data has no token field", async 
     (error: unknown) =>
       error instanceof RuntimeError &&
       error.code === "USERS_RESPONSE_INVALID",
+  );
+});
+
+/* -------------------------------------------------------------------------- */
+/*  listInvites                                                               */
+/* -------------------------------------------------------------------------- */
+
+const validPendingInvite: PendingInvite = {
+  id: "invite-1",
+  email: "pending@example.com",
+  grants: [
+    {
+      role: "editor",
+      scopeKind: "project",
+      project: "marketing-site",
+    },
+  ],
+  createdAt: "2026-04-01T00:00:00.000Z",
+  expiresAt: "2026-04-08T00:00:00.000Z",
+};
+
+const validListInvitesResponse = { data: [validPendingInvite] };
+
+test("listInvites fetches pending invites with cookie auth", async () => {
+  const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
+    [];
+  const api = createApi({
+    auth: { mode: "cookie" },
+    fetcher: async (input, init) => {
+      calls.push({ input, init });
+      return new Response(JSON.stringify(validListInvitesResponse), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  const result = await api.listInvites();
+
+  assert.equal(calls.length, 1);
+  assert.equal(
+    String(calls[0]?.input),
+    "http://localhost:4000/api/v1/auth/invites",
+  );
+  assert.equal(calls[0]?.init?.method, "GET");
+  assert.equal(result.length, 1);
+  assert.equal(result[0]?.email, "pending@example.com");
+});
+
+test("listInvites throws RuntimeError on non-ok response", async () => {
+  const api = createApi({
+    fetcher: async () =>
+      new Response(
+        JSON.stringify({ code: "UNAUTHORIZED", message: "Unauthorized" }),
+        { status: 401 },
+      ),
+  });
+
+  await assert.rejects(
+    () => api.listInvites(),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "UNAUTHORIZED" &&
+      error.statusCode === 401,
+  );
+});
+
+test("listInvites throws USERS_RESPONSE_INVALID on malformed response", async () => {
+  const api = createApi({
+    fetcher: async () =>
+      new Response(JSON.stringify({ unexpected: true }), { status: 200 }),
+  });
+
+  await assert.rejects(
+    () => api.listInvites(),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "USERS_RESPONSE_INVALID" &&
+      error.statusCode === 500,
+  );
+});
+
+/* -------------------------------------------------------------------------- */
+/*  revokeInvite                                                              */
+/* -------------------------------------------------------------------------- */
+
+const validRevokeInviteResponse = { data: { revoked: true } };
+
+test("revokeInvite sends DELETE with correct URL, CSRF header, and returns { revoked: true }", async () => {
+  const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
+    [];
+  const api = createApi({
+    auth: { mode: "cookie" },
+    fetcher: async (input, init) => {
+      calls.push({ input, init });
+      return new Response(JSON.stringify(validRevokeInviteResponse), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  const result = await api.revokeInvite("invite-1", "csrf-tok");
+
+  assert.equal(calls.length, 1);
+  assert.equal(
+    String(calls[0]?.input),
+    "http://localhost:4000/api/v1/auth/invites/invite-1",
+  );
+  assert.equal(calls[0]?.init?.method, "DELETE");
+  assert.equal(readHeader(calls[0]?.init, "x-mdcms-csrf-token"), "csrf-tok");
+  assert.deepEqual(result, { revoked: true });
+});
+
+test("revokeInvite uses token auth (Bearer header)", async () => {
+  const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
+    [];
+  const api = createApi({
+    auth: { mode: "token", token: "mdcms_key_test" },
+    fetcher: async (input, init) => {
+      calls.push({ input, init });
+      return new Response(JSON.stringify(validRevokeInviteResponse), {
+        status: 200,
+      });
+    },
+  });
+
+  await api.revokeInvite("invite-1", "csrf-tok");
+
+  assert.equal(
+    readHeader(calls[0]?.init, "authorization"),
+    "Bearer mdcms_key_test",
+  );
+});
+
+test("revokeInvite throws RuntimeError on non-ok response", async () => {
+  const api = createApi({
+    fetcher: async () =>
+      new Response(
+        JSON.stringify({ code: "NOT_FOUND", message: "Invitation not found" }),
+        { status: 404 },
+      ),
+  });
+
+  await assert.rejects(
+    () => api.revokeInvite("invite-1", "csrf-tok"),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "NOT_FOUND" &&
+      error.statusCode === 404,
+  );
+});
+
+test("revokeInvite throws USERS_RESPONSE_INVALID on malformed response", async () => {
+  const api = createApi({
+    fetcher: async () =>
+      new Response(JSON.stringify({ unexpected: true }), { status: 200 }),
+  });
+
+  await assert.rejects(
+    () => api.revokeInvite("invite-1", "csrf-tok"),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "USERS_RESPONSE_INVALID" &&
+      error.statusCode === 500,
   );
 });
 
