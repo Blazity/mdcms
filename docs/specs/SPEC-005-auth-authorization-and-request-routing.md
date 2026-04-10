@@ -452,7 +452,7 @@ Machine-to-machine access (SDK, CI/CD) uses API keys:
 
 **CLI auth defaults and precedence:**
 
-- Login-generated API keys default to scopes: `content:read`, `content:read:draft`, `content:write`.
+- Login-generated API keys request scopes: `projects:read`, `projects:write`, `schema:read`, `schema:write`, `content:read`, `content:read:draft`, `content:write`. The server validates that the session's effective role permits all requested scopes. **MVP limitation:** CLI requires Admin or Owner role (see SPEC-008).
 - CLI auth precedence is: `--api-key` > `MDCMS_API_KEY` > stored profile.
 
 **Deterministic failure semantics:**

@@ -366,7 +366,7 @@ export const migration: Migration = {
 - After obtaining the key, `cms login` verifies the project exists on the server (`GET /api/v1/projects`). If the project does not exist, the key is revoked (`POST /api/v1/auth/api-keys/self/revoke`) and the command exits with an error directing the user to run `cms init`.
 - The credential store is keyed by server URL, project, and environment and supports one active profile per tuple.
 - In interactive mode, credentials are stored in the OS credential store when available (fallback to `~/.mdcms/credentials.json` with `0600` permissions).
-- Login-generated API keys default to scopes: `projects:read`, `projects:write`, `schema:read`, `schema:write`, `content:read`, `content:read:draft`, `content:write`.
+- Login-generated API keys request scopes: `projects:read`, `projects:write`, `schema:read`, `schema:write`, `content:read`, `content:read:draft`, `content:write`. The server filters these to the subset permitted by the session's effective role. **MVP limitation:** CLI operations (`push`, `pull`, `init`) require `schema:write` and `projects:write` which are only available to Admin and Owner roles. Editor and Viewer users cannot use the CLI until role-aware scope narrowing is implemented.
 - CLI auth precedence is: `--api-key` > `MDCMS_API_KEY` > stored profile.
 - `cms logout` always clears the local profile for the current tuple and performs best-effort remote self-revoke of the active API key.
 

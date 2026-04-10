@@ -183,9 +183,13 @@ export default function UsersPage() {
         grants: [
           {
             role: inviteData.role,
-            scopeKind: inviteData.pathPrefix ? "folder_prefix" : "project",
-            project: activeProject || undefined,
-            pathPrefix: inviteData.pathPrefix || undefined,
+            scopeKind: inviteData.role === "admin"
+              ? "global"
+              : inviteData.pathPrefix
+                ? "folder_prefix"
+                : "project",
+            project: inviteData.role === "admin" ? undefined : (activeProject || undefined),
+            pathPrefix: inviteData.role === "admin" ? undefined : (inviteData.pathPrefix || undefined),
           },
         ],
       });
@@ -244,9 +248,13 @@ export default function UsersPage() {
       await updateGrants(editRoleTarget.userId, [
         {
           role: editRoleValue,
-          scopeKind: editRolePathPrefix ? "folder_prefix" : "project",
-          project: editRoleTarget.currentGrants[0]?.project ?? activeProject ?? undefined,
-          pathPrefix: editRolePathPrefix || undefined,
+          scopeKind: editRoleValue === "admin"
+            ? "global"
+            : editRolePathPrefix
+              ? "folder_prefix"
+              : "project",
+          project: editRoleValue === "admin" ? undefined : (editRoleTarget.currentGrants[0]?.project ?? activeProject ?? undefined),
+          pathPrefix: editRoleValue === "admin" ? undefined : (editRolePathPrefix || undefined),
         },
       ]);
       toast.success(`Role updated for ${editRoleTarget.userName}.`);
