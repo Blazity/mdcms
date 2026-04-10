@@ -56,7 +56,11 @@ function getMainNavItems(filters: {
   canManageUsers: boolean;
   canManageSettings: boolean;
 }) {
+  const canManageAdminSurfaces =
+    filters.canManageUsers || filters.canManageSettings;
+
   return mainNavItems.filter((item) => {
+    if (item.href === "/admin/environments") return canManageAdminSurfaces;
     if (item.href === "/admin/schema") return filters.canReadSchema;
     if (item.href === "/admin/users") return filters.canManageUsers;
     if (item.href === "/admin/settings") return filters.canManageSettings;

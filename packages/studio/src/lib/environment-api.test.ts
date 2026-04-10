@@ -28,12 +28,19 @@ function readHeader(
   return null;
 }
 
-function createApi(options: StudioEnvironmentApiOptions = {}) {
+function createApi(
+  options: StudioEnvironmentApiOptions = {},
+  config?: {
+    project?: string;
+    environment?: string;
+    serverUrl?: string;
+  },
+) {
   return createStudioEnvironmentApi(
     {
-      project: "marketing-site",
-      environment: "production",
-      serverUrl: "http://localhost:4000",
+      project: config?.project ?? "marketing-site",
+      environment: config?.environment ?? "production",
+      serverUrl: config?.serverUrl ?? "http://localhost:4000",
     },
     options,
   );
@@ -87,6 +94,99 @@ test("list returns empty array for empty response", async () => {
   const result = await api.list();
 
   assert.deepEqual(result, []);
+});
+
+test("list resolves scenario-relative environment routes", async () => {
+  const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
+    [];
+  const api = createApi(
+    {
+      fetcher: async (input, init) => {
+        calls.push({ input, init });
+        return new Response(JSON.stringify({ data: [validEnvSummary] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    },
+    {
+      serverUrl: "http://localhost:4000/review-api/editor",
+    },
+  );
+
+  await api.list();
+
+  assert.equal(
+    String(calls[0]?.input),
+    "http://localhost:4000/review-api/editor/api/v1/environments",
+  );
+});
+
+test("create posts the environment name with project and csrf headers", async () => {
+  const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
+    [];
+  const api = createApi({
+    auth: { mode: "cookie" },
+    csrfToken: "csrf-token",
+    fetcher: async (input, init) => {
+      calls.push({ input, init });
+      return new Response(
+        JSON.stringify({
+          data: {
+            ...validEnvSummary,
+            id: "env-staging",
+            name: "staging",
+            isDefault: false,
+          },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
+    },
+  });
+
+  const result = await api.create({ name: "staging" });
+
+  assert.equal(
+    String(calls[0]?.input),
+    "http://localhost:4000/api/v1/environments",
+  );
+  assert.equal(calls[0]?.init?.method, "POST");
+  assert.equal(readHeader(calls[0]?.init, "x-mdcms-project"), "marketing-site");
+  assert.equal(readHeader(calls[0]?.init, "x-mdcms-environment"), "production");
+  assert.equal(readHeader(calls[0]?.init, "x-mdcms-csrf-token"), "csrf-token");
+  assert.equal(calls[0]?.init?.body, JSON.stringify({ name: "staging" }));
+  assert.equal(result.name, "staging");
+});
+
+test("delete sends the environment id with csrf protection", async () => {
+  const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
+    [];
+  const api = createApi({
+    auth: { mode: "cookie" },
+    csrfToken: "csrf-token",
+    fetcher: async (input, init) => {
+      calls.push({ input, init });
+      return new Response(
+        JSON.stringify({ data: { deleted: true, id: "env-staging" } }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
+    },
+  });
+
+  await api.delete("env-staging");
+
+  assert.equal(
+    String(calls[0]?.input),
+    "http://localhost:4000/api/v1/environments/env-staging",
+  );
+  assert.equal(calls[0]?.init?.method, "DELETE");
+  assert.equal(readHeader(calls[0]?.init, "x-mdcms-csrf-token"), "csrf-token");
 });
 
 test("list throws on 401 response", async () => {

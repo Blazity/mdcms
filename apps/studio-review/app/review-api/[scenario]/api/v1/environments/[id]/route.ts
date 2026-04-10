@@ -1,9 +1,6 @@
 import { RuntimeError } from "@mdcms/shared";
 
-import {
-  createReviewEnvironment,
-  listReviewEnvironments,
-} from "../../../../../../review/environments";
+import { deleteReviewEnvironment } from "../../../../../../../review/environments";
 
 function toErrorResponse(error: unknown): Response {
   if (error instanceof RuntimeError) {
@@ -35,31 +32,15 @@ function toErrorResponse(error: unknown): Response {
   );
 }
 
-export async function GET(
+export async function DELETE(
   _request: Request,
-  context: { params: Promise<{ scenario: string }> },
+  context: { params: Promise<{ scenario: string; id: string }> },
 ) {
   try {
-    const { scenario } = await context.params;
+    const { scenario, id } = await context.params;
 
     return Response.json({
-      data: listReviewEnvironments(scenario),
-    });
-  } catch (error) {
-    return toErrorResponse(error);
-  }
-}
-
-export async function POST(
-  request: Request,
-  context: { params: Promise<{ scenario: string }> },
-) {
-  try {
-    const { scenario } = await context.params;
-    const payload = (await request.json()) as { name?: string };
-
-    return Response.json({
-      data: createReviewEnvironment(scenario, payload),
+      data: deleteReviewEnvironment(scenario, id),
     });
   } catch (error) {
     return toErrorResponse(error);

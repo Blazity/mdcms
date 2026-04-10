@@ -363,6 +363,66 @@ Normative behavior:
 - Environment switching does not require host bridge cooperation. The host bridge
   does not define an environment navigation callback.
 
+### Environment Management (`/admin/environments`)
+
+The `/admin/environments` route is a live project-scoped environment management
+surface for the currently mounted project. It is backed by:
+
+- `GET /api/v1/environments` for the current project environment list
+- `POST /api/v1/environments` for environment creation
+- `DELETE /api/v1/environments/:id` for environment deletion
+- `GET /api/v1/me/capabilities` for shell-level admin navigation visibility
+
+Normative behavior:
+
+- The route manages only list/create/delete behavior in MVP. Clone, promote,
+  rename, description editing, and other environment workflows are out of scope
+  for this route until their owning work is specified.
+- Environment rows are rendered from the live `EnvironmentSummary[]` contract.
+  Studio must not render mock environment metadata, synthetic document counts,
+  or fake promotion history on this route.
+- The create flow submits `{ name }` to `POST /api/v1/environments`. Studio may
+  omit `extends` and rely on the server-side config validation rules defined by
+  the environment-management contract.
+- On successful create, the creation dialog closes and the environment list
+  reloads from the live API before the new row is presented as ready.
+- The default `production` environment is rendered as the non-deletable default
+  environment. Its delete action is disabled or omitted in the ready state.
+- Deleting a non-default environment requires an explicit confirmation step and,
+  on success, reloads the live environment list before removing the row from the
+  UI.
+- The route must surface deterministic server failures truthfully:
+  - `INVALID_INPUT` (`400`) on create is shown inline on the creation form.
+  - `CONFLICT` (`409`) on create or delete is shown inline without replacing the
+    current ready view.
+  - `NOT_FOUND` (`404`) on delete is surfaced as a non-destructive row/action
+    failure and followed by a live list reload.
+- The shell navigation entry for `/admin/environments` follows the same
+  admin-owned visibility policy as other admin surfaces. Until a dedicated
+  environment-management capability exists, Studio may use the current
+  capability snapshot to hide the entry unless the caller exposes at least one
+  admin-only capability (`capabilities.users.manage` or
+  `capabilities.settings.manage`).
+- Direct navigation to `/admin/environments` remains supported even when the
+  navigation entry is hidden. Route authorization still depends on the
+  environment-management endpoints; hidden navigation is advisory UI gating, not
+  the security boundary.
+
+Deterministic states:
+
+- While the initial environment list request is pending, the route renders a
+  dedicated loading state for environment management instead of mock cards.
+- If `GET /api/v1/environments` returns `401` or `403`, the route renders a
+  forbidden state for the active project.
+- If `GET /api/v1/environments` returns a non-auth, non-forbidden failure, the
+  route renders an error state with a retry action.
+- If `GET /api/v1/environments` succeeds with zero rows, the route renders an
+  empty state for the active project. When the current caller is allowed to use
+  the route, the empty state may include the create affordance.
+- When the list request succeeds with one or more rows, the route renders a
+  ready state with per-row metadata limited to the live environment summary
+  contract (`name`, `extends`, default status, `createdAt`).
+
 ### Target-Scoped Capabilities and Schema Recovery
 
 Studio uses `GET /api/v1/me/capabilities` as the canonical source for
