@@ -3,7 +3,15 @@
 import { useEffect, useState } from "react";
 
 import type { EnvironmentSummary } from "@mdcms/shared";
-import { Plus, Trash2 } from "lucide-react";
+import {
+  ArrowRightLeft,
+  Clock,
+  GitBranch,
+  MoreHorizontal,
+  Plus,
+  Shield,
+  Trash2,
+} from "lucide-react";
 
 import { createStudioEnvironmentApi } from "../../../environment-api.js";
 import { useStudioSession } from "./session-context.js";
@@ -24,8 +32,22 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../../components/ui/dialog.js";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../../components/ui/card.js";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../../components/ui/dropdown-menu.js";
 import { Input } from "../../components/ui/input.js";
 import { Label } from "../../components/ui/label.js";
+import { cn } from "../../lib/utils.js";
 
 export type EnvironmentManagementState =
   | {
@@ -51,6 +73,7 @@ export type EnvironmentManagementState =
 
 type EnvironmentManagementPageViewProps = {
   state: EnvironmentManagementState;
+  activeEnvironment?: string | null;
   createName?: string;
   createError?: string | null;
   actionError?: string | null;
@@ -64,6 +87,7 @@ type EnvironmentManagementPageViewProps = {
   onDeleteDialogChange?: (open: boolean) => void;
   onRequestDelete?: (environment: EnvironmentSummary) => void;
   onDeleteConfirm?: () => void;
+  onSwitchEnvironment?: (environment: string) => void;
   onRetry?: () => void;
 };
 
@@ -132,6 +156,31 @@ function formatCreatedAt(value: string): string {
   return date.toISOString();
 }
 
+const MONTH_ABBREV = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+function formatDisplayDate(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return `${MONTH_ABBREV[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()}`;
+}
+
 function sortEnvironments(
   environments: readonly EnvironmentSummary[],
 ): EnvironmentSummary[] {
@@ -158,6 +207,7 @@ function renderRetryButton(onRetry?: () => void) {
 
 export function EnvironmentManagementPageView({
   state,
+  activeEnvironment = null,
   createName = "",
   createError = null,
   actionError = null,
@@ -171,6 +221,7 @@ export function EnvironmentManagementPageView({
   onDeleteDialogChange,
   onRequestDelete,
   onDeleteConfirm,
+  onSwitchEnvironment,
   onRetry,
 }: EnvironmentManagementPageViewProps) {
   const canManage = state.status === "ready";
@@ -289,47 +340,104 @@ export function EnvironmentManagementPageView({
         ) : (
           <section
             data-mdcms-environments-page-state="ready"
-            className="grid gap-4"
+            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
           >
             {state.environments.map((environment) => (
-              <article
+              <Card
                 key={environment.id}
                 data-mdcms-environment-row={environment.name}
-                className="space-y-4 rounded-lg border p-4"
+                className={cn(
+                  "flex flex-col",
+                  environment.isDefault && "border-primary/40 shadow-md",
+                  activeEnvironment === environment.name &&
+                    "ring-2 ring-primary/50",
+                )}
               >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-lg font-semibold tracking-tight">
-                        {environment.name}
-                      </h2>
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={cn(
+                        "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+                        environment.isDefault
+                          ? "bg-primary/10 text-primary"
+                          : "bg-muted text-muted-foreground",
+                      )}
+                    >
                       {environment.isDefault ? (
-                        <Badge variant="secondary">Default</Badge>
-                      ) : null}
+                        <Shield className="h-5 w-5" />
+                      ) : (
+                        <GitBranch className="h-5 w-5" />
+                      )}
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      {environment.extends
-                        ? `Extends ${environment.extends}`
-                        : "No parent environment"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Created {formatCreatedAt(environment.createdAt)}
-                    </p>
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <CardTitle className="flex flex-wrap items-center gap-2">
+                        <span className="truncate">{environment.name}</span>
+                        {environment.isDefault ? (
+                          <Badge variant="secondary">Default</Badge>
+                        ) : null}
+                        {activeEnvironment === environment.name ? (
+                          <Badge variant="outline">Active</Badge>
+                        ) : null}
+                      </CardTitle>
+                      <CardDescription>
+                        {environment.extends
+                          ? `Extends ${environment.extends}`
+                          : "No parent environment"}
+                      </CardDescription>
+                    </div>
+                    {!environment.isDefault ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Actions for ${environment.name}`}
+                            data-mdcms-environment-actions={environment.name}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                            <span className="sr-only">
+                              Delete {environment.name}
+                            </span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            disabled={pendingDeleteId === environment.id}
+                            onClick={() => onRequestDelete?.(environment)}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            {pendingDeleteId === environment.id
+                              ? `Deleting ${environment.name}...`
+                              : `Delete ${environment.name}`}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : null}
                   </div>
-                  {!environment.isDefault ? (
+                </CardHeader>
+                <CardContent className="mt-auto space-y-3">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Clock className="h-3.5 w-3.5" />
+                    <time dateTime={formatCreatedAt(environment.createdAt)}>
+                      Created {formatDisplayDate(environment.createdAt)}
+                    </time>
+                  </div>
+                  {activeEnvironment !== environment.name ? (
                     <Button
                       variant="outline"
-                      disabled={pendingDeleteId === environment.id}
-                      onClick={() => onRequestDelete?.(environment)}
+                      size="sm"
+                      className="w-full"
+                      onClick={() =>
+                        onSwitchEnvironment?.(environment.name)
+                      }
                     >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      {pendingDeleteId === environment.id
-                        ? `Deleting ${environment.name}...`
-                        : `Delete ${environment.name}`}
+                      <ArrowRightLeft className="mr-2 h-4 w-4" />
+                      Switch to {environment.name}
                     </Button>
                   ) : null}
-                </div>
-              </article>
+                </CardContent>
+              </Card>
             ))}
           </section>
         )}
@@ -374,7 +482,8 @@ export function EnvironmentManagementPageView({
 }
 
 export default function EnvironmentsPage() {
-  const { project, environment, apiBaseUrl, auth } = useStudioMountInfo();
+  const { project, environment, setEnvironment, apiBaseUrl, auth } =
+    useStudioMountInfo();
   const sessionState = useStudioSession();
   const [state, setState] = useState<EnvironmentManagementState>(() =>
     project ? createLoadingState(project) : createMissingRouteState(),
@@ -535,6 +644,7 @@ export default function EnvironmentsPage() {
   return (
     <EnvironmentManagementPageView
       state={state}
+      activeEnvironment={environment}
       createName={createName}
       createError={createError}
       actionError={actionError}
@@ -561,6 +671,7 @@ export default function EnvironmentsPage() {
         setDeleteTarget(environment);
       }}
       onDeleteConfirm={handleDeleteConfirm}
+      onSwitchEnvironment={setEnvironment}
       onRetry={() => {
         setActionError(null);
         setReloadVersion((current) => current + 1);
