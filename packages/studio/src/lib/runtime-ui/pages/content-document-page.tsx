@@ -2079,6 +2079,7 @@ export default function ContentDocumentPage({
       if (
         publishedBody !== currentState.draftBody &&
         latestAfterPublish.status === "ready" &&
+        latestAfterPublish.documentId === currentState.documentId &&
         latestAfterPublish.draftBody === currentState.draftBody &&
         !latestAfterPublish.viewingVersion
       ) {
@@ -2247,6 +2248,7 @@ export default function ContentDocumentPage({
     if (
       persistedBody !== requestBody &&
       latestAfterSave.status === "ready" &&
+      latestAfterSave.documentId === currentState.documentId &&
       latestAfterSave.draftBody === requestBody &&
       !latestAfterSave.viewingVersion
     ) {
