@@ -4,6 +4,7 @@ import {
   type ChangeEvent,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -1942,10 +1943,13 @@ export default function ContentDocumentPage({
   const stateRef = useRef(state);
   const loadRequestIdRef = useRef(0);
 
-  // Sync ref immediately so event handlers and async callbacks always
-  // see the latest committed state — not deferred to a useEffect which
-  // can lag behind when promises resolve between commit and effect.
-  stateRef.current = state;
+  // Sync ref after commit so event handlers and async callbacks always
+  // see the latest committed state. useLayoutEffect runs synchronously
+  // after commit but before paint, avoiding the stale-ref gap of useEffect
+  // while respecting React's rule against mutating refs during render.
+  useLayoutEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   function createRouteApi(): StudioDocumentRouteApi | undefined {
     if (!context || !route) {
@@ -2169,7 +2173,6 @@ export default function ContentDocumentPage({
     }
 
     setState(nextState);
-    stateRef.current = nextState;
   });
 
   const saveDraft = useEffectEvent(async (): Promise<boolean> => {
@@ -2256,7 +2259,8 @@ export default function ContentDocumentPage({
     }
 
     setState((current) =>
-      current.status === "ready"
+      current.status === "ready" &&
+      current.documentId === currentState.documentId
         ? applySuccessfulDraftSaveToReadyState({
             state: current,
             requestBody,
@@ -2459,6 +2463,7 @@ export default function ContentDocumentPage({
       const afterFetch = stateRef.current;
       if (
         afterFetch.status !== "ready" ||
+        afterFetch.documentId !== currentState.documentId ||
         afterFetch.viewingVersion?.version !== version
       ) {
         return;
