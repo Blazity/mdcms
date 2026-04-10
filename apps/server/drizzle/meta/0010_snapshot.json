@@ -1368,8 +1368,8 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "token": {
-          "name": "token",
+        "token_hash": {
+          "name": "token_hash",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -1475,10 +1475,10 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "uniq_invites_token": {
-          "name": "uniq_invites_token",
+        "uniq_invites_token_hash": {
+          "name": "uniq_invites_token_hash",
           "nullsNotDistinct": false,
-          "columns": ["token"]
+          "columns": ["token_hash"]
         }
       },
       "policies": {},
