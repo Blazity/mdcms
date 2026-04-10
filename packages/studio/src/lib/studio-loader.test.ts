@@ -401,6 +401,26 @@ test("isPreparedDocumentRouteMetadata rejects malformed nested route metadata", 
   );
   assert.equal(
     isPreparedDocumentRouteMetadata({
+      schemaHashesByEnvironment: ["production-schema-hash"],
+      environmentFieldTargets: {
+        BlogPost: {
+          featured: ["production"],
+        },
+      },
+    }),
+    false,
+  );
+  assert.equal(
+    isPreparedDocumentRouteMetadata({
+      schemaHashesByEnvironment: {
+        production: "production-schema-hash",
+      },
+      environmentFieldTargets: [],
+    }),
+    false,
+  );
+  assert.equal(
+    isPreparedDocumentRouteMetadata({
       schemaHashesByEnvironment: {
         production: "production-schema-hash",
       },

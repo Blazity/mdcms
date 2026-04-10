@@ -2277,19 +2277,29 @@ export default function ContentDocumentPage({
       return;
     }
 
+    const requestToken = createContentDocumentRouteRequestToken({
+      documentId: currentState.documentId,
+      route: currentState.route,
+    });
+
     // Sync Schema forwards the authored config snapshot through the schema
     // registry contract; Studio does not edit schema definitions here.
     const nextSchemaState = await syncSchemaStateForGuard(
       currentState.schemaState,
     );
 
-    if (!nextSchemaState) {
+    const latestAfterSync = stateRef.current;
+    if (
+      !nextSchemaState ||
+      latestAfterSync.status !== "ready" ||
+      !matchesContentDocumentRouteRequestToken(requestToken, latestAfterSync)
+    ) {
       return;
     }
 
     setState((current) =>
       current.status === "ready" &&
-      current.documentId === currentState.documentId
+      matchesContentDocumentRouteRequestToken(requestToken, current)
         ? applySchemaStateToReadyState({
             state: current,
             schemaState: nextSchemaState,
@@ -2511,10 +2521,16 @@ export default function ContentDocumentPage({
 
   const handleCreateVariant = useEffectEvent(async (prefill: boolean) => {
     const currentState = stateRef.current;
-    const api = createRouteApi();
+    const requestContext = activeContext;
+    const requestRoute = route;
+    const api = createRouteApi({
+      context: requestContext,
+      route: requestRoute,
+    });
 
     if (
       !api ||
+      !requestRoute ||
       currentState.status !== "ready" ||
       !currentState.variantCreation ||
       !currentState.canWrite
@@ -2522,6 +2538,10 @@ export default function ContentDocumentPage({
       return;
     }
 
+    const requestToken = createContentDocumentRouteRequestToken({
+      documentId: currentState.documentId,
+      route: requestRoute,
+    });
     const { targetLocale, sourceDocumentId } = currentState.variantCreation;
 
     setState((current) =>
@@ -2551,6 +2571,18 @@ export default function ContentDocumentPage({
           type: currentState.typeId,
           locale: currentState.variantCreation.sourceLocale,
         });
+
+        const latestAfterSourceLoad = stateRef.current;
+        if (
+          latestAfterSourceLoad.status !== "ready" ||
+          !matchesContentDocumentRouteRequestToken(
+            requestToken,
+            latestAfterSourceLoad,
+          )
+        ) {
+          return;
+        }
+
         sourceBody = sourceDoc.body ?? "";
         sourceFrontmatter = sourceDoc.frontmatter ?? {};
         sourceFormat = sourceDoc.format ?? "mdx";
@@ -2564,16 +2596,39 @@ export default function ContentDocumentPage({
         frontmatter: prefill ? sourceFrontmatter : {},
         body: prefill ? sourceBody : "",
         sourceDocumentId,
-        schemaHash: route?.write.canWrite ? route.write.schemaHash : undefined,
+        schemaHash: requestRoute.write.canWrite
+          ? requestRoute.write.schemaHash
+          : undefined,
       });
+
+      const latestAfterCreate = stateRef.current;
+      if (
+        latestAfterCreate.status !== "ready" ||
+        !matchesContentDocumentRouteRequestToken(
+          requestToken,
+          latestAfterCreate,
+        )
+      ) {
+        return;
+      }
 
       router.push(`/admin/content/${currentState.typeId}/${result.documentId}`);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to create variant.";
 
+      const latestAfterError = stateRef.current;
+      if (
+        latestAfterError.status !== "ready" ||
+        !matchesContentDocumentRouteRequestToken(requestToken, latestAfterError)
+      ) {
+        return;
+      }
+
       setState((current) =>
-        current.status === "ready" && current.variantCreation
+        current.status === "ready" &&
+        matchesContentDocumentRouteRequestToken(requestToken, current) &&
+        current.variantCreation
           ? {
               ...current,
               variantCreation: {
