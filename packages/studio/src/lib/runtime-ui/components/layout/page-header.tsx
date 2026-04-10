@@ -236,12 +236,7 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
           {mountInfo.project && accessibleProjects.length > 1 ? (
             <Select
               value={mountInfo.project}
-              onValueChange={(slug) => {
-                const url = new URL(window.location.href);
-                url.searchParams.set("project", slug);
-                url.searchParams.delete("env");
-                window.location.href = url.toString();
-              }}
+              onValueChange={(slug) => mountInfo.setProject(slug)}
             >
               <SelectTrigger className="w-36 h-9">
                 <SelectValue />

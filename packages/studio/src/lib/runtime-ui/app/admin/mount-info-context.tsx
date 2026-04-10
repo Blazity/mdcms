@@ -16,6 +16,7 @@ import type {
 export type StudioMountInfo = {
   project: string | null;
   environment: string | null;
+  setProject: (project: string) => void;
   setEnvironment: (environment: string) => void;
   apiBaseUrl: string;
   auth: StudioMountContext["auth"];
@@ -27,6 +28,7 @@ export type StudioMountInfo = {
 const DEFAULT_MOUNT_INFO: StudioMountInfo = {
   project: null,
   environment: null,
+  setProject: () => {},
   setEnvironment: () => {},
   apiBaseUrl: "",
   auth: { mode: "cookie" },

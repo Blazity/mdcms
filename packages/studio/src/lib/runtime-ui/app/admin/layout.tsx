@@ -78,7 +78,7 @@ export default function AdminLayout({
   const [canDeleteContent, setCanDeleteContent] = useState(false);
   const [canManageUsers, setCanManageUsers] = useState(false);
   const [canManageSettings, setCanManageSettings] = useState(false);
-  const [activeProject] = useState<string | null>(() => {
+  const [activeProject, setActiveProjectRaw] = useState<string | null>(() => {
     if (typeof window !== "undefined") {
       const fromQuery = new URLSearchParams(window.location.search).get(
         "project",
@@ -87,6 +87,18 @@ export default function AdminLayout({
     }
     return context.documentRoute?.project ?? null;
   });
+
+  const setActiveProject = useCallback((project: string) => {
+    setActiveProjectRaw(project);
+    // Reset environment when switching projects — the previous env may not exist
+    setActiveEnvironmentRaw(null);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("project", project);
+      url.searchParams.delete("env");
+      window.history.replaceState(null, "", url.toString());
+    }
+  }, []);
 
   const [activeEnvironment, setActiveEnvironmentRaw] = useState<string | null>(
     () => {
@@ -236,16 +248,20 @@ export default function AdminLayout({
 
   // Fetch environments
   useEffect(() => {
-    if (!activeProject || !activeEnvironment) {
+    if (!activeProject) {
       setEnvironments([]);
       return;
     }
+
+    // Use the current environment for the routing header, or fall back to a
+    // placeholder — the list endpoint only needs a valid project.
+    const routingEnv = activeEnvironment ?? "default";
 
     let cancelled = false;
     const envApi = createStudioEnvironmentApi(
       {
         project: activeProject,
-        environment: activeEnvironment,
+        environment: routingEnv,
         serverUrl: context.apiBaseUrl,
       },
       { auth: context.auth },
@@ -256,6 +272,11 @@ export default function AdminLayout({
       .then((list) => {
         if (!cancelled) {
           setEnvironments(list);
+          // Auto-select the first environment when none is active (e.g. after
+          // a project switch).
+          if (!activeEnvironment && list.length > 0) {
+            setActiveEnvironment(list[0]!.name);
+          }
         }
       })
       .catch(() => {
@@ -273,6 +294,7 @@ export default function AdminLayout({
     context.auth.token,
     activeEnvironment,
     activeProject,
+    setActiveEnvironment,
   ]);
 
   const pathname = usePathname();
@@ -326,6 +348,7 @@ export default function AdminLayout({
   const mountInfo = {
     project: activeProject,
     environment: activeEnvironment,
+    setProject: setActiveProject,
     setEnvironment: setActiveEnvironment,
     apiBaseUrl: context.apiBaseUrl,
     auth: context.auth,
