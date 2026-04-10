@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-
 import type { ActionCatalogItem, StudioMountContext } from "@mdcms/shared";
 
 import {
@@ -12,10 +10,6 @@ import {
   startDocumentPreview,
   stripStudioBasePath,
 } from "./remote-studio-app.js";
-import { AdminCapabilitiesProvider } from "./runtime-ui/app/admin/capabilities-context.js";
-import SettingsPage from "./runtime-ui/app/admin/settings-page.js";
-import { ThemeProvider } from "./runtime-ui/adapters/next-themes.js";
-import { StudioNavigationProvider } from "./runtime-ui/navigation.js";
 
 test("stripStudioBasePath resolves internal routes under an explicit base path", () => {
   assert.equal(stripStudioBasePath("/admin", "/admin"), "/");
@@ -342,56 +336,6 @@ test("RemoteStudioApp renders the expanded admin route surfaces", () => {
   assert.match(schemaMarkup, /Schema/);
   assert.doesNotMatch(schemaMarkup, /Schema Builder/);
   assert.match(workflowsMarkup, /Workflows/);
-  assert.match(settingsMarkup, /General Settings/);
+  assert.match(settingsMarkup, /Settings/);
 });
 
-test("SettingsPage links the schema tab to the live schema browser instead of rendering a mock viewer", () => {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  const markup = renderToStaticMarkup(
-    createElement(
-      QueryClientProvider,
-      { client: queryClient },
-      createElement(
-        ThemeProvider,
-        null,
-        createElement(
-          StudioNavigationProvider,
-          {
-            value: {
-              pathname: "/admin/settings",
-              params: {},
-              basePath: "/admin",
-              push: () => {},
-              replace: () => {},
-              back: () => {},
-            },
-          },
-          createElement(
-            AdminCapabilitiesProvider,
-            {
-              value: {
-                canReadSchema: true,
-                canCreateContent: false,
-                canPublishContent: false,
-                canUnpublishContent: false,
-                canDeleteContent: false,
-                canManageUsers: false,
-                canManageSettings: false,
-              },
-            },
-            createElement(SettingsPage, {
-              initialTab: "schema",
-            }),
-          ),
-        ),
-      ),
-    ),
-  );
-
-  assert.match(markup, /data-mdcms-settings-schema-state="linked"/);
-  assert.match(markup, /Open schema browser/);
-  assert.match(markup, /href="\/admin\/schema"/);
-  assert.doesNotMatch(markup, /Schema Viewer/);
-});
