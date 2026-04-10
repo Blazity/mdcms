@@ -1568,15 +1568,14 @@ test("ContentDocumentPageView renders environment-specific field badges inline w
 
   const markup = renderPageMarkup(state);
 
-  assert.match(markup, /Frontmatter/);
   assert.match(markup, /data-mdcms-property-field="featured"/);
   assert.match(markup, /data-mdcms-property-type="boolean"/);
   assert.match(markup, />featured</);
-  assert.match(markup, /staging only/);
+  assert.match(markup, /staging/);
   assert.match(markup, /data-mdcms-property-field="abTestVariant"/);
   assert.match(markup, /data-mdcms-property-type="string"/);
   assert.match(markup, />abTestVariant</);
-  assert.match(markup, /preview, staging only/);
+  assert.match(markup, /preview, staging/);
 });
 
 test("ContentDocumentPageView renders schema-driven property controls and unsupported fallback rows", () => {
@@ -1660,9 +1659,9 @@ test("ContentDocumentPageView renders schema-driven property controls and unsupp
   assert.match(markup, /data-mdcms-property-editor="select"/);
   assert.match(markup, /data-mdcms-property-field="metadata"/);
   assert.match(markup, /data-mdcms-property-type="object"/);
-  assert.match(markup, /Not editable in Studio yet/);
+  assert.match(markup, /Not editable yet/);
   assert.match(markup, /data-mdcms-property-field="featured"/);
-  assert.match(markup, /staging only/);
+  assert.match(markup, /staging/);
   assert.match(markup, />string</);
   assert.match(markup, />number</);
   assert.match(markup, />boolean</);

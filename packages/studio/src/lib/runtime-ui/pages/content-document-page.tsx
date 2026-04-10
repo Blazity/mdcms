@@ -57,7 +57,6 @@ import {
   DialogTitle,
 } from "../components/ui/dialog.js";
 import { Input } from "../components/ui/input.js";
-import { Label } from "../components/ui/label.js";
 import { Textarea } from "../components/ui/textarea.js";
 import {
   Tooltip,
@@ -1954,210 +1953,230 @@ function SidebarPropertiesTab(props: {
     !props.state.canWrite || !!props.state.viewingVersion;
 
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="p-4">
       {propertyDescriptors.length > 0 ? (
-        <div>
-          <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">
-            Frontmatter
-          </div>
-          <div className="flex flex-col gap-2">
-            {propertyDescriptors.map((descriptor) => {
-              const inputId = `document-property-${descriptor.fieldName}`;
+        <div className="flex flex-col">
+          {propertyDescriptors.map((descriptor) => {
+            const inputId = `document-property-${descriptor.fieldName}`;
+            const envLabel = descriptor.badgeLabel?.replace(/ only$/, "");
 
+            if (
+              descriptor.status === "editable" &&
+              descriptor.control.kind === "boolean"
+            ) {
               return (
                 <div
                   key={descriptor.fieldName}
                   data-mdcms-property-field={descriptor.fieldName}
                   data-mdcms-property-type={descriptor.typeLabel}
-                  data-mdcms-property-editor={
-                    descriptor.status === "editable"
-                      ? descriptor.control.kind
-                      : "unsupported"
-                  }
-                  className="rounded-md border border-border bg-background-subtle px-3 py-3"
+                  data-mdcms-property-editor="boolean"
+                  className="flex items-center justify-between border-b border-border py-2.5 last:border-b-0"
                 >
-                  <div className="flex flex-col gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Label
-                        htmlFor={inputId}
-                        className="font-mono text-xs text-foreground"
-                      >
-                        {descriptor.fieldName}
-                      </Label>
-                      <Badge variant="outline" className="shrink-0 text-[10px]">
-                        {descriptor.typeLabel}
-                      </Badge>
-                      {descriptor.badgeLabel ? (
-                        <Badge
-                          variant="outline"
-                          className="shrink-0 text-[10px]"
-                        >
-                          {descriptor.badgeLabel}
-                        </Badge>
+                  <div className="flex items-baseline gap-1.5">
+                    <label
+                      htmlFor={inputId}
+                      className="text-xs font-medium text-foreground"
+                    >
+                      {descriptor.fieldName}
+                      {descriptor.field.required ? (
+                        <span className="text-destructive"> *</span>
                       ) : null}
-                      {!descriptor.field.required ? (
-                        <Badge
-                          variant="outline"
-                          className="shrink-0 text-[10px]"
-                        >
-                          Optional
-                        </Badge>
-                      ) : null}
-                    </div>
-
-                    {descriptor.status === "editable" ? (
-                      <>
-                        {descriptor.control.kind === "string" ? (
-                          <Input
-                            id={inputId}
-                            type="text"
-                            value={descriptor.control.value}
-                            disabled={propertiesReadOnly}
-                            onChange={(event) =>
-                              props.onFrontmatterFieldChange?.(
-                                descriptor.fieldName,
-                                event.currentTarget.value.length === 0 &&
-                                  descriptor.control.canUnset
-                                  ? unsetFieldValue(descriptor.field)
-                                  : event.currentTarget.value,
-                              )
-                            }
-                          />
-                        ) : null}
-
-                        {descriptor.control.kind === "number" ? (
-                          <Input
-                            id={inputId}
-                            type="number"
-                            inputMode="decimal"
-                            value={descriptor.control.value ?? ""}
-                            disabled={propertiesReadOnly}
-                            onChange={(event) => {
-                              const rawValue = event.currentTarget.value.trim();
-
-                              if (rawValue.length === 0) {
-                                if (descriptor.control.canUnset) {
-                                  props.onFrontmatterFieldChange?.(
-                                    descriptor.fieldName,
-                                    unsetFieldValue(descriptor.field),
-                                  );
-                                }
-                                return;
-                              }
-
-                              const nextValue = Number(rawValue);
-
-                              if (Number.isFinite(nextValue)) {
-                                props.onFrontmatterFieldChange?.(
-                                  descriptor.fieldName,
-                                  nextValue,
-                                );
-                              }
-                            }}
-                          />
-                        ) : null}
-
-                        {descriptor.control.kind === "boolean" ? (
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="text-xs text-foreground-muted">
-                              {descriptor.control.isUnset
-                                ? "Unset"
-                                : descriptor.control.value
-                                  ? "Enabled"
-                                  : "Disabled"}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {descriptor.control.canUnset &&
-                              !descriptor.control.isUnset ? (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  disabled={propertiesReadOnly}
-                                  onClick={() =>
-                                    props.onFrontmatterFieldChange?.(
-                                      descriptor.fieldName,
-                                      unsetFieldValue(descriptor.field),
-                                    )
-                                  }
-                                >
-                                  Unset
-                                </Button>
-                              ) : null}
-                              <Switch
-                                id={inputId}
-                                checked={descriptor.control.value}
-                                disabled={propertiesReadOnly}
-                                aria-label={descriptor.fieldName}
-                                onCheckedChange={(checked) =>
-                                  props.onFrontmatterFieldChange?.(
-                                    descriptor.fieldName,
-                                    checked,
-                                  )
-                                }
-                              />
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {descriptor.control.kind === "select" ? (
-                          <Select
-                            value={
-                              descriptor.control.value === undefined ||
-                              descriptor.control.value === null
-                                ? PROPERTY_SELECT_UNSET_VALUE
-                                : JSON.stringify(descriptor.control.value)
-                            }
-                            disabled={propertiesReadOnly}
-                            onValueChange={(value) =>
-                              props.onFrontmatterFieldChange?.(
-                                descriptor.fieldName,
-                                value === PROPERTY_SELECT_UNSET_VALUE
-                                  ? unsetFieldValue(descriptor.field)
-                                  : JSON.parse(value),
-                              )
-                            }
-                          >
-                            <SelectTrigger id={inputId} className="w-full">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {descriptor.control.canUnset ? (
-                                <SelectItem value={PROPERTY_SELECT_UNSET_VALUE}>
-                                  Unset
-                                </SelectItem>
-                              ) : null}
-                              {descriptor.control.options.map((option) => (
-                                <SelectItem
-                                  key={JSON.stringify(option)}
-                                  value={JSON.stringify(option)}
-                                >
-                                  {formatPropertyOptionLabel(option)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : null}
-                      </>
-                    ) : (
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-foreground-muted">
-                        <span>Not editable in Studio yet</span>
-                      </div>
-                    )}
-
-                    {descriptor.error ? (
-                      <p
-                        data-mdcms-property-error={descriptor.fieldName}
-                        className="text-xs text-destructive"
-                      >
-                        {descriptor.error}
-                      </p>
+                    </label>
+                    {envLabel ? (
+                      <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-500">
+                        {envLabel}
+                      </span>
                     ) : null}
+                    <span className="font-mono text-[10px] text-foreground-muted">
+                      {descriptor.typeLabel}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-foreground-muted">
+                      {descriptor.control.isUnset
+                        ? "Unset"
+                        : descriptor.control.value
+                          ? "On"
+                          : "Off"}
+                    </span>
+                    {descriptor.control.canUnset &&
+                    !descriptor.control.isUnset ? (
+                      <button
+                        type="button"
+                        disabled={propertiesReadOnly}
+                        className="text-[11px] text-foreground-muted hover:text-foreground disabled:opacity-50"
+                        onClick={() =>
+                          props.onFrontmatterFieldChange?.(
+                            descriptor.fieldName,
+                            unsetFieldValue(descriptor.field),
+                          )
+                        }
+                      >
+                        Unset
+                      </button>
+                    ) : null}
+                    <Switch
+                      id={inputId}
+                      checked={descriptor.control.value}
+                      disabled={propertiesReadOnly}
+                      aria-label={descriptor.fieldName}
+                      onCheckedChange={(checked) =>
+                        props.onFrontmatterFieldChange?.(
+                          descriptor.fieldName,
+                          checked,
+                        )
+                      }
+                    />
                   </div>
                 </div>
               );
-            })}
-          </div>
+            }
+
+            return (
+              <div
+                key={descriptor.fieldName}
+                data-mdcms-property-field={descriptor.fieldName}
+                data-mdcms-property-type={descriptor.typeLabel}
+                data-mdcms-property-editor={
+                  descriptor.status === "editable"
+                    ? descriptor.control.kind
+                    : "unsupported"
+                }
+                className={cn(
+                  "flex flex-col gap-1.5 border-b border-border py-2.5 last:border-b-0",
+                  descriptor.status !== "editable" && "opacity-50",
+                )}
+              >
+                <div className="flex items-baseline justify-between">
+                  <div className="flex items-baseline gap-1.5">
+                    <label
+                      htmlFor={inputId}
+                      className="text-xs font-medium text-foreground"
+                    >
+                      {descriptor.fieldName}
+                      {descriptor.field.required ? (
+                        <span className="text-destructive"> *</span>
+                      ) : null}
+                    </label>
+                    {envLabel ? (
+                      <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-500">
+                        {envLabel}
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="font-mono text-[10px] text-foreground-muted">
+                    {descriptor.typeLabel}
+                  </span>
+                </div>
+
+                {descriptor.status === "editable" ? (
+                  <>
+                    {descriptor.control.kind === "string" ? (
+                      <Input
+                        id={inputId}
+                        type="text"
+                        value={descriptor.control.value}
+                        disabled={propertiesReadOnly}
+                        onChange={(event) =>
+                          props.onFrontmatterFieldChange?.(
+                            descriptor.fieldName,
+                            event.currentTarget.value.length === 0 &&
+                              descriptor.control.canUnset
+                              ? unsetFieldValue(descriptor.field)
+                              : event.currentTarget.value,
+                          )
+                        }
+                      />
+                    ) : null}
+
+                    {descriptor.control.kind === "number" ? (
+                      <Input
+                        id={inputId}
+                        type="number"
+                        inputMode="decimal"
+                        value={descriptor.control.value ?? ""}
+                        disabled={propertiesReadOnly}
+                        onChange={(event) => {
+                          const rawValue = event.currentTarget.value.trim();
+
+                          if (rawValue.length === 0) {
+                            if (descriptor.control.canUnset) {
+                              props.onFrontmatterFieldChange?.(
+                                descriptor.fieldName,
+                                unsetFieldValue(descriptor.field),
+                              );
+                            }
+                            return;
+                          }
+
+                          const nextValue = Number(rawValue);
+
+                          if (Number.isFinite(nextValue)) {
+                            props.onFrontmatterFieldChange?.(
+                              descriptor.fieldName,
+                              nextValue,
+                            );
+                          }
+                        }}
+                      />
+                    ) : null}
+
+                    {descriptor.control.kind === "select" ? (
+                      <Select
+                        value={
+                          descriptor.control.value === undefined ||
+                          descriptor.control.value === null
+                            ? PROPERTY_SELECT_UNSET_VALUE
+                            : JSON.stringify(descriptor.control.value)
+                        }
+                        disabled={propertiesReadOnly}
+                        onValueChange={(value) =>
+                          props.onFrontmatterFieldChange?.(
+                            descriptor.fieldName,
+                            value === PROPERTY_SELECT_UNSET_VALUE
+                              ? unsetFieldValue(descriptor.field)
+                              : JSON.parse(value),
+                          )
+                        }
+                      >
+                        <SelectTrigger id={inputId} className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {descriptor.control.canUnset ? (
+                            <SelectItem value={PROPERTY_SELECT_UNSET_VALUE}>
+                              Unset
+                            </SelectItem>
+                          ) : null}
+                          {descriptor.control.options.map((option) => (
+                            <SelectItem
+                              key={JSON.stringify(option)}
+                              value={JSON.stringify(option)}
+                            >
+                              {formatPropertyOptionLabel(option)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : null}
+                  </>
+                ) : (
+                  <span className="text-[11px] italic text-foreground-muted">
+                    Not editable yet
+                  </span>
+                )}
+
+                {descriptor.error ? (
+                  <p
+                    data-mdcms-property-error={descriptor.fieldName}
+                    className="text-xs text-destructive"
+                  >
+                    {descriptor.error}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       ) : null}
     </div>
