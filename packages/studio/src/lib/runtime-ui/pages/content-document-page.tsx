@@ -1882,14 +1882,10 @@ function formatPropertyOptionLabel(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function SidebarPropertiesTab(props: {
+export function SidebarInfoTab(props: {
   state: ContentDocumentPageReadyState;
-  onFrontmatterFieldChange?: (fieldName: string, value: unknown) => void;
 }) {
   const status = getStatusBadge(props.state);
-  const propertyDescriptors = getPropertyDescriptors(props.state);
-  const propertiesReadOnly =
-    !props.state.canWrite || !!props.state.viewingVersion;
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -1941,7 +1937,20 @@ function SidebarPropertiesTab(props: {
           {props.state.document.path}
         </span>
       </div>
+    </div>
+  );
+}
 
+function SidebarPropertiesTab(props: {
+  state: ContentDocumentPageReadyState;
+  onFrontmatterFieldChange?: (fieldName: string, value: unknown) => void;
+}) {
+  const propertyDescriptors = getPropertyDescriptors(props.state);
+  const propertiesReadOnly =
+    !props.state.canWrite || !!props.state.viewingVersion;
+
+  return (
+    <div className="flex flex-col gap-4 p-4">
       {propertyDescriptors.length > 0 ? (
         <div>
           <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">
@@ -2254,7 +2263,7 @@ function ContentDocumentPageSidebar(props: {
   onViewVersion?: (version: number) => void;
   onBackToDraft?: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"properties" | "history">(
+  const [activeTab, setActiveTab] = useState<"properties" | "info" | "history">(
     "properties",
   );
 
@@ -2281,6 +2290,18 @@ function ContentDocumentPageSidebar(props: {
           type="button"
           className={cn(
             "flex-1 py-2.5 text-center text-xs font-semibold transition-colors",
+            activeTab === "info"
+              ? "border-b-2 border-accent text-accent"
+              : "text-foreground-muted hover:text-foreground",
+          )}
+          onClick={() => setActiveTab("info")}
+        >
+          Info
+        </button>
+        <button
+          type="button"
+          className={cn(
+            "flex-1 py-2.5 text-center text-xs font-semibold transition-colors",
             activeTab === "history"
               ? "border-b-2 border-accent text-accent"
               : "text-foreground-muted hover:text-foreground",
@@ -2298,6 +2319,8 @@ function ContentDocumentPageSidebar(props: {
             state={props.state}
             onFrontmatterFieldChange={props.onFrontmatterFieldChange}
           />
+        ) : activeTab === "info" ? (
+          <SidebarInfoTab state={props.state} />
         ) : (
           <SidebarHistoryTab
             state={props.state}

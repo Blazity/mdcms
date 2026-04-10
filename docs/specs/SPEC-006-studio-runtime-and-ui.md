@@ -349,13 +349,17 @@ Normative behavior:
   to that mutable head snapshot.
 - The primary canvas edits the document `body` through the editor engine owned
   by SPEC-007.
-- The right sidebar exposes two tabs:
-  - `Properties` for document metadata and schema-driven frontmatter editing
+- The right sidebar exposes three tabs:
+  - `Properties` for schema-driven frontmatter editing
+  - `Info` for document system metadata
   - `History` for publish history and version comparison
-- The `Properties` tab shows the existing system metadata (`status`,
-  `publishedVersion`, `locale`, `updatedAt`, `path`) and, below it, the
-  schema-derived frontmatter fields for the current type in the active
-  environment.
+- `Properties` is dedicated to schema-derived frontmatter fields for the
+  current type in the active environment.
+- `Properties` does not render document system metadata such as `status`,
+  `publishedVersion`, `locale`, `updatedAt`, or `path`.
+- `Info` shows the existing read-only document metadata (`status`,
+  `publishedVersion`, `locale`, `updatedAt`, `path`).
+- The default selected sidebar tab is `Properties`.
 - Frontmatter controls are derived from the live resolved schema. Studio must
   not ship hard-coded per-type property forms for routed document editing.
 - MVP editable field support is intentionally narrow:

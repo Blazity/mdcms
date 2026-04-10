@@ -29,6 +29,7 @@ import {
   resolveActiveDocumentRouteContext,
   reduceContentDocumentPageReadyState,
   saveContentDocumentReadyState,
+  SidebarInfoTab,
   syncSchemaStateForGuard,
 } from "./content-document-page.js";
 
@@ -96,6 +97,12 @@ function renderPageMarkup(
       }),
     ),
   );
+}
+
+function renderInfoTabMarkup(
+  state: ReturnType<typeof createReadyState>,
+): string {
+  return renderToStaticMarkup(createElement(SidebarInfoTab, { state }));
 }
 
 function createReadyState(
@@ -1355,7 +1362,7 @@ test("loadContentDocumentPageState seeds arbitrary version comparison and diff s
   assert.equal(diff.rightVersion, 3);
 });
 
-test("ContentDocumentPageView renders tabbed sidebar with properties and history", () => {
+test("ContentDocumentPageView renders tabbed sidebar with properties, info, and history", () => {
   const ready = createReadyState();
   const readyMarkup = renderPageMarkup({
     ...ready,
@@ -1421,10 +1428,15 @@ test("ContentDocumentPageView renders tabbed sidebar with properties and history
 
   // The sidebar defaults to the Properties tab. Version history content
   // is in the History tab and version diff is in a modal, so they are
-  // not present in the default SSR render.
+  // not present in the default SSR render. System metadata moved to Info.
   assert.match(readyMarkup, /Properties/);
+  assert.match(readyMarkup, /Info/);
   assert.match(readyMarkup, /History/);
   assert.match(readyMarkup, /Publish document/);
+  assert.doesNotMatch(readyMarkup, /Status/);
+  assert.doesNotMatch(readyMarkup, /Published version/);
+  assert.doesNotMatch(readyMarkup, /Last edited/);
+  assert.doesNotMatch(readyMarkup, /Path/);
   // Old sidebar content should be gone
   assert.doesNotMatch(readyMarkup, /Document workflow/);
   assert.doesNotMatch(readyMarkup, /This page loads the routed draft/);
@@ -1432,6 +1444,31 @@ test("ContentDocumentPageView renders tabbed sidebar with properties and history
   assert.doesNotMatch(readyMarkup, /Move \/ Rename/);
   assert.doesNotMatch(readyMarkup, /View published version/);
   assert.doesNotMatch(readyMarkup, /Route status/);
+});
+
+test("SidebarInfoTab renders the document system metadata outside Properties", () => {
+  const state = createReadyState({
+    document: {
+      ...createReadyState().document,
+      hasUnpublishedChanges: false,
+      publishedVersion: 1,
+      path: "content/posts/hello-mdcms",
+      updatedAt: "2026-04-10T10:00:00.000Z",
+    },
+  });
+
+  const markup = renderInfoTabMarkup(state);
+
+  assert.match(markup, /Status/);
+  assert.match(markup, />Published</);
+  assert.match(markup, /Published version/);
+  assert.match(markup, />v1</);
+  assert.match(markup, /Locale/);
+  assert.match(markup, />en</);
+  assert.match(markup, /Last edited/);
+  assert.match(markup, /Path/);
+  assert.match(markup, /content\/posts\/hello-mdcms/);
+  assert.doesNotMatch(markup, /data-mdcms-property-field=/);
 });
 
 test("ContentDocumentPageView derives truthful document badges from live document state", () => {
