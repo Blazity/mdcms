@@ -38,7 +38,10 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/ui/table.js";
-import { useCanReadSchema } from "./capabilities-context.js";
+import {
+  useCanReadSchema,
+  useCanManageSettings,
+} from "./capabilities-context.js";
 import { PageHeader } from "../../components/layout/page-header.js";
 import { mockEnvironments, currentProject } from "../../lib/mock-data.js";
 import { cn } from "../../lib/utils.js";
@@ -59,6 +62,7 @@ export default function SettingsPage({
   const [activeTab, setActiveTab] = useState(initialTab);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const canReadSchema = useCanReadSchema();
+  const canManageSettings = useCanManageSettings();
   const basePath = useBasePath();
   const schemaBrowserHref = resolveStudioHref(basePath, "/schema");
   const {
@@ -302,6 +306,13 @@ export default function SettingsPage({
                 onSubmit={createKey}
                 isSubmitting={isCreating}
                 error={createError}
+                disabledScopes={
+                  canManageSettings
+                    ? undefined
+                    : new Set<
+                        import("../../api-keys-api.js").ApiKeyOperationScope
+                      >(["schema:write"])
+                }
               />
             </div>
           )}

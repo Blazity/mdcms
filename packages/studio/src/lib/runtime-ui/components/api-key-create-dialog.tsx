@@ -15,6 +15,7 @@ import { Button } from "./ui/button.js";
 import { Input } from "./ui/input.js";
 import { Label } from "./ui/label.js";
 import { Badge } from "./ui/badge.js";
+import { cn } from "../lib/utils.js";
 
 import type {
   ApiKeyOperationScope,
@@ -80,6 +81,7 @@ export type ApiKeyCreateDialogProps = {
   onSubmit: (input: ApiKeyCreateInput) => Promise<ApiKeyCreateResult>;
   isSubmitting: boolean;
   error: Error | null;
+  disabledScopes?: Set<ApiKeyOperationScope>;
 };
 
 type Step = "form" | "created";
@@ -90,6 +92,7 @@ export function ApiKeyCreateDialog({
   onSubmit,
   isSubmitting,
   error,
+  disabledScopes,
 }: ApiKeyCreateDialogProps) {
   const mountInfo = useStudioMountInfo();
   const [step, setStep] = useState<Step>("form");
@@ -101,6 +104,7 @@ export function ApiKeyCreateDialog({
     null,
   );
   const [copied, setCopied] = useState(false);
+  const [expiresAt, setExpiresAt] = useState("");
 
   useEffect(() => {
     if (!open) {
@@ -109,6 +113,7 @@ export function ApiKeyCreateDialog({
       setSelectedScopes(new Set());
       setCreatedResult(null);
       setCopied(false);
+      setExpiresAt("");
     }
   }, [open]);
 
@@ -140,6 +145,7 @@ export function ApiKeyCreateDialog({
       label: label.trim(),
       scopes: Array.from(selectedScopes),
       contextAllowlist,
+      ...(expiresAt ? { expiresAt: new Date(expiresAt).toISOString() } : {}),
     };
 
     const result = await onSubmit(input);
@@ -195,16 +201,26 @@ export function ApiKeyCreateDialog({
                     <div className="flex flex-wrap gap-1.5">
                       {group.scopes.map((scope) => {
                         const isSelected = selectedScopes.has(scope);
+                        const isDisabled =
+                          isSubmitting || disabledScopes?.has(scope);
                         return (
                           <button
                             key={scope}
                             type="button"
-                            disabled={isSubmitting}
+                            disabled={isDisabled}
                             onClick={() => toggleScope(scope)}
+                            title={
+                              disabledScopes?.has(scope)
+                                ? "Requires admin or owner role"
+                                : undefined
+                            }
                           >
                             <Badge
                               variant={isSelected ? "default" : "outline"}
-                              className="cursor-pointer select-none"
+                              className={cn(
+                                "cursor-pointer select-none",
+                                isDisabled && "opacity-50 cursor-not-allowed",
+                              )}
                             >
                               {scope}
                             </Badge>
@@ -214,6 +230,22 @@ export function ApiKeyCreateDialog({
                     </div>
                   </div>
                 ))}
+              </div>
+
+              {/* Expiration date */}
+              <div className="space-y-2">
+                <Label htmlFor="api-key-expires">Expires</Label>
+                <Input
+                  id="api-key-expires"
+                  type="date"
+                  value={expiresAt}
+                  onChange={(e) => setExpiresAt(e.target.value)}
+                  disabled={isSubmitting}
+                  min={new Date().toISOString().split("T")[0]}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Leave empty for no expiration.
+                </p>
               </div>
 
               {/* Error display */}
