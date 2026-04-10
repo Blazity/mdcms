@@ -166,6 +166,18 @@ export function shouldEnableTranslationCoverage(input: {
   return input.enableTranslationCoverage && input.supportedLocaleCount > 0;
 }
 
+export function getTranslationCoverageStatus(input: {
+  enableTranslationCoverage: boolean;
+  isLoading: boolean;
+  isFetching: boolean;
+  hasError: boolean;
+}): ContentTypeTranslationCoverageStatus {
+  if (!input.enableTranslationCoverage) return "idle";
+  if (input.isLoading || input.isFetching) return "loading";
+  if (input.hasError) return "error";
+  return "ready";
+}
+
 export function useContentTypeList(
   typeId: string,
   options: ContentTypeListOptions = {},
@@ -250,13 +262,16 @@ export function useContentTypeList(
     translationCoverageQuery.data ?? {};
   const translationCoverageStatus: ContentTypeTranslationCoverageStatus =
     useMemo(() => {
-      if (!enableTranslationCoverage) return "idle";
-      if (translationCoverageQuery.isLoading) return "loading";
-      if (translationCoverageQuery.error) return "error";
-      return "ready";
+      return getTranslationCoverageStatus({
+        enableTranslationCoverage,
+        isLoading: translationCoverageQuery.isLoading,
+        isFetching: translationCoverageQuery.isFetching,
+        hasError: translationCoverageQuery.error != null,
+      });
     }, [
       enableTranslationCoverage,
       translationCoverageQuery.isLoading,
+      translationCoverageQuery.isFetching,
       translationCoverageQuery.error,
     ]);
 

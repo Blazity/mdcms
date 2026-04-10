@@ -9,6 +9,7 @@ import {
   extractDocumentTitle,
   mapFiltersToQuery,
   getContentTypeListQueryKey,
+  getTranslationCoverageStatus,
   PAGE_SIZE,
   shouldEnableTranslationCoverage,
 } from "./use-content-type-list.js";
@@ -143,6 +144,18 @@ test("shouldEnableTranslationCoverage requires both a localized type and support
       supportedLocaleCount: 0,
     }),
     false,
+  );
+});
+
+test("getTranslationCoverageStatus reports loading during background coverage refetches", () => {
+  assert.equal(
+    getTranslationCoverageStatus({
+      enableTranslationCoverage: true,
+      isLoading: false,
+      isFetching: true,
+      hasError: false,
+    }),
+    "loading",
   );
 });
 
