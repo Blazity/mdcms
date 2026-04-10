@@ -58,6 +58,7 @@ import { useStudioMountInfo } from "../../mount-info-context.js";
 import {
   useContentTypeList,
   PAGE_SIZE,
+  type ContentTypeTranslationCoverageStatus,
   type MappedContentDocument,
   type ContentTypeListFilters,
 } from "../../../../hooks/use-content-type-list.js";
@@ -66,6 +67,11 @@ import { CreateDocumentDialog } from "../../../../components/create-document-dia
 import { createStudioSchemaRouteApi } from "../../../../../schema-route-api.js";
 import { createStudioDocumentRouteApi } from "../../../../../document-route-api.js";
 import { useToast } from "../../../../components/toast.js";
+import {
+  CONTENT_TRANSLATION_COVERAGE_QUERY_KEY,
+  formatContentTranslationCoverageLabel,
+  type ContentTranslationCoverage,
+} from "../../../../lib/content-translation-coverage.js";
 
 const statusConfig = {
   published: {
@@ -81,6 +87,51 @@ const statusConfig = {
     className: "bg-warning/10 text-warning border-warning/20",
   },
 };
+
+type TranslationCoverageSummaryProps = {
+  status: ContentTypeTranslationCoverageStatus;
+  coverage?: ContentTranslationCoverage;
+};
+
+export function TranslationCoverageSummary({
+  status,
+  coverage,
+}: TranslationCoverageSummaryProps) {
+  if (status === "idle") {
+    return null;
+  }
+
+  if (status === "loading") {
+    return (
+      <p
+        data-mdcms-translation-coverage-state="loading"
+        className="mt-1 text-xs text-foreground-muted"
+      >
+        Loading locale coverage...
+      </p>
+    );
+  }
+
+  if (status === "error" || !coverage) {
+    return (
+      <p
+        data-mdcms-translation-coverage-state="error"
+        className="mt-1 text-xs text-destructive"
+      >
+        Translation status unavailable.
+      </p>
+    );
+  }
+
+  return (
+    <p
+      data-mdcms-translation-coverage-state="ready"
+      className="mt-1 text-xs text-foreground-muted"
+    >
+      {formatContentTranslationCoverageLabel(coverage)}
+    </p>
+  );
+}
 
 function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -208,14 +259,7 @@ export default function ContentTypePage() {
       return documentApi.publish({ documentId });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: [
-          "content-list",
-          mountInfo.project,
-          mountInfo.environment,
-          typeId,
-        ],
-      });
+      invalidateContentListQueries();
     },
     onError: onRowActionError,
   });
@@ -227,14 +271,7 @@ export default function ContentTypePage() {
       return documentApi.unpublish({ documentId });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: [
-          "content-list",
-          mountInfo.project,
-          mountInfo.environment,
-          typeId,
-        ],
-      });
+      invalidateContentListQueries();
     },
     onError: onRowActionError,
   });
@@ -246,14 +283,7 @@ export default function ContentTypePage() {
       return documentApi.duplicate({ documentId });
     },
     onSuccess: (data) => {
-      void queryClient.invalidateQueries({
-        queryKey: [
-          "content-list",
-          mountInfo.project,
-          mountInfo.environment,
-          typeId,
-        ],
-      });
+      invalidateContentListQueries();
       router.push(`/admin/content/${typeId}/${data.documentId}`);
     },
     onError: onRowActionError,
@@ -266,14 +296,7 @@ export default function ContentTypePage() {
       return documentApi.softDelete({ documentId });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: [
-          "content-list",
-          mountInfo.project,
-          mountInfo.environment,
-          typeId,
-        ],
-      });
+      invalidateContentListQueries();
       toast.success(
         "Document moved to trash. It can be restored from the Trash page.",
       );
@@ -294,6 +317,28 @@ export default function ContentTypePage() {
   const currentPage = list.pagination
     ? Math.floor(list.pagination.offset / PAGE_SIZE) + 1
     : 1;
+  const showTranslationCoverage =
+    schemaEntry?.localized === true &&
+    (mountInfo.supportedLocales?.length ?? 0) > 0;
+
+  const invalidateContentListQueries = () => {
+    void queryClient.invalidateQueries({
+      queryKey: [
+        "content-list",
+        mountInfo.project,
+        mountInfo.environment,
+        typeId,
+      ],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: [
+        CONTENT_TRANSLATION_COVERAGE_QUERY_KEY,
+        mountInfo.project,
+        mountInfo.environment,
+        typeId,
+      ],
+    });
+  };
 
   function renderRowActions(doc: MappedContentDocument) {
     return (
@@ -547,6 +592,16 @@ export default function ContentTypePage() {
                             <p className="text-xs text-foreground-muted font-mono">
                               {doc.path}
                             </p>
+                            {showTranslationCoverage ? (
+                              <TranslationCoverageSummary
+                                status={list.translationCoverageStatus}
+                                coverage={
+                                  list.translationCoverageByGroup[
+                                    doc.translationGroupId
+                                  ]
+                                }
+                              />
+                            ) : null}
                           </div>
                         </TableCell>
                         <TableCell>

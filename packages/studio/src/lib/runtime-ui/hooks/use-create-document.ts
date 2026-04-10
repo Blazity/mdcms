@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { IMPLICIT_DEFAULT_LOCALE } from "@mdcms/shared";
 import { createStudioDocumentRouteApi } from "../../document-route-api.js";
+import { CONTENT_TRANSLATION_COVERAGE_QUERY_KEY } from "../lib/content-translation-coverage.js";
 import { useStudioMountInfo } from "../app/admin/mount-info-context.js";
 import { useRouter } from "../navigation.js";
 
@@ -68,6 +69,14 @@ export function useCreateDocument(typeId: string) {
       void queryClient.invalidateQueries({
         queryKey: [
           "content-list",
+          mountInfo.project,
+          mountInfo.environment,
+          typeId,
+        ],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: [
+          CONTENT_TRANSLATION_COVERAGE_QUERY_KEY,
           mountInfo.project,
           mountInfo.environment,
           typeId,

@@ -65,6 +65,7 @@ test("extractDocumentTitle falls back to last path segment", () => {
 test("mapContentDocument transforms API response to view model", () => {
   const mapped = mapContentDocument(baseDoc);
   assert.equal(mapped.documentId, "doc-1");
+  assert.equal(mapped.translationGroupId, "tg-1");
   assert.equal(mapped.title, "Hello World");
   assert.equal(mapped.path, "blog/hello-world");
   assert.equal(mapped.locale, "en");

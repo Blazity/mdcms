@@ -13,12 +13,18 @@ import {
   createStudioContentListApi,
   type StudioContentListQuery,
 } from "../../content-list-api.js";
+import {
+  getContentTranslationCoverageQueryKey,
+  loadContentTranslationCoverageMap,
+  type ContentTranslationCoverageMap,
+} from "../lib/content-translation-coverage.js";
 import { useStudioMountInfo } from "../app/admin/mount-info-context.js";
 
 export type DocumentStatus = "published" | "draft" | "changed";
 
 export type MappedContentDocument = {
   documentId: string;
+  translationGroupId: string;
   title: string;
   path: string;
   locale: string;
@@ -26,6 +32,12 @@ export type MappedContentDocument = {
   updatedAt: string;
   createdBy: string;
 };
+
+export type ContentTypeTranslationCoverageStatus =
+  | "idle"
+  | "loading"
+  | "ready"
+  | "error";
 
 export type ContentTypeListFilters = {
   q?: string;
@@ -68,6 +80,7 @@ export function mapContentDocument(
 ): MappedContentDocument {
   return {
     documentId: doc.documentId,
+    translationGroupId: doc.translationGroupId,
     title: extractDocumentTitle(doc.frontmatter, doc.path),
     path: doc.path,
     locale: doc.locale,
@@ -138,6 +151,7 @@ export function useContentTypeList(typeId: string) {
   const mountInfo = useStudioMountInfo();
   const [filters, setFiltersState] = useState<ContentTypeListFilters>({});
   const [offset, setOffset] = useState(0);
+  const supportedLocaleCount = mountInfo.supportedLocales?.length ?? 0;
 
   const api = useMemo(() => {
     if (!mountInfo.project || !mountInfo.environment || !mountInfo.apiBaseUrl) {
@@ -183,6 +197,21 @@ export function useContentTypeList(typeId: string) {
     enabled: api !== null,
   });
 
+  const translationCoverageQuery = useQuery({
+    queryKey: getContentTranslationCoverageQueryKey(
+      mountInfo.project,
+      mountInfo.environment,
+      typeId,
+    ),
+    queryFn: () =>
+      loadContentTranslationCoverageMap(api!, {
+        type: typeId,
+        totalLocales: supportedLocaleCount,
+      }),
+    enabled: api !== null && supportedLocaleCount > 0,
+    staleTime: 60_000,
+  });
+
   const documents = useMemo(
     () => (query.data?.data ?? []).map(mapContentDocument),
     [query.data?.data],
@@ -190,6 +219,19 @@ export function useContentTypeList(typeId: string) {
 
   const pagination: PaginationMetadata | null = query.data?.pagination ?? null;
   const users: Record<string, ContentUserSummary> = query.data?.users ?? {};
+  const translationCoverageByGroup: ContentTranslationCoverageMap =
+    translationCoverageQuery.data ?? {};
+  const translationCoverageStatus: ContentTypeTranslationCoverageStatus =
+    useMemo(() => {
+      if (supportedLocaleCount === 0) return "idle";
+      if (translationCoverageQuery.isLoading) return "loading";
+      if (translationCoverageQuery.error) return "error";
+      return "ready";
+    }, [
+      supportedLocaleCount,
+      translationCoverageQuery.isLoading,
+      translationCoverageQuery.error,
+    ]);
 
   const status: ContentTypeListStatus = useMemo(() => {
     if (query.isLoading) return "loading";
@@ -224,13 +266,18 @@ export function useContentTypeList(typeId: string) {
 
   const refresh = useCallback(() => {
     query.refetch();
-  }, [query.refetch]);
+    if (supportedLocaleCount > 0) {
+      translationCoverageQuery.refetch();
+    }
+  }, [query.refetch, supportedLocaleCount, translationCoverageQuery.refetch]);
 
   return {
     status,
     documents,
     pagination,
     users,
+    translationCoverageStatus,
+    translationCoverageByGroup,
     filters,
     errorMessage,
     setFilters,
