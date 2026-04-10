@@ -130,7 +130,7 @@ function formatCreatedAt(value: string): string {
     return value;
   }
 
-  return date.toLocaleString();
+  return date.toISOString();
 }
 
 function sortEnvironments(

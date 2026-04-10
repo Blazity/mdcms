@@ -35,6 +35,27 @@ function toErrorResponse(error: unknown): Response {
   );
 }
 
+async function parseCreateEnvironmentRequest(
+  request: Request,
+): Promise<{ name?: string }> {
+  try {
+    return (await request.json()) as { name?: string };
+  } catch (error) {
+    if (
+      error instanceof SyntaxError ||
+      (error as Error)?.name === "SyntaxError"
+    ) {
+      throw new RuntimeError({
+        code: "INVALID_INPUT",
+        message: "Request body must be valid JSON.",
+        statusCode: 400,
+      });
+    }
+
+    throw error;
+  }
+}
+
 export async function GET(
   _request: Request,
   context: { params: Promise<{ scenario: string }> },
@@ -56,7 +77,7 @@ export async function POST(
 ) {
   try {
     const { scenario } = await context.params;
-    const payload = (await request.json()) as { name?: string };
+    const payload = await parseCreateEnvironmentRequest(request);
 
     return Response.json({
       data: createReviewEnvironment(scenario, payload),

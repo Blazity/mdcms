@@ -161,6 +161,24 @@ test("create posts the environment name with project and csrf headers", async ()
   assert.equal(result.name, "staging");
 });
 
+test("create throws MISSING_CSRF_TOKEN when cookie auth omits csrfToken", async () => {
+  let called = false;
+  const api = createApi({
+    auth: { mode: "cookie" },
+    fetcher: async () => {
+      called = true;
+      throw new Error("fetcher should not be called");
+    },
+  });
+
+  await assert.rejects(
+    () => api.create({ name: "staging" }),
+    (error: unknown) =>
+      error instanceof RuntimeError && error.code === "MISSING_CSRF_TOKEN",
+  );
+  assert.equal(called, false);
+});
+
 test("delete sends the environment id with csrf protection", async () => {
   const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
     [];
@@ -187,6 +205,24 @@ test("delete sends the environment id with csrf protection", async () => {
   );
   assert.equal(calls[0]?.init?.method, "DELETE");
   assert.equal(readHeader(calls[0]?.init, "x-mdcms-csrf-token"), "csrf-token");
+});
+
+test("delete throws MISSING_CSRF_TOKEN when cookie auth omits csrfToken", async () => {
+  let called = false;
+  const api = createApi({
+    auth: { mode: "cookie" },
+    fetcher: async () => {
+      called = true;
+      throw new Error("fetcher should not be called");
+    },
+  });
+
+  await assert.rejects(
+    () => api.delete("env-staging"),
+    (error: unknown) =>
+      error instanceof RuntimeError && error.code === "MISSING_CSRF_TOKEN",
+  );
+  assert.equal(called, false);
 });
 
 test("list throws on 401 response", async () => {

@@ -57,12 +57,15 @@ test("EnvironmentManagementPageView renders live environment summaries and only 
     status: "ready",
     project: "marketing-site",
     environments: [
-      createEnvironmentSummary(),
+      createEnvironmentSummary({
+        createdAt: "2026-03-19T10:00:00.000Z",
+      }),
       createEnvironmentSummary({
         id: "env-staging",
         name: "staging",
         extends: "production",
         isDefault: false,
+        createdAt: "2026-03-20T11:30:45.000Z",
       }),
     ],
   });
@@ -72,6 +75,8 @@ test("EnvironmentManagementPageView renders live environment summaries and only 
   assert.match(markup, /data-mdcms-environment-row="staging"/);
   assert.match(markup, />Default</);
   assert.match(markup, /Extends production/);
+  assert.match(markup, /2026-03-19T10:00:00.000Z/);
+  assert.match(markup, /2026-03-20T11:30:45.000Z/);
   assert.match(markup, /Delete staging/);
   assert.doesNotMatch(markup, /Delete production/);
   assert.doesNotMatch(markup, /promot/i);

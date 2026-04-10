@@ -117,6 +117,16 @@ test("AppSidebar shows Environments route when admin-only capabilities are avail
   assert.match(markup, /href="\/admin\/environments"/);
 });
 
+test("AppSidebar shows Environments route when only settings.manage is allowed", () => {
+  const markup = renderSidebarWithCapabilities({
+    canReadSchema: true,
+    canManageUsers: false,
+    canManageSettings: true,
+  });
+
+  assert.match(markup, /href="\/admin\/environments"/);
+});
+
 test("AppSidebar hides Users route when users.manage is not allowed", () => {
   const markup = renderSidebarWithCapabilities({
     canReadSchema: true,

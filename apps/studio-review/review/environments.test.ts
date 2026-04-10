@@ -41,6 +41,17 @@ test("createReviewEnvironment persists newly created review rows", () => {
   assert.equal(environments[2]?.name, "preview");
 });
 
+test("createReviewEnvironment forbids non-admin scenarios", () => {
+  assert.throws(
+    () => createReviewEnvironment("editor", { name: "preview" }),
+    (error: unknown) =>
+      !!error &&
+      typeof error === "object" &&
+      "statusCode" in error &&
+      error.statusCode === 403,
+  );
+});
+
 test("deleteReviewEnvironment removes non-default rows and rejects deleting production", () => {
   const deleted = deleteReviewEnvironment("owner", "env-staging");
 
@@ -57,5 +68,16 @@ test("deleteReviewEnvironment removes non-default rows and rejects deleting prod
       typeof error === "object" &&
       "statusCode" in error &&
       error.statusCode === 409,
+  );
+});
+
+test("deleteReviewEnvironment forbids non-admin scenarios", () => {
+  assert.throws(
+    () => deleteReviewEnvironment("editor", "env-staging"),
+    (error: unknown) =>
+      !!error &&
+      typeof error === "object" &&
+      "statusCode" in error &&
+      error.statusCode === 403,
   );
 });
