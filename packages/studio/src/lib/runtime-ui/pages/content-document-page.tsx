@@ -4,6 +4,7 @@ import {
   type ChangeEvent,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -14,6 +15,7 @@ import {
   RuntimeError,
   type StudioDocumentRouteMountContext,
   type StudioMountContext,
+  type TranslationVariantSummary,
 } from "@mdcms/shared";
 
 import {
@@ -34,11 +36,11 @@ import {
   type DocumentVersionDiff,
 } from "../../document-version-diff.js";
 import { useParams, useRouter } from "../adapters/next-navigation.js";
+import { type MdxPropsPanelSelection } from "../components/editor/mdx-props-panel.js";
 import {
-  MdxPropsPanel,
-  type MdxPropsPanelSelection,
-} from "../components/editor/mdx-props-panel.js";
-import { TipTapEditor } from "../components/editor/tiptap-editor.js";
+  TipTapEditor,
+  type TipTapEditorHandle,
+} from "../components/editor/tiptap-editor.js";
 import { BreadcrumbTrail } from "../components/layout/page-header.js";
 import { Badge } from "../components/ui/badge.js";
 import { Button } from "../components/ui/button.js";
@@ -60,11 +62,19 @@ import {
 import {
   AlertCircle,
   Check,
-  History,
+  Globe,
   PanelRight,
   PanelRightClose,
   Send,
 } from "lucide-react";
+import { cn } from "../lib/utils.js";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select.js";
 
 const DOCUMENT_SAVE_DEBOUNCE_MS = 5000;
 const SCHEMA_MISMATCH_WRITE_MESSAGE =
@@ -121,6 +131,14 @@ export type ContentDocumentVersionComparison = {
   rightVersion?: number;
 };
 
+export type ContentDocumentVariantCreationState = {
+  targetLocale: string;
+  sourceDocumentId: string;
+  sourceLocale: string;
+  status: "idle" | "creating";
+  error?: string;
+};
+
 export type ContentDocumentPageReadyState = {
   status: "ready";
   typeId: string;
@@ -143,6 +161,16 @@ export type ContentDocumentPageReadyState = {
   versionHistory: ContentDocumentVersionHistoryState;
   selectedComparison: ContentDocumentVersionComparison;
   versionDiff: ContentDocumentVersionDiffState;
+  translationVariants: TranslationVariantSummary[];
+  localized: boolean;
+  variantsFetchFailed: boolean;
+  variantCreation?: ContentDocumentVariantCreationState;
+  viewingVersion?: {
+    version: number;
+    body: string;
+    status: "loading" | "ready" | "error";
+    error?: string;
+  };
 };
 
 export type ContentDocumentPageState =
@@ -210,12 +238,18 @@ type ContentDocumentPageViewProps = {
     side: "left" | "right",
     version?: number,
   ) => void;
+  editorRef?: React.Ref<TipTapEditorHandle>;
+  onViewVersion?: (version: number) => void;
+  onBackToDraft?: () => void;
+  onLocaleSwitch?: (locale: string) => void;
+  onCreateVariant?: (prefill: boolean) => void;
+  onCancelVariantCreation?: () => void;
 };
 
 type CreateContentDocumentPageHistoryApi = (input: {
   context: StudioMountContext;
   route: StudioDocumentRouteMountContext;
-}) => Pick<StudioDocumentRouteApi, "listVersions">;
+}) => Pick<StudioDocumentRouteApi, "listVersions" | "listVariants">;
 
 function createLoadingState(input: {
   typeId: string;
@@ -335,6 +369,9 @@ function createReadyState(input: {
     versionDiff: {
       status: "idle",
     },
+    translationVariants: [],
+    localized: false,
+    variantsFetchFailed: false,
     ...(writeAccess.writeMessage
       ? { writeMessage: writeAccess.writeMessage }
       : {}),
@@ -759,6 +796,75 @@ export async function loadContentDocumentPageState(input: {
     schemaState,
   });
 
+  let translationVariants: TranslationVariantSummary[] = [];
+  let localized = false;
+  let variantsFetchFailed = false;
+
+  if (schemaState.status === "ready") {
+    const typeEntry = schemaState.entries.find((e) => e.type === input.typeId);
+    localized = typeEntry?.localized ?? false;
+  }
+
+  // Fallback: if schema entries are empty (e.g., SCHEMA_NOT_SYNCED) but the
+  // document has a real locale and supportedLocales is configured, infer the
+  // type is localized so the switcher still appears for read-only navigation.
+  if (
+    !localized &&
+    route.supportedLocales &&
+    route.supportedLocales.length > 0 &&
+    readyState.locale !== "__mdcms_default__"
+  ) {
+    localized = true;
+  }
+
+  if (
+    localized &&
+    route.supportedLocales &&
+    route.supportedLocales.length > 0
+  ) {
+    try {
+      const routeApi = routeApiFactory({
+        context: input.context,
+        route,
+      });
+      const variantsResponse = await routeApi.listVariants({
+        documentId: input.documentId,
+      });
+      translationVariants = variantsResponse.data;
+
+      // Ensure the current document always appears in the variants list
+      // even if RBAC path filtering omitted it from the server response.
+      if (
+        !translationVariants.some((v) => v.documentId === readyState.documentId)
+      ) {
+        translationVariants = [
+          {
+            documentId: readyState.documentId,
+            locale: readyState.locale,
+            path: readyState.document.path,
+            publishedVersion: readyState.document.publishedVersion,
+            hasUnpublishedChanges: readyState.document.hasUnpublishedChanges,
+          },
+          ...translationVariants,
+        ];
+      }
+    } catch {
+      // Degrade gracefully — include the current document so its locale
+      // is never shown as missing, and flag the failure so the UI
+      // suppresses creation affordances for unverified locales.
+      translationVariants = [
+        {
+          documentId: readyState.documentId,
+          locale: readyState.locale,
+          path: readyState.document.path,
+          publishedVersion: readyState.document.publishedVersion,
+          hasUnpublishedChanges: readyState.document.hasUnpublishedChanges,
+        },
+      ];
+      variantsFetchFailed = true;
+    }
+  }
+
   const versionState = await loadContentDocumentVersionHistoryState({
     api: routeApiFactory({
       context: input.context,
@@ -769,6 +875,9 @@ export async function loadContentDocumentPageState(input: {
 
   return {
     ...readyState,
+    translationVariants,
+    localized,
+    variantsFetchFailed,
     ...versionState,
   };
 }
@@ -1113,216 +1222,6 @@ function ContentDocumentPageStatusView(props: {
   );
 }
 
-function renderVersionHistoryContent(props: {
-  state: ContentDocumentPageReadyState;
-  onSelectComparisonVersion?: (
-    side: "left" | "right",
-    version?: number,
-  ) => void;
-}) {
-  switch (props.state.versionHistory.status) {
-    case "idle":
-      return (
-        <p className="text-sm text-foreground-muted">
-          Version history will load once the draft is ready.
-        </p>
-      );
-    case "loading":
-      return (
-        <p className="text-sm text-foreground-muted">
-          Loading version history...
-        </p>
-      );
-    case "empty":
-      return (
-        <p className="text-sm text-foreground-muted">
-          No published versions yet.
-        </p>
-      );
-    case "error":
-      return (
-        <p className="text-sm text-destructive">
-          {props.state.versionHistory.message}
-        </p>
-      );
-    case "ready":
-      return (
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <label className="space-y-1 text-xs font-medium text-foreground-muted">
-              <span>Compare from</span>
-              <select
-                className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground"
-                value={String(props.state.selectedComparison.leftVersion ?? "")}
-                onChange={(event) => {
-                  props.onSelectComparisonVersion?.(
-                    "left",
-                    parseSelectedComparisonVersionValue(
-                      event.currentTarget.value,
-                    ),
-                  );
-                }}
-              >
-                <option value="">Select version</option>
-                {props.state.versionHistory.versions.map((version) => (
-                  <option
-                    key={`left-${version.version}`}
-                    value={version.version}
-                  >
-                    Version {version.version}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-1 text-xs font-medium text-foreground-muted">
-              <span>Compare to</span>
-              <select
-                className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground"
-                value={String(
-                  props.state.selectedComparison.rightVersion ?? "",
-                )}
-                onChange={(event) => {
-                  props.onSelectComparisonVersion?.(
-                    "right",
-                    parseSelectedComparisonVersionValue(
-                      event.currentTarget.value,
-                    ),
-                  );
-                }}
-              >
-                <option value="">Select version</option>
-                {props.state.versionHistory.versions.map((version) => (
-                  <option
-                    key={`right-${version.version}`}
-                    value={version.version}
-                  >
-                    Version {version.version}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          {props.state.versionHistory.versions.map((version) => (
-            <article
-              key={version.version}
-              data-mdcms-version={version.version}
-              className="space-y-2 rounded-md border border-border bg-background-subtle p-3"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium">Version {version.version}</p>
-              </div>
-              <p className="text-xs text-foreground-muted">
-                {version.publishedBy}
-              </p>
-              <p className="text-xs text-foreground-muted">
-                {version.publishedAt}
-              </p>
-              <p className="text-sm text-foreground-muted">
-                {version.changeSummary ?? "No change summary."}
-              </p>
-            </article>
-          ))}
-        </div>
-      );
-  }
-}
-
-function renderVersionDiffContent(state: ContentDocumentPageReadyState) {
-  switch (state.versionDiff.status) {
-    case "idle":
-      return (
-        <p className="text-sm text-foreground-muted">
-          Select two versions to compare.
-        </p>
-      );
-    case "loading":
-      return (
-        <p className="text-sm text-foreground-muted">Loading comparison...</p>
-      );
-    case "error":
-      return (
-        <p className="text-sm text-destructive">{state.versionDiff.message}</p>
-      );
-    case "ready": {
-      const { diff } = state.versionDiff;
-
-      return (
-        <div className="space-y-3">
-          <div>
-            <p className="text-sm font-medium">
-              Comparing v{diff.leftVersion} to v{diff.rightVersion}
-            </p>
-            {state.selectedComparison.leftVersion &&
-            state.selectedComparison.rightVersion ? (
-              <p className="text-xs text-foreground-muted">
-                Selected versions: v{state.selectedComparison.leftVersion} and v
-                {state.selectedComparison.rightVersion}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="space-y-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
-              Path
-            </p>
-            <p className="text-sm text-foreground-muted">{diff.path.before}</p>
-            <p className="text-sm">{diff.path.after}</p>
-          </div>
-
-          <div className="space-y-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
-              Frontmatter
-            </p>
-            {diff.frontmatter.changes.length === 0 ? (
-              <p className="text-sm text-foreground-muted">
-                No frontmatter changes.
-              </p>
-            ) : (
-              diff.frontmatter.changes.map((change) => (
-                <div
-                  key={change.path}
-                  className="rounded-md border border-border p-2"
-                >
-                  <p className="text-xs text-foreground-muted">{change.path}</p>
-                  <p className="text-sm">{String(change.after ?? "")}</p>
-                </div>
-              ))
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
-              Body
-            </p>
-            {diff.body.lines.length === 0 ? (
-              <p className="text-sm text-foreground-muted">No body changes.</p>
-            ) : (
-              <div className="space-y-1 rounded-md border border-border p-2">
-                {diff.body.lines.map((line, index) => (
-                  <div
-                    key={`${line.leftLineNumber}:${line.rightLineNumber}:${index}`}
-                    className="grid grid-cols-[56px_56px_1fr] gap-2 text-xs"
-                  >
-                    <span className="text-foreground-muted">
-                      {line.leftLineNumber ?? ""}
-                    </span>
-                    <span className="text-foreground-muted">
-                      {line.rightLineNumber ?? ""}
-                    </span>
-                    <span>{line.rightText ?? line.leftText ?? ""}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      );
-    }
-  }
-}
-
 function renderSchemaRecoveryBanner(input: {
   state: ContentDocumentPageReadyState;
   onSchemaSync?: () => void;
@@ -1387,61 +1286,272 @@ function renderSchemaRecoveryBanner(input: {
   );
 }
 
-function ContentDocumentPageSidebar(props: {
-  context?: StudioMountContext;
+function formatRelativeTime(isoDate: string): string {
+  const now = Date.now();
+  const then = new Date(isoDate).getTime();
+  const seconds = Math.floor((now - then) / 1000);
+
+  if (seconds < 60) return "just now";
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks}w ago`;
+
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+
+  return `${Math.floor(months / 12)}y ago`;
+}
+
+function getStatusBadge(state: ContentDocumentPageReadyState): {
+  label: string;
+  color: string;
+} {
+  if (state.document.publishedVersion === null) {
+    return { label: "Draft", color: "#888" };
+  }
+
+  return state.document.hasUnpublishedChanges
+    ? { label: "Changed", color: "#f59e0b" }
+    : { label: "Published", color: "#22c55e" };
+}
+
+function SidebarPropertiesTab(props: { state: ContentDocumentPageReadyState }) {
+  const status = getStatusBadge(props.state);
+
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      <div>
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">
+          Status
+        </div>
+        <div className="inline-flex items-center gap-1.5 rounded-full bg-background-subtle px-2.5 py-1">
+          <span
+            className="h-1.5 w-1.5 rounded-full"
+            style={{ background: status.color }}
+          />
+          <span className="text-xs font-medium">{status.label}</span>
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">
+          Published version
+        </div>
+        <span className="text-sm">
+          {props.state.document.publishedVersion !== null
+            ? `v${props.state.document.publishedVersion}`
+            : "Not published"}
+        </span>
+      </div>
+
+      <div>
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">
+          Locale
+        </div>
+        <span className="text-sm">{props.state.locale}</span>
+      </div>
+
+      <div>
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">
+          Last edited
+        </div>
+        <span className="text-sm">
+          {formatRelativeTime(props.state.document.updatedAt)}
+        </span>
+      </div>
+
+      <div>
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">
+          Path
+        </div>
+        <span className="font-mono text-xs text-foreground-muted">
+          {props.state.document.path}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function SidebarHistoryTab(props: {
   state: ContentDocumentPageReadyState;
-  activeMdxComponent?: MdxPropsPanelSelection | null;
-  onSelectComparisonVersion?: (
-    side: "left" | "right",
-    version?: number,
-  ) => void;
+  onViewVersion?: (version: number) => void;
+  onBackToDraft?: () => void;
 }) {
+  const { versionHistory, viewingVersion } = props.state;
+
+  const isViewingLatest = !viewingVersion;
+
+  return (
+    <div className="p-4">
+      {versionHistory.status === "idle" ||
+      versionHistory.status === "loading" ? (
+        <p className="text-sm text-foreground-muted">
+          {versionHistory.status === "loading"
+            ? "Loading versions..."
+            : "Loading..."}
+        </p>
+      ) : versionHistory.status === "error" ? (
+        <p className="text-sm text-destructive">{versionHistory.message}</p>
+      ) : versionHistory.status === "empty" ? (
+        <p className="text-sm text-foreground-muted">
+          No published versions yet.
+        </p>
+      ) : (
+        <div className="relative border-l-2 border-border pl-4">
+          {/* Latest (current draft) entry */}
+          <button
+            type="button"
+            className={cn(
+              "relative mb-4 w-full rounded-md px-2 py-1.5 text-left transition-colors",
+              isViewingLatest ? "bg-accent/10" : "hover:bg-background-subtle",
+            )}
+            onClick={() => {
+              if (!isViewingLatest) {
+                props.onBackToDraft?.();
+              }
+            }}
+          >
+            <div className="absolute -left-[21px] top-2.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-accent" />
+            <p className="text-sm font-medium">
+              Latest
+              {isViewingLatest ? (
+                <span className="ml-1.5 text-xs font-normal text-accent">
+                  viewing
+                </span>
+              ) : null}
+            </p>
+            <p className="mt-0.5 text-xs text-foreground-muted">
+              Current draft
+            </p>
+          </button>
+
+          {/* Published versions */}
+          {versionHistory.versions.map((version) => {
+            const isViewing = viewingVersion?.version === version.version;
+
+            return (
+              <button
+                key={version.version}
+                type="button"
+                data-mdcms-version={version.version}
+                className={cn(
+                  "relative mb-4 w-full rounded-md px-2 py-1.5 text-left transition-colors last:mb-0",
+                  isViewing ? "bg-accent/10" : "hover:bg-background-subtle",
+                )}
+                onClick={() => {
+                  if (isViewing) {
+                    props.onBackToDraft?.();
+                  } else {
+                    props.onViewVersion?.(version.version);
+                  }
+                }}
+              >
+                <div className="absolute -left-[21px] top-2.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-accent" />
+                <p className="text-sm font-medium">
+                  v{version.version}
+                  {isViewing ? (
+                    <span className="ml-1.5 text-xs font-normal text-accent">
+                      viewing
+                    </span>
+                  ) : null}
+                </p>
+                <p className="mt-0.5 text-xs text-foreground-muted">
+                  {version.changeSummary ?? "No summary"}
+                </p>
+                <p className="mt-0.5 text-xs text-foreground-muted">
+                  {formatRelativeTime(version.publishedAt)}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ContentDocumentPageSidebar(props: {
+  state: ContentDocumentPageReadyState;
+  onViewVersion?: (version: number) => void;
+  onBackToDraft?: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<"properties" | "history">(
+    "properties",
+  );
+
   return (
     <aside
       data-mdcms-editor-pane="sidebar"
-      className="w-80 shrink-0 border-l border-border bg-background"
+      className="flex w-80 shrink-0 flex-col border-l border-border bg-background"
     >
-      <div className="space-y-4 p-4">
-        <div className="space-y-1">
-          <p className="text-sm font-medium">Document workflow</p>
-          <p className="text-sm text-foreground-muted">
-            This page loads the routed draft, saves draft edits, and publishes
-            the current draft through the live content API.
-          </p>
-          <p className="text-sm text-foreground-muted">
-            If Studio cannot derive the local schema hash required for writes,
-            the editor stays read-only until schema recovery completes.
-          </p>
-        </div>
-
-        <div
-          data-mdcms-version-history-state={props.state.versionHistory.status}
-          className="space-y-3"
+      {/* Tabs */}
+      <div className="flex border-b border-border">
+        <button
+          type="button"
+          className={cn(
+            "flex-1 py-2.5 text-center text-xs font-semibold transition-colors",
+            activeTab === "properties"
+              ? "border-b-2 border-accent text-accent"
+              : "text-foreground-muted hover:text-foreground",
+          )}
+          onClick={() => setActiveTab("properties")}
         >
-          <div className="flex items-center gap-2">
-            <History className="h-4 w-4 text-foreground-muted" />
-            <p className="text-sm font-medium">Version history</p>
-          </div>
-          {renderVersionHistoryContent(props)}
-        </div>
-
-        <div
-          data-mdcms-version-diff-state={props.state.versionDiff.status}
-          className="space-y-3"
+          Properties
+        </button>
+        <button
+          type="button"
+          className={cn(
+            "flex-1 py-2.5 text-center text-xs font-semibold transition-colors",
+            activeTab === "history"
+              ? "border-b-2 border-accent text-accent"
+              : "text-foreground-muted hover:text-foreground",
+          )}
+          onClick={() => setActiveTab("history")}
         >
-          <p className="text-sm font-medium">Version diff</p>
-          {renderVersionDiffContent(props.state)}
-        </div>
+          History
+        </button>
+      </div>
 
-        {props.context?.mdx ? (
-          <MdxPropsPanel
-            context={props.context}
-            selection={props.activeMdxComponent ?? null}
+      {/* Tab content */}
+      <div className="flex-1 overflow-y-auto">
+        {activeTab === "properties" ? (
+          <SidebarPropertiesTab state={props.state} />
+        ) : (
+          <SidebarHistoryTab
+            state={props.state}
+            onViewVersion={props.onViewVersion}
+            onBackToDraft={props.onBackToDraft}
           />
-        ) : null}
+        )}
       </div>
     </aside>
   );
+}
+
+export function filterLocaleOptions(input: {
+  supportedLocales: string[];
+  translationVariants: TranslationVariantSummary[];
+  canWrite: boolean;
+  variantsFetchFailed: boolean;
+}): Array<{ locale: string; hasVariant: boolean }> {
+  return input.supportedLocales
+    .map((loc) => ({
+      locale: loc,
+      hasVariant: input.translationVariants.some((v) => v.locale === loc),
+    }))
+    .filter(
+      (item) =>
+        item.hasVariant || (input.canWrite && !input.variantsFetchFailed),
+    );
 }
 
 export function ContentDocumentPageView({
@@ -1458,6 +1568,12 @@ export function ContentDocumentPageView({
   onPublishSubmit,
   onSchemaSync,
   onSelectComparisonVersion,
+  editorRef,
+  onViewVersion,
+  onBackToDraft,
+  onLocaleSwitch,
+  onCreateVariant,
+  onCancelVariantCreation,
 }: ContentDocumentPageViewProps) {
   const documentLabel =
     state.status === "ready"
@@ -1485,7 +1601,7 @@ export function ContentDocumentPageView({
         data-mdcms-document-write-state={writeState}
         className="flex h-screen min-w-0 flex-col overflow-x-hidden"
       >
-        <header className="sticky top-0 z-30 flex min-w-0 flex-wrap items-center gap-3 border-b border-border bg-background px-4 py-3">
+        <header className="sticky top-0 z-30 flex h-14 min-w-0 items-center gap-3 border-b border-border bg-background px-4">
           <div className="flex min-w-0 flex-1 items-center gap-4">
             <BreadcrumbTrail
               className="flex-1"
@@ -1526,6 +1642,34 @@ export function ContentDocumentPageView({
           </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-3">
+            {state.status === "ready" &&
+            state.localized &&
+            state.route.supportedLocales &&
+            state.route.supportedLocales.length > 0 ? (
+              <Select
+                value={state.variantCreation?.targetLocale ?? state.locale}
+                onValueChange={(value) => onLocaleSwitch?.(value)}
+                disabled={state.variantCreation?.status === "creating"}
+              >
+                <SelectTrigger className="h-8 w-auto min-w-[100px] gap-1.5 text-xs">
+                  <Globe className="h-3.5 w-3.5 shrink-0" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {filterLocaleOptions({
+                    supportedLocales: state.route.supportedLocales,
+                    translationVariants: state.translationVariants,
+                    canWrite: state.canWrite,
+                    variantsFetchFailed: state.variantsFetchFailed,
+                  }).map(({ locale: loc, hasVariant }) => (
+                    <SelectItem key={loc} value={loc}>
+                      {hasVariant ? loc : `+ ${loc}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
+
             {workflowBadgeLabel ? (
               <Badge variant="outline" className="text-xs">
                 {workflowBadgeLabel}
@@ -1584,6 +1728,42 @@ export function ContentDocumentPageView({
                   state={state}
                   onGoBack={onGoBack}
                 />
+              ) : state.variantCreation ? (
+                <div className="flex min-h-[320px] items-center justify-center p-6">
+                  <div className="max-w-md text-center">
+                    <Globe className="mx-auto mb-4 h-10 w-10 text-foreground-muted" />
+                    <p className="mb-1 text-base font-medium">
+                      No {state.variantCreation.targetLocale} variant exists yet
+                    </p>
+                    <p className="mb-5 text-sm text-foreground-muted">
+                      Create a translation variant for this document to start
+                      editing in {state.variantCreation.targetLocale}.
+                    </p>
+                    {state.variantCreation.error ? (
+                      <div className="mb-4 rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                        {state.variantCreation.error}
+                      </div>
+                    ) : null}
+                    <div className="flex items-center justify-center gap-3">
+                      <Button
+                        variant="outline"
+                        disabled={state.variantCreation.status === "creating"}
+                        onClick={() => onCreateVariant?.(false)}
+                      >
+                        Create empty
+                      </Button>
+                      <Button
+                        className="bg-accent text-white hover:bg-accent-hover"
+                        disabled={state.variantCreation.status === "creating"}
+                        onClick={() => onCreateVariant?.(true)}
+                      >
+                        {state.variantCreation.status === "creating"
+                          ? "Creating..."
+                          : `Pre-fill from ${state.variantCreation.sourceLocale}`}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <div className="space-y-4">
                   {hasSchemaRecoveryMismatch(state.schemaState)
@@ -1619,12 +1799,38 @@ export function ContentDocumentPageView({
                     </div>
                   ) : null}
 
+                  {state.viewingVersion ? (
+                    <div className="mb-3 flex items-center justify-between rounded-md border border-accent/30 bg-accent/5 px-4 py-2.5">
+                      <p className="text-sm font-medium">
+                        Viewing version {state.viewingVersion.version}
+                        {state.viewingVersion.status === "loading"
+                          ? " — Loading..."
+                          : null}
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => onBackToDraft?.()}
+                      >
+                        View latest
+                      </Button>
+                    </div>
+                  ) : null}
+
+                  {state.viewingVersion?.status === "error" ? (
+                    <div className="mb-3 rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                      {state.viewingVersion.error}
+                    </div>
+                  ) : null}
+
                   <TipTapEditor
-                    content={state.draftBody}
+                    ref={editorRef}
+                    initialContent={state.draftBody}
                     context={context}
                     onChange={onDraftChange}
                     onActiveMdxComponentChange={onActiveMdxComponentChange}
-                    readOnly={!state.canWrite}
+                    readOnly={!state.canWrite || !!state.viewingVersion}
                     forbidden={false}
                   />
                 </div>
@@ -1634,10 +1840,9 @@ export function ContentDocumentPageView({
 
           {state.status === "ready" && sidebarOpen ? (
             <ContentDocumentPageSidebar
-              context={context}
               state={state}
-              activeMdxComponent={activeMdxComponent}
-              onSelectComparisonVersion={onSelectComparisonVersion}
+              onViewVersion={onViewVersion}
+              onBackToDraft={onBackToDraft}
             />
           ) : null}
         </div>
@@ -1732,12 +1937,17 @@ export default function ContentDocumentPage({
         }),
   );
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const editorRef = useRef<TipTapEditorHandle>(null);
   const [activeMdxComponent, setActiveMdxComponent] =
     useState<MdxPropsPanelSelection | null>(null);
   const stateRef = useRef(state);
   const loadRequestIdRef = useRef(0);
 
-  useEffect(() => {
+  // Sync ref after commit so event handlers and async callbacks always
+  // see the latest committed state. useLayoutEffect runs synchronously
+  // after commit but before paint, avoiding the stale-ref gap of useEffect
+  // while respecting React's rule against mutating refs during render.
+  useLayoutEffect(() => {
     stateRef.current = state;
   }, [state]);
 
@@ -1866,6 +2076,20 @@ export default function ContentDocumentPage({
         return;
       }
 
+      // If publish normalized the body, rehydrate the editor — but only
+      // if the user hasn't typed newer edits during the in-flight publish.
+      const publishedBody = nextState.document.body;
+      const latestAfterPublish = stateRef.current;
+      if (
+        publishedBody !== currentState.draftBody &&
+        latestAfterPublish.status === "ready" &&
+        latestAfterPublish.documentId === currentState.documentId &&
+        latestAfterPublish.draftBody === currentState.draftBody &&
+        !latestAfterPublish.viewingVersion
+      ) {
+        editorRef.current?.setContent(publishedBody);
+      }
+
       setState((current) =>
         current.status === "ready" &&
         current.documentId === currentState.documentId
@@ -1949,10 +2173,9 @@ export default function ContentDocumentPage({
     }
 
     setState(nextState);
-    stateRef.current = nextState;
   });
 
-  const saveDraft = useEffectEvent(async () => {
+  const saveDraft = useEffectEvent(async (): Promise<boolean> => {
     const currentState = stateRef.current;
     const api = createRouteApi();
 
@@ -1964,7 +2187,7 @@ export default function ContentDocumentPage({
       !route.write.canWrite ||
       currentState.status !== "ready"
     ) {
-      return;
+      return false;
     }
 
     if (
@@ -1973,7 +2196,7 @@ export default function ContentDocumentPage({
       currentState.draftBody === currentState.document.body ||
       currentState.saveRequestBody === currentState.draftBody
     ) {
-      return;
+      return false;
     }
 
     const requestBody = currentState.draftBody;
@@ -2003,7 +2226,7 @@ export default function ContentDocumentPage({
             })
           : current,
       );
-      return;
+      return false;
     }
 
     const mutationError = nextState.mutationError;
@@ -2017,17 +2240,281 @@ export default function ContentDocumentPage({
             })
           : current,
       );
+      return false;
+    }
+
+    // If the server normalized the body (whitespace, etc.), rehydrate the
+    // editor — but only if the user hasn't typed newer edits during the
+    // in-flight save. The reducer already preserves newer drafts in state.
+    const persistedBody = nextState.document.body;
+    const latestAfterSave = stateRef.current;
+    if (
+      persistedBody !== requestBody &&
+      latestAfterSave.status === "ready" &&
+      latestAfterSave.documentId === currentState.documentId &&
+      latestAfterSave.draftBody === requestBody &&
+      !latestAfterSave.viewingVersion
+    ) {
+      editorRef.current?.setContent(persistedBody);
+    }
+
+    setState((current) =>
+      current.status === "ready" &&
+      current.documentId === currentState.documentId
+        ? applySuccessfulDraftSaveToReadyState({
+            state: current,
+            requestBody,
+            persistedBody,
+            updatedAt: nextState.document.updatedAt,
+          })
+        : current,
+    );
+    return true;
+  });
+
+  const handleLocaleSwitch = useEffectEvent(async (targetLocale: string) => {
+    const currentState = stateRef.current;
+    if (currentState.status !== "ready") return;
+
+    // If selecting the current locale, clear variant creation state
+    if (targetLocale === currentState.locale && !currentState.variantCreation) {
       return;
+    }
+
+    // Unsaved changes guard: save before switching (covers both unsaved
+    // edits and in-flight saves that haven't persisted yet)
+    if (
+      currentState.saveState !== "saved" &&
+      currentState.canWrite &&
+      currentState.draftBody !== currentState.document.body
+    ) {
+      const saved = await saveDraft();
+
+      if (!saved) {
+        return;
+      }
+    }
+
+    // Check if variant exists
+    const existingVariant = currentState.translationVariants.find(
+      (v) => v.locale === targetLocale,
+    );
+
+    if (existingVariant) {
+      // Clear variant creation state and navigate to the existing variant
+      setState((current) =>
+        current.status === "ready"
+          ? { ...current, variantCreation: undefined }
+          : current,
+      );
+      router.push(
+        `/admin/content/${currentState.typeId}/${existingVariant.documentId}`,
+      );
+      return;
+    }
+
+    // No variant exists — show creation prompt (only if user can write)
+    if (!currentState.canWrite) {
+      return;
+    }
+
+    // Prefer the default locale variant as the prefill source per SPEC-009.
+    // Fall back to the current variant if the default locale variant is
+    // not available (e.g., not yet created or current doc is the default).
+    const defaultLocale = route?.defaultLocale;
+    const defaultVariant =
+      defaultLocale && defaultLocale !== currentState.locale
+        ? currentState.translationVariants.find(
+            (v) => v.locale === defaultLocale,
+          )
+        : undefined;
+
+    const sourceDocumentId =
+      defaultVariant?.documentId ?? currentState.documentId;
+    const sourceLocale = defaultVariant?.locale ?? currentState.locale;
+
+    setState((current) =>
+      current.status === "ready"
+        ? {
+            ...current,
+            variantCreation: {
+              targetLocale,
+              sourceDocumentId,
+              sourceLocale,
+              status: "idle",
+            },
+          }
+        : current,
+    );
+  });
+
+  const handleCreateVariant = useEffectEvent(async (prefill: boolean) => {
+    const currentState = stateRef.current;
+    const api = createRouteApi();
+
+    if (
+      !api ||
+      currentState.status !== "ready" ||
+      !currentState.variantCreation ||
+      !currentState.canWrite
+    ) {
+      return;
+    }
+
+    const { targetLocale, sourceDocumentId } = currentState.variantCreation;
+
+    setState((current) =>
+      current.status === "ready" && current.variantCreation
+        ? {
+            ...current,
+            variantCreation: {
+              ...current.variantCreation,
+              status: "creating",
+              error: undefined,
+            },
+          }
+        : current,
+    );
+
+    try {
+      // Always fetch the source document via loadDraft for prefill.
+      // StudioDocumentShellData does not carry frontmatter or format,
+      // so reading from local state would lose metadata.
+      let sourceBody = "";
+      let sourceFrontmatter: Record<string, unknown> = {};
+      let sourceFormat: "md" | "mdx" = "mdx";
+
+      if (prefill) {
+        const sourceDoc = await api.loadDraft({
+          documentId: sourceDocumentId,
+          type: currentState.typeId,
+          locale: currentState.variantCreation.sourceLocale,
+        });
+        sourceBody = sourceDoc.body ?? "";
+        sourceFrontmatter = sourceDoc.frontmatter ?? {};
+        sourceFormat = sourceDoc.format ?? "mdx";
+      }
+
+      const result = await api.create({
+        type: currentState.typeId,
+        path: currentState.document.path,
+        locale: targetLocale,
+        format: sourceFormat,
+        frontmatter: prefill ? sourceFrontmatter : {},
+        body: prefill ? sourceBody : "",
+        sourceDocumentId,
+        schemaHash: route?.write.canWrite ? route.write.schemaHash : undefined,
+      });
+
+      router.push(`/admin/content/${currentState.typeId}/${result.documentId}`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to create variant.";
+
+      setState((current) =>
+        current.status === "ready" && current.variantCreation
+          ? {
+              ...current,
+              variantCreation: {
+                ...current.variantCreation,
+                status: "idle",
+                error: message,
+              },
+            }
+          : current,
+      );
+    }
+  });
+
+  const handleCancelVariantCreation = useEffectEvent(() => {
+    setState((current) =>
+      current.status === "ready"
+        ? { ...current, variantCreation: undefined }
+        : current,
+    );
+  });
+
+  const handleViewVersion = useEffectEvent(async (version: number) => {
+    const currentState = stateRef.current;
+    const api = createRouteApi();
+
+    if (!api || currentState.status !== "ready") return;
+
+    setState((current) =>
+      current.status === "ready"
+        ? {
+            ...current,
+            viewingVersion: { version, body: "", status: "loading" },
+          }
+        : current,
+    );
+
+    try {
+      const versionDoc = await api.getVersion({
+        documentId: currentState.documentId,
+        locale: currentState.document.locale,
+        version,
+      });
+
+      const versionBody = versionDoc.body ?? "";
+
+      // Only update the editor if this version is still the one the UI expects.
+      // A newer version click may have fired while this fetch was in-flight.
+      const afterFetch = stateRef.current;
+      if (
+        afterFetch.status !== "ready" ||
+        afterFetch.documentId !== currentState.documentId ||
+        afterFetch.viewingVersion?.version !== version
+      ) {
+        return;
+      }
+
+      editorRef.current?.setContent(versionBody);
+
+      setState((current) =>
+        current.status === "ready" &&
+        current.viewingVersion?.version === version
+          ? {
+              ...current,
+              viewingVersion: {
+                version,
+                body: versionBody,
+                status: "ready",
+              },
+            }
+          : current,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to load version.";
+
+      setState((current) =>
+        current.status === "ready" &&
+        current.viewingVersion?.version === version
+          ? {
+              ...current,
+              viewingVersion: {
+                version,
+                body: "",
+                status: "error",
+                error: message,
+              },
+            }
+          : current,
+      );
+    }
+  });
+
+  const handleBackToDraft = useEffectEvent(() => {
+    const currentState = stateRef.current;
+
+    if (currentState.status === "ready") {
+      editorRef.current?.setContent(currentState.draftBody);
     }
 
     setState((current) =>
       current.status === "ready"
-        ? applySuccessfulDraftSaveToReadyState({
-            state: current,
-            requestBody,
-            persistedBody: nextState.document.body,
-            updatedAt: nextState.document.updatedAt,
-          })
+        ? { ...current, viewingVersion: undefined }
         : current,
     );
   });
@@ -2186,6 +2673,18 @@ export default function ContentDocumentPage({
             : current,
         );
       }}
+      onLocaleSwitch={(locale) => {
+        void handleLocaleSwitch(locale);
+      }}
+      onCreateVariant={(prefill) => {
+        void handleCreateVariant(prefill);
+      }}
+      onCancelVariantCreation={handleCancelVariantCreation}
+      editorRef={editorRef}
+      onViewVersion={(version) => {
+        void handleViewVersion(version);
+      }}
+      onBackToDraft={handleBackToDraft}
     />
   );
 }

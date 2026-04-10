@@ -1,6 +1,10 @@
 export const studioExampleProject = "marketing-site";
 export const studioExampleEnvironment = "staging";
 export const studioExampleServerUrl = "http://localhost:4000";
+export const studioExampleLocales = {
+  default: "en",
+  supported: ["en", "fr"],
+} as const;
 
 export const studioExampleMdxComponents = [
   {

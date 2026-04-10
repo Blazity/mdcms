@@ -54,6 +54,7 @@ import {
   type MappedTrashDocument,
   type TrashListSort,
 } from "../../hooks/use-trash-list.js";
+import { getContentTranslationCoverageQueryKey } from "../../lib/content-translation-coverage.js";
 import { createStudioSchemaRouteApi } from "../../../schema-route-api.js";
 import { createStudioDocumentRouteApi } from "../../../document-route-api.js";
 import { useToast } from "../../components/toast.js";
@@ -162,6 +163,12 @@ export default function TrashPage() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["trash-list"] });
+      void queryClient.invalidateQueries({
+        queryKey: getContentTranslationCoverageQueryKey(
+          mountInfo.project,
+          mountInfo.environment,
+        ),
+      });
       toast.success("Document restored. It is now available as a draft.");
     },
     onError: (error: Error) => {

@@ -4,6 +4,7 @@ import type {
   ContentVersionDocumentResponse,
   ContentVersionSummaryResponse,
   SchemaRegistryTypeSnapshot,
+  TranslationVariantSummary,
 } from "@mdcms/shared";
 import type { AuthorizationRequirement } from "../auth.js";
 import type { DrizzleDatabase } from "../db.js";
@@ -81,6 +82,24 @@ export type ContentListQuery = {
   order?: string;
   q?: string;
 };
+
+export type ContentVariantSummary = TranslationVariantSummary;
+
+export function sortVariantSummaries(
+  variants: ContentVariantSummary[],
+): ContentVariantSummary[] {
+  return variants.sort((a, b) =>
+    a.locale < b.locale
+      ? -1
+      : a.locale > b.locale
+        ? 1
+        : a.documentId < b.documentId
+          ? -1
+          : a.documentId > b.documentId
+            ? 1
+            : 0,
+  );
+}
 
 export type ContentWritePayload = {
   path?: string;
@@ -196,6 +215,10 @@ export type ContentStore = {
       actorId?: string;
     },
   ) => Promise<ContentDocument>;
+  listVariants: (
+    scope: ContentScope,
+    documentId: string,
+  ) => Promise<ContentVariantSummary[] | undefined>;
 };
 
 export type CreateDatabaseContentStoreOptions = {

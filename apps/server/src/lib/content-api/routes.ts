@@ -218,6 +218,59 @@ export function mountContentApiRoutes(
   });
 
   contentApp.get?.(
+    "/api/v1/content/:documentId/variants",
+    ({ request, params }: any) => {
+      return executeWithRuntimeErrorsHandled(request, async () => {
+        const scope = pickScope(request);
+
+        await options.authorize(request, {
+          requiredScope: "content:read",
+          project: scope.project,
+          environment: scope.environment,
+        });
+
+        const variants = await options.store.listVariants(
+          scope,
+          params.documentId,
+        );
+
+        if (variants === undefined) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+            details: { documentId: params.documentId },
+          });
+        }
+
+        // Authorize each variant path individually for folder-level RBAC.
+        // Variants in the same translation group may have divergent paths,
+        // so the caller must be allowed to read each one.
+        const authorized = [];
+        for (const variant of variants) {
+          try {
+            await options.authorize(request, {
+              requiredScope: "content:read",
+              project: scope.project,
+              environment: scope.environment,
+              documentPath: variant.path,
+            });
+            authorized.push(variant);
+          } catch (error) {
+            // Silently omit variants the caller cannot access.
+            // Rethrow non-auth errors so outages surface.
+            if (!(error instanceof RuntimeError) || error.statusCode !== 403) {
+              throw error;
+            }
+          }
+        }
+
+        return Response.json({ data: authorized });
+      });
+    },
+  );
+
+  contentApp.get?.(
     "/api/v1/content/:documentId",
     ({ request, params, query }: any) => {
       return executeWithRuntimeErrorsHandled(request, async () => {

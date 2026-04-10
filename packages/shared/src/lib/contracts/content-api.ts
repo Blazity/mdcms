@@ -84,3 +84,15 @@ export type ContentOverviewCountsResponse = {
   published: number;
   drafts: number;
 };
+
+export type TranslationVariantSummary = {
+  documentId: string;
+  locale: string;
+  path: string;
+  publishedVersion: number | null;
+  hasUnpublishedChanges: boolean;
+};
+
+export type TranslationVariantsResponse = ApiDataEnvelope<
+  TranslationVariantSummary[]
+>;

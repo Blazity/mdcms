@@ -13,6 +13,7 @@ import {
   type RuntimeContext,
 } from "@mdcms/shared";
 import { extractMdxComponentProps } from "@mdcms/shared/mdx";
+import { resolveStudioDocumentRouteSchemaCapability } from "./document-route-schema.js";
 
 /**
  * Studio runtime helpers align env resolution, logger setup, and error
@@ -98,10 +99,20 @@ export async function prepareStudioConfig(
       )
     : undefined;
 
+  // Pre-compute the schema hash while the full config (with Zod types,
+  // environments, etc.) is available. Client-side code may receive a
+  // stripped config where these fields are absent, so embedding the hash
+  // here ensures the Studio loader can enable writes without re-deriving.
+  const schemaCapability =
+    await resolveStudioDocumentRouteSchemaCapability(config);
+
   return {
     ...config,
     environment,
     ...(components !== undefined ? { components } : {}),
+    ...(schemaCapability.canWrite
+      ? { _schemaHash: schemaCapability.schemaHash }
+      : {}),
   };
 }
 

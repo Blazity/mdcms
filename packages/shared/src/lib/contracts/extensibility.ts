@@ -147,6 +147,7 @@ export type StudioDocumentRouteMountContext = {
    *  current value at runtime. */
   initialEnvironment: string;
   supportedLocales?: string[];
+  defaultLocale?: string;
   write: StudioDocumentRouteWriteContext;
 };
 
@@ -548,9 +549,23 @@ const studioDocumentRouteContextSchema = z
     project: nonEmptyStringSchema,
     initialEnvironment: nonEmptyStringSchema,
     supportedLocales: z.array(nonEmptyStringSchema).optional(),
+    defaultLocale: nonEmptyStringSchema.optional(),
     write: studioDocumentRouteWriteSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((data, ctx) => {
+    if (
+      data.defaultLocale &&
+      data.supportedLocales &&
+      !data.supportedLocales.includes(data.defaultLocale)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `defaultLocale "${data.defaultLocale}" must be included in supportedLocales`,
+        path: ["defaultLocale"],
+      });
+    }
+  });
 
 const studioMountContextSchema = z
   .object({

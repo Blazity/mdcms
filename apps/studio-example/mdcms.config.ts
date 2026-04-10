@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   studioExampleEnvironment,
+  studioExampleLocales,
   studioExampleMdxComponents,
   studioExampleProject,
   studioExampleServerUrl,
@@ -46,10 +47,7 @@ export default defineConfig({
   environment: studioExampleEnvironment,
   serverUrl: studioExampleServerUrl,
   contentDirectories: ["content"],
-  locales: {
-    default: "en",
-    supported: ["en", "fr"],
-  },
+  locales: studioExampleLocales,
   environments: {
     production: {},
     staging: {

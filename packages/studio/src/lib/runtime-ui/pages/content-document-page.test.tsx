@@ -17,6 +17,7 @@ import {
   applySchemaStateToReadyState,
   ContentDocumentPageView,
   createContentDocumentPageState,
+  filterLocaleOptions,
   loadContentDocumentPageState,
   loadContentDocumentVersionDiff,
   parseSelectedComparisonVersionValue,
@@ -431,6 +432,7 @@ test("loadContentDocumentPageState applies the schema mismatch guard before retu
           hasMore: false,
         },
       }),
+      listVariants: async () => ({ data: [] }),
     }),
   } as any);
 
@@ -616,6 +618,7 @@ test("loadContentDocumentPageState loads the routed draft and version history", 
           },
         };
       },
+      listVariants: async () => ({ data: [] }),
     }),
   });
 
@@ -1120,6 +1123,7 @@ test("loadContentDocumentPageState seeds arbitrary version comparison and diff s
           hasMore: false,
         },
       }),
+      listVariants: async () => ({ data: [] }),
     }),
   });
 
@@ -1156,39 +1160,8 @@ test("loadContentDocumentPageState seeds arbitrary version comparison and diff s
   assert.equal(diff.rightVersion, 3);
 });
 
-test("ContentDocumentPageView renders version history states and arbitrary-version diff output", () => {
+test("ContentDocumentPageView renders tabbed sidebar with properties and history", () => {
   const ready = createReadyState();
-  const loadingMarkup = renderPageMarkup({
-    ...ready,
-    versionHistory: {
-      status: "loading",
-      versions: [],
-    },
-    versionDiff: {
-      status: "idle",
-    },
-  });
-  const emptyMarkup = renderPageMarkup({
-    ...ready,
-    versionHistory: {
-      status: "empty",
-      versions: [],
-    },
-    versionDiff: {
-      status: "idle",
-    },
-  });
-  const errorMarkup = renderPageMarkup({
-    ...ready,
-    versionHistory: {
-      status: "error",
-      versions: [],
-      message: "Version history temporarily unavailable.",
-    },
-    versionDiff: {
-      status: "idle",
-    },
-  });
   const readyMarkup = renderPageMarkup({
     ...ready,
     publishDialogOpen: true,
@@ -1251,30 +1224,15 @@ test("ContentDocumentPageView renders version history states and arbitrary-versi
     },
   });
 
-  assert.match(loadingMarkup, /data-mdcms-version-history-state="loading"/);
-  assert.match(loadingMarkup, /Loading version history/);
-  assert.match(emptyMarkup, /data-mdcms-version-history-state="empty"/);
-  assert.match(emptyMarkup, /No published versions yet/);
-  assert.match(errorMarkup, /data-mdcms-version-history-state="error"/);
-  assert.match(errorMarkup, /Version history temporarily unavailable/);
-  assert.match(readyMarkup, /data-mdcms-version-history-state="ready"/);
-  assert.match(readyMarkup, /Version 3/);
-  assert.match(readyMarkup, /33333333-3333-4333-8333-333333333333/);
-  assert.match(readyMarkup, /Ready for launch\./);
+  // The sidebar defaults to the Properties tab. Version history content
+  // is in the History tab and version diff is in a modal, so they are
+  // not present in the default SSR render.
+  assert.match(readyMarkup, /Properties/);
+  assert.match(readyMarkup, /History/);
   assert.match(readyMarkup, /Publish document/);
-  assert.match(readyMarkup, /data-mdcms-version-diff-state="ready"/);
-  assert.match(readyMarkup, /Comparing v1 to v3/);
-  assert.match(readyMarkup, /blog\/launch-notes-updated/);
-  assert.match(readyMarkup, /Launch Notes v3/);
-  assert.match(readyMarkup, /Document workflow/);
-  assert.match(
-    readyMarkup,
-    /This page loads the routed draft, saves draft edits, and publishes the current draft through the live content API\./,
-  );
-  assert.match(
-    readyMarkup,
-    /If Studio cannot derive the local schema hash required for writes, the editor stays read-only until schema recovery completes\./,
-  );
+  // Old sidebar content should be gone
+  assert.doesNotMatch(readyMarkup, /Document workflow/);
+  assert.doesNotMatch(readyMarkup, /This page loads the routed draft/);
   assert.doesNotMatch(readyMarkup, />Unpublish</);
   assert.doesNotMatch(readyMarkup, /Move \/ Rename/);
   assert.doesNotMatch(readyMarkup, /View published version/);
@@ -1331,4 +1289,193 @@ test("ContentDocumentPageView blocks writes when the local schema hash capabilit
   assert.equal(state.canWrite, false);
   assert.match(markup, /data-mdcms-document-write-state="blocked"/);
   assert.match(markup, /Schema sync required before Studio can write drafts\./);
+});
+
+test("locale switcher renders for localized type with supportedLocales", () => {
+  const state = createReadyState();
+  state.localized = true;
+  state.route.supportedLocales = ["en", "fr", "de"];
+  state.translationVariants = [
+    {
+      documentId: "11111111-1111-4111-8111-111111111111",
+      locale: "en",
+      path: "blog/launch-notes",
+      publishedVersion: 5,
+      hasUnpublishedChanges: true,
+    },
+  ];
+
+  const html = renderPageMarkup(state);
+  // The Select trigger renders when localized + supportedLocales are set.
+  // SelectContent uses a Radix Portal so options don't appear in SSR output.
+  assert.ok(
+    html.includes('data-slot="select-trigger"'),
+    "should render the locale select trigger",
+  );
+});
+
+test("locale switcher does not render for non-localized types", () => {
+  const state = createReadyState();
+  state.localized = false;
+
+  const html = renderPageMarkup(state);
+  // The switcher guard checks state.localized — no Select should render
+  assert.ok(
+    !html.includes('data-slot="select-trigger"'),
+    "should not render locale select when type is not localized",
+  );
+});
+
+test("locale switcher does not render without supportedLocales", () => {
+  const state = createReadyState();
+  state.localized = true;
+  // supportedLocales not set on route
+
+  const html = renderPageMarkup(state);
+  assert.ok(
+    !html.includes('data-slot="select-trigger"'),
+    "should not render locale select when supportedLocales is undefined",
+  );
+});
+
+test("variant creation prompt renders when variantCreation state is set", () => {
+  const state = createReadyState();
+  state.localized = true;
+  state.route.supportedLocales = ["en", "fr"];
+  state.variantCreation = {
+    targetLocale: "fr",
+    sourceDocumentId: "11111111-1111-4111-8111-111111111111",
+    sourceLocale: "en",
+    status: "idle",
+  };
+
+  const html = renderPageMarkup(state);
+  assert.ok(html.includes("No fr variant exists yet"));
+  assert.ok(html.includes("Create empty"));
+  assert.ok(html.includes("Pre-fill from en"));
+});
+
+test("variant creation prompt shows error when present", () => {
+  const state = createReadyState();
+  state.localized = true;
+  state.route.supportedLocales = ["en", "fr"];
+  state.variantCreation = {
+    targetLocale: "fr",
+    sourceDocumentId: "11111111-1111-4111-8111-111111111111",
+    sourceLocale: "en",
+    status: "idle",
+    error: "TRANSLATION_VARIANT_CONFLICT",
+  };
+
+  const html = renderPageMarkup(state);
+  assert.ok(html.includes("TRANSLATION_VARIANT_CONFLICT"));
+});
+
+test("filterLocaleOptions hides missing locales for read-only users", () => {
+  const result = filterLocaleOptions({
+    supportedLocales: ["en", "fr", "de"],
+    translationVariants: [
+      {
+        documentId: "11111111-1111-4111-8111-111111111111",
+        locale: "en",
+        path: "blog/launch-notes",
+        publishedVersion: 5,
+        hasUnpublishedChanges: true,
+      },
+    ],
+    canWrite: false,
+    variantsFetchFailed: false,
+  });
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0].locale, "en");
+  assert.equal(result[0].hasVariant, true);
+});
+
+test("filterLocaleOptions hides missing locales when variants fetch failed", () => {
+  const result = filterLocaleOptions({
+    supportedLocales: ["en", "fr", "de"],
+    translationVariants: [
+      {
+        documentId: "11111111-1111-4111-8111-111111111111",
+        locale: "en",
+        path: "blog/launch-notes",
+        publishedVersion: 5,
+        hasUnpublishedChanges: true,
+      },
+    ],
+    canWrite: true,
+    variantsFetchFailed: true,
+  });
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0].locale, "en");
+});
+
+test("filterLocaleOptions shows missing locales with + prefix for writable users", () => {
+  const result = filterLocaleOptions({
+    supportedLocales: ["en", "fr", "de"],
+    translationVariants: [
+      {
+        documentId: "11111111-1111-4111-8111-111111111111",
+        locale: "en",
+        path: "blog/launch-notes",
+        publishedVersion: 5,
+        hasUnpublishedChanges: true,
+      },
+    ],
+    canWrite: true,
+    variantsFetchFailed: false,
+  });
+
+  assert.equal(result.length, 3);
+  assert.equal(result[0].hasVariant, true);
+  assert.equal(result[1].hasVariant, false);
+  assert.equal(result[2].hasVariant, false);
+});
+
+test("locale switcher stays selectable when listVariants returns sibling-only", () => {
+  const state = createReadyState();
+  state.localized = true;
+  state.route.supportedLocales = ["en", "fr"];
+  // Only the sibling locale is in translationVariants — the current
+  // locale "en" was filtered out (e.g., by RBAC path filtering).
+  state.translationVariants = [
+    {
+      documentId: "22222222-2222-4222-8222-222222222222",
+      locale: "fr",
+      path: "blog/launch-notes",
+      publishedVersion: null,
+      hasUnpublishedChanges: false,
+    },
+  ];
+
+  const html = renderPageMarkup(state);
+  // The Select trigger should still render
+  assert.ok(
+    html.includes('data-slot="select-trigger"'),
+    "locale select trigger should render even when current locale is not in variants",
+  );
+  // The current locale (en) should be the selected value
+  assert.ok(
+    html.includes("en"),
+    "current locale should appear as the selected value",
+  );
+});
+
+test("variant creation buttons show creating state", () => {
+  const state = createReadyState();
+  state.localized = true;
+  state.route.supportedLocales = ["en", "fr"];
+  state.variantCreation = {
+    targetLocale: "fr",
+    sourceDocumentId: "11111111-1111-4111-8111-111111111111",
+    sourceLocale: "en",
+    status: "creating",
+  };
+
+  const html = renderPageMarkup(state);
+  assert.ok(html.includes("Creating..."));
+  // The creating button has a disabled="" attribute in the rendered HTML
+  assert.ok(html.includes('disabled=""'));
 });

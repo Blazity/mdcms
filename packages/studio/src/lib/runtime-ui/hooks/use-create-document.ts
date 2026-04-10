@@ -5,6 +5,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { IMPLICIT_DEFAULT_LOCALE } from "@mdcms/shared";
 import { createStudioDocumentRouteApi } from "../../document-route-api.js";
+import { getContentTranslationCoverageQueryKey } from "../lib/content-translation-coverage.js";
+import { getContentTypeListQueryKey } from "./use-content-type-list.js";
 import { useStudioMountInfo } from "../app/admin/mount-info-context.js";
 import { useRouter } from "../navigation.js";
 
@@ -66,12 +68,18 @@ export function useCreateDocument(typeId: string) {
     },
     onSuccess: (data) => {
       void queryClient.invalidateQueries({
-        queryKey: [
-          "content-list",
+        queryKey: getContentTypeListQueryKey(
           mountInfo.project,
           mountInfo.environment,
           typeId,
-        ],
+        ),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: getContentTranslationCoverageQueryKey(
+          mountInfo.project,
+          mountInfo.environment,
+          typeId,
+        ),
       });
       setIsOpen(false);
       router.push(`/admin/content/${typeId}/${data.documentId}`);
