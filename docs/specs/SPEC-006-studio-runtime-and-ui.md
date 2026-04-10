@@ -327,6 +327,10 @@ single document head in the active `(project, environment)` target. It is
 backed by:
 
 - `GET /api/v1/content/:documentId?draft=true` for the current draft snapshot
+  (`draft=true` is an authorization/read-model switch that returns the mutable
+  head content snapshot for the addressed document when the caller is
+  authorized; it is not a server-side status filter for "draft-only" or
+  "show unpublished" documents)
 - `PUT /api/v1/content/:documentId` for draft persistence
 - `POST /api/v1/content/:documentId/publish` for publish
 - `GET /api/v1/content/:documentId/versions` and
@@ -340,6 +344,9 @@ Normative behavior:
 - The editor route is keyed by the routed `type`, `documentId`, and active
   environment. Studio must reject stale async results when the active
   environment or routed document changes.
+- `GET /api/v1/content/:documentId?draft=true` reads the mutable head snapshot
+  for that single document in the active target. Authorization controls access
+  to that mutable head snapshot.
 - The primary canvas edits the document `body` through the editor engine owned
   by SPEC-007.
 - The right sidebar exposes two tabs:

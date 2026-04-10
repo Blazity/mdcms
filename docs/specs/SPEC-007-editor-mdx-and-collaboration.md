@@ -106,8 +106,12 @@ There are two distinct save operations:
 **Publish (versioned):**
 
 - Explicit user action (Publish button).
-- Copies the current draft body and frontmatter into a new immutable row in
-  `document_versions`.
+- The client invokes the publish endpoint with the document identity and the
+  optional change summary; it does not upload the body/frontmatter snapshot as
+  part of the publish request in MVP.
+- The server copies the current mutable draft body and frontmatter from the
+  `documents` head row into a new immutable row in `document_versions` at the
+  moment publish succeeds.
 - Optionally includes a change summary entered by the user.
 - This is the only action that creates version history.
 
