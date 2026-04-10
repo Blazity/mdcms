@@ -38,7 +38,6 @@ export type InviteUserInput = {
 
 export type InviteResult = {
   id: string;
-  token: string;
   email: string;
   expiresAt: string;
 };
@@ -266,7 +265,7 @@ export function createStudioUsersApi(
       if (
         !isRecord(payload) ||
         !isRecord(payload.data) ||
-        typeof (payload.data as Record<string, unknown>).token !== "string"
+        typeof (payload.data as Record<string, unknown>).id !== "string"
       ) {
         throw toInvalidResponseError("POST /api/v1/auth/users/invite", payload);
       }

@@ -478,7 +478,6 @@ const validInviteInput: InviteUserInput = {
 
 const validInviteResult: InviteResult = {
   id: "invite-1",
-  token: "invite_token_abc123",
   email: "newuser@example.com",
   expiresAt: "2026-04-16T00:00:00.000Z",
 };
@@ -514,7 +513,6 @@ test("invite sends POST with correct URL, CSRF header, content-type, JSON body, 
     validInviteInput,
   );
 
-  assert.equal(result.token, "invite_token_abc123");
   assert.equal(result.id, "invite-1");
   assert.equal(result.email, "newuser@example.com");
 });
@@ -608,10 +606,10 @@ test("invite throws USERS_RESPONSE_INVALID on malformed response", async () => {
   );
 });
 
-test("invite throws USERS_RESPONSE_INVALID when data has no token field", async () => {
+test("invite throws USERS_RESPONSE_INVALID when data has no id field", async () => {
   const api = createApi({
     fetcher: async () =>
-      new Response(JSON.stringify({ data: { id: "invite-1" } }), {
+      new Response(JSON.stringify({ data: { email: "a@b.com" } }), {
         status: 200,
       }),
   });

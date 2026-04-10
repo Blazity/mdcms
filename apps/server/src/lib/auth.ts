@@ -256,7 +256,6 @@ export type AuthService = {
     input: InviteUserInput,
   ) => Promise<{
     id: string;
-    token: string;
     email: string;
     expiresAt: string;
   }>;
@@ -4282,7 +4281,6 @@ export function createAuthService(
       const ALLOWED_SCOPE_KINDS = [
         "global",
         "project",
-        "environment",
         "folder_prefix",
       ] as const;
       for (const grant of input.grants) {
@@ -4320,16 +4318,6 @@ export function createAuthService(
           throw new RuntimeError({
             code: "VALIDATION_ERROR",
             message: "Project scope requires a project.",
-            statusCode: 400,
-          });
-        }
-        if (
-          scopeKind === "environment" &&
-          (!grant.project || !grant.environment)
-        ) {
-          throw new RuntimeError({
-            code: "VALIDATION_ERROR",
-            message: "Environment scope requires project and environment.",
             statusCode: 400,
           });
         }
@@ -4389,35 +4377,31 @@ export function createAuthService(
       const token = randomBytes(32).toString("hex");
       const tokenHash = hashInviteToken(token);
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-      const inserted = await options.db.transaction(async (tx) => {
-        const [row] = await tx
-          .insert(invites)
-          .values({
-            tokenHash,
-            email,
-            grants: input.grants,
-            createdByUserId: session.userId,
-            expiresAt,
-          })
-          .returning();
-        await options.emailService!.sendInviteEmail({
-          to: email,
-          inviterName: inviter?.name ?? "An administrator",
-          studioUrl,
-          token,
-        });
-        return row;
+      const [inserted] = await options.db
+        .insert(invites)
+        .values({
+          tokenHash,
+          email,
+          grants: input.grants,
+          createdByUserId: session.userId,
+          expiresAt,
+        })
+        .returning();
+      await options.emailService!.sendInviteEmail({
+        to: email,
+        inviterName: inviter?.name ?? "An administrator",
+        studioUrl,
+        token,
       });
       return {
         id: inserted.id,
-        token,
         email: inserted.email,
         expiresAt: inserted.expiresAt.toISOString(),
       };
     },
 
     async updateUserGrants(request, userId, newGrants) {
-      await assertAdminSession(request);
+      const session = await assertAdminSession(request);
       const normalizedId = assertNonEmptyString(userId, "userId");
       if (!Array.isArray(newGrants) || newGrants.length === 0) {
         throw new RuntimeError({
@@ -4436,7 +4420,6 @@ export function createAuthService(
       const ALLOWED_GRANT_SCOPE_KINDS = [
         "global",
         "project",
-        "environment",
         "folder_prefix",
       ] as const;
       for (const grant of newGrants) {
@@ -4473,16 +4456,6 @@ export function createAuthService(
           });
         }
         if (
-          scopeKind === "environment" &&
-          (!grant.project || !grant.environment)
-        ) {
-          throw new RuntimeError({
-            code: "VALIDATION_ERROR",
-            message: "Environment scope requires project and environment.",
-            statusCode: 400,
-          });
-        }
-        if (
           scopeKind === "folder_prefix" &&
           (!grant.project || !grant.environment || !grant.pathPrefix)
         ) {
@@ -4504,33 +4477,47 @@ export function createAuthService(
           statusCode: 404,
         });
       }
-      // Check owner invariant: if user currently has owner grant and new grants don't include owner
-      const currentGrants = await options.db
-        .select()
-        .from(rbacGrants)
-        .where(
-          and(
-            eq(rbacGrants.userId, normalizedId),
-            isNull(rbacGrants.revokedAt),
-          ),
-        );
-      const isCurrentlyOwner = currentGrants.some((g) => g.role === "owner");
+      // Only owners can grant the owner role
       const willBeOwner = newGrants.some((g) => g.role === "owner");
-      if (isCurrentlyOwner && !willBeOwner) {
-        const ownerCountRow = await options.db
-          .select({ count: sql<number>`count(*)::int` })
+      if (willBeOwner) {
+        const callerGrants = await loadSessionRbacGrants(session);
+        const callerIsOwner = callerGrants.some(
+          (g) => g.role === "owner" && g.scope.kind === "global",
+        );
+        if (!callerIsOwner) {
+          throw new RuntimeError({
+            code: "FORBIDDEN",
+            message: "Only owners can grant the owner role.",
+            statusCode: 403,
+          });
+        }
+      }
+      // Revoke + insert in a single transaction (owner check inside to prevent TOCTOU race)
+      await options.db.transaction(async (tx) => {
+        const currentGrants = await tx
+          .select()
           .from(rbacGrants)
           .where(
-            and(eq(rbacGrants.role, "owner"), isNull(rbacGrants.revokedAt)),
+            and(
+              eq(rbacGrants.userId, normalizedId),
+              isNull(rbacGrants.revokedAt),
+            ),
           );
-        assertOwnerMutationAllowed({
-          activeOwnerCount: ownerCountRow[0]?.count ?? 0,
-          intent: "demote_owner",
-        });
-      }
-      // Revoke + insert in a single transaction
-      const sessionForGrants = await requireSession(request);
-      await options.db.transaction(async (tx) => {
+        const isCurrentlyOwner = currentGrants.some(
+          (g) => g.role === "owner",
+        );
+        if (isCurrentlyOwner && !willBeOwner) {
+          const ownerCountRow = await tx
+            .select({ count: sql<number>`count(*)::int` })
+            .from(rbacGrants)
+            .where(
+              and(eq(rbacGrants.role, "owner"), isNull(rbacGrants.revokedAt)),
+            );
+          assertOwnerMutationAllowed({
+            activeOwnerCount: ownerCountRow[0]?.count ?? 0,
+            intent: "demote_owner",
+          });
+        }
         await tx
           .update(rbacGrants)
           .set({ revokedAt: new Date() })
@@ -4548,7 +4535,7 @@ export function createAuthService(
             project: grant.project || null,
             environment: grant.environment || null,
             pathPrefix: grant.pathPrefix || null,
-            createdByUserId: sessionForGrants.userId,
+            createdByUserId: session.userId,
           });
         }
       });
@@ -4557,8 +4544,15 @@ export function createAuthService(
     },
 
     async removeUser(request, userId) {
-      await assertAdminSession(request);
+      const session = await assertAdminSession(request);
       const normalizedId = assertNonEmptyString(userId, "userId");
+      if (normalizedId === session.userId) {
+        throw new RuntimeError({
+          code: "FORBIDDEN",
+          message: "Cannot remove your own account.",
+          statusCode: 403,
+        });
+      }
       const user = await options.db.query.authUsers.findFirst({
         where: eq(authUsers.id, normalizedId),
       });
@@ -4569,30 +4563,30 @@ export function createAuthService(
           statusCode: 404,
         });
       }
-      // Check owner invariant
-      const userGrants = await options.db
-        .select()
-        .from(rbacGrants)
-        .where(
-          and(
-            eq(rbacGrants.userId, normalizedId),
-            isNull(rbacGrants.revokedAt),
-          ),
-        );
-      const isOwner = userGrants.some((g) => g.role === "owner");
-      if (isOwner) {
-        const ownerCountRow = await options.db
-          .select({ count: sql<number>`count(*)::int` })
+      // Owner check + removal in a single transaction to prevent TOCTOU race
+      await options.db.transaction(async (tx) => {
+        const userGrants = await tx
+          .select()
           .from(rbacGrants)
           .where(
-            and(eq(rbacGrants.role, "owner"), isNull(rbacGrants.revokedAt)),
+            and(
+              eq(rbacGrants.userId, normalizedId),
+              isNull(rbacGrants.revokedAt),
+            ),
           );
-        assertOwnerMutationAllowed({
-          activeOwnerCount: ownerCountRow[0]?.count ?? 0,
-          intent: "remove_owner",
-        });
-      }
-      await options.db.transaction(async (tx) => {
+        const isOwner = userGrants.some((g) => g.role === "owner");
+        if (isOwner) {
+          const ownerCountRow = await tx
+            .select({ count: sql<number>`count(*)::int` })
+            .from(rbacGrants)
+            .where(
+              and(eq(rbacGrants.role, "owner"), isNull(rbacGrants.revokedAt)),
+            );
+          assertOwnerMutationAllowed({
+            activeOwnerCount: ownerCountRow[0]?.count ?? 0,
+            intent: "remove_owner",
+          });
+        }
         await tx
           .update(rbacGrants)
           .set({ revokedAt: new Date() })
@@ -4673,6 +4667,13 @@ export function createAuthService(
       const normalizedToken = assertNonEmptyString(token, "token");
       const name = assertNonEmptyString(input.name, "name");
       const password = assertNonEmptyString(input.password, "password");
+      if (password.length < 8) {
+        throw new RuntimeError({
+          code: "VALIDATION_ERROR",
+          message: "Password must be at least 8 characters.",
+          statusCode: 400,
+        });
+      }
       const tokenHash = hashInviteToken(normalizedToken);
       const invite = await options.db.query.invites.findFirst({
         where: eq(invites.tokenHash, tokenHash),
