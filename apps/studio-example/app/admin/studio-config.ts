@@ -2,6 +2,7 @@ import type { MdcmsConfig } from "@mdcms/studio";
 import { prepareStudioConfig } from "@mdcms/studio/runtime";
 import {
   studioExampleEnvironment,
+  studioExampleLocales,
   studioExampleMdxComponents,
   studioExampleProject,
   studioExampleServerUrl,
@@ -46,6 +47,7 @@ export function createClientStudioConfig(
     project: studioExampleProject,
     environment: studioExampleEnvironment,
     serverUrl: studioExampleServerUrl,
+    locales: studioExampleLocales,
     // Pre-computed schema hash from the server component where the full
     // config (with Zod types/environments) is available for derivation.
     ...(schemaHash ? { _schemaHash: schemaHash } : {}),

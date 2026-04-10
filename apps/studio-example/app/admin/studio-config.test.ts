@@ -70,3 +70,12 @@ test("createClientStudioConfig merges prepared extracted props onto authored com
     },
   });
 });
+
+test("createClientStudioConfig preserves explicit locale metadata", () => {
+  const config = createClientStudioConfig([]);
+
+  assert.deepEqual(config.locales, {
+    default: "en",
+    supported: ["en", "fr"],
+  });
+});
