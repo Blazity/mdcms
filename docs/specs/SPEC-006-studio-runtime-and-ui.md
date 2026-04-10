@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-04-06
+last_updated: 2026-04-10
 ---
 
 # SPEC-006 Studio Runtime and UI
@@ -319,6 +319,85 @@ Row-level actions:
 
 - Row action failures are surfaced inline with a dismissible error banner.
 - The `content.list.row.actions` extensibility slot applies to these actions.
+
+### Document Editor (`/admin/content/:type/:documentId`)
+
+The `/admin/content/:type/:documentId` route is the live document editor for a
+single document head in the active `(project, environment)` target. It is
+backed by:
+
+- `GET /api/v1/content/:documentId?draft=true` for the current draft snapshot
+  (`draft=true` is an authorization/read-model switch that returns the mutable
+  head content snapshot for the addressed document when the caller is
+  authorized; it is not a server-side status filter for "draft-only" or
+  "show unpublished" documents)
+- `PUT /api/v1/content/:documentId` for draft persistence
+- `POST /api/v1/content/:documentId/publish` for publish
+- `GET /api/v1/content/:documentId/versions` and
+  `GET /api/v1/content/:documentId/versions/:version` for history and diff
+- `GET /api/v1/content/:documentId/variants` for locale variant discovery
+- `GET /api/v1/schema` for live type and field metadata
+- `GET /api/v1/me/capabilities` for write/publish gating
+
+Normative behavior:
+
+- The editor route is keyed by the routed `type`, `documentId`, and active
+  environment. Studio must reject stale async results when the active
+  environment or routed document changes.
+- `GET /api/v1/content/:documentId?draft=true` reads the mutable head snapshot
+  for that single document in the active target. Authorization controls access
+  to that mutable head snapshot.
+- The primary canvas edits the document `body` through the editor engine owned
+  by SPEC-007.
+- The right sidebar exposes three tabs in this order:
+  - `Info` for document system metadata
+  - `Properties` for schema-driven frontmatter editing
+  - `History` for publish history and version comparison
+- `Properties` is dedicated to schema-derived frontmatter fields for the
+  current type in the active environment.
+- `Properties` does not render document system metadata such as `status`,
+  `publishedVersion`, `locale`, `updatedAt`, or `path`.
+- `Info` shows the existing read-only document metadata (`status`,
+  `publishedVersion`, `locale`, `updatedAt`, `path`).
+- The default selected sidebar tab is `Properties` even though `Info` appears
+  first in the tab strip.
+- Frontmatter controls are derived from the live resolved schema. Studio must
+  not ship hard-coded per-type property forms for routed document editing.
+- Every property row shows an always-visible compact type label derived from
+  the resolved schema for the active environment.
+- MVP editable field support is intentionally narrow:
+  - `string` fields render as single-line text inputs
+  - `number` fields render as numeric inputs
+  - `boolean` fields render as switches
+  - enum-like fields render as selects when the resolved schema exposes a
+    closed value set
+  - optional wrappers of supported kinds reuse the same control and allow an
+    empty/unset value
+- Unsupported field shapes render deterministically as read-only property rows
+  with a type label and a “Not editable in Studio yet” message. Unsupported
+  shapes include reference fields, arrays, objects, tuples, unions, executable
+  custom schemas, and any unrecognized field kind.
+- Unsupported frontmatter values must be preserved in the local draft state and
+  in subsequent `PUT /api/v1/content/:documentId` writes. Studio must not drop
+  a field solely because the current UI cannot edit it.
+- Property field order follows the resolved schema order for the current type.
+- Fields that only exist in specific environments remain first-class controls
+  when they are present in the active environment. Their environment badge is
+  shown inline with the field label/control (for example `staging only`); a
+  summary-only list without an editable control does not satisfy this contract.
+- Fields omitted from the resolved schema for the active environment are not
+  rendered as editable controls in that environment.
+- Frontmatter edits participate in the same unsaved/saving/saved indicator model
+  as body edits. Changing only a property field is sufficient to mark the draft
+  unsaved and trigger draft persistence.
+- Existing write-blocking states continue to apply to both body and property
+  editing. When Studio is read-only because of RBAC, schema mismatch, or other
+  guarded write conditions, the properties editor is disabled consistently with
+  the main editor canvas.
+- Validation failures returned by `PUT /api/v1/content/:documentId` should be
+  anchored to the corresponding property control when the failure can be mapped
+  to a named frontmatter field; otherwise Studio falls back to the route-level
+  mutation error banner.
 
 ### Theme Preference Persistence
 

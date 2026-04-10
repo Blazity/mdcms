@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "bun:test";
 import {
   RuntimeError,
+  type SchemaRegistryEntry,
   createEmptyCurrentPrincipalCapabilities,
 } from "@mdcms/shared";
 import { createElement } from "react";
@@ -16,15 +17,19 @@ import {
   applySuccessfulDraftSaveToReadyState,
   applySchemaStateToReadyState,
   ContentDocumentPageView,
+  createContentDocumentRouteRequestToken,
   createContentDocumentPageState,
   filterLocaleOptions,
   loadContentDocumentPageState,
   loadContentDocumentVersionDiff,
+  matchesContentDocumentRouteRequestToken,
   parseSelectedComparisonVersionValue,
   publishContentDocumentReadyState,
   reloadSchemaStateForGuard,
+  resolveActiveDocumentRouteContext,
   reduceContentDocumentPageReadyState,
   saveContentDocumentReadyState,
+  SidebarInfoTab,
   syncSchemaStateForGuard,
 } from "./content-document-page.js";
 
@@ -41,6 +46,10 @@ function createReadyShell(
       type: "BlogPost",
       locale: "en",
       path: "blog/launch-notes",
+      format: "mdx",
+      frontmatter: {
+        title: "Launch Notes",
+      },
       body: "# Launch Notes",
       updatedAt: "2026-03-27T12:00:00.000Z",
       hasUnpublishedChanges: true,
@@ -90,9 +99,23 @@ function renderPageMarkup(
   );
 }
 
-function createReadyState() {
+function renderInfoTabMarkup(
+  state: ReturnType<typeof createReadyState>,
+): string {
+  return renderToStaticMarkup(createElement(SidebarInfoTab, { state }));
+}
+
+function createReadyState(
+  overrides: Partial<
+    Extract<
+      ReturnType<typeof createContentDocumentPageState>,
+      { status: "ready" }
+    >
+  > = {},
+) {
   const state = createContentDocumentPageState({
     shell: createReadyShell(),
+    typeId: "BlogPost",
     typeLabel: "Blog post",
     documentRoute: {
       project: "marketing-site",
@@ -108,7 +131,10 @@ function createReadyState() {
     throw new Error("expected ready state");
   }
 
-  return state;
+  return {
+    ...state,
+    ...overrides,
+  };
 }
 
 type ReadySchemaState = Extract<
@@ -141,6 +167,24 @@ function createReadySchemaState(
     sync: async (): Promise<ReadySchemaState> =>
       createReadySchemaState(overrides),
     ...overrides,
+  };
+}
+
+function createSchemaEntry(
+  fields: SchemaRegistryEntry["resolvedSchema"]["fields"],
+): SchemaRegistryEntry {
+  return {
+    type: "BlogPost",
+    directory: "content/blog",
+    localized: true,
+    schemaHash: "local-hash",
+    syncedAt: "2026-03-27T12:00:00.000Z",
+    resolvedSchema: {
+      type: "BlogPost",
+      directory: "content/blog",
+      localized: true,
+      fields,
+    },
   };
 }
 
@@ -538,6 +582,59 @@ test("reduceContentDocumentPageReadyState moves draft edits through unsaved, sav
   assert.equal(saved.draftBody, "# Launch Notes\nUpdated");
 });
 
+test("createContentDocumentPageState keeps routed frontmatter and format in ready state", () => {
+  const state = createContentDocumentPageState({
+    shell: createReadyShell({
+      format: "md",
+      frontmatter: {
+        title: "Launch Notes",
+        seo: {
+          slug: "launch-notes",
+        },
+      },
+    }),
+    typeLabel: "Blog post",
+    documentRoute: createRouteContext(),
+  });
+
+  assert.equal(state.status, "ready");
+  if (state.status !== "ready") {
+    throw new Error("expected ready state");
+  }
+
+  assert.equal(state.document.format, "md");
+  assert.deepEqual(state.document.frontmatter, {
+    title: "Launch Notes",
+    seo: {
+      slug: "launch-notes",
+    },
+  });
+  assert.deepEqual(state.draftFrontmatter, {
+    title: "Launch Notes",
+    seo: {
+      slug: "launch-notes",
+    },
+  });
+});
+
+test("reduceContentDocumentPageReadyState marks frontmatter edits as unsaved and updates the draft frontmatter", () => {
+  const initial = createReadyState();
+
+  const next = reduceContentDocumentPageReadyState(initial, {
+    type: "frontmatterFieldChanged",
+    fieldName: "title",
+    value: "Updated Launch Notes",
+  });
+
+  assert.equal(next.saveState, "unsaved");
+  assert.deepEqual(next.draftFrontmatter, {
+    title: "Updated Launch Notes",
+  });
+  assert.deepEqual(initial.document.frontmatter, {
+    title: "Launch Notes",
+  });
+});
+
 test("reduceContentDocumentPageReadyState keeps the unsaved draft body and surfaces mutation feedback on save failure", () => {
   const initial = createReadyState();
 
@@ -673,10 +770,83 @@ test("saveContentDocumentReadyState persists routed draft updates through the co
   assert.equal(calls[0]?.schemaHash, "schema-hash");
   assert.deepEqual(calls[0]?.payload, {
     body: "# Launch Notes\nUpdated",
+    frontmatter: {
+      title: "Launch Notes",
+    },
   });
   assert.equal(next.saveState, "saved");
   assert.equal(next.document.body, "# Launch Notes\nUpdated");
   assert.equal(next.document.updatedAt, "2026-03-27T12:05:00.000Z");
+});
+
+test("saveContentDocumentReadyState persists draft frontmatter changes and preserves unsupported values", async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const initial = reduceContentDocumentPageReadyState(
+    createReadyState({
+      document: {
+        ...createReadyState().document,
+        frontmatter: {
+          title: "Launch Notes",
+          seo: {
+            slug: "launch-notes",
+          },
+        },
+      },
+      draftFrontmatter: {
+        title: "Launch Notes",
+        seo: {
+          slug: "launch-notes",
+        },
+      },
+    }),
+    {
+      type: "frontmatterFieldChanged",
+      fieldName: "title",
+      value: "Updated Launch Notes",
+    },
+  );
+
+  const next = await saveContentDocumentReadyState({
+    api: {
+      updateDraft: async (input) => {
+        calls.push(input as Record<string, unknown>);
+
+        return createDocumentResponse({
+          frontmatter: {
+            title: "Updated Launch Notes",
+            seo: {
+              slug: "launch-notes",
+            },
+          },
+          updatedAt: "2026-03-27T12:05:00.000Z",
+        });
+      },
+    },
+    route: createRouteContext(),
+    state: initial,
+  });
+
+  assert.deepEqual(calls[0]?.payload, {
+    body: "# Launch Notes",
+    frontmatter: {
+      title: "Updated Launch Notes",
+      seo: {
+        slug: "launch-notes",
+      },
+    },
+  });
+  assert.deepEqual(next.document.frontmatter, {
+    title: "Updated Launch Notes",
+    seo: {
+      slug: "launch-notes",
+    },
+  });
+  assert.deepEqual(next.draftFrontmatter, {
+    title: "Updated Launch Notes",
+    seo: {
+      slug: "launch-notes",
+    },
+  });
 });
 
 test("saveContentDocumentReadyState applies the normalized body returned by the server", async () => {
@@ -727,6 +897,38 @@ test("saveContentDocumentReadyState keeps the unsaved draft when the routed upda
   assert.equal(next.draftBody, "# Launch Notes\nInvalid");
   assert.equal(next.document.body, "# Launch Notes");
   assert.equal(next.mutationError, "Path must be unique.");
+});
+
+test("saveContentDocumentReadyState anchors mapped frontmatter validation failures to the field state", async () => {
+  const initial = reduceContentDocumentPageReadyState(createReadyState(), {
+    type: "frontmatterFieldChanged",
+    fieldName: "author",
+    value: "not-a-valid-reference",
+  });
+
+  const next = await saveContentDocumentReadyState({
+    api: {
+      updateDraft: async () => {
+        throw new RuntimeError({
+          code: "INVALID_INPUT",
+          message:
+            'Field "frontmatter.author" must reference an "Author" document.',
+          statusCode: 400,
+          details: {
+            field: "frontmatter.author",
+          },
+        });
+      },
+    },
+    route: createRouteContext(),
+    state: initial,
+  });
+
+  assert.equal(next.mutationError, undefined);
+  assert.deepEqual(next.fieldErrors, {
+    author: 'Field "frontmatter.author" must reference an "Author" document.',
+  });
+  assert.equal(next.saveState, "unsaved");
 });
 
 test("saveContentDocumentReadyState surfaces forbidden routed draft updates without pretending the draft persisted", async () => {
@@ -1160,7 +1362,7 @@ test("loadContentDocumentPageState seeds arbitrary version comparison and diff s
   assert.equal(diff.rightVersion, 3);
 });
 
-test("ContentDocumentPageView renders tabbed sidebar with properties and history", () => {
+test("ContentDocumentPageView renders tabbed sidebar in info, properties, history order", () => {
   const ready = createReadyState();
   const readyMarkup = renderPageMarkup({
     ...ready,
@@ -1226,10 +1428,26 @@ test("ContentDocumentPageView renders tabbed sidebar with properties and history
 
   // The sidebar defaults to the Properties tab. Version history content
   // is in the History tab and version diff is in a modal, so they are
-  // not present in the default SSR render.
+  // not present in the default SSR render. System metadata moved to Info.
+  const infoIndex = readyMarkup.indexOf(">Info<");
+  const propertiesIndex = readyMarkup.indexOf(">Properties<");
+  const historyIndex = readyMarkup.indexOf(">History<");
+
+  assert.ok(infoIndex >= 0, "expected Info tab label");
+  assert.ok(propertiesIndex >= 0, "expected Properties tab label");
+  assert.ok(historyIndex >= 0, "expected History tab label");
+  assert.ok(
+    infoIndex < propertiesIndex && propertiesIndex < historyIndex,
+    "expected Info, Properties, History tab order",
+  );
   assert.match(readyMarkup, /Properties/);
+  assert.match(readyMarkup, /Info/);
   assert.match(readyMarkup, /History/);
   assert.match(readyMarkup, /Publish document/);
+  assert.doesNotMatch(readyMarkup, /Status/);
+  assert.doesNotMatch(readyMarkup, /Published version/);
+  assert.doesNotMatch(readyMarkup, /Last edited/);
+  assert.doesNotMatch(readyMarkup, /Path/);
   // Old sidebar content should be gone
   assert.doesNotMatch(readyMarkup, /Document workflow/);
   assert.doesNotMatch(readyMarkup, /This page loads the routed draft/);
@@ -1237,6 +1455,31 @@ test("ContentDocumentPageView renders tabbed sidebar with properties and history
   assert.doesNotMatch(readyMarkup, /Move \/ Rename/);
   assert.doesNotMatch(readyMarkup, /View published version/);
   assert.doesNotMatch(readyMarkup, /Route status/);
+});
+
+test("SidebarInfoTab renders the document system metadata outside Properties", () => {
+  const state = createReadyState({
+    document: {
+      ...createReadyState().document,
+      hasUnpublishedChanges: false,
+      publishedVersion: 1,
+      path: "content/posts/hello-mdcms",
+      updatedAt: "2026-04-10T10:00:00.000Z",
+    },
+  });
+
+  const markup = renderInfoTabMarkup(state);
+
+  assert.match(markup, /Status/);
+  assert.match(markup, />Published</);
+  assert.match(markup, /Published version/);
+  assert.match(markup, />v1</);
+  assert.match(markup, /Locale/);
+  assert.match(markup, />en</);
+  assert.match(markup, /Last edited/);
+  assert.match(markup, /Path/);
+  assert.match(markup, /content\/posts\/hello-mdcms/);
+  assert.doesNotMatch(markup, /data-mdcms-property-field=/);
 });
 
 test("ContentDocumentPageView derives truthful document badges from live document state", () => {
@@ -1289,6 +1532,203 @@ test("ContentDocumentPageView blocks writes when the local schema hash capabilit
   assert.equal(state.canWrite, false);
   assert.match(markup, /data-mdcms-document-write-state="blocked"/);
   assert.match(markup, /Schema sync required before Studio can write drafts\./);
+});
+
+test("ContentDocumentPageView renders environment-specific field badges inline with editable fields", () => {
+  const state = createReadyState();
+  state.schemaState = createReadySchemaState({
+    entries: [
+      createSchemaEntry({
+        featured: {
+          kind: "boolean",
+          required: true,
+          nullable: false,
+        },
+        abTestVariant: {
+          kind: "string",
+          required: false,
+          nullable: false,
+        },
+      }),
+    ],
+  });
+  state.document.frontmatter = {
+    featured: false,
+    abTestVariant: "variant-a",
+  };
+  state.draftFrontmatter = {
+    ...state.document.frontmatter,
+  };
+  state.route.environmentFieldTargets = {
+    [state.typeId]: {
+      featured: ["staging"],
+      abTestVariant: ["preview", "staging"],
+    },
+  };
+
+  const markup = renderPageMarkup(state);
+
+  assert.match(markup, /data-mdcms-property-field="featured"/);
+  assert.match(markup, /data-mdcms-property-type="boolean"/);
+  assert.match(markup, />featured</);
+  assert.match(markup, /staging/);
+  assert.match(markup, /data-mdcms-property-field="abTestVariant"/);
+  assert.match(markup, /data-mdcms-property-type="string"/);
+  assert.match(markup, />abTestVariant</);
+  assert.match(markup, /preview, staging/);
+});
+
+test("ContentDocumentPageView renders schema-driven property controls and unsupported fallback rows", () => {
+  const state = createReadyState();
+  state.schemaState = createReadySchemaState({
+    entries: [
+      createSchemaEntry({
+        title: {
+          kind: "string",
+          required: true,
+          nullable: false,
+        },
+        views: {
+          kind: "number",
+          required: false,
+          nullable: false,
+        },
+        published: {
+          kind: "boolean",
+          required: true,
+          nullable: false,
+        },
+        status: {
+          kind: "enum",
+          required: true,
+          nullable: false,
+          options: ["draft", "published"],
+        },
+        metadata: {
+          kind: "object",
+          required: false,
+          nullable: false,
+          fields: {
+            slug: {
+              kind: "string",
+              required: true,
+              nullable: false,
+            },
+          },
+        },
+        featured: {
+          kind: "boolean",
+          required: true,
+          nullable: false,
+        },
+      }),
+    ],
+  });
+  state.route.environmentFieldTargets = {
+    [state.typeId]: {
+      featured: ["staging"],
+    },
+  };
+  state.document.frontmatter = {
+    title: "Launch Notes",
+    views: 42,
+    published: true,
+    status: "draft",
+    metadata: {
+      slug: "launch-notes",
+    },
+    featured: false,
+  };
+  state.draftFrontmatter = {
+    ...state.document.frontmatter,
+  };
+
+  const markup = renderPageMarkup(state);
+
+  assert.match(markup, /data-mdcms-property-field="title"/);
+  assert.match(markup, /data-mdcms-property-type="string"/);
+  assert.match(markup, /data-mdcms-property-editor="string"/);
+  assert.match(markup, /data-mdcms-property-field="views"/);
+  assert.match(markup, /data-mdcms-property-type="number"/);
+  assert.match(markup, /data-mdcms-property-editor="number"/);
+  assert.match(markup, /data-mdcms-property-field="published"/);
+  assert.match(markup, /data-mdcms-property-type="boolean"/);
+  assert.match(markup, /data-mdcms-property-editor="boolean"/);
+  assert.match(markup, /data-mdcms-property-field="status"/);
+  assert.match(markup, /data-mdcms-property-type="enum"/);
+  assert.match(markup, /data-mdcms-property-editor="select"/);
+  assert.match(markup, /data-mdcms-property-field="metadata"/);
+  assert.match(markup, /data-mdcms-property-type="object"/);
+  assert.match(markup, /Not editable yet/);
+  assert.match(markup, /data-mdcms-property-field="featured"/);
+  assert.match(markup, /staging/);
+  assert.match(markup, />string</);
+  assert.match(markup, />number</);
+  assert.match(markup, />boolean</);
+  assert.match(markup, />enum</);
+  assert.match(markup, />object</);
+});
+
+test("resolveActiveDocumentRouteContext switches write metadata with the selected environment", () => {
+  const route = {
+    ...createRouteContext(true),
+    writeByEnvironment: {
+      production: {
+        canWrite: true as const,
+        schemaHash: "production-schema-hash",
+      },
+      staging: {
+        canWrite: true as const,
+        schemaHash: "staging-schema-hash",
+      },
+    },
+  };
+
+  const activeRoute = resolveActiveDocumentRouteContext(route, "production");
+
+  assert.equal(activeRoute.initialEnvironment, "production");
+  assert.deepEqual(activeRoute.write, {
+    canWrite: true,
+    schemaHash: "production-schema-hash",
+  });
+});
+
+test("document route request tokens reject stale async results after an environment switch", () => {
+  const requestToken = createContentDocumentRouteRequestToken({
+    documentId: "11111111-1111-4111-8111-111111111111",
+    route: createRouteContext(true),
+  });
+  const switchedRoute = resolveActiveDocumentRouteContext(
+    {
+      ...createRouteContext(true),
+      writeByEnvironment: {
+        production: {
+          canWrite: true as const,
+          schemaHash: "production-schema-hash",
+        },
+        staging: {
+          canWrite: true as const,
+          schemaHash: "staging-schema-hash",
+        },
+      },
+    },
+    "production",
+  );
+
+  assert.equal(
+    matchesContentDocumentRouteRequestToken(requestToken, {
+      documentId: "11111111-1111-4111-8111-111111111111",
+      route: createRouteContext(true),
+    }),
+    true,
+  );
+  assert.equal(
+    matchesContentDocumentRouteRequestToken(requestToken, {
+      documentId: "11111111-1111-4111-8111-111111111111",
+      route: switchedRoute,
+    }),
+    false,
+  );
 });
 
 test("locale switcher renders for localized type with supportedLocales", () => {

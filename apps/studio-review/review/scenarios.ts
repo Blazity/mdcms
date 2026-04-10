@@ -97,6 +97,11 @@ function createSchemaEntries() {
         directory: "content/posts",
         localized: false,
         fields: {
+          featured: {
+            kind: "boolean",
+            required: true,
+            nullable: false,
+          },
           title: {
             kind: "string",
             required: true,

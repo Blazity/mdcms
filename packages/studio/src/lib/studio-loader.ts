@@ -18,7 +18,11 @@ import {
 } from "@mdcms/shared";
 
 import { assertStudioRuntimePublication } from "./bootstrap-verification.js";
-import { resolveStudioDocumentRouteSchemaCapability } from "./document-route-schema.js";
+import {
+  resolveStudioDocumentRouteSchemaCapability,
+  resolveStudioDocumentRoutePreparedMetadata,
+  type StudioDocumentRoutePreparedMetadata,
+} from "./document-route-schema.js";
 import type { MdcmsConfig } from "./studio.js";
 import {
   normalizeStudioBaseUrl,
@@ -227,6 +231,117 @@ function readTrimmedConfigString(value: unknown): string | undefined {
     : undefined;
 }
 
+function isNonEmptyTrimmedString(value: unknown): value is string {
+  return (
+    typeof value === "string" && value.length > 0 && value.trim() === value
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isNonEmptyTrimmedString);
+}
+
+/** Validates precomputed route metadata before it reaches the mount contract. */
+export function isPreparedDocumentRouteMetadata(
+  value: unknown,
+): value is StudioDocumentRoutePreparedMetadata {
+  if (!isRecord(value) || !isRecord(value.schemaHashesByEnvironment)) {
+    return false;
+  }
+
+  const schemaEntries = Object.entries(value.schemaHashesByEnvironment);
+  if (
+    schemaEntries.length === 0 ||
+    !schemaEntries.every(
+      ([environment, schemaHash]) =>
+        isNonEmptyTrimmedString(environment) &&
+        isNonEmptyTrimmedString(schemaHash),
+    )
+  ) {
+    return false;
+  }
+
+  if (value.environmentFieldTargets === undefined) {
+    return false;
+  }
+
+  if (!isRecord(value.environmentFieldTargets)) {
+    return false;
+  }
+
+  const validEnvironments = new Set(
+    schemaEntries.map(([environment]) => environment),
+  );
+
+  return Object.entries(value.environmentFieldTargets).every(
+    ([typeName, typeFields]) => {
+      if (!isNonEmptyTrimmedString(typeName) || !isRecord(typeFields)) {
+        return false;
+      }
+
+      const fieldEntries = Object.entries(typeFields);
+      if (fieldEntries.length === 0) {
+        return false;
+      }
+
+      return fieldEntries.every(([fieldName, targets]) => {
+        if (!isNonEmptyTrimmedString(fieldName)) {
+          return false;
+        }
+
+        return (
+          isStringArray(targets) &&
+          targets.length > 0 &&
+          targets.every((target) => validEnvironments.has(target))
+        );
+      });
+    },
+  );
+}
+
+function toWriteByEnvironment(
+  metadata: StudioDocumentRoutePreparedMetadata,
+): Record<
+  string,
+  {
+    canWrite: true;
+    schemaHash: string;
+  }
+> {
+  return Object.fromEntries(
+    Object.entries(metadata.schemaHashesByEnvironment)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([environment, schemaHash]) => [
+        environment,
+        {
+          canWrite: true as const,
+          schemaHash,
+        },
+      ]),
+  );
+}
+
+async function readPreparedDocumentRouteMetadata(
+  config: MdcmsConfig,
+): Promise<StudioDocumentRoutePreparedMetadata | undefined> {
+  const precomputed = (config as Record<string, unknown>)
+    ._documentRouteMetadata;
+
+  if (isPreparedDocumentRouteMetadata(precomputed)) {
+    return precomputed;
+  }
+
+  try {
+    return await resolveStudioDocumentRoutePreparedMetadata(config);
+  } catch {
+    return undefined;
+  }
+}
+
 async function createDocumentRouteMountContext(
   config: MdcmsConfig,
 ): Promise<StudioMountContext["documentRoute"] | undefined> {
@@ -244,10 +359,18 @@ async function createDocumentRouteMountContext(
     typeof (config as Record<string, unknown>)._schemaHash === "string"
       ? ((config as Record<string, unknown>)._schemaHash as string)
       : undefined;
+  const preparedDocumentRouteMetadata =
+    await readPreparedDocumentRouteMetadata(config);
+  const writeByEnvironment = preparedDocumentRouteMetadata
+    ? toWriteByEnvironment(preparedDocumentRouteMetadata)
+    : undefined;
+  const currentEnvironmentWrite = writeByEnvironment?.[environment];
 
-  const capability = precomputedSchemaHash
-    ? { canWrite: true as const, schemaHash: precomputedSchemaHash }
-    : await resolveStudioDocumentRouteSchemaCapability(config);
+  const capability = currentEnvironmentWrite
+    ? currentEnvironmentWrite
+    : precomputedSchemaHash
+      ? { canWrite: true as const, schemaHash: precomputedSchemaHash }
+      : await resolveStudioDocumentRouteSchemaCapability(config);
 
   let supportedLocales: string[] | undefined;
   let defaultLocale: string | undefined;
@@ -272,6 +395,15 @@ async function createDocumentRouteMountContext(
     initialEnvironment: environment,
     ...(supportedLocales && supportedLocales.length > 0
       ? { supportedLocales, defaultLocale }
+      : {}),
+    ...(writeByEnvironment ? { writeByEnvironment } : {}),
+    ...(preparedDocumentRouteMetadata &&
+    Object.keys(preparedDocumentRouteMetadata.environmentFieldTargets).length >
+      0
+      ? {
+          environmentFieldTargets:
+            preparedDocumentRouteMetadata.environmentFieldTargets,
+        }
       : {}),
     write: capability.canWrite
       ? {

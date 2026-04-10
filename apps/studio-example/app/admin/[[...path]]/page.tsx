@@ -19,6 +19,11 @@ export default async function AdminCatchAllPage() {
       preparedComponents={extractPreparedStudioComponentMetadata(
         preparedConfig,
       )}
+      documentRouteMetadata={
+        "_documentRouteMetadata" in preparedConfig
+          ? preparedConfig._documentRouteMetadata
+          : undefined
+      }
       schemaHash={
         "_schemaHash" in preparedConfig
           ? (preparedConfig._schemaHash as string)

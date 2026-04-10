@@ -1,6 +1,6 @@
 "use client";
 
-import { Studio } from "@mdcms/studio";
+import { Studio, type MdcmsConfig } from "@mdcms/studio";
 
 import {
   createClientStudioConfig,
@@ -12,11 +12,13 @@ export function AdminStudioClient(props: {
   basePath: string;
   serverUrl: string;
   preparedComponents: PreparedStudioComponentMetadata[];
+  documentRouteMetadata?: MdcmsConfig["_documentRouteMetadata"];
 }) {
   const config = createClientStudioConfig({
     scenario: props.scenario,
     serverUrl: props.serverUrl,
     preparedComponents: props.preparedComponents,
+    documentRouteMetadata: props.documentRouteMetadata ?? undefined,
   });
 
   return (

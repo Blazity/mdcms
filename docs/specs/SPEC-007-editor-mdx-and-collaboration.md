@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-26
+last_updated: 2026-04-10
 ---
 
 # SPEC-007 Editor, MDX, and Collaboration
@@ -95,15 +95,23 @@ There are two distinct save operations:
 **Auto-save (draft):**
 
 - Debounced: triggers ~5 seconds after the last change, or on editor blur/disconnect.
-- Serializes the current TipTap document state to markdown + frontmatter.
+- Serializes the current TipTap document state to markdown together with the
+  current frontmatter draft state from the schema-driven `Properties` tab.
 - `UPDATE`s the `documents` row in place, sets `has_unpublished_changes = TRUE`, and increments `draft_revision`. No version history is created.
 - Silent — no UI indication beyond a subtle "Saved" indicator.
 - Does not depend on Redis, WebSocket sessions, or webhook fan-out in MVP.
+- Frontmatter-only edits and body-only edits use the same draft-save pipeline
+  and the same unsaved/saving/saved state machine.
 
 **Publish (versioned):**
 
 - Explicit user action (Publish button).
-- Copies the current draft content into a new immutable row in `document_versions`.
+- The client invokes the publish endpoint with the document identity and the
+  optional change summary; it does not upload the body/frontmatter snapshot as
+  part of the publish request in MVP.
+- The server copies the current mutable draft body and frontmatter from the
+  `documents` head row into a new immutable row in `document_versions` at the
+  moment publish succeeds.
 - Optionally includes a change summary entered by the user.
 - This is the only action that creates version history.
 

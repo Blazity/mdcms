@@ -10,6 +10,9 @@ import {
 
 type PreparedStudioConfig = Awaited<ReturnType<typeof prepareStudioConfig>>;
 type PreparedStudioComponent = NonNullable<MdcmsConfig["components"]>[number];
+type PreparedDocumentRouteMetadata = NonNullable<
+  MdcmsConfig["_documentRouteMetadata"]
+>;
 
 export type PreparedStudioComponentMetadata = Pick<
   PreparedStudioComponent,
@@ -70,6 +73,7 @@ export function createClientStudioConfig(input: {
   scenario: string;
   serverUrl: string;
   preparedComponents: PreparedStudioComponentMetadata[];
+  documentRouteMetadata?: PreparedDocumentRouteMetadata;
 }): MdcmsConfig {
   const extractedPropsByName = new Map(
     input.preparedComponents.map((component) => [
@@ -85,6 +89,9 @@ export function createClientStudioConfig(input: {
     project: studioReviewProject,
     environment: studioReviewEnvironment,
     serverUrl: input.serverUrl,
+    ...(input.documentRouteMetadata
+      ? { _documentRouteMetadata: input.documentRouteMetadata }
+      : {}),
     components: clientComponents.map((component) => {
       const extractedProps = extractedPropsByName.get(component.name);
 
