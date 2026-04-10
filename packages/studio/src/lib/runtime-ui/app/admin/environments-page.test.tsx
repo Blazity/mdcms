@@ -6,6 +6,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import type { EnvironmentSummary } from "@mdcms/shared";
 
+import { ThemeProvider } from "../../adapters/next-themes.js";
+import { StudioMountInfoProvider } from "./mount-info-context.js";
+import { StudioSessionProvider } from "./session-context.js";
 import {
   EnvironmentManagementPageView,
   type EnvironmentManagementState,
@@ -27,9 +30,33 @@ function createEnvironmentSummary(
 
 function renderMarkup(state: EnvironmentManagementState): string {
   return renderToStaticMarkup(
-    createElement(EnvironmentManagementPageView, {
-      state,
-    }),
+    createElement(
+      ThemeProvider,
+      null,
+      createElement(
+        StudioSessionProvider,
+        {
+          value: { status: "unauthenticated" },
+        },
+        createElement(
+          StudioMountInfoProvider,
+          {
+            value: {
+              project: "marketing-site",
+              environment: "staging",
+              setEnvironment: () => {},
+              apiBaseUrl: "http://localhost:4000",
+              auth: { mode: "cookie" },
+              environments: [],
+              hostBridge: null,
+            },
+          },
+          createElement(EnvironmentManagementPageView, {
+            state,
+          }),
+        ),
+      ),
+    ),
   );
 }
 
@@ -45,6 +72,9 @@ test("EnvironmentManagementPageView renders loading and empty states determinist
     environments: [],
   });
 
+  assert.match(loadingMarkup, /class="min-h-screen"/);
+  assert.match(loadingMarkup, /sticky top-0/);
+  assert.match(loadingMarkup, /p-6 space-y-6/);
   assert.match(loadingMarkup, /data-mdcms-environments-page-state="loading"/);
   assert.match(loadingMarkup, /Loading environments/i);
   assert.match(emptyMarkup, /data-mdcms-environments-page-state="empty"/);

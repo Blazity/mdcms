@@ -12,7 +12,6 @@ import {
   PageHeader,
   PageHeaderActions,
   PageHeaderDescription,
-  PageHeaderHeading,
 } from "../../components/layout/page-header.js";
 import { Badge } from "../../components/ui/badge.js";
 import { Button } from "../../components/ui/button.js";
@@ -177,194 +176,199 @@ export function EnvironmentManagementPageView({
   const canManage = state.status === "ready";
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader>
-        <div className="space-y-1">
-          <PageHeaderHeading>Environments</PageHeaderHeading>
-          <PageHeaderDescription>
-            Manage project environments for {state.project}.
-          </PageHeaderDescription>
-        </div>
-        {canManage ? (
-          <PageHeaderActions>
-            <Dialog
-              open={isCreateDialogOpen}
-              onOpenChange={onCreateDialogChange}
-            >
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  New Environment
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create Environment</DialogTitle>
-                  <DialogDescription>
-                    Create a new environment for this project.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-3 py-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="environment-name">Name</Label>
-                    <Input
-                      id="environment-name"
-                      placeholder="e.g. staging"
-                      value={createName}
-                      onChange={(event) =>
-                        onCreateNameChange?.(event.target.value)
-                      }
-                    />
-                  </div>
-                  {createError ? (
-                    <p className="text-sm text-destructive">{createError}</p>
-                  ) : null}
-                </div>
-                <DialogFooter>
-                  <Button
-                    variant="outline"
-                    onClick={() => onCreateDialogChange?.(false)}
-                  >
-                    Cancel
+    <div className="min-h-screen">
+      <PageHeader breadcrumbs={[{ label: "Environments" }]} />
+      <div className="p-6 space-y-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Environments
+            </h1>
+            <PageHeaderDescription>
+              Manage project environments for {state.project}.
+            </PageHeaderDescription>
+          </div>
+          {canManage ? (
+            <PageHeaderActions>
+              <Dialog
+                open={isCreateDialogOpen}
+                onOpenChange={onCreateDialogChange}
+              >
+                <DialogTrigger asChild>
+                  <Button className="w-full sm:w-auto" type="button">
+                    <Plus className="mr-2 h-4 w-4" />
+                    New Environment
                   </Button>
-                  <Button
-                    disabled={pendingCreate}
-                    onClick={() => onCreateSubmit?.()}
-                  >
-                    {pendingCreate ? "Creating..." : "Create"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </PageHeaderActions>
-        ) : null}
-      </PageHeader>
-
-      {actionError ? (
-        <section className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-          {actionError}
-        </section>
-      ) : null}
-
-      {state.status === "loading" ? (
-        <section
-          data-mdcms-environments-page-state="loading"
-          className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
-        >
-          {state.message}
-        </section>
-      ) : state.status === "forbidden" ? (
-        <section
-          data-mdcms-environments-page-state="forbidden"
-          className="space-y-3 rounded-lg border border-dashed p-6"
-        >
-          <Badge variant="secondary">Forbidden</Badge>
-          <p className="text-sm text-muted-foreground">{state.message}</p>
-          <p className="text-xs text-muted-foreground">{state.project}</p>
-        </section>
-      ) : state.status === "error" ? (
-        <section
-          data-mdcms-environments-page-state="error"
-          className="space-y-3 rounded-lg border border-dashed p-6"
-        >
-          <Badge variant="destructive">Error</Badge>
-          <p className="text-sm text-muted-foreground">{state.message}</p>
-          <p className="text-xs text-muted-foreground">{state.project}</p>
-          {renderRetryButton(onRetry)}
-        </section>
-      ) : state.environments.length === 0 ? (
-        <section
-          data-mdcms-environments-page-state="empty"
-          className="space-y-3 rounded-lg border border-dashed p-6"
-        >
-          <Badge variant="outline">Empty</Badge>
-          <p className="text-sm text-muted-foreground">
-            No environments were returned for this project yet.
-          </p>
-          <p className="text-xs text-muted-foreground">{state.project}</p>
-        </section>
-      ) : (
-        <section
-          data-mdcms-environments-page-state="ready"
-          className="grid gap-4"
-        >
-          {state.environments.map((environment) => (
-            <article
-              key={environment.id}
-              data-mdcms-environment-row={environment.name}
-              className="space-y-4 rounded-lg border p-4"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-lg font-semibold tracking-tight">
-                      {environment.name}
-                    </h2>
-                    {environment.isDefault ? (
-                      <Badge variant="secondary">Default</Badge>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create Environment</DialogTitle>
+                    <DialogDescription>
+                      Create a new environment for this project.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-3 py-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="environment-name">Name</Label>
+                      <Input
+                        id="environment-name"
+                        placeholder="e.g. staging"
+                        value={createName}
+                        onChange={(event) =>
+                          onCreateNameChange?.(event.target.value)
+                        }
+                      />
+                    </div>
+                    {createError ? (
+                      <p className="text-sm text-destructive">{createError}</p>
                     ) : null}
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    {environment.extends
-                      ? `Extends ${environment.extends}`
-                      : "No parent environment"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Created {formatCreatedAt(environment.createdAt)}
-                  </p>
-                </div>
-                {!environment.isDefault ? (
-                  <Button
-                    variant="outline"
-                    disabled={pendingDeleteId === environment.id}
-                    onClick={() => onRequestDelete?.(environment)}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    {pendingDeleteId === environment.id
-                      ? `Deleting ${environment.name}...`
-                      : `Delete ${environment.name}`}
-                  </Button>
-                ) : null}
-              </div>
-            </article>
-          ))}
-        </section>
-      )}
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      onClick={() => onCreateDialogChange?.(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      disabled={pendingCreate}
+                      onClick={() => onCreateSubmit?.()}
+                    >
+                      {pendingCreate ? "Creating..." : "Create"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </PageHeaderActions>
+          ) : null}
+        </div>
 
-      <Dialog
-        open={deleteTarget !== null}
-        onOpenChange={(open) => onDeleteDialogChange?.(open)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Environment</DialogTitle>
-            <DialogDescription>
-              {isEnvironmentSummary(deleteTarget)
-                ? `Delete ${deleteTarget.name} from ${state.project}?`
-                : "Delete this environment?"}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => onDeleteDialogChange?.(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={!deleteTarget || pendingDeleteId === deleteTarget.id}
-              onClick={() => onDeleteConfirm?.()}
-            >
-              {deleteTarget && pendingDeleteId === deleteTarget.id
-                ? `Deleting ${deleteTarget.name}...`
-                : deleteTarget
-                  ? `Delete ${deleteTarget.name}`
-                  : "Delete"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        {actionError ? (
+          <section className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+            {actionError}
+          </section>
+        ) : null}
+
+        {state.status === "loading" ? (
+          <section
+            data-mdcms-environments-page-state="loading"
+            className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
+          >
+            {state.message}
+          </section>
+        ) : state.status === "forbidden" ? (
+          <section
+            data-mdcms-environments-page-state="forbidden"
+            className="space-y-3 rounded-lg border border-dashed p-6"
+          >
+            <Badge variant="secondary">Forbidden</Badge>
+            <p className="text-sm text-muted-foreground">{state.message}</p>
+            <p className="text-xs text-muted-foreground">{state.project}</p>
+          </section>
+        ) : state.status === "error" ? (
+          <section
+            data-mdcms-environments-page-state="error"
+            className="space-y-3 rounded-lg border border-dashed p-6"
+          >
+            <Badge variant="destructive">Error</Badge>
+            <p className="text-sm text-muted-foreground">{state.message}</p>
+            <p className="text-xs text-muted-foreground">{state.project}</p>
+            {renderRetryButton(onRetry)}
+          </section>
+        ) : state.environments.length === 0 ? (
+          <section
+            data-mdcms-environments-page-state="empty"
+            className="space-y-3 rounded-lg border border-dashed p-6"
+          >
+            <Badge variant="outline">Empty</Badge>
+            <p className="text-sm text-muted-foreground">
+              No environments were returned for this project yet.
+            </p>
+            <p className="text-xs text-muted-foreground">{state.project}</p>
+          </section>
+        ) : (
+          <section
+            data-mdcms-environments-page-state="ready"
+            className="grid gap-4"
+          >
+            {state.environments.map((environment) => (
+              <article
+                key={environment.id}
+                data-mdcms-environment-row={environment.name}
+                className="space-y-4 rounded-lg border p-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-lg font-semibold tracking-tight">
+                        {environment.name}
+                      </h2>
+                      {environment.isDefault ? (
+                        <Badge variant="secondary">Default</Badge>
+                      ) : null}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {environment.extends
+                        ? `Extends ${environment.extends}`
+                        : "No parent environment"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Created {formatCreatedAt(environment.createdAt)}
+                    </p>
+                  </div>
+                  {!environment.isDefault ? (
+                    <Button
+                      variant="outline"
+                      disabled={pendingDeleteId === environment.id}
+                      onClick={() => onRequestDelete?.(environment)}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      {pendingDeleteId === environment.id
+                        ? `Deleting ${environment.name}...`
+                        : `Delete ${environment.name}`}
+                    </Button>
+                  ) : null}
+                </div>
+              </article>
+            ))}
+          </section>
+        )}
+
+        <Dialog
+          open={deleteTarget !== null}
+          onOpenChange={(open) => onDeleteDialogChange?.(open)}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Environment</DialogTitle>
+              <DialogDescription>
+                {isEnvironmentSummary(deleteTarget)
+                  ? `Delete ${deleteTarget.name} from ${state.project}?`
+                  : "Delete this environment?"}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => onDeleteDialogChange?.(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={!deleteTarget || pendingDeleteId === deleteTarget.id}
+                onClick={() => onDeleteConfirm?.()}
+              >
+                {deleteTarget && pendingDeleteId === deleteTarget.id
+                  ? `Deleting ${deleteTarget.name}...`
+                  : deleteTarget
+                    ? `Delete ${deleteTarget.name}`
+                    : "Delete"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
     </div>
   );
 }
