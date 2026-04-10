@@ -4,7 +4,10 @@ import { test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { TranslationCoverageSummary } from "./page.js";
+import {
+  getContentTypeTableColumns,
+  TranslationCoverageSummary,
+} from "./page.js";
 
 test("TranslationCoverageSummary renders nothing for the idle state", () => {
   const markup = renderToStaticMarkup(
@@ -54,4 +57,18 @@ test("TranslationCoverageSummary renders an error fallback when coverage is unav
 
   assert.match(markup, /data-mdcms-translation-coverage-state="error"/);
   assert.match(markup, /Translation status unavailable/i);
+});
+
+test("content type table adds a dedicated Translations column for localized lists", () => {
+  assert.deepEqual(
+    getContentTypeTableColumns(true).map((column) => column.label),
+    ["Title / Path", "Translations", "Status", "Updated", "Author", ""],
+  );
+});
+
+test("content type table keeps the original columns for non-localized lists", () => {
+  assert.deepEqual(
+    getContentTypeTableColumns(false).map((column) => column.label),
+    ["Title / Path", "Status", "Updated", "Author", ""],
+  );
 });

@@ -94,6 +94,33 @@ type TranslationCoverageSummaryProps = {
   coverage?: ContentTranslationCoverage;
 };
 
+type ContentTypeTableColumn = {
+  key: "title" | "translations" | "status" | "updated" | "author" | "actions";
+  label: string;
+  className?: string;
+};
+
+export function getContentTypeTableColumns(
+  showTranslationCoverage: boolean,
+): ContentTypeTableColumn[] {
+  return [
+    { key: "title", label: "Title / Path" },
+    ...(showTranslationCoverage
+      ? ([
+          {
+            key: "translations",
+            label: "Translations",
+            className: "w-40",
+          },
+        ] satisfies ContentTypeTableColumn[])
+      : []),
+    { key: "status", label: "Status", className: "w-28" },
+    { key: "updated", label: "Updated", className: "w-32" },
+    { key: "author", label: "Author", className: "w-28" },
+    { key: "actions", label: "", className: "w-14" },
+  ];
+}
+
 export function TranslationCoverageSummary({
   status,
   coverage,
@@ -106,7 +133,7 @@ export function TranslationCoverageSummary({
     return (
       <p
         data-mdcms-translation-coverage-state="loading"
-        className="mt-1 text-xs text-foreground-muted"
+        className="text-xs text-foreground-muted"
       >
         Loading locale coverage...
       </p>
@@ -117,7 +144,7 @@ export function TranslationCoverageSummary({
     return (
       <p
         data-mdcms-translation-coverage-state="error"
-        className="mt-1 text-xs text-destructive"
+        className="text-xs text-destructive"
       >
         Translation status unavailable.
       </p>
@@ -127,7 +154,7 @@ export function TranslationCoverageSummary({
   return (
     <p
       data-mdcms-translation-coverage-state="ready"
-      className="mt-1 text-xs text-foreground-muted"
+      className="text-xs text-foreground-muted"
     >
       {formatContentTranslationCoverageLabel(coverage)}
     </p>
@@ -322,6 +349,10 @@ export default function ContentTypePage() {
     : 1;
   const showTranslationCoverage =
     enableTranslationCoverage && (mountInfo.supportedLocales?.length ?? 0) > 0;
+  const tableColumns = useMemo(
+    () => getContentTypeTableColumns(showTranslationCoverage),
+    [showTranslationCoverage],
+  );
 
   const invalidateContentListQueries = () => {
     void queryClient.invalidateQueries({
@@ -568,11 +599,14 @@ export default function ContentTypePage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Title / Path</TableHead>
-                      <TableHead className="w-28">Status</TableHead>
-                      <TableHead className="w-32">Updated</TableHead>
-                      <TableHead className="w-28">Author</TableHead>
-                      <TableHead className="w-14"></TableHead>
+                      {tableColumns.map((column) => (
+                        <TableHead
+                          key={column.key}
+                          className={column.className}
+                        >
+                          {column.label}
+                        </TableHead>
+                      ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -592,18 +626,20 @@ export default function ContentTypePage() {
                             <p className="text-xs text-foreground-muted font-mono">
                               {doc.path}
                             </p>
-                            {showTranslationCoverage ? (
-                              <TranslationCoverageSummary
-                                status={list.translationCoverageStatus}
-                                coverage={
-                                  list.translationCoverageByGroup[
-                                    doc.translationGroupId
-                                  ]
-                                }
-                              />
-                            ) : null}
                           </div>
                         </TableCell>
+                        {showTranslationCoverage ? (
+                          <TableCell>
+                            <TranslationCoverageSummary
+                              status={list.translationCoverageStatus}
+                              coverage={
+                                list.translationCoverageByGroup[
+                                  doc.translationGroupId
+                                ]
+                              }
+                            />
+                          </TableCell>
+                        ) : null}
                         <TableCell>
                           <Badge
                             variant="outline"
