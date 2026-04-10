@@ -4,6 +4,7 @@ import {
   type ChangeEvent,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -36,7 +37,10 @@ import {
 } from "../../document-version-diff.js";
 import { useParams, useRouter } from "../adapters/next-navigation.js";
 import { type MdxPropsPanelSelection } from "../components/editor/mdx-props-panel.js";
-import { TipTapEditor } from "../components/editor/tiptap-editor.js";
+import {
+  TipTapEditor,
+  type TipTapEditorHandle,
+} from "../components/editor/tiptap-editor.js";
 import { BreadcrumbTrail } from "../components/layout/page-header.js";
 import { Badge } from "../components/ui/badge.js";
 import { Button } from "../components/ui/button.js";
@@ -234,6 +238,7 @@ type ContentDocumentPageViewProps = {
     side: "left" | "right",
     version?: number,
   ) => void;
+  editorRef?: React.Ref<TipTapEditorHandle>;
   onViewVersion?: (version: number) => void;
   onBackToDraft?: () => void;
   onLocaleSwitch?: (locale: string) => void;
@@ -1563,6 +1568,7 @@ export function ContentDocumentPageView({
   onPublishSubmit,
   onSchemaSync,
   onSelectComparisonVersion,
+  editorRef,
   onViewVersion,
   onBackToDraft,
   onLocaleSwitch,
@@ -1819,11 +1825,8 @@ export function ContentDocumentPageView({
                   ) : null}
 
                   <TipTapEditor
-                    content={
-                      state.viewingVersion?.status === "ready"
-                        ? state.viewingVersion.body
-                        : state.draftBody
-                    }
+                    ref={editorRef}
+                    initialContent={state.draftBody}
                     context={context}
                     onChange={onDraftChange}
                     onActiveMdxComponentChange={onActiveMdxComponentChange}
@@ -1934,12 +1937,17 @@ export default function ContentDocumentPage({
         }),
   );
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const editorRef = useRef<TipTapEditorHandle>(null);
   const [activeMdxComponent, setActiveMdxComponent] =
     useState<MdxPropsPanelSelection | null>(null);
   const stateRef = useRef(state);
   const loadRequestIdRef = useRef(0);
 
-  useEffect(() => {
+  // Sync ref after commit so event handlers and async callbacks always
+  // see the latest committed state. useLayoutEffect runs synchronously
+  // after commit but before paint, avoiding the stale-ref gap of useEffect
+  // while respecting React's rule against mutating refs during render.
+  useLayoutEffect(() => {
     stateRef.current = state;
   }, [state]);
 
@@ -2068,6 +2076,20 @@ export default function ContentDocumentPage({
         return;
       }
 
+      // If publish normalized the body, rehydrate the editor — but only
+      // if the user hasn't typed newer edits during the in-flight publish.
+      const publishedBody = nextState.document.body;
+      const latestAfterPublish = stateRef.current;
+      if (
+        publishedBody !== currentState.draftBody &&
+        latestAfterPublish.status === "ready" &&
+        latestAfterPublish.documentId === currentState.documentId &&
+        latestAfterPublish.draftBody === currentState.draftBody &&
+        !latestAfterPublish.viewingVersion
+      ) {
+        editorRef.current?.setContent(publishedBody);
+      }
+
       setState((current) =>
         current.status === "ready" &&
         current.documentId === currentState.documentId
@@ -2151,7 +2173,6 @@ export default function ContentDocumentPage({
     }
 
     setState(nextState);
-    stateRef.current = nextState;
   });
 
   const saveDraft = useEffectEvent(async (): Promise<boolean> => {
@@ -2222,12 +2243,28 @@ export default function ContentDocumentPage({
       return false;
     }
 
+    // If the server normalized the body (whitespace, etc.), rehydrate the
+    // editor — but only if the user hasn't typed newer edits during the
+    // in-flight save. The reducer already preserves newer drafts in state.
+    const persistedBody = nextState.document.body;
+    const latestAfterSave = stateRef.current;
+    if (
+      persistedBody !== requestBody &&
+      latestAfterSave.status === "ready" &&
+      latestAfterSave.documentId === currentState.documentId &&
+      latestAfterSave.draftBody === requestBody &&
+      !latestAfterSave.viewingVersion
+    ) {
+      editorRef.current?.setContent(persistedBody);
+    }
+
     setState((current) =>
-      current.status === "ready"
+      current.status === "ready" &&
+      current.documentId === currentState.documentId
         ? applySuccessfulDraftSaveToReadyState({
             state: current,
             requestBody,
-            persistedBody: nextState.document.body,
+            persistedBody,
             updatedAt: nextState.document.updatedAt,
           })
         : current,
@@ -2419,6 +2456,21 @@ export default function ContentDocumentPage({
         version,
       });
 
+      const versionBody = versionDoc.body ?? "";
+
+      // Only update the editor if this version is still the one the UI expects.
+      // A newer version click may have fired while this fetch was in-flight.
+      const afterFetch = stateRef.current;
+      if (
+        afterFetch.status !== "ready" ||
+        afterFetch.documentId !== currentState.documentId ||
+        afterFetch.viewingVersion?.version !== version
+      ) {
+        return;
+      }
+
+      editorRef.current?.setContent(versionBody);
+
       setState((current) =>
         current.status === "ready" &&
         current.viewingVersion?.version === version
@@ -2426,7 +2478,7 @@ export default function ContentDocumentPage({
               ...current,
               viewingVersion: {
                 version,
-                body: versionDoc.body ?? "",
+                body: versionBody,
                 status: "ready",
               },
             }
@@ -2454,6 +2506,12 @@ export default function ContentDocumentPage({
   });
 
   const handleBackToDraft = useEffectEvent(() => {
+    const currentState = stateRef.current;
+
+    if (currentState.status === "ready") {
+      editorRef.current?.setContent(currentState.draftBody);
+    }
+
     setState((current) =>
       current.status === "ready"
         ? { ...current, viewingVersion: undefined }
@@ -2622,6 +2680,7 @@ export default function ContentDocumentPage({
         void handleCreateVariant(prefill);
       }}
       onCancelVariantCreation={handleCancelVariantCreation}
+      editorRef={editorRef}
       onViewVersion={(version) => {
         void handleViewVersion(version);
       }}
