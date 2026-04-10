@@ -208,6 +208,7 @@ export function createServerRequestHandlerWithModules(
       });
       mountProjectApiRoutes(app, {
         store: projectStore,
+        requireSession: (request) => authService.requireAdminSession(request),
         authorizeRead: (request) => {
           const routing = resolveRequestTargetRouting(request);
           return authService

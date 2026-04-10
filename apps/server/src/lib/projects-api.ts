@@ -1,8 +1,8 @@
 import { RuntimeError } from "@mdcms/shared";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import type { DrizzleDatabase } from "./db.js";
-import { environments, projects } from "./db/schema.js";
+import { environments, projects, rbacGrants } from "./db/schema.js";
 import { executeWithRuntimeErrorsHandled } from "./http-utils.js";
 import {
   ensureProjectProvisioned,
@@ -27,6 +27,7 @@ export type ProjectDetail = {
 
 export type ProjectStore = {
   list: () => Promise<ProjectSummary[]>;
+  listForUser: (userId: string) => Promise<ProjectSummary[]>;
   create: (input: { name: string }) => Promise<ProjectDetail>;
   listEnvironments: (slug: string) => Promise<{ id: string; name: string }[]>;
   createEnvironment: (
@@ -39,6 +40,7 @@ export type MountProjectApiRoutesOptions = {
   store: ProjectStore;
   authorizeRead: (request: Request) => Promise<void>;
   authorizeWrite: (request: Request) => Promise<void>;
+  requireSession: (request: Request) => Promise<{ userId: string }>;
 };
 
 type ProjectRouteApp = {
@@ -114,6 +116,71 @@ export function createDatabaseProjectStore(options: {
           environmentCountSubquery,
           eq(projects.id, environmentCountSubquery.projectId),
         );
+
+      return rows.map((row) => ({
+        id: row.id,
+        slug: row.slug,
+        name: row.name,
+        environmentCount: row.environmentCount,
+        createdAt: toIsoString(row.createdAt) ?? new Date(0).toISOString(),
+      }));
+    },
+
+    async listForUser(userId: string) {
+      const userGrants = await db
+        .select({
+          scopeKind: rbacGrants.scopeKind,
+          project: rbacGrants.project,
+        })
+        .from(rbacGrants)
+        .where(
+          and(eq(rbacGrants.userId, userId), isNull(rbacGrants.revokedAt)),
+        );
+
+      const hasGlobalGrant = userGrants.some((g) => g.scopeKind === "global");
+      if (hasGlobalGrant) {
+        return this.list();
+      }
+
+      const grantedSlugs = [
+        ...new Set(
+          userGrants
+            .filter(
+              (g) =>
+                g.scopeKind === "project" || g.scopeKind === "folder_prefix",
+            )
+            .map((g) => g.project)
+            .filter((p): p is string => p !== null),
+        ),
+      ];
+
+      if (grantedSlugs.length === 0) {
+        return [];
+      }
+
+      const environmentCountSubquery = db
+        .select({
+          projectId: environments.projectId,
+          count: sql<number>`count(*)::int`.as("environment_count"),
+        })
+        .from(environments)
+        .groupBy(environments.projectId)
+        .as("env_counts");
+
+      const rows = await db
+        .select({
+          id: projects.id,
+          slug: projects.slug,
+          name: projects.name,
+          createdAt: projects.createdAt,
+          environmentCount: sql<number>`coalesce(${environmentCountSubquery.count}, 0)::int`,
+        })
+        .from(projects)
+        .leftJoin(
+          environmentCountSubquery,
+          eq(projects.id, environmentCountSubquery.projectId),
+        )
+        .where(inArray(projects.slug, grantedSlugs));
 
       return rows.map((row) => ({
         id: row.id,
@@ -287,6 +354,15 @@ export function mountProjectApiRoutes(
   options: MountProjectApiRoutesOptions,
 ): void {
   const projectApp = app as ProjectRouteApp;
+
+  projectApp.get?.("/api/v1/me/projects", ({ request }: any) => {
+    return executeWithRuntimeErrorsHandled(request, async () => {
+      const session = await options.requireSession(request);
+      return {
+        data: await options.store.listForUser(session.userId),
+      };
+    });
+  });
 
   projectApp.get?.("/api/v1/projects", ({ request }: any) => {
     return executeWithRuntimeErrorsHandled(request, async () => {

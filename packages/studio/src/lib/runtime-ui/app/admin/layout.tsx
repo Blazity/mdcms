@@ -78,6 +78,16 @@ export default function AdminLayout({
   const [canDeleteContent, setCanDeleteContent] = useState(false);
   const [canManageUsers, setCanManageUsers] = useState(false);
   const [canManageSettings, setCanManageSettings] = useState(false);
+  const [activeProject] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      const fromQuery = new URLSearchParams(window.location.search).get(
+        "project",
+      );
+      if (fromQuery) return fromQuery;
+    }
+    return context.documentRoute?.project ?? null;
+  });
+
   const [activeEnvironment, setActiveEnvironmentRaw] = useState<string | null>(
     () => {
       if (typeof window !== "undefined") {
@@ -113,12 +123,11 @@ export default function AdminLayout({
 
   // Fetch capabilities
   useEffect(() => {
-    const project = context.documentRoute?.project;
     const loadInput =
-      project && activeEnvironment
+      activeProject && activeEnvironment
         ? {
             config: {
-              project,
+              project: activeProject,
               environment: activeEnvironment,
               serverUrl: context.apiBaseUrl,
             },
@@ -176,7 +185,7 @@ export default function AdminLayout({
     context.auth.mode,
     context.auth.token,
     activeEnvironment,
-    context.documentRoute?.project,
+    activeProject,
   ]);
 
   // Fetch session
@@ -227,8 +236,7 @@ export default function AdminLayout({
 
   // Fetch environments
   useEffect(() => {
-    const project = context.documentRoute?.project;
-    if (!project || !activeEnvironment) {
+    if (!activeProject || !activeEnvironment) {
       setEnvironments([]);
       return;
     }
@@ -236,7 +244,7 @@ export default function AdminLayout({
     let cancelled = false;
     const envApi = createStudioEnvironmentApi(
       {
-        project,
+        project: activeProject,
         environment: activeEnvironment,
         serverUrl: context.apiBaseUrl,
       },
@@ -264,7 +272,7 @@ export default function AdminLayout({
     context.auth.mode,
     context.auth.token,
     activeEnvironment,
-    context.documentRoute?.project,
+    activeProject,
   ]);
 
   const pathname = usePathname();
@@ -316,7 +324,7 @@ export default function AdminLayout({
   };
 
   const mountInfo = {
-    project: context.documentRoute?.project ?? null,
+    project: activeProject,
     environment: activeEnvironment,
     setEnvironment: setActiveEnvironment,
     apiBaseUrl: context.apiBaseUrl,
