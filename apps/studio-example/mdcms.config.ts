@@ -14,6 +14,8 @@ const post = defineType("post", {
   fields: {
     title: z.string().min(1),
     slug: z.string().min(1),
+    featured: z.boolean().default(false).env("staging"),
+    abTestVariant: z.string().min(1).optional().env("staging"),
     author: reference("author").optional(),
   },
 });
