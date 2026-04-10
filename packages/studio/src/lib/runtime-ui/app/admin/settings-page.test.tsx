@@ -10,6 +10,7 @@ import {
   AdminCapabilitiesProvider,
   type AdminCapabilitiesValue,
 } from "./capabilities-context.js";
+import { StudioMountInfoProvider } from "./mount-info-context.js";
 import SettingsPage from "./settings-page.js";
 
 function renderSettingsPage(input: {
@@ -53,9 +54,24 @@ function renderSettingsPage(input: {
                 ...input.capabilities,
               },
             },
-            createElement(SettingsPage, {
-              initialTab: input.initialTab,
-            }),
+            createElement(
+              StudioMountInfoProvider,
+              {
+                value: {
+                  project: "test-project",
+                  environment: "production",
+                  apiBaseUrl: "https://api.example.com",
+                  auth: { mode: "cookie" as const },
+                  environments: [],
+                  hostBridge: null,
+                  setProject: () => {},
+                  setEnvironment: () => {},
+                },
+              },
+              createElement(SettingsPage, {
+                initialTab: input.initialTab,
+              }),
+            ),
           ),
         ),
       ),
@@ -66,6 +82,7 @@ function renderSettingsPage(input: {
 test("SettingsPage renders the API keys tab header and create button", () => {
   const markup = renderSettingsPage({
     initialTab: "api-keys",
+    capabilities: { canManageSettings: true },
   });
 
   assert.match(markup, /Create API Key/);
@@ -76,6 +93,7 @@ test("SettingsPage hides the schema browser CTA when schema.read is unavailable"
   const markup = renderSettingsPage({
     initialTab: "schema",
     capabilities: {
+      canManageSettings: true,
       canReadSchema: false,
     },
   });
@@ -88,7 +106,44 @@ test("SettingsPage uses the active Studio base path for the schema browser link"
   const markup = renderSettingsPage({
     initialTab: "schema",
     basePath: "/embedded/studio",
+    capabilities: { canManageSettings: true },
   });
 
   assert.match(markup, /href="\/embedded\/studio\/schema"/);
+});
+
+test("SettingsPage shows access denied when canManageSettings is false", () => {
+  const markup = renderSettingsPage({
+    initialTab: "api-keys",
+    capabilities: { canManageSettings: false },
+  });
+  assert.match(markup, /Access denied/);
+  assert.doesNotMatch(markup, /Create API Key/);
+});
+
+test("SettingsPage renders content when canManageSettings is true", () => {
+  const markup = renderSettingsPage({
+    initialTab: "api-keys",
+    capabilities: { canManageSettings: true },
+  });
+  assert.match(markup, /Create API Key/);
+  assert.doesNotMatch(markup, /Access denied/);
+});
+
+test("SettingsPage does not render Webhooks or Media tabs", () => {
+  const markup = renderSettingsPage({
+    initialTab: "general",
+    capabilities: { canManageSettings: true },
+  });
+  assert.doesNotMatch(markup, /Webhooks/);
+  assert.doesNotMatch(markup, /Media/);
+});
+
+test("SettingsPage General tab shows read-only project context", () => {
+  const markup = renderSettingsPage({
+    initialTab: "general",
+    capabilities: { canManageSettings: true },
+  });
+  assert.match(markup, /read-only/i);
+  assert.doesNotMatch(markup, /Save changes/);
 });

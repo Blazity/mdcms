@@ -7,6 +7,7 @@ import {
   Mail,
   Edit,
   Shield,
+  ShieldOff,
   Trash2,
   LogOut,
   Loader2,
@@ -54,7 +55,14 @@ import { PageHeader } from "../../components/layout/page-header.js";
 import { useToast } from "../../components/toast.js";
 import { useUserList } from "../../hooks/use-user-list.js";
 import type { UserWithGrants } from "../../../users-api.js";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../../components/ui/tooltip.js";
 import { cn } from "../../lib/utils.js";
+import { useCanManageUsers } from "./capabilities-context.js";
 
 const roleConfig = {
   owner: {
@@ -94,9 +102,19 @@ function getScopeLabel(grants: UserWithGrants["grants"]): string {
   const projects = [
     ...new Set(grants.map((g) => g.project).filter(Boolean)),
   ];
-  if (projects.length === 0) return "None";
-  if (projects.length === 1) return projects[0]!;
-  return `${projects.length} projects`;
+  const pathPrefixes = grants
+    .map((g) => g.pathPrefix)
+    .filter(Boolean);
+  const base =
+    projects.length === 0
+      ? "None"
+      : projects.length === 1
+        ? projects[0]!
+        : `${projects.length} projects`;
+  if (pathPrefixes.length > 0) {
+    return `${base} (${pathPrefixes[0]}${pathPrefixes.length > 1 ? ` +${pathPrefixes.length - 1}` : ""})`;
+  }
+  return base;
 }
 
 function formatJoinedDate(isoString: string): string {
@@ -114,8 +132,29 @@ export default function UsersPage() {
     email: "",
     role: "editor",
     globalAccess: true,
+    pathPrefix: "",
   });
   const [inviteError, setInviteError] = useState<string | null>(null);
+
+  const [editRoleDialogOpen, setEditRoleDialogOpen] = useState(false);
+  const [editRoleTarget, setEditRoleTarget] = useState<{
+    userId: string;
+    userName: string;
+    currentRole: string;
+    currentGrants: UserWithGrants["grants"];
+  } | null>(null);
+  const [editRoleValue, setEditRoleValue] = useState("editor");
+
+  const [editPermissionsDialogOpen, setEditPermissionsDialogOpen] = useState(false);
+  const [editPermissionsTarget, setEditPermissionsTarget] = useState<{
+    userId: string;
+    userName: string;
+    currentGrants: UserWithGrants["grants"];
+  } | null>(null);
+  const [editPermissionsData, setEditPermissionsData] = useState({
+    scopeKind: "global",
+    pathPrefix: "",
+  });
 
   const toast = useToast();
   const {
@@ -129,7 +168,26 @@ export default function UsersPage() {
     isRemoving,
     revokeSessions,
     isRevokingSessions,
+    updateGrants,
+    isUpdatingGrants,
   } = useUserList();
+
+  const canManageUsers = useCanManageUsers();
+
+  if (!canManageUsers) {
+    return (
+      <div className="min-h-screen">
+        <PageHeader breadcrumbs={[{ label: "Users" }]} />
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <ShieldOff className="mb-4 h-8 w-8 text-foreground-muted" />
+          <h3 className="mb-2 text-lg font-semibold">Access denied</h3>
+          <p className="text-sm text-foreground-muted">
+            You don&apos;t have permission to manage users.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   async function handleInvite() {
     setInviteError(null);
@@ -140,11 +198,12 @@ export default function UsersPage() {
           {
             role: inviteData.role,
             scopeKind: inviteData.globalAccess ? "global" : "project",
+            pathPrefix: inviteData.pathPrefix || undefined,
           },
         ],
       });
       setInviteDialogOpen(false);
-      setInviteData({ email: "", role: "editor", globalAccess: true });
+      setInviteData({ email: "", role: "editor", globalAccess: true, pathPrefix: "" });
       toast.success("Invitation sent successfully.");
     } catch (err) {
       const message =
@@ -177,6 +236,45 @@ export default function UsersPage() {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to remove user.";
+      toast.error(message);
+    }
+  }
+
+  async function handleEditRole() {
+    if (!editRoleTarget) return;
+    try {
+      await updateGrants(editRoleTarget.userId, [
+        {
+          role: editRoleValue,
+          scopeKind: editRoleTarget.currentGrants[0]?.scopeKind ?? "global",
+          pathPrefix: editRoleTarget.currentGrants[0]?.pathPrefix ?? undefined,
+        },
+      ]);
+      toast.success(`Role updated for ${editRoleTarget.userName}.`);
+      setEditRoleDialogOpen(false);
+      setEditRoleTarget(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to update role.";
+      toast.error(message);
+    }
+  }
+
+  async function handleEditPermissions() {
+    if (!editPermissionsTarget) return;
+    const currentRole = getHighestRole(editPermissionsTarget.currentGrants);
+    try {
+      await updateGrants(editPermissionsTarget.userId, [
+        {
+          role: currentRole,
+          scopeKind: editPermissionsData.scopeKind,
+          pathPrefix: editPermissionsData.pathPrefix || undefined,
+        },
+      ]);
+      toast.success(`Permissions updated for ${editPermissionsTarget.userName}.`);
+      setEditPermissionsDialogOpen(false);
+      setEditPermissionsTarget(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to update permissions.";
       toast.error(message);
     }
   }
@@ -258,6 +356,26 @@ export default function UsersPage() {
                   />
                 </div>
 
+                {/* Folder prefix */}
+                {!inviteData.globalAccess &&
+                  (inviteData.role === "editor" || inviteData.role === "viewer") && (
+                  <div className="space-y-2">
+                    <Label htmlFor="path-prefix">Folder prefix</Label>
+                    <Input
+                      id="path-prefix"
+                      placeholder="e.g. content/blog"
+                      value={inviteData.pathPrefix}
+                      onChange={(e) =>
+                        setInviteData({ ...inviteData, pathPrefix: e.target.value })
+                      }
+                      className="font-mono"
+                    />
+                    <p className="text-xs text-foreground-muted">
+                      Restricts access to content under this path only.
+                    </p>
+                  </div>
+                )}
+
                 {/* Invite error */}
                 {inviteError && (
                   <p className="text-sm text-destructive">{inviteError}</p>
@@ -327,7 +445,6 @@ export default function UsersPage() {
                   <TableHead>User</TableHead>
                   <TableHead className="w-28">Role</TableHead>
                   <TableHead className="w-32">Scope</TableHead>
-                  <TableHead className="w-32">Last Active</TableHead>
                   <TableHead className="w-28">Joined</TableHead>
                   <TableHead className="w-14"></TableHead>
                 </TableRow>
@@ -369,11 +486,6 @@ export default function UsersPage() {
                       <TableCell className="text-sm text-foreground-muted">
                         {getScopeLabel(user.grants)}
                       </TableCell>
-                      <TableCell>
-                        <span className="text-sm text-foreground-muted">
-                          &mdash;
-                        </span>
-                      </TableCell>
                       <TableCell className="text-sm text-foreground-muted">
                         {formatJoinedDate(user.createdAt)}
                       </TableCell>
@@ -389,11 +501,39 @@ export default function UsersPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem>
+                          <TooltipProvider>
+                            <DropdownMenuItem
+                              disabled={role === "owner"}
+                              onClick={() => {
+                                setEditRoleTarget({
+                                  userId: user.id,
+                                  userName: user.name,
+                                  currentRole: role,
+                                  currentGrants: user.grants,
+                                });
+                                setEditRoleValue(role);
+                                setEditRoleDialogOpen(true);
+                              }}
+                            >
                               <Edit className="mr-2 h-4 w-4" />
                               Edit role
                             </DropdownMenuItem>
-                            <DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={role === "owner"}
+                              onClick={() => {
+                                const grant = user.grants[0];
+                                setEditPermissionsTarget({
+                                  userId: user.id,
+                                  userName: user.name,
+                                  currentGrants: user.grants,
+                                });
+                                setEditPermissionsData({
+                                  scopeKind: grant?.scopeKind ?? "global",
+                                  pathPrefix: grant?.pathPrefix ?? "",
+                                });
+                                setEditPermissionsDialogOpen(true);
+                              }}
+                            >
                               <Shield className="mr-2 h-4 w-4" />
                               Edit permissions
                             </DropdownMenuItem>
@@ -407,16 +547,36 @@ export default function UsersPage() {
                               Revoke sessions
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              disabled={role === "owner" || isRemoving}
-                              onClick={() =>
-                                handleRemoveUser(user.id, user.name)
-                              }
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Remove user
-                            </DropdownMenuItem>
+                            {role === "owner" ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="w-full">
+                                    <DropdownMenuItem
+                                      className="text-destructive focus:text-destructive"
+                                      disabled
+                                    >
+                                      <Trash2 className="mr-2 h-4 w-4" />
+                                      Remove user
+                                    </DropdownMenuItem>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="left">
+                                  <p>Owners cannot be removed. Transfer ownership first.</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            ) : (
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                disabled={isRemoving}
+                                onClick={() =>
+                                  handleRemoveUser(user.id, user.name)
+                                }
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Remove user
+                              </DropdownMenuItem>
+                            )}
+                          </TooltipProvider>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -427,6 +587,110 @@ export default function UsersPage() {
             </Table>
           </div>
         )}
+
+        {/* Edit Role Dialog */}
+        <Dialog open={editRoleDialogOpen} onOpenChange={setEditRoleDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit role</DialogTitle>
+              <DialogDescription>
+                Change the role for {editRoleTarget?.userName}.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <Select value={editRoleValue} onValueChange={setEditRoleValue}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="editor">Editor</SelectItem>
+                    <SelectItem value="viewer">Viewer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setEditRoleDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                className="bg-accent hover:bg-accent-hover text-white"
+                disabled={isUpdatingGrants}
+                onClick={handleEditRole}
+              >
+                {isUpdatingGrants ? "Saving..." : "Save"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Permissions Dialog */}
+        <Dialog open={editPermissionsDialogOpen} onOpenChange={setEditPermissionsDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit permissions</DialogTitle>
+              <DialogDescription>
+                Change scope for {editPermissionsTarget?.userName}.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="flex items-center justify-between rounded-lg border border-border p-3">
+                <div className="space-y-0.5">
+                  <Label>Global access</Label>
+                  <p className="text-xs text-foreground-muted">
+                    Apply role to all projects and folders
+                  </p>
+                </div>
+                <Switch
+                  checked={editPermissionsData.scopeKind === "global"}
+                  onCheckedChange={(checked) =>
+                    setEditPermissionsData({
+                      ...editPermissionsData,
+                      scopeKind: checked ? "global" : "project",
+                      pathPrefix: checked ? "" : editPermissionsData.pathPrefix,
+                    })
+                  }
+                />
+              </div>
+
+              {editPermissionsData.scopeKind !== "global" && (
+                <div className="space-y-2">
+                  <Label htmlFor="edit-path-prefix">Folder prefix</Label>
+                  <Input
+                    id="edit-path-prefix"
+                    placeholder="e.g. content/blog"
+                    value={editPermissionsData.pathPrefix}
+                    onChange={(e) =>
+                      setEditPermissionsData({
+                        ...editPermissionsData,
+                        pathPrefix: e.target.value,
+                      })
+                    }
+                    className="font-mono"
+                  />
+                  <p className="text-xs text-foreground-muted">
+                    Restricts access to content under this path only.
+                  </p>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setEditPermissionsDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                className="bg-accent hover:bg-accent-hover text-white"
+                disabled={isUpdatingGrants}
+                onClick={handleEditPermissions}
+              >
+                {isUpdatingGrants ? "Saving..." : "Save"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

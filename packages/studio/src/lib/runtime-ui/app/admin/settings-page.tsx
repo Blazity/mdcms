@@ -4,12 +4,10 @@ import { useState } from "react";
 import {
   Settings,
   Key,
-  Webhook,
-  Image,
   Database,
   ArrowRight,
-  Copy,
   Plus,
+  ShieldOff,
 } from "lucide-react";
 import Link from "../../adapters/next-link.js";
 import {
@@ -18,18 +16,9 @@ import {
 } from "../../adapters/next-navigation.js";
 import { useApiKeyList } from "../../hooks/use-api-key-list.js";
 import { ApiKeyCreateDialog } from "../../components/api-key-create-dialog.js";
+import type { ApiKeyOperationScope } from "../../../api-keys-api.js";
 import { Button } from "../../components/ui/button.js";
-import { Input } from "../../components/ui/input.js";
 import { Badge } from "../../components/ui/badge.js";
-import { Label } from "../../components/ui/label.js";
-import { Separator } from "../../components/ui/separator.js";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../../components/ui/select.js";
 import {
   Table,
   TableBody,
@@ -43,14 +32,12 @@ import {
   useCanManageSettings,
 } from "./capabilities-context.js";
 import { PageHeader } from "../../components/layout/page-header.js";
-import { mockEnvironments, currentProject } from "../../lib/mock-data.js";
+import { useStudioMountInfo } from "./mount-info-context.js";
 import { cn } from "../../lib/utils.js";
 
 const settingsTabs = [
   { id: "general", label: "General", icon: Settings },
   { id: "api-keys", label: "API Keys", icon: Key },
-  { id: "webhooks", label: "Webhooks", icon: Webhook },
-  { id: "media", label: "Media", icon: Image },
   { id: "schema", label: "Schema", icon: Database },
 ];
 
@@ -65,6 +52,7 @@ export default function SettingsPage({
   const canManageSettings = useCanManageSettings();
   const basePath = useBasePath();
   const schemaBrowserHref = resolveStudioHref(basePath, "/schema");
+  const mountInfo = useStudioMountInfo();
   const {
     status: apiKeysStatus,
     keys: apiKeys,
@@ -75,6 +63,21 @@ export default function SettingsPage({
     revokeKey,
     isRevoking,
   } = useApiKeyList();
+
+  if (!canManageSettings) {
+    return (
+      <div className="min-h-screen">
+        <PageHeader breadcrumbs={[{ label: "Settings" }]} />
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <ShieldOff className="mb-4 h-8 w-8 text-foreground-muted" />
+          <h3 className="mb-2 text-lg font-semibold">Access denied</h3>
+          <p className="text-sm text-foreground-muted">
+            You don&apos;t have permission to manage settings.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">
@@ -108,60 +111,26 @@ export default function SettingsPage({
           {activeTab === "general" && (
             <div className="max-w-2xl space-y-6">
               <div>
-                <h2 className="text-xl font-semibold">General Settings</h2>
+                <h2 className="text-xl font-semibold">General</h2>
                 <p className="text-sm text-foreground-muted">
-                  Manage your project configuration
+                  Project configuration is managed through the CLI and
+                  server-side settings. This view shows read-only context
+                  for the current session.
                 </p>
               </div>
-
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="project-name">Project name</Label>
-                  <Input id="project-name" defaultValue={currentProject.name} />
+              <div className="rounded-lg border border-border bg-background-subtle p-4 space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-foreground-muted">Project</span>
+                  <span className="font-mono">{mountInfo.project ?? "\u2014"}</span>
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="project-slug">Project slug</Label>
-                  <Input
-                    id="project-slug"
-                    defaultValue={currentProject.slug}
-                    className="font-mono"
-                  />
+                <div className="flex justify-between text-sm">
+                  <span className="text-foreground-muted">Environment</span>
+                  <span className="font-mono">{mountInfo.environment ?? "\u2014"}</span>
                 </div>
-
-                <div className="space-y-2">
-                  <Label>Server URL</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      value="https://api.mdcms.io/v1/marketing-site"
-                      readOnly
-                      className="font-mono flex-1"
-                    />
-                    <Button variant="outline" size="icon">
-                      <Copy className="h-4 w-4" />
-                    </Button>
-                  </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-foreground-muted">Server URL</span>
+                  <span className="font-mono text-xs break-all">{mountInfo.apiBaseUrl ?? "\u2014"}</span>
                 </div>
-
-                <div className="space-y-2">
-                  <Label>Default environment</Label>
-                  <Select defaultValue="production">
-                    <SelectTrigger className="w-48">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {mockEnvironments.map((env) => (
-                        <SelectItem key={env.id} value={env.id}>
-                          {env.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <Button className="bg-accent hover:bg-accent-hover text-white">
-                  Save changes
-                </Button>
               </div>
             </div>
           )}
@@ -309,67 +278,9 @@ export default function SettingsPage({
                 disabledScopes={
                   canManageSettings
                     ? undefined
-                    : new Set<
-                        import("../../api-keys-api.js").ApiKeyOperationScope
-                      >(["schema:write"])
+                    : new Set<ApiKeyOperationScope>(["schema:write"])
                 }
               />
-            </div>
-          )}
-
-          {/* Webhooks */}
-          {activeTab === "webhooks" && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-xl font-semibold">Webhooks</h2>
-                <p className="text-sm text-foreground-muted">
-                  Configure webhook endpoints for content events
-                </p>
-              </div>
-              <p className="text-sm text-foreground-muted">
-                Webhook management coming soon.
-              </p>
-            </div>
-          )}
-
-          {/* Media Settings */}
-          {activeTab === "media" && (
-            <div className="max-w-2xl space-y-6">
-              <div>
-                <h2 className="text-xl font-semibold">Media Settings</h2>
-                <p className="text-sm text-foreground-muted">
-                  Configure upload limits and media handling
-                </p>
-              </div>
-
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="image-limit">Image upload size limit</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      id="image-limit"
-                      type="number"
-                      defaultValue="10"
-                      className="w-24"
-                    />
-                    <span className="text-sm text-foreground-muted">MB</span>
-                  </div>
-                  <p className="text-xs text-foreground-muted">
-                    Leave empty for no limit. Applies only to image uploads.
-                  </p>
-                </div>
-
-                <Separator />
-
-                <p className="text-sm text-foreground-muted">
-                  MDCMS accepts all file types. Size limits apply only to
-                  image/* MIME types.
-                </p>
-
-                <Button className="bg-accent hover:bg-accent-hover text-white">
-                  Save
-                </Button>
-              </div>
             </div>
           )}
 
