@@ -56,8 +56,10 @@ import { cn } from "../../../../lib/utils.js";
 import { useAdminCapabilities } from "../../capabilities-context.js";
 import { useStudioMountInfo } from "../../mount-info-context.js";
 import {
+  getContentTypeListQueryKey,
   useContentTypeList,
   PAGE_SIZE,
+  type ContentTypeTranslationCoverageStatus,
   type MappedContentDocument,
   type ContentTypeListFilters,
 } from "../../../../hooks/use-content-type-list.js";
@@ -66,6 +68,11 @@ import { CreateDocumentDialog } from "../../../../components/create-document-dia
 import { createStudioSchemaRouteApi } from "../../../../../schema-route-api.js";
 import { createStudioDocumentRouteApi } from "../../../../../document-route-api.js";
 import { useToast } from "../../../../components/toast.js";
+import {
+  formatContentTranslationCoverageLabel,
+  getContentTranslationCoverageQueryKey,
+  type ContentTranslationCoverage,
+} from "../../../../lib/content-translation-coverage.js";
 
 const statusConfig = {
   published: {
@@ -81,6 +88,78 @@ const statusConfig = {
     className: "bg-warning/10 text-warning border-warning/20",
   },
 };
+
+type TranslationCoverageSummaryProps = {
+  status: ContentTypeTranslationCoverageStatus;
+  coverage?: ContentTranslationCoverage;
+};
+
+type ContentTypeTableColumn = {
+  key: "title" | "translations" | "status" | "updated" | "author" | "actions";
+  label: string;
+  className?: string;
+};
+
+export function getContentTypeTableColumns(
+  showTranslationCoverage: boolean,
+): ContentTypeTableColumn[] {
+  return [
+    { key: "title", label: "Title / Path" },
+    ...(showTranslationCoverage
+      ? ([
+          {
+            key: "translations",
+            label: "Translations",
+            className: "w-40",
+          },
+        ] satisfies ContentTypeTableColumn[])
+      : []),
+    { key: "status", label: "Status", className: "w-28" },
+    { key: "updated", label: "Updated", className: "w-32" },
+    { key: "author", label: "Author", className: "w-28" },
+    { key: "actions", label: "", className: "w-14" },
+  ];
+}
+
+export function TranslationCoverageSummary({
+  status,
+  coverage,
+}: TranslationCoverageSummaryProps) {
+  if (status === "idle") {
+    return null;
+  }
+
+  if (status === "loading") {
+    return (
+      <p
+        data-mdcms-translation-coverage-state="loading"
+        className="text-xs text-foreground-muted"
+      >
+        Loading locale coverage...
+      </p>
+    );
+  }
+
+  if (status === "error" || !coverage) {
+    return (
+      <p
+        data-mdcms-translation-coverage-state="error"
+        className="text-xs text-destructive"
+      >
+        Translation status unavailable.
+      </p>
+    );
+  }
+
+  return (
+    <p
+      data-mdcms-translation-coverage-state="ready"
+      className="text-xs text-foreground-muted"
+    >
+      {formatContentTranslationCoverageLabel(coverage)}
+    </p>
+  );
+}
 
 function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -123,27 +202,6 @@ export default function ContentTypePage() {
   const [rowActionError, setRowActionError] = useState<string | null>(null);
   const [showLoading, setShowLoading] = useState(false);
 
-  const list = useContentTypeList(typeId);
-  const create = useCreateDocument(typeId);
-
-  // Debounce loading skeleton by 200ms
-  useEffect(() => {
-    if (list.status !== "loading") {
-      setShowLoading(false);
-      return;
-    }
-    const timer = setTimeout(() => setShowLoading(true), 200);
-    return () => clearTimeout(timer);
-  }, [list.status]);
-
-  // Debounced search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      list.setFilters({ q: searchInput || undefined });
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchInput, list.setFilters]);
-
   // Schema query for type metadata (localized, locales, directory)
   const schemaApi = useMemo(() => {
     if (!mountInfo.project || !mountInfo.environment || !mountInfo.apiBaseUrl)
@@ -177,6 +235,29 @@ export default function ContentTypePage() {
   }, [schemaQuery.data, typeId]);
 
   const typeName = schemaEntry?.type ?? typeId;
+  const enableTranslationCoverage = schemaEntry?.localized === true;
+  const list = useContentTypeList(typeId, {
+    enableTranslationCoverage,
+  });
+  const create = useCreateDocument(typeId);
+
+  // Debounce loading skeleton by 200ms
+  useEffect(() => {
+    if (list.status !== "loading") {
+      setShowLoading(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowLoading(true), 200);
+    return () => clearTimeout(timer);
+  }, [list.status]);
+
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      list.setFilters({ q: searchInput || undefined });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput, list.setFilters]);
 
   // Document route API for row actions
   const documentApi = useMemo(() => {
@@ -208,14 +289,7 @@ export default function ContentTypePage() {
       return documentApi.publish({ documentId });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: [
-          "content-list",
-          mountInfo.project,
-          mountInfo.environment,
-          typeId,
-        ],
-      });
+      invalidateContentListQueries();
     },
     onError: onRowActionError,
   });
@@ -227,14 +301,7 @@ export default function ContentTypePage() {
       return documentApi.unpublish({ documentId });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: [
-          "content-list",
-          mountInfo.project,
-          mountInfo.environment,
-          typeId,
-        ],
-      });
+      invalidateContentListQueries();
     },
     onError: onRowActionError,
   });
@@ -246,14 +313,7 @@ export default function ContentTypePage() {
       return documentApi.duplicate({ documentId });
     },
     onSuccess: (data) => {
-      void queryClient.invalidateQueries({
-        queryKey: [
-          "content-list",
-          mountInfo.project,
-          mountInfo.environment,
-          typeId,
-        ],
-      });
+      invalidateContentListQueries();
       router.push(`/admin/content/${typeId}/${data.documentId}`);
     },
     onError: onRowActionError,
@@ -266,14 +326,7 @@ export default function ContentTypePage() {
       return documentApi.softDelete({ documentId });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: [
-          "content-list",
-          mountInfo.project,
-          mountInfo.environment,
-          typeId,
-        ],
-      });
+      invalidateContentListQueries();
       toast.success(
         "Document moved to trash. It can be restored from the Trash page.",
       );
@@ -294,6 +347,29 @@ export default function ContentTypePage() {
   const currentPage = list.pagination
     ? Math.floor(list.pagination.offset / PAGE_SIZE) + 1
     : 1;
+  const showTranslationCoverage =
+    enableTranslationCoverage && (mountInfo.supportedLocales?.length ?? 0) > 0;
+  const tableColumns = useMemo(
+    () => getContentTypeTableColumns(showTranslationCoverage),
+    [showTranslationCoverage],
+  );
+
+  const invalidateContentListQueries = () => {
+    void queryClient.invalidateQueries({
+      queryKey: getContentTypeListQueryKey(
+        mountInfo.project,
+        mountInfo.environment,
+        typeId,
+      ),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: getContentTranslationCoverageQueryKey(
+        mountInfo.project,
+        mountInfo.environment,
+        typeId,
+      ),
+    });
+  };
 
   function renderRowActions(doc: MappedContentDocument) {
     return (
@@ -523,11 +599,14 @@ export default function ContentTypePage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Title / Path</TableHead>
-                      <TableHead className="w-28">Status</TableHead>
-                      <TableHead className="w-32">Updated</TableHead>
-                      <TableHead className="w-28">Author</TableHead>
-                      <TableHead className="w-14"></TableHead>
+                      {tableColumns.map((column) => (
+                        <TableHead
+                          key={column.key}
+                          className={column.className}
+                        >
+                          {column.label}
+                        </TableHead>
+                      ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -549,6 +628,18 @@ export default function ContentTypePage() {
                             </p>
                           </div>
                         </TableCell>
+                        {showTranslationCoverage ? (
+                          <TableCell>
+                            <TranslationCoverageSummary
+                              status={list.translationCoverageStatus}
+                              coverage={
+                                list.translationCoverageByGroup[
+                                  doc.translationGroupId
+                                ]
+                              }
+                            />
+                          </TableCell>
+                        ) : null}
                         <TableCell>
                           <Badge
                             variant="outline"

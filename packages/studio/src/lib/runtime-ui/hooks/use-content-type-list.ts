@@ -13,12 +13,18 @@ import {
   createStudioContentListApi,
   type StudioContentListQuery,
 } from "../../content-list-api.js";
+import {
+  getContentTranslationCoverageQueryKey,
+  loadContentTranslationCoverageMap,
+  type ContentTranslationCoverageMap,
+} from "../lib/content-translation-coverage.js";
 import { useStudioMountInfo } from "../app/admin/mount-info-context.js";
 
 export type DocumentStatus = "published" | "draft" | "changed";
 
 export type MappedContentDocument = {
   documentId: string;
+  translationGroupId: string;
   title: string;
   path: string;
   locale: string;
@@ -26,6 +32,12 @@ export type MappedContentDocument = {
   updatedAt: string;
   createdBy: string;
 };
+
+export type ContentTypeTranslationCoverageStatus =
+  | "idle"
+  | "loading"
+  | "ready"
+  | "error";
 
 export type ContentTypeListFilters = {
   q?: string;
@@ -41,6 +53,10 @@ export type ContentTypeListStatus =
   | "forbidden";
 
 export const PAGE_SIZE = 20;
+
+export type ContentTypeListOptions = {
+  enableTranslationCoverage?: boolean;
+};
 
 export function deriveDocumentStatus(
   publishedVersion: number | null,
@@ -68,6 +84,7 @@ export function mapContentDocument(
 ): MappedContentDocument {
   return {
     documentId: doc.documentId,
+    translationGroupId: doc.translationGroupId,
     title: extractDocumentTitle(doc.frontmatter, doc.path),
     path: doc.path,
     locale: doc.locale,
@@ -134,10 +151,45 @@ function hasActiveFilters(filters: ContentTypeListFilters): boolean {
   return Boolean(filters.q || (filters.status && filters.status !== "all"));
 }
 
-export function useContentTypeList(typeId: string) {
+export function getContentTypeListQueryKey(
+  project: string | null | undefined,
+  environment: string | null | undefined,
+  typeId: string,
+) {
+  return ["content-list", project, environment, typeId] as const;
+}
+
+export function shouldEnableTranslationCoverage(input: {
+  enableTranslationCoverage: boolean;
+  supportedLocaleCount: number;
+}): boolean {
+  return input.enableTranslationCoverage && input.supportedLocaleCount > 0;
+}
+
+export function getTranslationCoverageStatus(input: {
+  enableTranslationCoverage: boolean;
+  isLoading: boolean;
+  isFetching: boolean;
+  hasError: boolean;
+}): ContentTypeTranslationCoverageStatus {
+  if (!input.enableTranslationCoverage) return "idle";
+  if (input.isLoading || input.isFetching) return "loading";
+  if (input.hasError) return "error";
+  return "ready";
+}
+
+export function useContentTypeList(
+  typeId: string,
+  options: ContentTypeListOptions = {},
+) {
   const mountInfo = useStudioMountInfo();
   const [filters, setFiltersState] = useState<ContentTypeListFilters>({});
   const [offset, setOffset] = useState(0);
+  const supportedLocaleCount = mountInfo.supportedLocales?.length ?? 0;
+  const enableTranslationCoverage = shouldEnableTranslationCoverage({
+    enableTranslationCoverage: options.enableTranslationCoverage === true,
+    supportedLocaleCount,
+  });
 
   const api = useMemo(() => {
     if (!mountInfo.project || !mountInfo.environment || !mountInfo.apiBaseUrl) {
@@ -162,10 +214,11 @@ export function useContentTypeList(typeId: string) {
 
   const query = useQuery({
     queryKey: [
-      "content-list",
-      mountInfo.project,
-      mountInfo.environment,
-      typeId,
+      ...getContentTypeListQueryKey(
+        mountInfo.project,
+        mountInfo.environment,
+        typeId,
+      ),
       queryParams,
       offset,
     ],
@@ -183,6 +236,21 @@ export function useContentTypeList(typeId: string) {
     enabled: api !== null,
   });
 
+  const translationCoverageQuery = useQuery({
+    queryKey: getContentTranslationCoverageQueryKey(
+      mountInfo.project,
+      mountInfo.environment,
+      typeId,
+    ),
+    queryFn: () =>
+      loadContentTranslationCoverageMap(api!, {
+        type: typeId,
+        totalLocales: supportedLocaleCount,
+      }),
+    enabled: api !== null && enableTranslationCoverage,
+    staleTime: 60_000,
+  });
+
   const documents = useMemo(
     () => (query.data?.data ?? []).map(mapContentDocument),
     [query.data?.data],
@@ -190,6 +258,22 @@ export function useContentTypeList(typeId: string) {
 
   const pagination: PaginationMetadata | null = query.data?.pagination ?? null;
   const users: Record<string, ContentUserSummary> = query.data?.users ?? {};
+  const translationCoverageByGroup: ContentTranslationCoverageMap =
+    translationCoverageQuery.data ?? {};
+  const translationCoverageStatus: ContentTypeTranslationCoverageStatus =
+    useMemo(() => {
+      return getTranslationCoverageStatus({
+        enableTranslationCoverage,
+        isLoading: translationCoverageQuery.isLoading,
+        isFetching: translationCoverageQuery.isFetching,
+        hasError: translationCoverageQuery.error != null,
+      });
+    }, [
+      enableTranslationCoverage,
+      translationCoverageQuery.isLoading,
+      translationCoverageQuery.isFetching,
+      translationCoverageQuery.error,
+    ]);
 
   const status: ContentTypeListStatus = useMemo(() => {
     if (query.isLoading) return "loading";
@@ -224,13 +308,22 @@ export function useContentTypeList(typeId: string) {
 
   const refresh = useCallback(() => {
     query.refetch();
-  }, [query.refetch]);
+    if (enableTranslationCoverage) {
+      translationCoverageQuery.refetch();
+    }
+  }, [
+    enableTranslationCoverage,
+    query.refetch,
+    translationCoverageQuery.refetch,
+  ]);
 
   return {
     status,
     documents,
     pagination,
     users,
+    translationCoverageStatus,
+    translationCoverageByGroup,
     filters,
     errorMessage,
     setFilters,
