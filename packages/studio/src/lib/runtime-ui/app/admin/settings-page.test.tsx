@@ -88,27 +88,13 @@ test("SettingsPage renders the API keys tab header and create button", () => {
   assert.match(markup, /Manage API keys for external integrations/);
 });
 
-test("SettingsPage hides the schema browser CTA when schema.read is unavailable", () => {
+test("SettingsPage does not render a Schema tab", () => {
   const markup = renderSettingsPage({
-    initialTab: "schema",
-    capabilities: {
-      canManageSettings: true,
-      canReadSchema: false,
-    },
-  });
-
-  assert.doesNotMatch(markup, /data-mdcms-settings-schema-state="linked"/);
-  assert.doesNotMatch(markup, /Open schema browser/);
-});
-
-test("SettingsPage uses the active Studio base path for the schema browser link", () => {
-  const markup = renderSettingsPage({
-    initialTab: "schema",
-    basePath: "/embedded/studio",
+    initialTab: "general",
     capabilities: { canManageSettings: true },
   });
-
-  assert.match(markup, /href="\/embedded\/studio\/schema"/);
+  assert.doesNotMatch(markup, /Open schema browser/);
+  assert.doesNotMatch(markup, /data-mdcms-settings-schema-state/);
 });
 
 test("SettingsPage shows access denied when canManageSettings is false", () => {

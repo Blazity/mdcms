@@ -4,19 +4,11 @@ import { useState } from "react";
 import {
   Settings,
   Key,
-  Database,
-  ArrowRight,
   Plus,
   ShieldOff,
 } from "lucide-react";
-import Link from "../../adapters/next-link.js";
-import {
-  resolveStudioHref,
-  useBasePath,
-} from "../../adapters/next-navigation.js";
 import { useApiKeyList } from "../../hooks/use-api-key-list.js";
 import { ApiKeyCreateDialog } from "../../components/api-key-create-dialog.js";
-import type { ApiKeyOperationScope } from "../../../api-keys-api.js";
 import { Button } from "../../components/ui/button.js";
 import { Badge } from "../../components/ui/badge.js";
 import {
@@ -27,10 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/ui/table.js";
-import {
-  useCanReadSchema,
-  useCanManageSettings,
-} from "./capabilities-context.js";
+import { useCanManageSettings } from "./capabilities-context.js";
 import { PageHeader } from "../../components/layout/page-header.js";
 import { useStudioMountInfo } from "./mount-info-context.js";
 import { cn } from "../../lib/utils.js";
@@ -38,7 +27,6 @@ import { cn } from "../../lib/utils.js";
 const settingsTabs = [
   { id: "general", label: "General", icon: Settings },
   { id: "api-keys", label: "API Keys", icon: Key },
-  { id: "schema", label: "Schema", icon: Database },
 ];
 
 export default function SettingsPage({
@@ -48,10 +36,7 @@ export default function SettingsPage({
 }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const canReadSchema = useCanReadSchema();
   const canManageSettings = useCanManageSettings();
-  const basePath = useBasePath();
-  const schemaBrowserHref = resolveStudioHref(basePath, "/schema");
   const mountInfo = useStudioMountInfo();
   const {
     status: apiKeysStatus,
@@ -275,54 +260,10 @@ export default function SettingsPage({
                 onSubmit={createKey}
                 isSubmitting={isCreating}
                 error={createError}
-                disabledScopes={
-                  canManageSettings
-                    ? undefined
-                    : new Set<ApiKeyOperationScope>(["schema:write"])
-                }
               />
             </div>
           )}
 
-          {/* Schema */}
-          {activeTab === "schema" && canReadSchema && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-xl font-semibold">Schema</h2>
-                <p className="text-sm text-foreground-muted">
-                  Studio exposes the current content model through the live
-                  read-only schema browser. Schema changes stay code-first and
-                  sync through explicit recovery actions only.
-                </p>
-              </div>
-
-              <section
-                data-mdcms-settings-schema-state="linked"
-                className="rounded-lg border border-border bg-background-subtle p-6"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="max-w-2xl space-y-2">
-                    <Badge variant="outline">Read-only</Badge>
-                    <p className="text-sm text-foreground-muted">
-                      Open the live schema browser to inspect synced types,
-                      fields, validation metadata, and any active schema
-                      mismatch recovery banner for this project/environment.
-                    </p>
-                  </div>
-
-                  <Button
-                    asChild
-                    className="bg-accent text-white hover:bg-accent-hover"
-                  >
-                    <Link href={schemaBrowserHref}>
-                      Open schema browser
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Link>
-                  </Button>
-                </div>
-              </section>
-            </div>
-          )}
         </main>
       </div>
     </div>

@@ -50,22 +50,6 @@ const SCOPE_GROUPS: ScopeGroup[] = [
     scopes: ["schema:read", "schema:write"],
   },
   {
-    label: "Media",
-    scopes: ["media:upload", "media:delete"],
-  },
-  {
-    label: "Webhooks",
-    scopes: ["webhooks:read", "webhooks:write"],
-  },
-  {
-    label: "Environments",
-    scopes: ["environments:clone", "environments:promote"],
-  },
-  {
-    label: "Migrations",
-    scopes: ["migrations:run"],
-  },
-  {
     label: "Projects",
     scopes: ["projects:read", "projects:write"],
   },
@@ -81,7 +65,6 @@ export type ApiKeyCreateDialogProps = {
   onSubmit: (input: ApiKeyCreateInput) => Promise<ApiKeyCreateResult>;
   isSubmitting: boolean;
   error: Error | null;
-  disabledScopes?: Set<ApiKeyOperationScope>;
 };
 
 type Step = "form" | "created";
@@ -92,7 +75,6 @@ export function ApiKeyCreateDialog({
   onSubmit,
   isSubmitting,
   error,
-  disabledScopes,
 }: ApiKeyCreateDialogProps) {
   const mountInfo = useStudioMountInfo();
   const [step, setStep] = useState<Step>("form");
@@ -201,25 +183,18 @@ export function ApiKeyCreateDialog({
                     <div className="flex flex-wrap gap-1.5">
                       {group.scopes.map((scope) => {
                         const isSelected = selectedScopes.has(scope);
-                        const isDisabled =
-                          isSubmitting || disabledScopes?.has(scope);
                         return (
                           <button
                             key={scope}
                             type="button"
-                            disabled={isDisabled}
+                            disabled={isSubmitting}
                             onClick={() => toggleScope(scope)}
-                            title={
-                              disabledScopes?.has(scope)
-                                ? "Requires admin or owner role"
-                                : undefined
-                            }
                           >
                             <Badge
                               variant={isSelected ? "default" : "outline"}
                               className={cn(
                                 "cursor-pointer select-none",
-                                isDisabled && "opacity-50 cursor-not-allowed",
+                                isSubmitting && "opacity-50 cursor-not-allowed",
                               )}
                             >
                               {scope}
