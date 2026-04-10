@@ -5,17 +5,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ThemeProvider } from "../../adapters/next-themes.js";
+import { ToastProvider } from "../../components/toast.js";
 import { StudioNavigationProvider } from "../../navigation.js";
 import {
   AdminCapabilitiesProvider,
   type AdminCapabilitiesValue,
 } from "./capabilities-context.js";
 import { StudioMountInfoProvider } from "./mount-info-context.js";
-import SettingsPage from "./settings-page.js";
+import { StudioSessionProvider } from "./session-context.js";
+import UsersPage from "./users-page.js";
 
-function renderSettingsPage(input: {
-  initialTab: string;
-  basePath?: string;
+function renderUsersPage(input: {
   capabilities?: Partial<AdminCapabilitiesValue>;
 }): string {
   const queryClient = new QueryClient({
@@ -32,9 +32,9 @@ function renderSettingsPage(input: {
           StudioNavigationProvider,
           {
             value: {
-              pathname: "/admin/settings",
+              pathname: "/admin/users",
               params: {},
-              basePath: input.basePath ?? "/admin",
+              basePath: "/admin",
               push: () => {},
               replace: () => {},
               back: () => {},
@@ -67,9 +67,23 @@ function renderSettingsPage(input: {
                   setEnvironment: () => {},
                 },
               },
-              createElement(SettingsPage, {
-                initialTab: input.initialTab,
-              }),
+              createElement(
+                StudioSessionProvider,
+                {
+                  value: {
+                    status: "authenticated" as const,
+                    session: {
+                      id: "sess-1",
+                      userId: "user-1",
+                      email: "test@example.com",
+                      issuedAt: new Date().toISOString(),
+                      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+                    },
+                    csrfToken: "test-csrf-token",
+                  },
+                },
+                createElement(ToastProvider, null, createElement(UsersPage)),
+              ),
             ),
           ),
         ),
@@ -78,57 +92,19 @@ function renderSettingsPage(input: {
   );
 }
 
-test("SettingsPage renders the API keys tab header and create button", () => {
-  const markup = renderSettingsPage({
-    initialTab: "api-keys",
-    capabilities: { canManageSettings: true },
-  });
-
-  assert.match(markup, /Create API Key/);
-  assert.match(markup, /Manage API keys for external integrations/);
-});
-
-test("SettingsPage does not render a Schema tab", () => {
-  const markup = renderSettingsPage({
-    initialTab: "general",
-    capabilities: { canManageSettings: true },
-  });
-  assert.doesNotMatch(markup, /Open schema browser/);
-  assert.doesNotMatch(markup, /data-mdcms-settings-schema-state/);
-});
-
-test("SettingsPage shows access denied when canManageSettings is false", () => {
-  const markup = renderSettingsPage({
-    initialTab: "api-keys",
-    capabilities: { canManageSettings: false },
-  });
+test("UsersPage shows access denied when canManageUsers is false", () => {
+  const markup = renderUsersPage({ capabilities: { canManageUsers: false } });
   assert.match(markup, /Access denied/);
-  assert.doesNotMatch(markup, /Create API Key/);
+  assert.doesNotMatch(markup, /Invite User/);
 });
 
-test("SettingsPage renders content when canManageSettings is true", () => {
-  const markup = renderSettingsPage({
-    initialTab: "api-keys",
-    capabilities: { canManageSettings: true },
-  });
-  assert.match(markup, /Create API Key/);
+test("UsersPage renders user management when canManageUsers is true", () => {
+  const markup = renderUsersPage({ capabilities: { canManageUsers: true } });
+  assert.match(markup, /Invite User/);
   assert.doesNotMatch(markup, /Access denied/);
 });
 
-test("SettingsPage does not render Webhooks or Media tabs", () => {
-  const markup = renderSettingsPage({
-    initialTab: "general",
-    capabilities: { canManageSettings: true },
-  });
-  assert.doesNotMatch(markup, /Webhooks/);
-  assert.doesNotMatch(markup, /Media/);
-});
-
-test("SettingsPage General tab shows read-only project context", () => {
-  const markup = renderSettingsPage({
-    initialTab: "general",
-    capabilities: { canManageSettings: true },
-  });
-  assert.match(markup, /read-only/i);
-  assert.doesNotMatch(markup, /Save changes/);
+test("UsersPage does not render a Last Active column", () => {
+  const markup = renderUsersPage({ capabilities: { canManageUsers: true } });
+  assert.doesNotMatch(markup, /Last Active/);
 });

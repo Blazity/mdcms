@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-31
+last_updated: 2026-04-10
 ---
 
 # SPEC-005 Auth, Authorization, and Request Routing
@@ -452,7 +452,7 @@ Machine-to-machine access (SDK, CI/CD) uses API keys:
 
 **CLI auth defaults and precedence:**
 
-- Login-generated API keys default to scopes: `content:read`, `content:read:draft`, `content:write`.
+- Login-generated API keys request scopes: `projects:read`, `projects:write`, `schema:read`, `schema:write`, `content:read`, `content:read:draft`, `content:write`. The server validates that the session's effective role permits all requested scopes. **MVP limitation:** CLI requires Admin or Owner role (see SPEC-008).
 - CLI auth precedence is: `--api-key` > `MDCMS_API_KEY` > stored profile.
 
 **Deterministic failure semantics:**
@@ -527,8 +527,17 @@ Schema authorization semantics:
 | GET    | `/api/v1/auth/session`                           | session               | none           | none                | session cookie                                                                          | `200` `{ data: { session, csrfToken } }`                 | `UNAUTHORIZED` (`401`), `FORBIDDEN_ORIGIN` (`403`)                                                                                                                                              |
 | GET    | `/api/v1/auth/get-session`                       | session               | none           | none                | session cookie                                                                          | `200` `{ data: { session, csrfToken } }`                 | `UNAUTHORIZED` (`401`), `FORBIDDEN_ORIGIN` (`403`)                                                                                                                                              |
 | GET    | `/api/v1/me/capabilities`                        | session_or_api_key    | none           | project+environment | session cookie or `Authorization: Bearer <mdcms_key_...>` plus explicit target routing  | `200` `{ data: { project, environment, capabilities } }` | `UNAUTHORIZED` (`401`), `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `FORBIDDEN_ORIGIN` (`403`)                                                                         |
+| GET    | `/api/v1/me/projects`                            | session               | none           | none                | session cookie                                                                          | `200` `{ data: ProjectSummary[] }`                       | `UNAUTHORIZED` (`401`)                                                                                                                                                                          |
 | POST   | `/api/v1/auth/logout`                            | session               | none           | none                | session cookie                                                                          | `200` `{ data: { revoked: boolean } }`                   | `FORBIDDEN` (`403`), `INTERNAL_ERROR` (`500`)                                                                                                                                                   |
 | POST   | `/api/v1/auth/users/:userId/sessions/revoke-all` | session (admin/owner) | none           | none                | `userId` path param                                                                     | `200` `{ data: { userId, revokedSessions } }`            | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                                                                                                |
+| GET    | `/api/v1/auth/users`                             | session (admin/owner) | none           | none                | session cookie                                                                          | `200` `{ data: UserWithGrants[] }`                       | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`)                                                                                                                                                     |
+| GET    | `/api/v1/auth/users/:userId`                     | session (admin/owner) | none           | none                | `userId` path param                                                                     | `200` `{ data: UserWithGrants }`                         | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                                                                                                |
+| POST   | `/api/v1/auth/users/invite`                      | session (admin/owner) | none           | none                | JSON: `{ email, grants[] }`                                                             | `200` `{ data: { id, email, expiresAt } }`               | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `INVALID_INPUT` (`400`), `CONFLICT` (`409`)                                                                                                        |
+| GET    | `/api/v1/auth/invites`                           | session (admin/owner) | none           | none                | session cookie                                                                          | `200` `{ data: PendingInvite[] }`                        | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`)                                                                                                                                                     |
+| DELETE | `/api/v1/auth/invites/:inviteId`                 | session (admin/owner) | none           | none                | `inviteId` path param                                                                   | `200` `{ data: { revoked: true } }`                      | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `CONFLICT` (`409`)                                                                                                            |
+| POST   | `/api/v1/auth/invites/:token/accept`             | public                | none           | none                | JSON: `{ name, password }`                                                              | `200` `{ data: { userId } }`                             | `NOT_FOUND` (`404`), `CONFLICT` (`409`), `GONE` (`410`), `VALIDATION_ERROR` (`400`)                                                                                                             |
+| PATCH  | `/api/v1/auth/users/:userId/grants`              | session (admin/owner) | none           | none                | JSON: `{ grants[] }`                                                                    | `200` `{ data: UserWithGrants }`                         | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `INVALID_INPUT` (`400`)                                                                                                       |
+| DELETE | `/api/v1/auth/users/:userId`                     | session (admin/owner) | none           | none                | `userId` path param                                                                     | `200` `{ data: { removed: true } }`                      | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                                                                                                |
 | GET    | `/api/v1/auth/api-keys`                          | session               | none           | none                | session cookie                                                                          | `200` `{ data: ApiKeyMetadata[] }`                       | `UNAUTHORIZED` (`401`)                                                                                                                                                                          |
 | POST   | `/api/v1/auth/api-keys`                          | session               | none           | none                | JSON: `{ label, scopes[], contextAllowlist[], expiresAt? }`                             | `200` `{ data: { key, ...metadata } }` (key shown once)  | `UNAUTHORIZED` (`401`), `INVALID_INPUT` (`400`), `FORBIDDEN` (`403`), `INTERNAL_ERROR` (`500`)                                                                                                  |
 | POST   | `/api/v1/auth/api-keys/:keyId/revoke`            | session               | none           | none                | `keyId` path param                                                                      | `200` `{ data: ApiKeyMetadata }`                         | `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                                                                                                                |
@@ -540,6 +549,71 @@ Schema authorization semantics:
 | GET    | `/api/v1/auth/sso/callback/:providerId`          | public                | none           | none                | OIDC callback query per Better Auth SSO flow                                            | `302` redirect to validated callback URL + `set-cookie`  | `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `AUTH_OIDC_REQUIRED_CLAIM_MISSING` (`401`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`), `AUTH_PROVIDER_ERROR` (`502`), `INTERNAL_ERROR` (`500`)     |
 | POST   | `/api/v1/auth/sso/saml2/sp/acs/:providerId`      | public                | none           | none                | form or body: `SAMLResponse`, optional `RelayState`                                     | `302` redirect to validated callback URL + `set-cookie`  | `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `AUTH_SAML_REQUIRED_ATTRIBUTE_MISSING` (`401`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`), `AUTH_PROVIDER_ERROR` (`502`), `INTERNAL_ERROR` (`500`) |
 | GET    | `/api/v1/auth/sso/saml2/sp/metadata`             | public                | none           | none                | query: `providerId`, optional `format` enum (`xml` or `json`)                           | `200` provider-specific SP metadata                      | `INVALID_INPUT` (`400`), `SSO_PROVIDER_NOT_CONFIGURED` (`404`)                                                                                                                                  |
+
+### User Management Type Shapes
+
+**UserWithGrants:**
+
+```typescript
+{
+  id: string;
+  name: string;
+  email: string;
+  image: string | null;
+  createdAt: string;
+  grants: UserGrant[];
+}
+```
+
+**UserGrant:**
+
+```typescript
+{
+  id: string;
+  role: "owner" | "admin" | "editor" | "viewer";
+  scopeKind: "global" | "project" | "folder_prefix";
+  project: string | null;
+  environment: string | null;
+  pathPrefix: string | null;
+  createdAt: string;
+}
+```
+
+**PendingInvite:**
+
+```typescript
+{
+  id: string;
+  email: string;
+  grants: GrantInput[];
+  createdAt: string;
+  expiresAt: string;
+}
+```
+
+**Grant input (invite/update):**
+
+```typescript
+{
+  role: "admin" | "editor" | "viewer";
+  scopeKind: "global" | "project" | "folder_prefix";
+  project?: string;       // required when scopeKind is "project" or "folder_prefix"
+  environment?: string;   // optional
+  pathPrefix?: string;    // required when scopeKind is "folder_prefix"
+}
+```
+
+**ProjectSummary:**
+
+```typescript
+{
+  id: string;
+  slug: string;
+  name: string;
+  environmentCount: number;
+  createdAt: string;
+}
+```
 
 ## OIDC Sign-In Semantics
 

@@ -20,6 +20,7 @@ import SettingsPage from "./runtime-ui/app/admin/settings-page.js";
 import TrashPage from "./runtime-ui/app/admin/trash-page.js";
 import UsersPage from "./runtime-ui/app/admin/users-page.js";
 import WorkflowsPage from "./runtime-ui/app/admin/workflows-page.js";
+import InviteAcceptPage from "./runtime-ui/app/invite/invite-accept-page.js";
 import LoginPage from "./runtime-ui/app/admin/login-page.js";
 import { StudioSessionProvider } from "./runtime-ui/app/admin/session-context.js";
 import { StudioMountInfoProvider } from "./runtime-ui/app/admin/mount-info-context.js";
@@ -40,6 +41,11 @@ const RUNTIME_ROUTES: readonly StudioRuntimeRouteDefinition[] = [
     id: "login",
     path: "/login",
     render: () => <LoginPage />,
+  },
+  {
+    id: "invite.accept",
+    path: "/invite/:token",
+    render: (context) => <InviteAcceptPage serverUrl={context.apiBaseUrl} />,
   },
   {
     id: "dashboard",
@@ -484,8 +490,9 @@ export function RemoteStudioApp({
       return;
     }
 
-    // Preserve the active environment query param across navigations
-    const currentEnv = new URLSearchParams(window.location.search).get("env");
+    // Preserve active environment query param across navigations
+    const searchParams = new URLSearchParams(window.location.search);
+    const currentEnv = searchParams.get("env");
     let resolvedHref = href;
     if (currentEnv) {
       const url = new URL(href, window.location.origin);
@@ -527,7 +534,9 @@ export function RemoteStudioApp({
           data-mdcms-active-route={activeRoute?.id ?? "unknown"}
           className="mdcms-studio-runtime"
         >
-          {activeRoute?.id === "login" ? (
+          {activeRoute?.id === "invite.accept" ? (
+            renderRouteContent(activeRoute, context)
+          ) : activeRoute?.id === "login" ? (
             <StudioSessionProvider value={{ status: "unauthenticated" }}>
               <StudioMountInfoProvider
                 value={{

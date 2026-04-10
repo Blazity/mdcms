@@ -71,6 +71,20 @@
       "when": 1774395811363,
       "tag": "0009_peaceful_living_tribunal",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1775730517964,
+      "tag": "0010_big_mystique",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1775826199747,
+      "tag": "0011_known_lockheed",
+      "breakpoints": true
     }
   ]
 }

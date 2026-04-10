@@ -6,6 +6,7 @@ import {
 import {
   createConsoleLogger,
   resolveRequestTargetRouting,
+  RuntimeError,
   type Logger,
 } from "@mdcms/shared";
 import { and, eq, inArray } from "drizzle-orm";
@@ -26,6 +27,7 @@ import {
   mountAuthRoutes,
   resolveStartupOidcProviders,
 } from "./auth.js";
+import { createEmailService } from "./email.js";
 import { mountCollaborationRoutes } from "./collaboration-auth.js";
 import {
   createDatabaseEnvironmentStore,
@@ -106,7 +108,12 @@ export function createServerRequestHandlerWithModules(
 
   const dbConnection = createDatabaseConnection({ env: rawEnv });
   const dal = createContentDAL({ db: dbConnection.db });
-  const authService = createAuthService({ db: dbConnection.db, env: rawEnv });
+  const emailService = env.SMTP_HOST ? createEmailService(env) : undefined;
+  const authService = createAuthService({
+    db: dbConnection.db,
+    env: rawEnv,
+    emailService,
+  });
   const contentStore = createDatabaseContentStore({ db: dbConnection.db });
   const schemaStore = createDatabaseSchemaStore({ db: dbConnection.db });
   let configPromise: Promise<ParsedMdcmsConfig | undefined> | undefined;
@@ -195,6 +202,17 @@ export function createServerRequestHandlerWithModules(
       });
       mountEnvironmentApiRoutes(app, {
         store: environmentStore,
+        authorizeSession: async (request) => {
+          const session = await authService.getSession(request);
+          if (!session) {
+            throw new RuntimeError({
+              code: "UNAUTHORIZED",
+              message: "Authentication required.",
+              statusCode: 401,
+            });
+          }
+          return session;
+        },
         authorizeAdmin: (request) => authService.requireAdminSession(request),
         requireCsrf: (request) => authService.requireCsrfProtection(request),
       });

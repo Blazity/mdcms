@@ -172,6 +172,42 @@ export const authLoginBackoffs = pgTable(
   ],
 );
 
+export const invites = pgTable(
+  "invites",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    tokenHash: text("token_hash").notNull(),
+    email: text().notNull(),
+    grants: jsonb()
+      .$type<
+        Array<{
+          role: string;
+          scopeKind: string;
+          project?: string;
+          environment?: string;
+          pathPrefix?: string;
+        }>
+      >()
+      .notNull(),
+    createdByUserId: text()
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+    acceptedAt: timestamp({ withTimezone: true }),
+    revokedAt: timestamp({ withTimezone: true }),
+  },
+  (table) => [
+    unique("uniq_invites_token_hash").on(table.tokenHash),
+    index("idx_invites_email").on(table.email),
+    index("idx_invites_status").on(
+      table.acceptedAt,
+      table.revokedAt,
+      table.expiresAt,
+    ),
+  ],
+);
+
 export const rbacGrants = pgTable(
   "rbac_grants",
   {
