@@ -55,8 +55,13 @@ export type EnvironmentRequestCsrfProtector = (
   request: Request,
 ) => Promise<void>;
 
+export type EnvironmentSessionAuthorizer = (
+  request: Request,
+) => Promise<StudioSession | void>;
+
 export type MountEnvironmentApiRoutesOptions = {
   store: EnvironmentStore;
+  authorizeSession: EnvironmentSessionAuthorizer;
   authorizeAdmin: EnvironmentAdminAuthorizer;
   requireCsrf: EnvironmentRequestCsrfProtector;
 };
@@ -468,7 +473,7 @@ export function mountEnvironmentApiRoutes(
   environmentApp.get?.("/api/v1/environments", ({ request }: any) => {
     return executeWithRuntimeErrorsHandled(request, async () => {
       const project = pickProject(request);
-      await options.authorizeAdmin(request);
+      await options.authorizeSession(request);
 
       return {
         data: await options.store.list(project),

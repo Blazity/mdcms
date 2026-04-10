@@ -6,6 +6,7 @@ import {
 import {
   createConsoleLogger,
   resolveRequestTargetRouting,
+  RuntimeError,
   type Logger,
 } from "@mdcms/shared";
 import { and, eq, inArray } from "drizzle-orm";
@@ -203,6 +204,17 @@ export function createServerRequestHandlerWithModules(
       });
       mountEnvironmentApiRoutes(app, {
         store: environmentStore,
+        authorizeSession: async (request) => {
+          const session = await authService.getSession(request);
+          if (!session) {
+            throw new RuntimeError({
+              code: "UNAUTHORIZED",
+              message: "Authentication required.",
+              statusCode: 401,
+            });
+          }
+          return session;
+        },
         authorizeAdmin: (request) => authService.requireAdminSession(request),
         requireCsrf: (request) => authService.requireCsrfProtection(request),
       });

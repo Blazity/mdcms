@@ -38,6 +38,7 @@ test("environment routes list project-scoped environments for admin sessions", a
             throw new Error("not used");
           },
         },
+        authorizeSession: async () => undefined,
         authorizeAdmin: async () => undefined,
         requireCsrf: async () => undefined,
       });
@@ -74,6 +75,7 @@ test("environment routes reject create requests without admin privileges", async
             throw new Error("not used");
           },
         },
+        authorizeSession: async () => undefined,
         authorizeAdmin: async () => {
           throw Object.assign(new Error("forbidden"), {
             code: "FORBIDDEN",

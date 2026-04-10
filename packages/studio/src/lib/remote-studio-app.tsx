@@ -492,17 +492,13 @@ export function RemoteStudioApp({
       return;
     }
 
-    // Preserve active project and environment query params across navigations
+    // Preserve active environment query param across navigations
     const searchParams = new URLSearchParams(window.location.search);
-    const currentProject = searchParams.get("project");
     const currentEnv = searchParams.get("env");
     let resolvedHref = href;
-    if (currentProject || currentEnv) {
+    if (currentEnv) {
       const url = new URL(href, window.location.origin);
-      if (currentProject && !url.searchParams.has("project")) {
-        url.searchParams.set("project", currentProject);
-      }
-      if (currentEnv && !url.searchParams.has("env")) {
+      if (!url.searchParams.has("env")) {
         url.searchParams.set("env", currentEnv);
       }
       resolvedHref = url.pathname + url.search + url.hash;

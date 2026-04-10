@@ -6,7 +6,6 @@ import {
   MoreHorizontal,
   Mail,
   Edit,
-  Shield,
   ShieldOff,
   Trash2,
   LogOut,
@@ -51,7 +50,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select.js";
-import { Switch } from "../../components/ui/switch.js";
 import { Label } from "../../components/ui/label.js";
 import { PageHeader } from "../../components/layout/page-header.js";
 import { useToast } from "../../components/toast.js";
@@ -101,23 +99,15 @@ function getHighestRole(
 }
 
 function getScopeLabel(grants: UserWithGrants["grants"]): string {
-  if (grants.some((g) => g.scopeKind === "global")) return "Global";
-  const projects = [
-    ...new Set(grants.map((g) => g.project).filter(Boolean)),
-  ];
   const pathPrefixes = grants
     .map((g) => g.pathPrefix)
     .filter(Boolean);
-  const base =
-    projects.length === 0
-      ? "None"
-      : projects.length === 1
-        ? projects[0]!
-        : `${projects.length} projects`;
   if (pathPrefixes.length > 0) {
-    return `${base} (${pathPrefixes[0]}${pathPrefixes.length > 1 ? ` +${pathPrefixes.length - 1}` : ""})`;
+    return pathPrefixes.length === 1
+      ? pathPrefixes[0]!
+      : `${pathPrefixes[0]} +${pathPrefixes.length - 1}`;
   }
-  return base;
+  return "Full project";
 }
 
 function formatJoinedDate(isoString: string): string {
@@ -134,7 +124,6 @@ export default function UsersPage() {
   const [inviteData, setInviteData] = useState({
     email: "",
     role: "editor",
-    globalAccess: true,
     pathPrefix: "",
   });
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -147,17 +136,7 @@ export default function UsersPage() {
     currentGrants: UserWithGrants["grants"];
   } | null>(null);
   const [editRoleValue, setEditRoleValue] = useState("editor");
-
-  const [editPermissionsDialogOpen, setEditPermissionsDialogOpen] = useState(false);
-  const [editPermissionsTarget, setEditPermissionsTarget] = useState<{
-    userId: string;
-    userName: string;
-    currentGrants: UserWithGrants["grants"];
-  } | null>(null);
-  const [editPermissionsData, setEditPermissionsData] = useState({
-    scopeKind: "global",
-    pathPrefix: "",
-  });
+  const [editRolePathPrefix, setEditRolePathPrefix] = useState("");
 
   const toast = useToast();
   const {
@@ -204,14 +183,14 @@ export default function UsersPage() {
         grants: [
           {
             role: inviteData.role,
-            scopeKind: inviteData.globalAccess ? "global" : "project",
-            project: inviteData.globalAccess ? undefined : (activeProject || undefined),
+            scopeKind: inviteData.pathPrefix ? "folder_prefix" : "project",
+            project: activeProject || undefined,
             pathPrefix: inviteData.pathPrefix || undefined,
           },
         ],
       });
       setInviteDialogOpen(false);
-      setInviteData({ email: "", role: "editor", globalAccess: true, pathPrefix: "" });
+      setInviteData({ email: "", role: "editor", pathPrefix: "" });
       toast.success("Invitation sent successfully.");
     } catch (err) {
       const message =
@@ -265,10 +244,9 @@ export default function UsersPage() {
       await updateGrants(editRoleTarget.userId, [
         {
           role: editRoleValue,
-          scopeKind: editRoleTarget.currentGrants[0]?.scopeKind ?? "global",
-          project: editRoleTarget.currentGrants[0]?.project ?? undefined,
-          environment: editRoleTarget.currentGrants[0]?.environment ?? undefined,
-          pathPrefix: editRoleTarget.currentGrants[0]?.pathPrefix ?? undefined,
+          scopeKind: editRolePathPrefix ? "folder_prefix" : "project",
+          project: editRoleTarget.currentGrants[0]?.project ?? activeProject ?? undefined,
+          pathPrefix: editRolePathPrefix || undefined,
         },
       ]);
       toast.success(`Role updated for ${editRoleTarget.userName}.`);
@@ -280,28 +258,6 @@ export default function UsersPage() {
     }
   }
 
-  async function handleEditPermissions() {
-    if (!editPermissionsTarget) return;
-    const currentRole = getHighestRole(editPermissionsTarget.currentGrants);
-    try {
-      await updateGrants(editPermissionsTarget.userId, [
-        {
-          role: currentRole,
-          scopeKind: editPermissionsData.scopeKind,
-          project: editPermissionsData.scopeKind === "global"
-            ? undefined
-            : (editPermissionsTarget.currentGrants[0]?.project ?? activeProject ?? undefined),
-          pathPrefix: editPermissionsData.pathPrefix || undefined,
-        },
-      ]);
-      toast.success(`Permissions updated for ${editPermissionsTarget.userName}.`);
-      setEditPermissionsDialogOpen(false);
-      setEditPermissionsTarget(null);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to update permissions.";
-      toast.error(message);
-    }
-  }
 
   return (
     <div className="min-h-screen">
@@ -364,27 +320,10 @@ export default function UsersPage() {
                   </Select>
                 </div>
 
-                {/* Global access */}
-                <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <div className="space-y-0.5">
-                    <Label>Global access</Label>
-                    <p className="text-xs text-foreground-muted">
-                      Apply role to all projects and folders
-                    </p>
-                  </div>
-                  <Switch
-                    checked={inviteData.globalAccess}
-                    onCheckedChange={(checked) =>
-                      setInviteData({ ...inviteData, globalAccess: checked })
-                    }
-                  />
-                </div>
-
-                {/* Folder prefix */}
-                {!inviteData.globalAccess &&
-                  (inviteData.role === "editor" || inviteData.role === "viewer") && (
+                {/* Folder prefix (editor/viewer only) */}
+                {(inviteData.role === "editor" || inviteData.role === "viewer") && (
                   <div className="space-y-2">
-                    <Label htmlFor="path-prefix">Folder prefix</Label>
+                    <Label htmlFor="path-prefix">Folder prefix (optional)</Label>
                     <Input
                       id="path-prefix"
                       placeholder="e.g. content/blog"
@@ -395,7 +334,7 @@ export default function UsersPage() {
                       className="font-mono"
                     />
                     <p className="text-xs text-foreground-muted">
-                      Restricts access to content under this path only.
+                      Restricts access to content under this path only. Leave empty for full project access.
                     </p>
                   </div>
                 )}
@@ -584,30 +523,12 @@ export default function UsersPage() {
                                   currentGrants: user.grants,
                                 });
                                 setEditRoleValue(role);
+                                setEditRolePathPrefix(user.grants[0]?.pathPrefix ?? "");
                                 setEditRoleDialogOpen(true);
                               }}
                             >
                               <Edit className="mr-2 h-4 w-4" />
                               Edit role
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              disabled={role === "owner"}
-                              onClick={() => {
-                                const grant = user.grants[0];
-                                setEditPermissionsTarget({
-                                  userId: user.id,
-                                  userName: user.name,
-                                  currentGrants: user.grants,
-                                });
-                                setEditPermissionsData({
-                                  scopeKind: grant?.scopeKind ?? "global",
-                                  pathPrefix: grant?.pathPrefix ?? "",
-                                });
-                                setEditPermissionsDialogOpen(true);
-                              }}
-                            >
-                              <Shield className="mr-2 h-4 w-4" />
-                              Edit permissions
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               disabled={isRevokingSessions}
@@ -683,6 +604,21 @@ export default function UsersPage() {
                   </SelectContent>
                 </Select>
               </div>
+              {(editRoleValue === "editor" || editRoleValue === "viewer") && (
+                <div className="space-y-2">
+                  <Label htmlFor="edit-role-path-prefix">Folder prefix (optional)</Label>
+                  <Input
+                    id="edit-role-path-prefix"
+                    placeholder="e.g. content/blog"
+                    value={editRolePathPrefix}
+                    onChange={(e) => setEditRolePathPrefix(e.target.value)}
+                    className="font-mono"
+                  />
+                  <p className="text-xs text-foreground-muted">
+                    Restricts access to content under this path only. Leave empty for full project access.
+                  </p>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="ghost" onClick={() => setEditRoleDialogOpen(false)}>
@@ -699,70 +635,6 @@ export default function UsersPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Edit Permissions Dialog */}
-        <Dialog open={editPermissionsDialogOpen} onOpenChange={setEditPermissionsDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Edit permissions</DialogTitle>
-              <DialogDescription>
-                Change scope for {editPermissionsTarget?.userName}.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                <div className="space-y-0.5">
-                  <Label>Global access</Label>
-                  <p className="text-xs text-foreground-muted">
-                    Apply role to all projects and folders
-                  </p>
-                </div>
-                <Switch
-                  checked={editPermissionsData.scopeKind === "global"}
-                  onCheckedChange={(checked) =>
-                    setEditPermissionsData({
-                      ...editPermissionsData,
-                      scopeKind: checked ? "global" : "project",
-                      pathPrefix: checked ? "" : editPermissionsData.pathPrefix,
-                    })
-                  }
-                />
-              </div>
-
-              {editPermissionsData.scopeKind !== "global" && (
-                <div className="space-y-2">
-                  <Label htmlFor="edit-path-prefix">Folder prefix</Label>
-                  <Input
-                    id="edit-path-prefix"
-                    placeholder="e.g. content/blog"
-                    value={editPermissionsData.pathPrefix}
-                    onChange={(e) =>
-                      setEditPermissionsData({
-                        ...editPermissionsData,
-                        pathPrefix: e.target.value,
-                      })
-                    }
-                    className="font-mono"
-                  />
-                  <p className="text-xs text-foreground-muted">
-                    Restricts access to content under this path only.
-                  </p>
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => setEditPermissionsDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                className="bg-accent hover:bg-accent-hover text-white"
-                disabled={isUpdatingGrants}
-                onClick={handleEditPermissions}
-              >
-                {isUpdatingGrants ? "Saving..." : "Save"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
     </div>
   );
