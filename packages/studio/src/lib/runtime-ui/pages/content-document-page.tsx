@@ -195,6 +195,11 @@ export type ContentDocumentPageState =
     }
   | ContentDocumentPageReadyState;
 
+export type ContentDocumentRouteRequestToken = {
+  documentId: string;
+  initialEnvironment: string;
+};
+
 type ContentDocumentPageStateInput = {
   shell: StudioDocumentShell;
   typeLabel: string;
@@ -247,6 +252,30 @@ type ContentDocumentPageViewProps = {
   onCreateVariant?: (prefill: boolean) => void;
   onCancelVariantCreation?: () => void;
 };
+
+/** Captures the routed document identity used to reject stale async results. */
+export function createContentDocumentRouteRequestToken(input: {
+  documentId: string;
+  route: Pick<StudioDocumentRouteMountContext, "initialEnvironment">;
+}): ContentDocumentRouteRequestToken {
+  return {
+    documentId: input.documentId,
+    initialEnvironment: input.route.initialEnvironment,
+  };
+}
+
+export function matchesContentDocumentRouteRequestToken(
+  token: ContentDocumentRouteRequestToken,
+  input: {
+    documentId: string;
+    route?: Pick<StudioDocumentRouteMountContext, "initialEnvironment">;
+  },
+): boolean {
+  return (
+    input.documentId === token.documentId &&
+    input.route?.initialEnvironment === token.initialEnvironment
+  );
+}
 
 type CreateContentDocumentPageHistoryApi = (input: {
   context: StudioMountContext;
@@ -2035,23 +2064,35 @@ export default function ContentDocumentPage({
     stateRef.current = state;
   }, [state]);
 
-  function createRouteApi(): StudioDocumentRouteApi | undefined {
-    if (!activeContext || !route) {
+  function createRouteApi(input?: {
+    context?: StudioMountContext;
+    route?: StudioDocumentRouteMountContext;
+  }): StudioDocumentRouteApi | undefined {
+    const nextContext = input?.context ?? activeContext;
+    const nextRoute = input?.route ?? route;
+
+    if (!nextContext || !nextRoute) {
       return undefined;
     }
 
     return createContentDocumentRouteApi({
-      context: activeContext,
-      route,
+      context: nextContext,
+      route: nextRoute,
     });
   }
 
   const loadSelectedVersionDiff = useEffectEvent(async () => {
     const currentState = stateRef.current;
-    const api = createRouteApi();
+    const requestContext = activeContext;
+    const requestRoute = route;
+    const api = createRouteApi({
+      context: requestContext,
+      route: requestRoute,
+    });
 
     if (
       !api ||
+      !requestRoute ||
       currentState.status !== "ready" ||
       !currentState.selectedComparison.leftVersion ||
       !currentState.selectedComparison.rightVersion
@@ -2059,6 +2100,10 @@ export default function ContentDocumentPage({
       return;
     }
 
+    const requestToken = createContentDocumentRouteRequestToken({
+      documentId: currentState.documentId,
+      route: requestRoute,
+    });
     const leftVersion = currentState.selectedComparison.leftVersion;
     const rightVersion = currentState.selectedComparison.rightVersion;
 
@@ -2086,6 +2131,7 @@ export default function ContentDocumentPage({
 
       setState((current) =>
         current.status === "ready" &&
+        matchesContentDocumentRouteRequestToken(requestToken, current) &&
         current.selectedComparison.leftVersion === leftVersion &&
         current.selectedComparison.rightVersion === rightVersion
           ? {
@@ -2105,6 +2151,7 @@ export default function ContentDocumentPage({
 
       setState((current) =>
         current.status === "ready" &&
+        matchesContentDocumentRouteRequestToken(requestToken, current) &&
         current.selectedComparison.leftVersion === leftVersion &&
         current.selectedComparison.rightVersion === rightVersion
           ? {
@@ -2123,12 +2170,26 @@ export default function ContentDocumentPage({
 
   const publishDocument = useEffectEvent(async () => {
     const currentState = stateRef.current;
-    const api = createRouteApi();
+    const requestContext = activeContext;
+    const requestRoute = route;
+    const api = createRouteApi({
+      context: requestContext,
+      route: requestRoute,
+    });
 
-    if (!api || currentState.status !== "ready" || !currentState.canWrite) {
+    if (
+      !api ||
+      !requestRoute ||
+      currentState.status !== "ready" ||
+      !currentState.canWrite
+    ) {
       return;
     }
 
+    const requestToken = createContentDocumentRouteRequestToken({
+      documentId: currentState.documentId,
+      route: requestRoute,
+    });
     setState((current) =>
       current.status === "ready"
         ? {
@@ -2150,7 +2211,8 @@ export default function ContentDocumentPage({
 
       if (hasSchemaRecoveryMismatch(recoveredSchemaState)) {
         setState((current) =>
-          current.status === "ready"
+          current.status === "ready" &&
+          matchesContentDocumentRouteRequestToken(requestToken, current)
             ? applyGuardedPublishFailureToReadyState({
                 state: current,
                 schemaState: recoveredSchemaState,
@@ -2167,7 +2229,10 @@ export default function ContentDocumentPage({
       if (
         publishedBody !== currentState.draftBody &&
         latestAfterPublish.status === "ready" &&
-        latestAfterPublish.documentId === currentState.documentId &&
+        matchesContentDocumentRouteRequestToken(
+          requestToken,
+          latestAfterPublish,
+        ) &&
         latestAfterPublish.draftBody === currentState.draftBody &&
         !latestAfterPublish.viewingVersion
       ) {
@@ -2176,7 +2241,7 @@ export default function ContentDocumentPage({
 
       setState((current) =>
         current.status === "ready" &&
-        current.documentId === currentState.documentId
+        matchesContentDocumentRouteRequestToken(requestToken, current)
           ? applySuccessfulPublishToReadyState({
               state: current,
               requestBody: currentState.draftBody,
@@ -2188,7 +2253,8 @@ export default function ContentDocumentPage({
       const message = toRouteErrorMessage(error, "Failed to publish document.");
 
       setState((current) =>
-        current.status === "ready"
+        current.status === "ready" &&
+        matchesContentDocumentRouteRequestToken(requestToken, current)
           ? {
               ...current,
               publishState: "idle",
@@ -2261,14 +2327,19 @@ export default function ContentDocumentPage({
 
   const saveDraft = useEffectEvent(async (): Promise<boolean> => {
     const currentState = stateRef.current;
-    const api = createRouteApi();
+    const requestContext = activeContext;
+    const requestRoute = route;
+    const api = createRouteApi({
+      context: requestContext,
+      route: requestRoute,
+    });
 
     if (
       !api ||
       // Fail closed when the embedded host cannot derive the local schema hash
       // required by guarded draft-write routes.
-      !route ||
-      !route.write.canWrite ||
+      !requestRoute ||
+      !requestRoute.write.canWrite ||
       currentState.status !== "ready"
     ) {
       return false;
@@ -2284,6 +2355,10 @@ export default function ContentDocumentPage({
     }
 
     const requestBody = currentState.draftBody;
+    const requestToken = createContentDocumentRouteRequestToken({
+      documentId: currentState.documentId,
+      route: requestRoute,
+    });
 
     setState((current) =>
       current.status === "ready"
@@ -2295,7 +2370,7 @@ export default function ContentDocumentPage({
 
     const nextState = await saveContentDocumentReadyState({
       api,
-      route,
+      route: requestRoute,
       state: currentState,
     });
 
@@ -2303,7 +2378,8 @@ export default function ContentDocumentPage({
 
     if (hasSchemaRecoveryMismatch(recoveredSchemaState)) {
       setState((current) =>
-        current.status === "ready"
+        current.status === "ready" &&
+        matchesContentDocumentRouteRequestToken(requestToken, current)
           ? applyGuardedDraftSaveFailureToReadyState({
               state: current,
               schemaState: recoveredSchemaState,
@@ -2316,7 +2392,8 @@ export default function ContentDocumentPage({
     const mutationError = nextState.mutationError;
     if (mutationError) {
       setState((current) =>
-        current.status === "ready"
+        current.status === "ready" &&
+        matchesContentDocumentRouteRequestToken(requestToken, current)
           ? applyFailedDraftSaveToReadyState({
               state: current,
               requestBody,
@@ -2335,7 +2412,7 @@ export default function ContentDocumentPage({
     if (
       persistedBody !== requestBody &&
       latestAfterSave.status === "ready" &&
-      latestAfterSave.documentId === currentState.documentId &&
+      matchesContentDocumentRouteRequestToken(requestToken, latestAfterSave) &&
       latestAfterSave.draftBody === requestBody &&
       !latestAfterSave.viewingVersion
     ) {
@@ -2344,7 +2421,7 @@ export default function ContentDocumentPage({
 
     setState((current) =>
       current.status === "ready" &&
-      current.documentId === currentState.documentId
+      matchesContentDocumentRouteRequestToken(requestToken, current)
         ? applySuccessfulDraftSaveToReadyState({
             state: current,
             requestBody,
@@ -2520,9 +2597,19 @@ export default function ContentDocumentPage({
 
   const handleViewVersion = useEffectEvent(async (version: number) => {
     const currentState = stateRef.current;
-    const api = createRouteApi();
+    const requestContext = activeContext;
+    const requestRoute = route;
+    const api = createRouteApi({
+      context: requestContext,
+      route: requestRoute,
+    });
 
-    if (!api || currentState.status !== "ready") return;
+    if (!api || !requestRoute || currentState.status !== "ready") return;
+
+    const requestToken = createContentDocumentRouteRequestToken({
+      documentId: currentState.documentId,
+      route: requestRoute,
+    });
 
     setState((current) =>
       current.status === "ready"
@@ -2547,7 +2634,7 @@ export default function ContentDocumentPage({
       const afterFetch = stateRef.current;
       if (
         afterFetch.status !== "ready" ||
-        afterFetch.documentId !== currentState.documentId ||
+        !matchesContentDocumentRouteRequestToken(requestToken, afterFetch) ||
         afterFetch.viewingVersion?.version !== version
       ) {
         return;
@@ -2557,6 +2644,7 @@ export default function ContentDocumentPage({
 
       setState((current) =>
         current.status === "ready" &&
+        matchesContentDocumentRouteRequestToken(requestToken, current) &&
         current.viewingVersion?.version === version
           ? {
               ...current,
@@ -2574,6 +2662,7 @@ export default function ContentDocumentPage({
 
       setState((current) =>
         current.status === "ready" &&
+        matchesContentDocumentRouteRequestToken(requestToken, current) &&
         current.viewingVersion?.version === version
           ? {
               ...current,

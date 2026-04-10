@@ -15,7 +15,11 @@ import {
 } from "@mdcms/shared";
 
 import { buildStudioRuntimeArtifacts } from "./build-runtime.js";
-import { loadStudioRuntime, type MdcmsConfig } from "./studio-loader.js";
+import {
+  isPreparedDocumentRouteMetadata,
+  loadStudioRuntime,
+  type MdcmsConfig,
+} from "./studio-loader.js";
 
 const validHostBridge: HostBridgeV1 = {
   version: "1",
@@ -351,6 +355,76 @@ test("loadStudioRuntime forwards document route environment metadata to the remo
       },
     });
   });
+});
+
+test("isPreparedDocumentRouteMetadata rejects malformed nested route metadata", () => {
+  assert.equal(
+    isPreparedDocumentRouteMetadata({
+      schemaHashesByEnvironment: {
+        production: "production-schema-hash",
+        staging: "staging-schema-hash",
+      },
+      environmentFieldTargets: {
+        BlogPost: {
+          featured: ["staging"],
+        },
+      },
+    }),
+    true,
+  );
+
+  assert.equal(
+    isPreparedDocumentRouteMetadata({
+      schemaHashesByEnvironment: {
+        production: " production-schema-hash ",
+      },
+      environmentFieldTargets: {
+        BlogPost: {
+          featured: ["production"],
+        },
+      },
+    }),
+    false,
+  );
+  assert.equal(
+    isPreparedDocumentRouteMetadata({
+      schemaHashesByEnvironment: {
+        production: "production-schema-hash",
+      },
+      environmentFieldTargets: {
+        BlogPost: {
+          featured: [],
+        },
+      },
+    }),
+    false,
+  );
+  assert.equal(
+    isPreparedDocumentRouteMetadata({
+      schemaHashesByEnvironment: {
+        production: "production-schema-hash",
+      },
+      environmentFieldTargets: {
+        BlogPost: {
+          featured: ["staging"],
+        },
+      },
+    }),
+    false,
+  );
+  assert.equal(
+    isPreparedDocumentRouteMetadata({
+      schemaHashesByEnvironment: {
+        production: "production-schema-hash",
+      },
+      environmentFieldTargets: {
+        " BlogPost ": {
+          featured: ["production"],
+        },
+      },
+    }),
+    false,
+  );
 });
 
 test("loadStudioRuntime preserves a path-prefixed studio serverUrl for bootstrap and runtime asset fetches", async () => {

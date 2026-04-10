@@ -16,10 +16,12 @@ import {
   applySuccessfulDraftSaveToReadyState,
   applySchemaStateToReadyState,
   ContentDocumentPageView,
+  createContentDocumentRouteRequestToken,
   createContentDocumentPageState,
   filterLocaleOptions,
   loadContentDocumentPageState,
   loadContentDocumentVersionDiff,
+  matchesContentDocumentRouteRequestToken,
   parseSelectedComparisonVersionValue,
   publishContentDocumentReadyState,
   reloadSchemaStateForGuard,
@@ -1332,6 +1334,44 @@ test("resolveActiveDocumentRouteContext switches write metadata with the selecte
     canWrite: true,
     schemaHash: "production-schema-hash",
   });
+});
+
+test("document route request tokens reject stale async results after an environment switch", () => {
+  const requestToken = createContentDocumentRouteRequestToken({
+    documentId: "11111111-1111-4111-8111-111111111111",
+    route: createRouteContext(true),
+  });
+  const switchedRoute = resolveActiveDocumentRouteContext(
+    {
+      ...createRouteContext(true),
+      writeByEnvironment: {
+        production: {
+          canWrite: true as const,
+          schemaHash: "production-schema-hash",
+        },
+        staging: {
+          canWrite: true as const,
+          schemaHash: "staging-schema-hash",
+        },
+      },
+    },
+    "production",
+  );
+
+  assert.equal(
+    matchesContentDocumentRouteRequestToken(requestToken, {
+      documentId: "11111111-1111-4111-8111-111111111111",
+      route: createRouteContext(true),
+    }),
+    true,
+  );
+  assert.equal(
+    matchesContentDocumentRouteRequestToken(requestToken, {
+      documentId: "11111111-1111-4111-8111-111111111111",
+      route: switchedRoute,
+    }),
+    false,
+  );
 });
 
 test("locale switcher renders for localized type with supportedLocales", () => {

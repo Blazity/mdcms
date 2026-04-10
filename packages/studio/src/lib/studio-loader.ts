@@ -231,26 +231,35 @@ function readTrimmedConfigString(value: unknown): string | undefined {
     : undefined;
 }
 
+function isNonEmptyTrimmedString(value: unknown): value is string {
+  return (
+    typeof value === "string" && value.length > 0 && value.trim() === value
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
 function isStringArray(value: unknown): value is string[] {
-  return (
-    Array.isArray(value) && value.every((entry) => typeof entry === "string")
-  );
+  return Array.isArray(value) && value.every(isNonEmptyTrimmedString);
 }
 
-function isPreparedDocumentRouteMetadata(
+/** Validates precomputed route metadata before it reaches the mount contract. */
+export function isPreparedDocumentRouteMetadata(
   value: unknown,
 ): value is StudioDocumentRoutePreparedMetadata {
   if (!isRecord(value) || !isRecord(value.schemaHashesByEnvironment)) {
     return false;
   }
 
+  const schemaEntries = Object.entries(value.schemaHashesByEnvironment);
   if (
-    !Object.values(value.schemaHashesByEnvironment).every(
-      (entry) => typeof entry === "string" && entry.trim().length > 0,
+    schemaEntries.length === 0 ||
+    !schemaEntries.every(
+      ([environment, schemaHash]) =>
+        isNonEmptyTrimmedString(environment) &&
+        isNonEmptyTrimmedString(schemaHash),
     )
   ) {
     return false;
@@ -264,13 +273,34 @@ function isPreparedDocumentRouteMetadata(
     return false;
   }
 
-  return Object.values(value.environmentFieldTargets).every((typeFields) => {
-    if (!isRecord(typeFields)) {
-      return false;
-    }
+  const validEnvironments = new Set(
+    schemaEntries.map(([environment]) => environment),
+  );
 
-    return Object.values(typeFields).every(isStringArray);
-  });
+  return Object.entries(value.environmentFieldTargets).every(
+    ([typeName, typeFields]) => {
+      if (!isNonEmptyTrimmedString(typeName) || !isRecord(typeFields)) {
+        return false;
+      }
+
+      const fieldEntries = Object.entries(typeFields);
+      if (fieldEntries.length === 0) {
+        return false;
+      }
+
+      return fieldEntries.every(([fieldName, targets]) => {
+        if (!isNonEmptyTrimmedString(fieldName)) {
+          return false;
+        }
+
+        return (
+          isStringArray(targets) &&
+          targets.length > 0 &&
+          targets.every((target) => validEnvironments.has(target))
+        );
+      });
+    },
+  );
 }
 
 function toWriteByEnvironment(
