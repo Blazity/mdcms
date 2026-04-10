@@ -5,6 +5,7 @@ import type { StudioContentListApi } from "../../content-list-api.js";
 export const CONTENT_TRANSLATION_COVERAGE_QUERY_KEY =
   "content-translation-coverage";
 export const CONTENT_TRANSLATION_COVERAGE_PAGE_SIZE = 100;
+export const MAX_CONTENT_TRANSLATION_COVERAGE_PAGES = 1000;
 
 export type ContentTranslationCoverage = {
   translatedLocales: number;
@@ -24,13 +25,13 @@ type TranslationCoverageDocument = Pick<
 export function getContentTranslationCoverageQueryKey(
   project: string | null | undefined,
   environment: string | null | undefined,
-  type: string,
+  type?: string,
 ) {
   return [
     CONTENT_TRANSLATION_COVERAGE_QUERY_KEY,
     project,
     environment,
-    type,
+    ...(type ? [type] : []),
   ] as const;
 }
 
@@ -73,6 +74,7 @@ export async function loadContentTranslationCoverageMap(
   input: {
     type: string;
     totalLocales: number;
+    maxPages?: number;
   },
 ): Promise<ContentTranslationCoverageMap> {
   if (input.totalLocales <= 0) {
@@ -81,8 +83,13 @@ export async function loadContentTranslationCoverageMap(
 
   const documents: TranslationCoverageDocument[] = [];
   let offset = 0;
+  let pageCount = 0;
+  const maxPages = Math.max(
+    1,
+    input.maxPages ?? MAX_CONTENT_TRANSLATION_COVERAGE_PAGES,
+  );
 
-  while (true) {
+  while (pageCount < maxPages) {
     const response = await api.list({
       type: input.type,
       draft: true,
@@ -90,6 +97,7 @@ export async function loadContentTranslationCoverageMap(
       limit: CONTENT_TRANSLATION_COVERAGE_PAGE_SIZE,
       offset,
     });
+    pageCount += 1;
 
     documents.push(
       ...response.data.map((document) => ({
@@ -102,7 +110,14 @@ export async function loadContentTranslationCoverageMap(
       break;
     }
 
-    offset += Math.max(response.pagination.limit, response.data.length, 1);
+    const nextOffset =
+      offset + Math.max(response.pagination.limit, response.data.length, 1);
+
+    if (nextOffset <= offset) {
+      break;
+    }
+
+    offset = nextOffset;
   }
 
   return buildContentTranslationCoverageMap(documents, input.totalLocales);

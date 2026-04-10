@@ -158,3 +158,62 @@ test("loadContentTranslationCoverageMap paginates through the full type list", a
     },
   ]);
 });
+
+test("loadContentTranslationCoverageMap stops after the configured maxPages guard", async () => {
+  let calls = 0;
+  const api: StudioContentListApi = {
+    list: async () => {
+      calls += 1;
+
+      if (calls > 3) {
+        throw new Error("pagination guard did not stop further requests");
+      }
+
+      return {
+        data: [
+          {
+            documentId: `doc-${calls}`,
+            translationGroupId: "tg-1",
+            project: "marketing-site",
+            environment: "production",
+            path: `blog/post-${calls}`,
+            type: "BlogPost",
+            locale: `locale-${calls}`,
+            format: "md",
+            isDeleted: false,
+            hasUnpublishedChanges: false,
+            version: 1,
+            publishedVersion: 1,
+            draftRevision: 0,
+            frontmatter: { title: `Post ${calls}` },
+            body: "# Post",
+            createdBy: "user-1",
+            createdAt: "2026-03-01T00:00:00.000Z",
+            updatedBy: "user-1",
+            updatedAt: "2026-03-20T00:00:00.000Z",
+          },
+        ],
+        pagination: {
+          total: 1,
+          limit: 1,
+          offset: calls - 1,
+          hasMore: true,
+        },
+      };
+    },
+  };
+
+  const coverage = await loadContentTranslationCoverageMap(api, {
+    type: "BlogPost",
+    totalLocales: 5,
+    maxPages: 3,
+  } as never);
+
+  assert.equal(calls, 3);
+  assert.deepEqual(coverage, {
+    "tg-1": {
+      translatedLocales: 3,
+      totalLocales: 5,
+    },
+  });
+});

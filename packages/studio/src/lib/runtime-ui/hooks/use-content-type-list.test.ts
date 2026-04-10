@@ -8,7 +8,9 @@ import {
   deriveDocumentStatus,
   extractDocumentTitle,
   mapFiltersToQuery,
+  getContentTypeListQueryKey,
   PAGE_SIZE,
+  shouldEnableTranslationCoverage,
 } from "./use-content-type-list.js";
 
 const baseDoc: ContentDocumentResponse = {
@@ -111,6 +113,37 @@ test("mapFiltersToQuery maps sort values to API params", () => {
 test("mapFiltersToQuery includes q when present", () => {
   const result = mapFiltersToQuery({ q: "hello" });
   assert.equal(result.q, "hello");
+});
+
+test("getContentTypeListQueryKey returns the canonical type-scoped query prefix", () => {
+  assert.deepEqual(
+    getContentTypeListQueryKey("marketing-site", "production", "BlogPost"),
+    ["content-list", "marketing-site", "production", "BlogPost"],
+  );
+});
+
+test("shouldEnableTranslationCoverage requires both a localized type and supported locales", () => {
+  assert.equal(
+    shouldEnableTranslationCoverage({
+      enableTranslationCoverage: true,
+      supportedLocaleCount: 2,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldEnableTranslationCoverage({
+      enableTranslationCoverage: false,
+      supportedLocaleCount: 2,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldEnableTranslationCoverage({
+      enableTranslationCoverage: true,
+      supportedLocaleCount: 0,
+    }),
+    false,
+  );
 });
 
 test("PAGE_SIZE is 20", () => {

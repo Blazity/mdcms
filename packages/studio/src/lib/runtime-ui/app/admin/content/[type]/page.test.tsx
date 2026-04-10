@@ -6,6 +6,19 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { TranslationCoverageSummary } from "./page.js";
 
+test("TranslationCoverageSummary renders nothing for the idle state", () => {
+  const markup = renderToStaticMarkup(
+    createElement(TranslationCoverageSummary, {
+      status: "idle",
+    }),
+  );
+
+  assert.equal(markup, "");
+  assert.doesNotMatch(markup, /data-mdcms-translation-coverage-state/);
+  assert.doesNotMatch(markup, /Loading/i);
+  assert.doesNotMatch(markup, /Translation status unavailable/i);
+});
+
 test("TranslationCoverageSummary renders the loading state deterministically", () => {
   const markup = renderToStaticMarkup(
     createElement(TranslationCoverageSummary, {

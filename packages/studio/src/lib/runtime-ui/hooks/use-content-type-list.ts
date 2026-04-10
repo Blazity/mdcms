@@ -54,6 +54,10 @@ export type ContentTypeListStatus =
 
 export const PAGE_SIZE = 20;
 
+export type ContentTypeListOptions = {
+  enableTranslationCoverage?: boolean;
+};
+
 export function deriveDocumentStatus(
   publishedVersion: number | null,
   hasUnpublishedChanges: boolean,
@@ -147,11 +151,33 @@ function hasActiveFilters(filters: ContentTypeListFilters): boolean {
   return Boolean(filters.q || (filters.status && filters.status !== "all"));
 }
 
-export function useContentTypeList(typeId: string) {
+export function getContentTypeListQueryKey(
+  project: string | null | undefined,
+  environment: string | null | undefined,
+  typeId: string,
+) {
+  return ["content-list", project, environment, typeId] as const;
+}
+
+export function shouldEnableTranslationCoverage(input: {
+  enableTranslationCoverage: boolean;
+  supportedLocaleCount: number;
+}): boolean {
+  return input.enableTranslationCoverage && input.supportedLocaleCount > 0;
+}
+
+export function useContentTypeList(
+  typeId: string,
+  options: ContentTypeListOptions = {},
+) {
   const mountInfo = useStudioMountInfo();
   const [filters, setFiltersState] = useState<ContentTypeListFilters>({});
   const [offset, setOffset] = useState(0);
   const supportedLocaleCount = mountInfo.supportedLocales?.length ?? 0;
+  const enableTranslationCoverage = shouldEnableTranslationCoverage({
+    enableTranslationCoverage: options.enableTranslationCoverage === true,
+    supportedLocaleCount,
+  });
 
   const api = useMemo(() => {
     if (!mountInfo.project || !mountInfo.environment || !mountInfo.apiBaseUrl) {
@@ -176,10 +202,11 @@ export function useContentTypeList(typeId: string) {
 
   const query = useQuery({
     queryKey: [
-      "content-list",
-      mountInfo.project,
-      mountInfo.environment,
-      typeId,
+      ...getContentTypeListQueryKey(
+        mountInfo.project,
+        mountInfo.environment,
+        typeId,
+      ),
       queryParams,
       offset,
     ],
@@ -208,7 +235,7 @@ export function useContentTypeList(typeId: string) {
         type: typeId,
         totalLocales: supportedLocaleCount,
       }),
-    enabled: api !== null && supportedLocaleCount > 0,
+    enabled: api !== null && enableTranslationCoverage,
     staleTime: 60_000,
   });
 
@@ -223,12 +250,12 @@ export function useContentTypeList(typeId: string) {
     translationCoverageQuery.data ?? {};
   const translationCoverageStatus: ContentTypeTranslationCoverageStatus =
     useMemo(() => {
-      if (supportedLocaleCount === 0) return "idle";
+      if (!enableTranslationCoverage) return "idle";
       if (translationCoverageQuery.isLoading) return "loading";
       if (translationCoverageQuery.error) return "error";
       return "ready";
     }, [
-      supportedLocaleCount,
+      enableTranslationCoverage,
       translationCoverageQuery.isLoading,
       translationCoverageQuery.error,
     ]);
@@ -266,10 +293,14 @@ export function useContentTypeList(typeId: string) {
 
   const refresh = useCallback(() => {
     query.refetch();
-    if (supportedLocaleCount > 0) {
+    if (enableTranslationCoverage) {
       translationCoverageQuery.refetch();
     }
-  }, [query.refetch, supportedLocaleCount, translationCoverageQuery.refetch]);
+  }, [
+    enableTranslationCoverage,
+    query.refetch,
+    translationCoverageQuery.refetch,
+  ]);
 
   return {
     status,

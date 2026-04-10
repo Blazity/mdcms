@@ -56,6 +56,7 @@ import { cn } from "../../../../lib/utils.js";
 import { useAdminCapabilities } from "../../capabilities-context.js";
 import { useStudioMountInfo } from "../../mount-info-context.js";
 import {
+  getContentTypeListQueryKey,
   useContentTypeList,
   PAGE_SIZE,
   type ContentTypeTranslationCoverageStatus,
@@ -68,8 +69,8 @@ import { createStudioSchemaRouteApi } from "../../../../../schema-route-api.js";
 import { createStudioDocumentRouteApi } from "../../../../../document-route-api.js";
 import { useToast } from "../../../../components/toast.js";
 import {
-  CONTENT_TRANSLATION_COVERAGE_QUERY_KEY,
   formatContentTranslationCoverageLabel,
+  getContentTranslationCoverageQueryKey,
   type ContentTranslationCoverage,
 } from "../../../../lib/content-translation-coverage.js";
 
@@ -174,27 +175,6 @@ export default function ContentTypePage() {
   const [rowActionError, setRowActionError] = useState<string | null>(null);
   const [showLoading, setShowLoading] = useState(false);
 
-  const list = useContentTypeList(typeId);
-  const create = useCreateDocument(typeId);
-
-  // Debounce loading skeleton by 200ms
-  useEffect(() => {
-    if (list.status !== "loading") {
-      setShowLoading(false);
-      return;
-    }
-    const timer = setTimeout(() => setShowLoading(true), 200);
-    return () => clearTimeout(timer);
-  }, [list.status]);
-
-  // Debounced search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      list.setFilters({ q: searchInput || undefined });
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchInput, list.setFilters]);
-
   // Schema query for type metadata (localized, locales, directory)
   const schemaApi = useMemo(() => {
     if (!mountInfo.project || !mountInfo.environment || !mountInfo.apiBaseUrl)
@@ -228,6 +208,29 @@ export default function ContentTypePage() {
   }, [schemaQuery.data, typeId]);
 
   const typeName = schemaEntry?.type ?? typeId;
+  const enableTranslationCoverage = schemaEntry?.localized === true;
+  const list = useContentTypeList(typeId, {
+    enableTranslationCoverage,
+  });
+  const create = useCreateDocument(typeId);
+
+  // Debounce loading skeleton by 200ms
+  useEffect(() => {
+    if (list.status !== "loading") {
+      setShowLoading(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowLoading(true), 200);
+    return () => clearTimeout(timer);
+  }, [list.status]);
+
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      list.setFilters({ q: searchInput || undefined });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput, list.setFilters]);
 
   // Document route API for row actions
   const documentApi = useMemo(() => {
@@ -318,25 +321,22 @@ export default function ContentTypePage() {
     ? Math.floor(list.pagination.offset / PAGE_SIZE) + 1
     : 1;
   const showTranslationCoverage =
-    schemaEntry?.localized === true &&
-    (mountInfo.supportedLocales?.length ?? 0) > 0;
+    enableTranslationCoverage && (mountInfo.supportedLocales?.length ?? 0) > 0;
 
   const invalidateContentListQueries = () => {
     void queryClient.invalidateQueries({
-      queryKey: [
-        "content-list",
+      queryKey: getContentTypeListQueryKey(
         mountInfo.project,
         mountInfo.environment,
         typeId,
-      ],
+      ),
     });
     void queryClient.invalidateQueries({
-      queryKey: [
-        CONTENT_TRANSLATION_COVERAGE_QUERY_KEY,
+      queryKey: getContentTranslationCoverageQueryKey(
         mountInfo.project,
         mountInfo.environment,
         typeId,
-      ],
+      ),
     });
   };
 
