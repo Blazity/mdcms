@@ -186,6 +186,24 @@ export function AdminStudioClient({ config }: { config: MdcmsConfig }) {
   - successful `Sync Schema` runs reuse the same local config snapshot payload
     as CLI schema sync; Studio does not expose manual schema editing controls
 
+## Environment Management
+
+- Remote runtime route: `/admin/environments`
+- The route is now backed by the live environment management endpoints:
+  - `GET /api/v1/environments`
+  - `POST /api/v1/environments`
+  - `DELETE /api/v1/environments/:id`
+- The page is intentionally scoped to list/create/delete only.
+- It renders deterministic loading, empty, forbidden, error, and ready states.
+- Environment rows render only contract-backed metadata:
+  - `name`
+  - `extends`
+  - default status
+  - `createdAt`
+- The create dialog submits `{ name }`; the server remains authoritative for
+  config-defined environment validation.
+- The default `production` environment is rendered as non-deletable.
+
 ## Schema Browser
 
 - Remote runtime route: `/admin/schema`
