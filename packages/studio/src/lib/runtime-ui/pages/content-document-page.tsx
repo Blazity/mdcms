@@ -325,6 +325,7 @@ type ContentDocumentPropertyControl =
 type ContentDocumentPropertyDescriptor = {
   fieldName: string;
   field: SchemaRegistryFieldSnapshot;
+  typeLabel: string;
   badgeLabel?: string;
   error?: string;
 } & (
@@ -334,7 +335,6 @@ type ContentDocumentPropertyDescriptor = {
     }
   | {
       status: "unsupported";
-      typeLabel: string;
     }
 );
 
@@ -549,9 +549,7 @@ function canEditSelectField(
   );
 }
 
-function describeUnsupportedFieldType(
-  field: SchemaRegistryFieldSnapshot,
-): string {
+function describePropertyFieldType(field: SchemaRegistryFieldSnapshot): string {
   if (field.reference) {
     return `reference:${field.reference.targetType}`;
   }
@@ -570,6 +568,7 @@ function resolvePropertyDescriptor(input: {
   );
   const error = input.state.fieldErrors?.[input.fieldName];
   const currentValue = input.state.draftFrontmatter[input.fieldName];
+  const typeLabel = describePropertyFieldType(input.field);
 
   if (
     currentValue === undefined &&
@@ -579,6 +578,7 @@ function resolvePropertyDescriptor(input: {
     return {
       fieldName: input.fieldName,
       field: input.field,
+      typeLabel,
       badgeLabel,
       error,
       status: "editable",
@@ -595,6 +595,7 @@ function resolvePropertyDescriptor(input: {
     return {
       fieldName: input.fieldName,
       field: input.field,
+      typeLabel,
       badgeLabel,
       error,
       status: "editable",
@@ -611,6 +612,7 @@ function resolvePropertyDescriptor(input: {
     return {
       fieldName: input.fieldName,
       field: input.field,
+      typeLabel,
       badgeLabel,
       error,
       status: "editable",
@@ -626,6 +628,7 @@ function resolvePropertyDescriptor(input: {
     return {
       fieldName: input.fieldName,
       field: input.field,
+      typeLabel,
       badgeLabel,
       error,
       status: "editable",
@@ -641,6 +644,7 @@ function resolvePropertyDescriptor(input: {
     return {
       fieldName: input.fieldName,
       field: input.field,
+      typeLabel,
       badgeLabel,
       error,
       status: "editable",
@@ -656,10 +660,10 @@ function resolvePropertyDescriptor(input: {
   return {
     fieldName: input.fieldName,
     field: input.field,
+    typeLabel,
     badgeLabel,
     error,
     status: "unsupported",
-    typeLabel: describeUnsupportedFieldType(input.field),
   };
 }
 
@@ -1964,6 +1968,7 @@ function SidebarPropertiesTab(props: {
                 <div
                   key={descriptor.fieldName}
                   data-mdcms-property-field={descriptor.fieldName}
+                  data-mdcms-property-type={descriptor.typeLabel}
                   data-mdcms-property-editor={
                     descriptor.status === "editable"
                       ? descriptor.control.kind
@@ -1979,6 +1984,9 @@ function SidebarPropertiesTab(props: {
                       >
                         {descriptor.fieldName}
                       </Label>
+                      <Badge variant="outline" className="shrink-0 text-[10px]">
+                        {descriptor.typeLabel}
+                      </Badge>
                       {descriptor.badgeLabel ? (
                         <Badge
                           variant="outline"
@@ -2133,9 +2141,6 @@ function SidebarPropertiesTab(props: {
                       </>
                     ) : (
                       <div className="flex flex-wrap items-center gap-2 text-xs text-foreground-muted">
-                        <Badge variant="outline" className="text-[10px]">
-                          {descriptor.typeLabel}
-                        </Badge>
                         <span>Not editable in Studio yet</span>
                       </div>
                     )}

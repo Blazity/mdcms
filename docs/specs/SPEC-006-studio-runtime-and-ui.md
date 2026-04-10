@@ -362,6 +362,8 @@ Normative behavior:
 - The default selected sidebar tab is `Properties`.
 - Frontmatter controls are derived from the live resolved schema. Studio must
   not ship hard-coded per-type property forms for routed document editing.
+- Every property row shows an always-visible compact type label derived from
+  the resolved schema for the active environment.
 - MVP editable field support is intentionally narrow:
   - `string` fields render as single-line text inputs
   - `number` fields render as numeric inputs

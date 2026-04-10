@@ -1559,9 +1559,11 @@ test("ContentDocumentPageView renders environment-specific field badges inline w
 
   assert.match(markup, /Frontmatter/);
   assert.match(markup, /data-mdcms-property-field="featured"/);
+  assert.match(markup, /data-mdcms-property-type="boolean"/);
   assert.match(markup, />featured</);
   assert.match(markup, /staging only/);
   assert.match(markup, /data-mdcms-property-field="abTestVariant"/);
+  assert.match(markup, /data-mdcms-property-type="string"/);
   assert.match(markup, />abTestVariant</);
   assert.match(markup, /preview, staging only/);
 });
@@ -1634,17 +1636,27 @@ test("ContentDocumentPageView renders schema-driven property controls and unsupp
   const markup = renderPageMarkup(state);
 
   assert.match(markup, /data-mdcms-property-field="title"/);
+  assert.match(markup, /data-mdcms-property-type="string"/);
   assert.match(markup, /data-mdcms-property-editor="string"/);
   assert.match(markup, /data-mdcms-property-field="views"/);
+  assert.match(markup, /data-mdcms-property-type="number"/);
   assert.match(markup, /data-mdcms-property-editor="number"/);
   assert.match(markup, /data-mdcms-property-field="published"/);
+  assert.match(markup, /data-mdcms-property-type="boolean"/);
   assert.match(markup, /data-mdcms-property-editor="boolean"/);
   assert.match(markup, /data-mdcms-property-field="status"/);
+  assert.match(markup, /data-mdcms-property-type="enum"/);
   assert.match(markup, /data-mdcms-property-editor="select"/);
   assert.match(markup, /data-mdcms-property-field="metadata"/);
+  assert.match(markup, /data-mdcms-property-type="object"/);
   assert.match(markup, /Not editable in Studio yet/);
   assert.match(markup, /data-mdcms-property-field="featured"/);
   assert.match(markup, /staging only/);
+  assert.match(markup, />string</);
+  assert.match(markup, />number</);
+  assert.match(markup, />boolean</);
+  assert.match(markup, />enum</);
+  assert.match(markup, />object</);
 });
 
 test("resolveActiveDocumentRouteContext switches write metadata with the selected environment", () => {
