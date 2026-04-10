@@ -441,9 +441,11 @@ function mapErrorToFrontmatterField(error: unknown): string | undefined {
     return undefined;
   }
 
-  const normalized = candidate.startsWith("frontmatter.")
-    ? candidate.slice("frontmatter.".length)
-    : candidate;
+  if (!candidate.startsWith("frontmatter.")) {
+    return undefined;
+  }
+
+  const normalized = candidate.slice("frontmatter.".length);
   const [fieldName] = normalized.split(/[.[\]]/, 1);
 
   return fieldName?.trim().length ? fieldName : undefined;
