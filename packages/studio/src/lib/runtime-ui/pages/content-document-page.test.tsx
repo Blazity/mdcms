@@ -1362,7 +1362,7 @@ test("loadContentDocumentPageState seeds arbitrary version comparison and diff s
   assert.equal(diff.rightVersion, 3);
 });
 
-test("ContentDocumentPageView renders tabbed sidebar with properties, info, and history", () => {
+test("ContentDocumentPageView renders tabbed sidebar in info, properties, history order", () => {
   const ready = createReadyState();
   const readyMarkup = renderPageMarkup({
     ...ready,
@@ -1429,6 +1429,17 @@ test("ContentDocumentPageView renders tabbed sidebar with properties, info, and 
   // The sidebar defaults to the Properties tab. Version history content
   // is in the History tab and version diff is in a modal, so they are
   // not present in the default SSR render. System metadata moved to Info.
+  const infoIndex = readyMarkup.indexOf(">Info<");
+  const propertiesIndex = readyMarkup.indexOf(">Properties<");
+  const historyIndex = readyMarkup.indexOf(">History<");
+
+  assert.ok(infoIndex >= 0, "expected Info tab label");
+  assert.ok(propertiesIndex >= 0, "expected Properties tab label");
+  assert.ok(historyIndex >= 0, "expected History tab label");
+  assert.ok(
+    infoIndex < propertiesIndex && propertiesIndex < historyIndex,
+    "expected Info, Properties, History tab order",
+  );
   assert.match(readyMarkup, /Properties/);
   assert.match(readyMarkup, /Info/);
   assert.match(readyMarkup, /History/);

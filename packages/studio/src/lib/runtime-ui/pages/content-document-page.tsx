@@ -2283,18 +2283,6 @@ function ContentDocumentPageSidebar(props: {
           type="button"
           className={cn(
             "flex-1 py-2.5 text-center text-xs font-semibold transition-colors",
-            activeTab === "properties"
-              ? "border-b-2 border-accent text-accent"
-              : "text-foreground-muted hover:text-foreground",
-          )}
-          onClick={() => setActiveTab("properties")}
-        >
-          Properties
-        </button>
-        <button
-          type="button"
-          className={cn(
-            "flex-1 py-2.5 text-center text-xs font-semibold transition-colors",
             activeTab === "info"
               ? "border-b-2 border-accent text-accent"
               : "text-foreground-muted hover:text-foreground",
@@ -2302,6 +2290,18 @@ function ContentDocumentPageSidebar(props: {
           onClick={() => setActiveTab("info")}
         >
           Info
+        </button>
+        <button
+          type="button"
+          className={cn(
+            "flex-1 py-2.5 text-center text-xs font-semibold transition-colors",
+            activeTab === "properties"
+              ? "border-b-2 border-accent text-accent"
+              : "text-foreground-muted hover:text-foreground",
+          )}
+          onClick={() => setActiveTab("properties")}
+        >
+          Properties
         </button>
         <button
           type="button"
