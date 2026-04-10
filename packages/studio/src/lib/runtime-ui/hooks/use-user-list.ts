@@ -37,7 +37,7 @@ export function useUserList() {
     session.status === "authenticated" ? session.csrfToken : null;
 
   const query = useQuery({
-    queryKey: ["users"],
+    queryKey: ["users", mountInfo.apiBaseUrl],
     queryFn: async () => {
       return api!.list();
     },
@@ -47,7 +47,7 @@ export function useUserList() {
   const users: UserWithGrants[] = query.data ?? [];
 
   const invitesQuery = useQuery({
-    queryKey: ["invites"],
+    queryKey: ["invites", mountInfo.apiBaseUrl],
     queryFn: async () => {
       return api!.listInvites();
     },
@@ -93,8 +93,12 @@ export function useUserList() {
       return api.invite(input, csrfToken);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["users"] });
-      void queryClient.invalidateQueries({ queryKey: ["invites"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["users", mountInfo.apiBaseUrl],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["invites", mountInfo.apiBaseUrl],
+      });
     },
   });
 
@@ -123,7 +127,9 @@ export function useUserList() {
       return api.updateGrants(userId, grants, csrfToken);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["users"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["users", mountInfo.apiBaseUrl],
+      });
     },
   });
 
@@ -146,7 +152,9 @@ export function useUserList() {
       return api.remove(userId, csrfToken);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["users"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["users", mountInfo.apiBaseUrl],
+      });
     },
   });
 
@@ -199,8 +207,7 @@ export function useUserList() {
             ? parsed.code
             : "REVOKE_SESSIONS_FAILED";
         const message =
-          typeof parsed.message === "string" &&
-          parsed.message.trim().length > 0
+          typeof parsed.message === "string" && parsed.message.trim().length > 0
             ? parsed.message
             : "Failed to revoke user sessions.";
 
@@ -214,7 +221,9 @@ export function useUserList() {
       return response.json();
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["users"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["users", mountInfo.apiBaseUrl],
+      });
     },
   });
 
@@ -237,7 +246,9 @@ export function useUserList() {
       return api.revokeInvite(inviteId, csrfToken);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["invites"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["invites", mountInfo.apiBaseUrl],
+      });
     },
   });
 

@@ -69,10 +69,7 @@ export type StudioUsersApiOptions = {
 export type StudioUsersApi = {
   list: () => Promise<UserWithGrants[]>;
   get: (userId: string) => Promise<UserWithGrants>;
-  invite: (
-    input: InviteUserInput,
-    csrfToken: string,
-  ) => Promise<InviteResult>;
+  invite: (input: InviteUserInput, csrfToken: string) => Promise<InviteResult>;
   listInvites: () => Promise<PendingInvite[]>;
   revokeInvite: (
     inviteId: string,
@@ -83,10 +80,7 @@ export type StudioUsersApi = {
     grants: InviteUserInput["grants"],
     csrfToken: string,
   ) => Promise<UserWithGrants>;
-  remove: (
-    userId: string,
-    csrfToken: string,
-  ) => Promise<{ removed: true }>;
+  remove: (userId: string, csrfToken: string) => Promise<{ removed: true }>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -137,6 +131,40 @@ function toInvalidResponseError(
   });
 }
 
+function isGrantArray(value: unknown): value is UserGrant[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (g) =>
+        isRecord(g) &&
+        typeof g.role === "string" &&
+        typeof g.scopeKind === "string",
+    )
+  );
+}
+
+function isUserWithGrants(value: unknown): value is UserWithGrants {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    typeof value.email === "string" &&
+    typeof value.createdAt === "string" &&
+    isGrantArray(value.grants)
+  );
+}
+
+function isPendingInvite(value: unknown): value is PendingInvite {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.email === "string" &&
+    typeof value.createdAt === "string" &&
+    typeof value.expiresAt === "string" &&
+    isGrantArray(value.grants)
+  );
+}
+
 export function createStudioUsersApi(
   config: StudioUsersApiConfig,
   options: StudioUsersApiOptions = {},
@@ -164,11 +192,15 @@ export function createStudioUsersApi(
         );
       }
 
-      if (!isRecord(payload) || !Array.isArray(payload.data)) {
+      if (
+        !isRecord(payload) ||
+        !Array.isArray(payload.data) ||
+        !payload.data.every(isUserWithGrants)
+      ) {
         throw toInvalidResponseError("GET /api/v1/auth/users", payload);
       }
 
-      return payload.data as UserWithGrants[];
+      return payload.data;
     },
 
     async get(userId: string): Promise<UserWithGrants> {
@@ -191,14 +223,14 @@ export function createStudioUsersApi(
         );
       }
 
-      if (!isRecord(payload) || !isRecord(payload.data)) {
+      if (!isRecord(payload) || !isUserWithGrants(payload.data)) {
         throw toInvalidResponseError(
           `GET /api/v1/auth/users/${userId}`,
           payload,
         );
       }
 
-      return payload.data as UserWithGrants;
+      return payload.data;
     },
 
     async invite(
@@ -262,11 +294,15 @@ export function createStudioUsersApi(
         );
       }
 
-      if (!isRecord(payload) || !Array.isArray(payload.data)) {
+      if (
+        !isRecord(payload) ||
+        !Array.isArray(payload.data) ||
+        !payload.data.every(isPendingInvite)
+      ) {
         throw toInvalidResponseError("GET /api/v1/auth/invites", payload);
       }
 
-      return payload.data as PendingInvite[];
+      return payload.data;
     },
 
     async revokeInvite(
@@ -342,14 +378,14 @@ export function createStudioUsersApi(
         );
       }
 
-      if (!isRecord(payload) || !isRecord(payload.data)) {
+      if (!isRecord(payload) || !isUserWithGrants(payload.data)) {
         throw toInvalidResponseError(
           `PATCH /api/v1/auth/users/${userId}/grants`,
           payload,
         );
       }
 
-      return payload.data as UserWithGrants;
+      return payload.data;
     },
 
     async remove(

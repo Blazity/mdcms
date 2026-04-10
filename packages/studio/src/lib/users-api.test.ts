@@ -33,10 +33,7 @@ function readHeader(
 }
 
 function createApi(options: StudioUsersApiOptions = {}) {
-  return createStudioUsersApi(
-    { serverUrl: "http://localhost:4000" },
-    options,
-  );
+  return createStudioUsersApi({ serverUrl: "http://localhost:4000" }, options);
 }
 
 const validUser: UserWithGrants = {
@@ -280,8 +277,7 @@ test("list throws USERS_RESPONSE_INVALID when data is not an array", async () =>
   await assert.rejects(
     () => api.list(),
     (error: unknown) =>
-      error instanceof RuntimeError &&
-      error.code === "USERS_RESPONSE_INVALID",
+      error instanceof RuntimeError && error.code === "USERS_RESPONSE_INVALID",
   );
 });
 
@@ -461,8 +457,7 @@ test("get throws USERS_RESPONSE_INVALID when data is not an object", async () =>
   await assert.rejects(
     () => api.get("user-1"),
     (error: unknown) =>
-      error instanceof RuntimeError &&
-      error.code === "USERS_RESPONSE_INVALID",
+      error instanceof RuntimeError && error.code === "USERS_RESPONSE_INVALID",
   );
 });
 
@@ -514,7 +509,10 @@ test("invite sends POST with correct URL, CSRF header, content-type, JSON body, 
   assert.equal(calls[0]?.init?.method, "POST");
   assert.equal(readHeader(calls[0]?.init, "content-type"), "application/json");
   assert.equal(readHeader(calls[0]?.init, "x-mdcms-csrf-token"), "csrf-tok");
-  assert.deepEqual(JSON.parse(calls[0]?.init?.body as string), validInviteInput);
+  assert.deepEqual(
+    JSON.parse(calls[0]?.init?.body as string),
+    validInviteInput,
+  );
 
   assert.equal(result.token, "invite_token_abc123");
   assert.equal(result.id, "invite-1");
@@ -613,14 +611,15 @@ test("invite throws USERS_RESPONSE_INVALID on malformed response", async () => {
 test("invite throws USERS_RESPONSE_INVALID when data has no token field", async () => {
   const api = createApi({
     fetcher: async () =>
-      new Response(JSON.stringify({ data: { id: "invite-1" } }), { status: 200 }),
+      new Response(JSON.stringify({ data: { id: "invite-1" } }), {
+        status: 200,
+      }),
   });
 
   await assert.rejects(
     () => api.invite(validInviteInput, "csrf-tok"),
     (error: unknown) =>
-      error instanceof RuntimeError &&
-      error.code === "USERS_RESPONSE_INVALID",
+      error instanceof RuntimeError && error.code === "USERS_RESPONSE_INVALID",
   );
 });
 
@@ -831,7 +830,11 @@ test("updateGrants sends PATCH with correct URL, CSRF header, content-type, JSON
     },
   });
 
-  const result = await api.updateGrants("user-1", validUpdateGrants, "csrf-tok");
+  const result = await api.updateGrants(
+    "user-1",
+    validUpdateGrants,
+    "csrf-tok",
+  );
 
   assert.equal(calls.length, 1);
   assert.equal(
@@ -841,10 +844,9 @@ test("updateGrants sends PATCH with correct URL, CSRF header, content-type, JSON
   assert.equal(calls[0]?.init?.method, "PATCH");
   assert.equal(readHeader(calls[0]?.init, "content-type"), "application/json");
   assert.equal(readHeader(calls[0]?.init, "x-mdcms-csrf-token"), "csrf-tok");
-  assert.deepEqual(
-    JSON.parse(calls[0]?.init?.body as string),
-    { grants: validUpdateGrants },
-  );
+  assert.deepEqual(JSON.parse(calls[0]?.init?.body as string), {
+    grants: validUpdateGrants,
+  });
 
   assert.equal(result.id, "user-1");
   assert.equal(result.grants.length, 1);
@@ -970,8 +972,7 @@ test("updateGrants throws USERS_RESPONSE_INVALID when data is not an object", as
   await assert.rejects(
     () => api.updateGrants("user-1", validUpdateGrants, "csrf-tok"),
     (error: unknown) =>
-      error instanceof RuntimeError &&
-      error.code === "USERS_RESPONSE_INVALID",
+      error instanceof RuntimeError && error.code === "USERS_RESPONSE_INVALID",
   );
 });
 
@@ -1121,14 +1122,15 @@ test("remove throws USERS_RESPONSE_INVALID on malformed response", async () => {
 test("remove throws USERS_RESPONSE_INVALID when data has removed !== true", async () => {
   const api = createApi({
     fetcher: async () =>
-      new Response(JSON.stringify({ data: { removed: false } }), { status: 200 }),
+      new Response(JSON.stringify({ data: { removed: false } }), {
+        status: 200,
+      }),
   });
 
   await assert.rejects(
     () => api.remove("user-1", "csrf-tok"),
     (error: unknown) =>
-      error instanceof RuntimeError &&
-      error.code === "USERS_RESPONSE_INVALID",
+      error instanceof RuntimeError && error.code === "USERS_RESPONSE_INVALID",
   );
 });
 
@@ -1141,7 +1143,6 @@ test("remove throws USERS_RESPONSE_INVALID when data is not an object", async ()
   await assert.rejects(
     () => api.remove("user-1", "csrf-tok"),
     (error: unknown) =>
-      error instanceof RuntimeError &&
-      error.code === "USERS_RESPONSE_INVALID",
+      error instanceof RuntimeError && error.code === "USERS_RESPONSE_INVALID",
   );
 });

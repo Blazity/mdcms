@@ -176,7 +176,7 @@ export const invites = pgTable(
   "invites",
   {
     id: uuid().defaultRandom().primaryKey(),
-    token: text().notNull(),
+    tokenHash: text("token_hash").notNull(),
     email: text().notNull(),
     grants: jsonb()
       .$type<
@@ -198,9 +198,13 @@ export const invites = pgTable(
     revokedAt: timestamp({ withTimezone: true }),
   },
   (table) => [
-    unique("uniq_invites_token").on(table.token),
+    unique("uniq_invites_token_hash").on(table.tokenHash),
     index("idx_invites_email").on(table.email),
-    index("idx_invites_status").on(table.acceptedAt, table.revokedAt, table.expiresAt),
+    index("idx_invites_status").on(
+      table.acceptedAt,
+      table.revokedAt,
+      table.expiresAt,
+    ),
   ],
 );
 

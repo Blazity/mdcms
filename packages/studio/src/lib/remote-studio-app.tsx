@@ -45,9 +45,7 @@ const RUNTIME_ROUTES: readonly StudioRuntimeRouteDefinition[] = [
   {
     id: "invite.accept",
     path: "/invite/:token",
-    render: (context) => (
-      <InviteAcceptPage serverUrl={context.apiBaseUrl} />
-    ),
+    render: (context) => <InviteAcceptPage serverUrl={context.apiBaseUrl} />,
   },
   {
     id: "dashboard",

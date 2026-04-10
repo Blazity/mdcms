@@ -108,9 +108,7 @@ export function createServerRequestHandlerWithModules(
 
   const dbConnection = createDatabaseConnection({ env: rawEnv });
   const dal = createContentDAL({ db: dbConnection.db });
-  const emailService = env.SMTP_HOST
-    ? createEmailService(env)
-    : undefined;
+  const emailService = env.SMTP_HOST ? createEmailService(env) : undefined;
   const authService = createAuthService({
     db: dbConnection.db,
     env: rawEnv,

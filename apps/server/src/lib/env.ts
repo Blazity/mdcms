@@ -148,7 +148,7 @@ const ServerEnvExtensionSchema = z.object({
     .optional()
     .transform((value) => value?.trim() || "mdcms-server"),
   SMTP_HOST: z.string().trim().min(1).optional(),
-  SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional().default(1025),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional().default(587),
   SMTP_FROM: z.string().trim().min(1).optional(),
 });
 
@@ -783,7 +783,19 @@ export function parseServerEnv(rawEnv: NodeJS.ProcessEnv): ServerEnv {
   const parsedExtension = ServerEnvExtensionSchema.safeParse(rawEnv);
 
   if (!parsedExtension.success) {
-    return throwInvalidPortEnvError(rawEnv.PORT);
+    const fieldErrors = parsedExtension.error.flatten().fieldErrors;
+    const failingKeys = Object.keys(fieldErrors);
+    if (failingKeys.length === 1 && failingKeys[0] === "PORT") {
+      return throwInvalidPortEnvError(rawEnv.PORT);
+    }
+    throw new RuntimeError({
+      code: "INVALID_ENV",
+      message: `Invalid server environment variable(s): ${failingKeys.join(", ")}. ${parsedExtension.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
+      details: {
+        keys: failingKeys,
+        issues: parsedExtension.error.issues,
+      },
+    });
   }
 
   const oidcProviders = parseOidcProviders(rawEnv.MDCMS_AUTH_OIDC_PROVIDERS);

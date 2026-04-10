@@ -78,6 +78,13 @@
       "when": 1775730517964,
       "tag": "0010_big_mystique",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1744287000000,
+      "tag": "0011_rename_invites_token_to_token_hash",
+      "breakpoints": true
     }
   ]
 }

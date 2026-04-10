@@ -265,10 +265,7 @@ export type AuthService = {
     userId: string,
     grants: InviteUserInput["grants"],
   ) => Promise<UserWithGrants>;
-  removeUser: (
-    request: Request,
-    userId: string,
-  ) => Promise<{ removed: true }>;
+  removeUser: (request: Request, userId: string) => Promise<{ removed: true }>;
   listInvites: (request: Request) => Promise<PendingInvite[]>;
   revokeInvite: (
     request: Request,
@@ -857,6 +854,10 @@ function hashApiKey(token: string): string {
 }
 
 function hashCliLoginToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function hashInviteToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
@@ -4226,10 +4227,7 @@ export function createAuthService(
         .select()
         .from(rbacGrants)
         .where(isNull(rbacGrants.revokedAt));
-      const grantsByUserId = new Map<
-        string,
-        (typeof activeGrants)[number][]
-      >();
+      const grantsByUserId = new Map<string, (typeof activeGrants)[number][]>();
       for (const grant of activeGrants) {
         const existing = grantsByUserId.get(grant.userId) ?? [];
         existing.push(grant);
@@ -4280,6 +4278,13 @@ export function createAuthService(
         });
       }
       // Validate grants
+      const ALLOWED_ROLES = ["viewer", "editor", "admin"] as const;
+      const ALLOWED_SCOPE_KINDS = [
+        "global",
+        "project",
+        "environment",
+        "folder_prefix",
+      ] as const;
       for (const grant of input.grants) {
         const role = assertNonEmptyString(grant.role, "role");
         const scopeKind = assertNonEmptyString(grant.scopeKind, "scopeKind");
@@ -4290,6 +4295,20 @@ export function createAuthService(
             statusCode: 403,
           });
         }
+        if (!(ALLOWED_ROLES as readonly string[]).includes(role)) {
+          throw new RuntimeError({
+            code: "VALIDATION_ERROR",
+            message: `Invalid role: ${role}. Allowed: ${ALLOWED_ROLES.join(", ")}.`,
+            statusCode: 400,
+          });
+        }
+        if (!(ALLOWED_SCOPE_KINDS as readonly string[]).includes(scopeKind)) {
+          throw new RuntimeError({
+            code: "VALIDATION_ERROR",
+            message: `Invalid scopeKind: ${scopeKind}. Allowed: ${ALLOWED_SCOPE_KINDS.join(", ")}.`,
+            statusCode: 400,
+          });
+        }
         if (role === "admin" && scopeKind !== "global") {
           throw new RuntimeError({
             code: "VALIDATION_ERROR",
@@ -4297,6 +4316,42 @@ export function createAuthService(
             statusCode: 400,
           });
         }
+        if (scopeKind === "project" && !grant.project) {
+          throw new RuntimeError({
+            code: "VALIDATION_ERROR",
+            message: "Project scope requires a project.",
+            statusCode: 400,
+          });
+        }
+        if (
+          scopeKind === "environment" &&
+          (!grant.project || !grant.environment)
+        ) {
+          throw new RuntimeError({
+            code: "VALIDATION_ERROR",
+            message: "Environment scope requires project and environment.",
+            statusCode: 400,
+          });
+        }
+        if (
+          scopeKind === "folder_prefix" &&
+          (!grant.project || !grant.environment || !grant.pathPrefix)
+        ) {
+          throw new RuntimeError({
+            code: "VALIDATION_ERROR",
+            message:
+              "Folder prefix scope requires project, environment, and pathPrefix.",
+            statusCode: 400,
+          });
+        }
+      }
+      // Validate email service before any DB writes
+      if (!options.emailService) {
+        throw new RuntimeError({
+          code: "EMAIL_NOT_CONFIGURED",
+          message: "Email service is not configured. Cannot send invite.",
+          statusCode: 500,
+        });
       }
       // Check for existing pending invite
       const existingInvite = await options.db.query.invites.findFirst({
@@ -4325,42 +4380,37 @@ export function createAuthService(
           statusCode: 409,
         });
       }
-      // Generate token and insert
-      const token = randomBytes(32).toString("hex");
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-      const [inserted] = await options.db
-        .insert(invites)
-        .values({
-          token,
-          email,
-          grants: input.grants,
-          createdByUserId: session.userId,
-          expiresAt,
-        })
-        .returning();
-      // Send email
-      if (!options.emailService) {
-        throw new RuntimeError({
-          code: "EMAIL_NOT_CONFIGURED",
-          message: "Email service is not configured. Cannot send invite.",
-          statusCode: 500,
-        });
-      }
-      // Get inviter name
+      // Get inviter name before transaction
       const inviter = await options.db.query.authUsers.findFirst({
         where: eq(authUsers.id, session.userId),
       });
-      const studioUrl =
-        parsedEnv.MDCMS_STUDIO_ALLOWED_ORIGINS[0] ?? baseUrl;
-      await options.emailService.sendInviteEmail({
-        to: email,
-        inviterName: inviter?.name ?? "An administrator",
-        studioUrl,
-        token,
+      const studioUrl = parsedEnv.MDCMS_STUDIO_ALLOWED_ORIGINS[0] ?? baseUrl;
+      // Generate token and insert + send email transactionally
+      const token = randomBytes(32).toString("hex");
+      const tokenHash = hashInviteToken(token);
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const inserted = await options.db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(invites)
+          .values({
+            tokenHash,
+            email,
+            grants: input.grants,
+            createdByUserId: session.userId,
+            expiresAt,
+          })
+          .returning();
+        await options.emailService!.sendInviteEmail({
+          to: email,
+          inviterName: inviter?.name ?? "An administrator",
+          studioUrl,
+          token,
+        });
+        return row;
       });
       return {
         id: inserted.id,
-        token: inserted.token,
+        token,
         email: inserted.email,
         expiresAt: inserted.expiresAt.toISOString(),
       };
@@ -4377,13 +4427,69 @@ export function createAuthService(
         });
       }
       // Validate grants
+      const ALLOWED_GRANT_ROLES = [
+        "viewer",
+        "editor",
+        "admin",
+        "owner",
+      ] as const;
+      const ALLOWED_GRANT_SCOPE_KINDS = [
+        "global",
+        "project",
+        "environment",
+        "folder_prefix",
+      ] as const;
       for (const grant of newGrants) {
         const role = assertNonEmptyString(grant.role, "role");
         const scopeKind = assertNonEmptyString(grant.scopeKind, "scopeKind");
+        if (!(ALLOWED_GRANT_ROLES as readonly string[]).includes(role)) {
+          throw new RuntimeError({
+            code: "VALIDATION_ERROR",
+            message: `Invalid role: ${role}. Allowed: ${ALLOWED_GRANT_ROLES.join(", ")}.`,
+            statusCode: 400,
+          });
+        }
+        if (
+          !(ALLOWED_GRANT_SCOPE_KINDS as readonly string[]).includes(scopeKind)
+        ) {
+          throw new RuntimeError({
+            code: "VALIDATION_ERROR",
+            message: `Invalid scopeKind: ${scopeKind}. Allowed: ${ALLOWED_GRANT_SCOPE_KINDS.join(", ")}.`,
+            statusCode: 400,
+          });
+        }
         if ((role === "admin" || role === "owner") && scopeKind !== "global") {
           throw new RuntimeError({
             code: "VALIDATION_ERROR",
             message: `${role} role must be global scope.`,
+            statusCode: 400,
+          });
+        }
+        if (scopeKind === "project" && !grant.project) {
+          throw new RuntimeError({
+            code: "VALIDATION_ERROR",
+            message: "Project scope requires a project.",
+            statusCode: 400,
+          });
+        }
+        if (
+          scopeKind === "environment" &&
+          (!grant.project || !grant.environment)
+        ) {
+          throw new RuntimeError({
+            code: "VALIDATION_ERROR",
+            message: "Environment scope requires project and environment.",
+            statusCode: 400,
+          });
+        }
+        if (
+          scopeKind === "folder_prefix" &&
+          (!grant.project || !grant.environment || !grant.pathPrefix)
+        ) {
+          throw new RuntimeError({
+            code: "VALIDATION_ERROR",
+            message:
+              "Folder prefix scope requires project, environment, and pathPrefix.",
             statusCode: 400,
           });
         }
@@ -4422,29 +4528,30 @@ export function createAuthService(
           intent: "demote_owner",
         });
       }
-      // Soft-revoke existing grants
-      await options.db
-        .update(rbacGrants)
-        .set({ revokedAt: new Date() })
-        .where(
-          and(
-            eq(rbacGrants.userId, normalizedId),
-            isNull(rbacGrants.revokedAt),
-          ),
-        );
-      // Insert new grants
+      // Revoke + insert in a single transaction
       const sessionForGrants = await requireSession(request);
-      for (const grant of newGrants) {
-        await options.db.insert(rbacGrants).values({
-          userId: normalizedId,
-          role: grant.role,
-          scopeKind: grant.scopeKind,
-          project: grant.project || null,
-          environment: grant.environment || null,
-          pathPrefix: grant.pathPrefix || null,
-          createdByUserId: sessionForGrants.userId,
-        });
-      }
+      await options.db.transaction(async (tx) => {
+        await tx
+          .update(rbacGrants)
+          .set({ revokedAt: new Date() })
+          .where(
+            and(
+              eq(rbacGrants.userId, normalizedId),
+              isNull(rbacGrants.revokedAt),
+            ),
+          );
+        for (const grant of newGrants) {
+          await tx.insert(rbacGrants).values({
+            userId: normalizedId,
+            role: grant.role,
+            scopeKind: grant.scopeKind,
+            project: grant.project || null,
+            environment: grant.environment || null,
+            pathPrefix: grant.pathPrefix || null,
+            createdByUserId: sessionForGrants.userId,
+          });
+        }
+      });
       const updated = await loadUserWithGrants(normalizedId);
       return updated!;
     },
@@ -4485,26 +4592,27 @@ export function createAuthService(
           intent: "remove_owner",
         });
       }
-      // Revoke all grants
-      await options.db
-        .update(rbacGrants)
-        .set({ revokedAt: new Date() })
-        .where(
-          and(
-            eq(rbacGrants.userId, normalizedId),
-            isNull(rbacGrants.revokedAt),
-          ),
-        );
-      // Revoke all sessions
-      await revokeAllUserSessions(normalizedId);
-      // Delete API keys (FK is onDelete: restrict, must remove first)
-      await options.db
-        .delete(apiKeys)
-        .where(eq(apiKeys.createdByUserId, normalizedId));
-      // Delete user (cascades sessions/accounts/invites)
-      await options.db
-        .delete(authUsers)
-        .where(eq(authUsers.id, normalizedId));
+      await options.db.transaction(async (tx) => {
+        await tx
+          .update(rbacGrants)
+          .set({ revokedAt: new Date() })
+          .where(
+            and(
+              eq(rbacGrants.userId, normalizedId),
+              isNull(rbacGrants.revokedAt),
+            ),
+          );
+        // Revoke all sessions
+        await tx
+          .delete(authSessions)
+          .where(eq(authSessions.userId, normalizedId));
+        // Delete API keys (FK is onDelete: restrict, must remove first)
+        await tx
+          .delete(apiKeys)
+          .where(eq(apiKeys.createdByUserId, normalizedId));
+        // Delete user (cascades sessions/accounts/invites)
+        await tx.delete(authUsers).where(eq(authUsers.id, normalizedId));
+      });
       return { removed: true as const };
     },
 
@@ -4565,8 +4673,9 @@ export function createAuthService(
       const normalizedToken = assertNonEmptyString(token, "token");
       const name = assertNonEmptyString(input.name, "name");
       const password = assertNonEmptyString(input.password, "password");
+      const tokenHash = hashInviteToken(normalizedToken);
       const invite = await options.db.query.invites.findFirst({
-        where: eq(invites.token, normalizedToken),
+        where: eq(invites.tokenHash, tokenHash),
       });
       if (!invite) {
         throw new RuntimeError({
@@ -4596,53 +4705,65 @@ export function createAuthService(
           statusCode: 410,
         });
       }
-      // Check email not already registered
-      const existingUser = await options.db.query.authUsers.findFirst({
-        where: eq(authUsers.email, invite.email),
-      });
-      if (existingUser) {
-        throw new RuntimeError({
-          code: "EMAIL_ALREADY_REGISTERED",
-          message: "A user with this email already exists.",
-          statusCode: 409,
-        });
-      }
-      // Create user
-      const userId = crypto.randomUUID();
-      await options.db.insert(authUsers).values({
-        id: userId,
-        name,
-        email: invite.email,
-        emailVerified: true,
-      });
-      // Create account with password
+      // Hash password before entering transaction
       const { hashPassword } = await import("better-auth/crypto");
       const hashedPassword = await hashPassword(password);
-      await options.db.insert(authAccounts).values({
-        id: crypto.randomUUID(),
-        accountId: userId,
-        providerId: "credential",
-        userId,
-        password: hashedPassword,
-      });
-      // Apply grants from invite
-      for (const grant of invite.grants) {
-        await options.db.insert(rbacGrants).values({
-          userId,
-          role: grant.role,
-          scopeKind: grant.scopeKind,
-          project: grant.project || null,
-          environment: grant.environment || null,
-          pathPrefix: grant.pathPrefix || null,
-          source: `invite:${invite.id}`,
-          createdByUserId: invite.createdByUserId,
+
+      const userId = crypto.randomUUID();
+      await options.db.transaction(async (tx) => {
+        // Atomically claim the invite to prevent concurrent acceptors
+        const [claimed] = await tx
+          .update(invites)
+          .set({ acceptedAt: new Date() })
+          .where(and(eq(invites.id, invite.id), isNull(invites.acceptedAt)))
+          .returning({ id: invites.id });
+        if (!claimed) {
+          throw new RuntimeError({
+            code: "INVITE_ALREADY_ACCEPTED",
+            message: "This invitation has already been accepted.",
+            statusCode: 409,
+          });
+        }
+        // Check email not already registered
+        const existingUser = await tx.query.authUsers.findFirst({
+          where: eq(authUsers.email, invite.email),
         });
-      }
-      // Mark invite as accepted
-      await options.db
-        .update(invites)
-        .set({ acceptedAt: new Date() })
-        .where(eq(invites.id, invite.id));
+        if (existingUser) {
+          throw new RuntimeError({
+            code: "EMAIL_ALREADY_REGISTERED",
+            message: "A user with this email already exists.",
+            statusCode: 409,
+          });
+        }
+        // Create user
+        await tx.insert(authUsers).values({
+          id: userId,
+          name,
+          email: invite.email,
+          emailVerified: true,
+        });
+        // Create account with password
+        await tx.insert(authAccounts).values({
+          id: crypto.randomUUID(),
+          accountId: userId,
+          providerId: "credential",
+          userId,
+          password: hashedPassword,
+        });
+        // Apply grants from invite
+        for (const grant of invite.grants) {
+          await tx.insert(rbacGrants).values({
+            userId,
+            role: grant.role,
+            scopeKind: grant.scopeKind,
+            project: grant.project || null,
+            environment: grant.environment || null,
+            pathPrefix: grant.pathPrefix || null,
+            source: `invite:${invite.id}`,
+            createdByUserId: invite.createdByUserId,
+          });
+        }
+      });
       return { userId };
     },
   };

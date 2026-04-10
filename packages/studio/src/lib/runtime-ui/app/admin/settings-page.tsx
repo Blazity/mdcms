@@ -1,12 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  Settings,
-  Key,
-  Plus,
-  ShieldOff,
-} from "lucide-react";
+import { Settings, Key, Plus, ShieldOff } from "lucide-react";
 import { useApiKeyList } from "../../hooks/use-api-key-list.js";
 import { ApiKeyCreateDialog } from "../../components/api-key-create-dialog.js";
 import { Button } from "../../components/ui/button.js";
@@ -47,6 +42,7 @@ export default function SettingsPage({
     createError,
     revokeKey,
     isRevoking,
+    revokeError,
   } = useApiKeyList();
 
   if (!canManageSettings) {
@@ -99,22 +95,28 @@ export default function SettingsPage({
                 <h2 className="text-xl font-semibold">General</h2>
                 <p className="text-sm text-foreground-muted">
                   Project configuration is managed through the CLI and
-                  server-side settings. This view shows read-only context
-                  for the current session.
+                  server-side settings. This view shows read-only context for
+                  the current session.
                 </p>
               </div>
               <div className="rounded-lg border border-border bg-background-subtle p-4 space-y-3">
                 <div className="flex justify-between text-sm">
                   <span className="text-foreground-muted">Project</span>
-                  <span className="font-mono">{mountInfo.project ?? "\u2014"}</span>
+                  <span className="font-mono">
+                    {mountInfo.project ?? "\u2014"}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-foreground-muted">Environment</span>
-                  <span className="font-mono">{mountInfo.environment ?? "\u2014"}</span>
+                  <span className="font-mono">
+                    {mountInfo.environment ?? "\u2014"}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-foreground-muted">Server URL</span>
-                  <span className="font-mono text-xs break-all">{mountInfo.apiBaseUrl ?? "\u2014"}</span>
+                  <span className="font-mono text-xs break-all">
+                    {mountInfo.apiBaseUrl ?? "\u2014"}
+                  </span>
                 </div>
               </div>
             </div>
@@ -149,10 +151,14 @@ export default function SettingsPage({
                 </p>
               )}
 
-              {apiKeysStatus === "empty" && (
-                <p className="text-sm text-foreground-muted">
-                  No API keys yet
+              {revokeError && (
+                <p className="text-sm text-destructive">
+                  {revokeError.message ?? "Failed to revoke API key."}
                 </p>
+              )}
+
+              {apiKeysStatus === "empty" && (
+                <p className="text-sm text-foreground-muted">No API keys yet</p>
               )}
 
               {apiKeysStatus === "ready" && (
@@ -214,9 +220,7 @@ export default function SettingsPage({
                             <div>
                               {new Date(key.createdAt).toLocaleDateString()}
                             </div>
-                            <div className="text-xs">
-                              {key.createdByUserId}
-                            </div>
+                            <div className="text-xs">{key.createdByUserId}</div>
                           </TableCell>
                           <TableCell className="text-sm text-foreground-muted">
                             {key.expiresAt
@@ -224,24 +228,42 @@ export default function SettingsPage({
                               : "Never"}
                           </TableCell>
                           <TableCell>
-                            <Badge
-                              variant="outline"
-                              className={cn(
-                                "text-xs",
-                                key.revokedAt === null
-                                  ? "bg-success/10 text-success border-success/20"
-                                  : "bg-destructive/10 text-destructive border-destructive/20",
-                              )}
-                            >
-                              {key.revokedAt === null ? "Active" : "Revoked"}
-                            </Badge>
+                            {(() => {
+                              const isExpired =
+                                key.expiresAt &&
+                                new Date(key.expiresAt).getTime() < Date.now();
+                              const label =
+                                key.revokedAt !== null
+                                  ? "Revoked"
+                                  : isExpired
+                                    ? "Expired"
+                                    : "Active";
+                              const isActive = label === "Active";
+                              return (
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "text-xs",
+                                    isActive
+                                      ? "bg-success/10 text-success border-success/20"
+                                      : "bg-destructive/10 text-destructive border-destructive/20",
+                                  )}
+                                >
+                                  {label}
+                                </Badge>
+                              );
+                            })()}
                           </TableCell>
                           <TableCell>
                             <Button
                               variant="outline"
                               size="sm"
                               className="text-destructive hover:text-destructive"
-                              onClick={() => revokeKey(key.id)}
+                              onClick={() => {
+                                revokeKey(key.id).catch(() => {
+                                  // Error is surfaced via revokeError from the hook
+                                });
+                              }}
                               disabled={isRevoking || key.revokedAt !== null}
                             >
                               Revoke
@@ -263,7 +285,6 @@ export default function SettingsPage({
               />
             </div>
           )}
-
         </main>
       </div>
     </div>

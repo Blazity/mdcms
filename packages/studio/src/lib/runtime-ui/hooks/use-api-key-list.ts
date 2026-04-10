@@ -34,7 +34,7 @@ export function useApiKeyList() {
     session.status === "authenticated" ? session.csrfToken : null;
 
   const query = useQuery({
-    queryKey: ["api-keys"],
+    queryKey: ["api-keys", mountInfo.apiBaseUrl],
     queryFn: async () => {
       return api!.list();
     },
@@ -82,7 +82,9 @@ export function useApiKeyList() {
       return api.create(input, csrfToken);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["api-keys"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["api-keys", mountInfo.apiBaseUrl],
+      });
     },
   });
 
@@ -105,7 +107,9 @@ export function useApiKeyList() {
       return api.revoke(keyId, csrfToken);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["api-keys"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["api-keys", mountInfo.apiBaseUrl],
+      });
     },
   });
 

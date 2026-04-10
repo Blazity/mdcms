@@ -187,6 +187,30 @@ function createAuthServiceStub(overrides: Partial<AuthService>): AuthService {
     listSsoProviders() {
       return [];
     },
+    async listUsers() {
+      return [];
+    },
+    async getUser() {
+      throw new Error("unused");
+    },
+    async inviteUser() {
+      throw new Error("unused");
+    },
+    async updateUserGrants() {
+      throw new Error("unused");
+    },
+    async removeUser() {
+      return { removed: true as const };
+    },
+    async listInvites() {
+      return [];
+    },
+    async revokeInvite() {
+      return { revoked: true as const };
+    },
+    async acceptInvite() {
+      return { userId: "user-1" };
+    },
   };
 
   return {

@@ -50,6 +50,22 @@ const SCOPE_GROUPS: ScopeGroup[] = [
     scopes: ["schema:read", "schema:write"],
   },
   {
+    label: "Media",
+    scopes: ["media:upload", "media:delete"],
+  },
+  {
+    label: "Webhooks",
+    scopes: ["webhooks:read", "webhooks:write"],
+  },
+  {
+    label: "Environments",
+    scopes: ["environments:clone", "environments:promote"],
+  },
+  {
+    label: "Migrations",
+    scopes: ["migrations:run"],
+  },
+  {
     label: "Projects",
     scopes: ["projects:read", "projects:write"],
   },
@@ -114,9 +130,12 @@ export function ApiKeyCreateDialog({
   const canSubmit =
     label.trim().length > 0 && selectedScopes.size > 0 && !isSubmitting;
 
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
+    setSubmitError(null);
 
     const contextAllowlist =
       mountInfo.project && mountInfo.environment
@@ -130,9 +149,15 @@ export function ApiKeyCreateDialog({
       ...(expiresAt ? { expiresAt: new Date(expiresAt).toISOString() } : {}),
     };
 
-    const result = await onSubmit(input);
-    setCreatedResult(result);
-    setStep("created");
+    try {
+      const result = await onSubmit(input);
+      setCreatedResult(result);
+      setStep("created");
+    } catch (err) {
+      setSubmitError(
+        err instanceof Error ? err.message : "Failed to create API key.",
+      );
+    }
   };
 
   const handleCopy = async () => {
@@ -188,6 +213,7 @@ export function ApiKeyCreateDialog({
                             key={scope}
                             type="button"
                             disabled={isSubmitting}
+                            aria-pressed={isSelected}
                             onClick={() => toggleScope(scope)}
                           >
                             <Badge
@@ -216,7 +242,10 @@ export function ApiKeyCreateDialog({
                   value={expiresAt}
                   onChange={(e) => setExpiresAt(e.target.value)}
                   disabled={isSubmitting}
-                  min={new Date().toISOString().split("T")[0]}
+                  min={(() => {
+                    const d = new Date();
+                    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                  })()}
                 />
                 <p className="text-xs text-muted-foreground">
                   Leave empty for no expiration.
@@ -224,8 +253,10 @@ export function ApiKeyCreateDialog({
               </div>
 
               {/* Error display */}
-              {error && (
-                <p className="text-sm text-destructive">{error.message}</p>
+              {(error || submitError) && (
+                <p className="text-sm text-destructive">
+                  {submitError ?? error?.message}
+                </p>
               )}
             </div>
 

@@ -344,7 +344,10 @@ test("create sends POST with correct URL, CSRF header, content-type, JSON body, 
   assert.equal(calls[0]?.init?.method, "POST");
   assert.equal(readHeader(calls[0]?.init, "content-type"), "application/json");
   assert.equal(readHeader(calls[0]?.init, "x-mdcms-csrf-token"), "csrf-tok");
-  assert.deepEqual(JSON.parse(calls[0]?.init?.body as string), validCreateInput);
+  assert.deepEqual(
+    JSON.parse(calls[0]?.init?.body as string),
+    validCreateInput,
+  );
 
   assert.equal(result.key, "mdcms_key_full_secret_value");
   assert.equal(result.id, "key-1");

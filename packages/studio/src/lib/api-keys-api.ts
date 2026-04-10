@@ -198,10 +198,7 @@ export function createStudioApiKeysApi(
       return payload.data as ApiKeyCreateResult;
     },
 
-    async revoke(
-      keyId: string,
-      csrfToken: string,
-    ): Promise<ApiKeyMetadata> {
+    async revoke(keyId: string, csrfToken: string): Promise<ApiKeyMetadata> {
       const url = resolveStudioRelativeUrl(
         `/api/v1/auth/api-keys/${encodeURIComponent(keyId)}/revoke`,
         config.serverUrl,

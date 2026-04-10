@@ -3,10 +3,7 @@ import { test } from "bun:test";
 
 import { RuntimeError } from "@mdcms/shared";
 
-import {
-  createEmailService,
-  type EmailTransportFactory,
-} from "./email.js";
+import { createEmailService, type EmailTransportFactory } from "./email.js";
 
 function createMockTransport() {
   const calls: Array<{
@@ -32,14 +29,16 @@ test("createEmailService throws EMAIL_NOT_CONFIGURED when SMTP_HOST is missing",
   assert.throws(
     () => createEmailService({}),
     (error: unknown) =>
-      error instanceof RuntimeError &&
-      error.code === "EMAIL_NOT_CONFIGURED",
+      error instanceof RuntimeError && error.code === "EMAIL_NOT_CONFIGURED",
   );
 });
 
 test("createEmailService creates service when SMTP_HOST is provided", () => {
   const { factory } = createMockTransport();
-  const service = createEmailService({ SMTP_HOST: "mail.example.com" }, factory);
+  const service = createEmailService(
+    { SMTP_HOST: "mail.example.com" },
+    factory,
+  );
 
   assert.ok(service);
   assert.equal(typeof service.sendInviteEmail, "function");
@@ -47,7 +46,10 @@ test("createEmailService creates service when SMTP_HOST is provided", () => {
 
 test("sendInviteEmail calls transport.sendMail with correct fields", async () => {
   const { factory, calls } = createMockTransport();
-  const service = createEmailService({ SMTP_HOST: "mail.example.com" }, factory);
+  const service = createEmailService(
+    { SMTP_HOST: "mail.example.com" },
+    factory,
+  );
 
   await service.sendInviteEmail({
     to: "user@example.com",
@@ -96,7 +98,10 @@ test("sendInviteEmail defaults from address to noreply@{SMTP_HOST}", async () =>
 
 test("sendInviteEmail includes token in accept URL", async () => {
   const { factory, calls } = createMockTransport();
-  const service = createEmailService({ SMTP_HOST: "mail.example.com" }, factory);
+  const service = createEmailService(
+    { SMTP_HOST: "mail.example.com" },
+    factory,
+  );
 
   await service.sendInviteEmail({
     to: "user@example.com",
@@ -106,13 +111,18 @@ test("sendInviteEmail includes token in accept URL", async () => {
   });
 
   assert.ok(
-    calls[0]?.html.includes("https://studio.example.com/admin/invite/my-secret-token"),
+    calls[0]?.html.includes(
+      "https://studio.example.com/admin/invite/my-secret-token",
+    ),
   );
 });
 
 test("sendInviteEmail includes inviter name in email HTML", async () => {
   const { factory, calls } = createMockTransport();
-  const service = createEmailService({ SMTP_HOST: "mail.example.com" }, factory);
+  const service = createEmailService(
+    { SMTP_HOST: "mail.example.com" },
+    factory,
+  );
 
   await service.sendInviteEmail({
     to: "user@example.com",

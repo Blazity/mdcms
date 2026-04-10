@@ -1,6 +1,15 @@
 import * as nodemailer from "nodemailer";
 import { RuntimeError } from "@mdcms/shared";
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export type EmailServiceEnv = {
   SMTP_HOST?: string;
   SMTP_PORT?: number;
@@ -41,7 +50,7 @@ function renderInviteEmailHtml(input: {
 <html>
 <body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
   <h2>You've been invited to MDCMS</h2>
-  <p>${input.inviterName} has invited you to join their MDCMS instance.</p>
+  <p>${escapeHtml(input.inviterName)} has invited you to join their MDCMS instance.</p>
   <p>
     <a href="${input.acceptUrl}"
        style="display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 6px;">
@@ -66,13 +75,14 @@ export function createEmailService(
   }
 
   const smtpHost = env.SMTP_HOST;
-  const smtpPort = env.SMTP_PORT ?? 1025;
+  const smtpPort = env.SMTP_PORT ?? 587;
+  const secure = smtpPort === 465;
   const fromAddress = env.SMTP_FROM ?? `noreply@${smtpHost}`;
   const factory = transport ?? nodemailer;
   const transporter = factory.createTransport({
     host: smtpHost,
     port: smtpPort,
-    secure: false,
+    secure,
   });
 
   return {

@@ -99,9 +99,7 @@ function getHighestRole(
 }
 
 function getScopeLabel(grants: UserWithGrants["grants"]): string {
-  const pathPrefixes = grants
-    .map((g) => g.pathPrefix)
-    .filter(Boolean);
+  const pathPrefixes = grants.map((g) => g.pathPrefix).filter(Boolean);
   if (pathPrefixes.length > 0) {
     return pathPrefixes.length === 1
       ? pathPrefixes[0]!
@@ -158,7 +156,8 @@ export default function UsersPage() {
   } = useUserList();
 
   const canManageUsers = useCanManageUsers();
-  const { project: activeProject } = useStudioMountInfo();
+  const { project: activeProject, environment: activeEnvironment } =
+    useStudioMountInfo();
 
   if (!canManageUsers) {
     return (
@@ -178,18 +177,34 @@ export default function UsersPage() {
   async function handleInvite() {
     setInviteError(null);
     try {
+      const useFolderPrefix = inviteData.pathPrefix && activeEnvironment;
       await inviteUser({
         email: inviteData.email,
         grants: [
           {
             role: inviteData.role,
-            scopeKind: inviteData.role === "admin"
-              ? "global"
-              : inviteData.pathPrefix
-                ? "folder_prefix"
-                : "project",
-            project: inviteData.role === "admin" ? undefined : (activeProject || undefined),
-            pathPrefix: inviteData.role === "admin" ? undefined : (inviteData.pathPrefix || undefined),
+            scopeKind:
+              inviteData.role === "admin"
+                ? "global"
+                : useFolderPrefix
+                  ? "folder_prefix"
+                  : "project",
+            project:
+              inviteData.role === "admin"
+                ? undefined
+                : activeProject || undefined,
+            environment:
+              inviteData.role === "admin"
+                ? undefined
+                : useFolderPrefix
+                  ? activeEnvironment
+                  : undefined,
+            pathPrefix:
+              inviteData.role === "admin"
+                ? undefined
+                : useFolderPrefix
+                  ? inviteData.pathPrefix
+                  : undefined,
           },
         ],
       });
@@ -209,9 +224,7 @@ export default function UsersPage() {
       toast.success(`Sessions revoked for ${userName}.`);
     } catch (err) {
       const message =
-        err instanceof Error
-          ? err.message
-          : "Failed to revoke sessions.";
+        err instanceof Error ? err.message : "Failed to revoke sessions.";
       toast.error(message);
     }
   }
@@ -245,27 +258,58 @@ export default function UsersPage() {
   async function handleEditRole() {
     if (!editRoleTarget) return;
     try {
-      await updateGrants(editRoleTarget.userId, [
-        {
-          role: editRoleValue,
-          scopeKind: editRoleValue === "admin"
+      const editUseFolderPrefix = editRolePathPrefix && activeEnvironment;
+      const editedGrant = {
+        role: editRoleValue,
+        scopeKind:
+          editRoleValue === "admin"
             ? "global"
-            : editRolePathPrefix
+            : editUseFolderPrefix
               ? "folder_prefix"
               : "project",
-          project: editRoleValue === "admin" ? undefined : (editRoleTarget.currentGrants[0]?.project ?? activeProject ?? undefined),
-          pathPrefix: editRoleValue === "admin" ? undefined : (editRolePathPrefix || undefined),
-        },
-      ]);
+        project:
+          editRoleValue === "admin"
+            ? undefined
+            : (editRoleTarget.currentGrants[0]?.project ??
+              activeProject ??
+              undefined),
+        environment:
+          editRoleValue === "admin"
+            ? undefined
+            : editUseFolderPrefix
+              ? activeEnvironment
+              : undefined,
+        pathPrefix:
+          editRoleValue === "admin"
+            ? undefined
+            : editUseFolderPrefix
+              ? editRolePathPrefix
+              : undefined,
+      };
+      // If user has multiple grants, preserve the others and only replace the first
+      const updatedGrants =
+        editRoleTarget.currentGrants.length > 1
+          ? [
+              editedGrant,
+              ...editRoleTarget.currentGrants.slice(1).map((g) => ({
+                role: g.role,
+                scopeKind: g.scopeKind,
+                project: g.project ?? undefined,
+                environment: g.environment ?? undefined,
+                pathPrefix: g.pathPrefix ?? undefined,
+              })),
+            ]
+          : [editedGrant];
+      await updateGrants(editRoleTarget.userId, updatedGrants);
       toast.success(`Role updated for ${editRoleTarget.userName}.`);
       setEditRoleDialogOpen(false);
       setEditRoleTarget(null);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to update role.";
+      const message =
+        err instanceof Error ? err.message : "Failed to update role.";
       toast.error(message);
     }
   }
-
 
   return (
     <div className="min-h-screen">
@@ -329,20 +373,27 @@ export default function UsersPage() {
                 </div>
 
                 {/* Folder prefix (editor/viewer only) */}
-                {(inviteData.role === "editor" || inviteData.role === "viewer") && (
+                {(inviteData.role === "editor" ||
+                  inviteData.role === "viewer") && (
                   <div className="space-y-2">
-                    <Label htmlFor="path-prefix">Folder prefix (optional)</Label>
+                    <Label htmlFor="path-prefix">
+                      Folder prefix (optional)
+                    </Label>
                     <Input
                       id="path-prefix"
                       placeholder="e.g. content/blog"
                       value={inviteData.pathPrefix}
                       onChange={(e) =>
-                        setInviteData({ ...inviteData, pathPrefix: e.target.value })
+                        setInviteData({
+                          ...inviteData,
+                          pathPrefix: e.target.value,
+                        })
                       }
                       className="font-mono"
                     />
                     <p className="text-xs text-foreground-muted">
-                      Restricts access to content under this path only. Leave empty for full project access.
+                      Restricts access to content under this path only. Leave
+                      empty for full project access.
                     </p>
                   </div>
                 )}
@@ -382,12 +433,8 @@ export default function UsersPage() {
         {status === "error" && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <AlertCircle className="mb-4 h-8 w-8 text-destructive" />
-            <h3 className="mb-2 text-lg font-semibold">
-              Failed to load users
-            </h3>
-            <p className="mb-4 text-sm text-foreground-muted">
-              {errorMessage}
-            </p>
+            <h3 className="mb-2 text-lg font-semibold">Failed to load users</h3>
+            <p className="mb-4 text-sm text-foreground-muted">{errorMessage}</p>
             <Button variant="outline" onClick={refresh}>
               Try again
             </Button>
@@ -431,10 +478,7 @@ export default function UsersPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge
-                      variant="outline"
-                      className="text-xs"
-                    >
+                    <Badge variant="outline" className="text-xs">
                       {invite.grants[0]?.role ?? "editor"}
                     </Badge>
                     <Button
@@ -494,10 +538,7 @@ export default function UsersPage() {
                       <TableCell>
                         <Badge
                           variant="outline"
-                          className={cn(
-                            "text-xs",
-                            roleConfig[role].className,
-                          )}
+                          className={cn("text-xs", roleConfig[role].className)}
                         >
                           {roleConfig[role].label}
                         </Badge>
@@ -520,64 +561,69 @@ export default function UsersPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                          <TooltipProvider>
-                            <DropdownMenuItem
-                              disabled={role === "owner"}
-                              onClick={() => {
-                                setEditRoleTarget({
-                                  userId: user.id,
-                                  userName: user.name,
-                                  currentRole: role,
-                                  currentGrants: user.grants,
-                                });
-                                setEditRoleValue(role);
-                                setEditRolePathPrefix(user.grants[0]?.pathPrefix ?? "");
-                                setEditRoleDialogOpen(true);
-                              }}
-                            >
-                              <Edit className="mr-2 h-4 w-4" />
-                              Edit role
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              disabled={isRevokingSessions}
-                              onClick={() =>
-                                handleRevokeSessions(user.id, user.name)
-                              }
-                            >
-                              <LogOut className="mr-2 h-4 w-4" />
-                              Revoke sessions
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            {role === "owner" ? (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span className="w-full">
-                                    <DropdownMenuItem
-                                      className="text-destructive focus:text-destructive"
-                                      disabled
-                                    >
-                                      <Trash2 className="mr-2 h-4 w-4" />
-                                      Remove user
-                                    </DropdownMenuItem>
-                                  </span>
-                                </TooltipTrigger>
-                                <TooltipContent side="left">
-                                  <p>Owners cannot be removed. Transfer ownership first.</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            ) : (
+                            <TooltipProvider>
                               <DropdownMenuItem
-                                className="text-destructive focus:text-destructive"
-                                disabled={isRemoving}
+                                disabled={role === "owner"}
+                                onClick={() => {
+                                  setEditRoleTarget({
+                                    userId: user.id,
+                                    userName: user.name,
+                                    currentRole: role,
+                                    currentGrants: user.grants,
+                                  });
+                                  setEditRoleValue(role);
+                                  setEditRolePathPrefix(
+                                    user.grants[0]?.pathPrefix ?? "",
+                                  );
+                                  setEditRoleDialogOpen(true);
+                                }}
+                              >
+                                <Edit className="mr-2 h-4 w-4" />
+                                Edit role
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                disabled={isRevokingSessions}
                                 onClick={() =>
-                                  handleRemoveUser(user.id, user.name)
+                                  handleRevokeSessions(user.id, user.name)
                                 }
                               >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Remove user
+                                <LogOut className="mr-2 h-4 w-4" />
+                                Revoke sessions
                               </DropdownMenuItem>
-                            )}
-                          </TooltipProvider>
+                              <DropdownMenuSeparator />
+                              {role === "owner" ? (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="w-full">
+                                      <DropdownMenuItem
+                                        className="text-destructive focus:text-destructive"
+                                        disabled
+                                      >
+                                        <Trash2 className="mr-2 h-4 w-4" />
+                                        Remove user
+                                      </DropdownMenuItem>
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="left">
+                                    <p>
+                                      Owners cannot be removed. Transfer
+                                      ownership first.
+                                    </p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              ) : (
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  disabled={isRemoving}
+                                  onClick={() =>
+                                    handleRemoveUser(user.id, user.name)
+                                  }
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Remove user
+                                </DropdownMenuItem>
+                              )}
+                            </TooltipProvider>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -614,7 +660,9 @@ export default function UsersPage() {
               </div>
               {(editRoleValue === "editor" || editRoleValue === "viewer") && (
                 <div className="space-y-2">
-                  <Label htmlFor="edit-role-path-prefix">Folder prefix (optional)</Label>
+                  <Label htmlFor="edit-role-path-prefix">
+                    Folder prefix (optional)
+                  </Label>
                   <Input
                     id="edit-role-path-prefix"
                     placeholder="e.g. content/blog"
@@ -623,13 +671,17 @@ export default function UsersPage() {
                     className="font-mono"
                   />
                   <p className="text-xs text-foreground-muted">
-                    Restricts access to content under this path only. Leave empty for full project access.
+                    Restricts access to content under this path only. Leave
+                    empty for full project access.
                   </p>
                 </div>
               )}
             </div>
             <DialogFooter>
-              <Button variant="ghost" onClick={() => setEditRoleDialogOpen(false)}>
+              <Button
+                variant="ghost"
+                onClick={() => setEditRoleDialogOpen(false)}
+              >
                 Cancel
               </Button>
               <Button
@@ -642,7 +694,6 @@ export default function UsersPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-
       </div>
     </div>
   );

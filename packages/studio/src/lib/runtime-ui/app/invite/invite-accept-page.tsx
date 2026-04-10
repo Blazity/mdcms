@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useParams } from "../../navigation.js";
 import { Button } from "../../components/ui/button.js";
 import { Input } from "../../components/ui/input.js";
@@ -14,18 +14,16 @@ type InviteAcceptPageProps = {
 };
 
 type PageState =
-  | { status: "loading" }
   | { status: "ready" }
   | { status: "submitting" }
   | { status: "accepted" }
+  | { status: "already_accepted" }
   | { status: "expired" }
   | { status: "error"; message: string };
 
 type AcceptErrorResponse = {
-  error?: {
-    code?: string;
-    message?: string;
-  };
+  code?: string;
+  message?: string;
 };
 
 export default function InviteAcceptPage({
@@ -35,18 +33,9 @@ export default function InviteAcceptPage({
   const params = useParams<{ token?: string }>();
   const token = tokenProp ?? params.token ?? "";
 
-  const [state, setState] = useState<PageState>({ status: "loading" });
+  const [state, setState] = useState<PageState>({ status: "ready" });
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
-
-  // Validate the invite token on mount by checking if it exists/is valid.
-  // The accept endpoint will reject expired/revoked tokens, but we can
-  // transition from loading to ready quickly since there's no dedicated
-  // "validate token" endpoint -- we just show the form.
-  useEffect(() => {
-    // No dedicated validation endpoint; show the form immediately.
-    setState({ status: "ready" });
-  }, []);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -67,28 +56,21 @@ export default function InviteAcceptPage({
         return;
       }
 
-      const body = (await response.json().catch(
-        () => undefined,
-      )) as AcceptErrorResponse | undefined;
+      const body = (await response.json().catch(() => undefined)) as
+        | AcceptErrorResponse
+        | undefined;
 
-      const errorCode = body?.error?.code;
+      const errorCode = body?.code;
       const errorMessage =
-        body?.error?.message ?? "Something went wrong. Please try again.";
+        body?.message ?? "Something went wrong. Please try again.";
 
-      if (
-        errorCode === "INVITE_EXPIRED" ||
-        errorCode === "INVITE_REVOKED"
-      ) {
+      if (errorCode === "INVITE_EXPIRED" || errorCode === "INVITE_REVOKED") {
         setState({ status: "expired" });
         return;
       }
 
       if (errorCode === "INVITE_ALREADY_ACCEPTED") {
-        setState({
-          status: "error",
-          message:
-            "This invitation has already been accepted. Try signing in instead.",
-        });
+        setState({ status: "already_accepted" });
         return;
       }
 
@@ -101,7 +83,7 @@ export default function InviteAcceptPage({
         return;
       }
 
-      if (errorCode === "INVITE_NOT_FOUND") {
+      if (errorCode === "NOT_FOUND" || errorCode === "INVITE_NOT_FOUND") {
         setState({
           status: "error",
           message: "This invitation link is invalid.",
@@ -117,14 +99,6 @@ export default function InviteAcceptPage({
       });
     }
   };
-
-  if (state.status === "loading") {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background p-4">
-        <div className="text-foreground-muted text-sm">Loading...</div>
-      </div>
-    );
-  }
 
   if (state.status === "accepted") {
     return (
@@ -171,6 +145,36 @@ export default function InviteAcceptPage({
               administrator to send a new invitation.
             </p>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === "already_accepted") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <div className="w-full max-w-sm space-y-6 rounded-xl border border-border bg-card p-8 shadow-sm">
+          <div className="text-center space-y-1">
+            <div className="flex justify-center mb-4">
+              <MDCMSLogo collapsed={false} />
+            </div>
+            <h1 className="text-lg font-semibold text-foreground">
+              Already Accepted
+            </h1>
+            <p className="text-sm text-foreground-muted">
+              This invitation has already been accepted. You can sign in with
+              your account.
+            </p>
+          </div>
+          <Button
+            type="button"
+            className="w-full bg-accent hover:bg-accent-hover text-white"
+            onClick={() => {
+              window.location.href = `${window.location.origin}${window.location.pathname.replace(/\/invite\/.*$/, "/login")}`;
+            }}
+          >
+            Go to Sign In
+          </Button>
         </div>
       </div>
     );
