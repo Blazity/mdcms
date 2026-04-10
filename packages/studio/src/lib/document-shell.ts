@@ -19,6 +19,8 @@ export type StudioDocumentShellData = {
   type: string;
   locale: string;
   path: string;
+  format: "md" | "mdx";
+  frontmatter: Record<string, unknown>;
   body: string;
   updatedAt: string;
   hasUnpublishedChanges: boolean;
@@ -142,6 +144,8 @@ export async function loadStudioDocumentShell(
         type: document.type ?? input.type,
         locale: document.locale ?? locale,
         path: document.path,
+        format: document.format ?? "mdx",
+        frontmatter: document.frontmatter ?? {},
         body: document.body ?? "",
         updatedAt: document.updatedAt ?? "",
         hasUnpublishedChanges: document.hasUnpublishedChanges,

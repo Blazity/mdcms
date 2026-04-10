@@ -13,6 +13,8 @@ import {
 import {
   type ContentDocumentResponse,
   type ContentVersionSummaryResponse,
+  type SchemaRegistryEntry,
+  type SchemaRegistryFieldSnapshot,
   RuntimeError,
   type StudioDocumentRouteMountContext,
   type StudioMountContext,
@@ -54,6 +56,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../components/ui/dialog.js";
+import { Input } from "../components/ui/input.js";
+import { Label } from "../components/ui/label.js";
 import { Textarea } from "../components/ui/textarea.js";
 import {
   Tooltip,
@@ -77,6 +81,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select.js";
+import { Switch } from "../components/ui/switch.js";
 
 const DOCUMENT_SAVE_DEBOUNCE_MS = 5000;
 const SCHEMA_MISMATCH_WRITE_MESSAGE =
@@ -151,9 +156,12 @@ export type ContentDocumentPageReadyState = {
   schemaState?: StudioSchemaState;
   document: StudioDocumentShellData;
   draftBody: string;
+  draftFrontmatter: Record<string, unknown>;
   saveState: "saved" | "saving" | "unsaved";
   mutationError?: string;
+  fieldErrors?: Record<string, string>;
   saveRequestBody?: string;
+  saveRequestFrontmatter?: Record<string, unknown>;
   canWrite: boolean;
   writeMessage?: string;
   publishDialogOpen: boolean;
@@ -214,16 +222,23 @@ type ContentDocumentPageReadyEvent =
       body: string;
     }
   | {
+      type: "frontmatterFieldChanged";
+      fieldName: string;
+      value: unknown;
+    }
+  | {
       type: "saveStarted";
     }
   | {
       type: "saveSucceeded";
       updatedAt: string;
       body?: string;
+      frontmatter?: Record<string, unknown>;
     }
   | {
       type: "saveFailed";
       message: string;
+      fieldName?: string;
     };
 
 type ContentDocumentPageViewProps = {
@@ -232,6 +247,7 @@ type ContentDocumentPageViewProps = {
   sidebarOpen?: boolean;
   activeMdxComponent?: MdxPropsPanelSelection | null;
   onDraftChange?: (body: string) => void;
+  onFrontmatterFieldChange?: (fieldName: string, value: unknown) => void;
   onActiveMdxComponentChange?: (
     selection: MdxPropsPanelSelection | null,
   ) => void;
@@ -281,6 +297,389 @@ type CreateContentDocumentPageHistoryApi = (input: {
   context: StudioMountContext;
   route: StudioDocumentRouteMountContext;
 }) => Pick<StudioDocumentRouteApi, "listVersions" | "listVariants">;
+
+type ContentDocumentPropertyControl =
+  | {
+      kind: "string";
+      value: string;
+      canUnset: boolean;
+    }
+  | {
+      kind: "number";
+      value: number | undefined;
+      canUnset: boolean;
+    }
+  | {
+      kind: "boolean";
+      value: boolean;
+      canUnset: boolean;
+      isUnset: boolean;
+    }
+  | {
+      kind: "select";
+      value: unknown;
+      options: unknown[];
+      canUnset: boolean;
+    };
+
+type ContentDocumentPropertyDescriptor = {
+  fieldName: string;
+  field: SchemaRegistryFieldSnapshot;
+  badgeLabel?: string;
+  error?: string;
+} & (
+  | {
+      status: "editable";
+      control: ContentDocumentPropertyControl;
+    }
+  | {
+      status: "unsupported";
+      typeLabel: string;
+    }
+);
+
+const PROPERTY_SELECT_UNSET_VALUE = "__mdcms_unset__";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function cloneFrontmatter(
+  frontmatter: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  return { ...(frontmatter ?? {}) };
+}
+
+function areJsonValuesEqual(left: unknown, right: unknown): boolean {
+  if (left === right) {
+    return true;
+  }
+
+  if (left === null || right === null) {
+    return left === right;
+  }
+
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right)) {
+      return false;
+    }
+
+    if (left.length !== right.length) {
+      return false;
+    }
+
+    return left.every((entry, index) =>
+      areJsonValuesEqual(entry, right[index]),
+    );
+  }
+
+  if (isRecord(left) || isRecord(right)) {
+    if (!isRecord(left) || !isRecord(right)) {
+      return false;
+    }
+
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+
+    if (leftKeys.length !== rightKeys.length) {
+      return false;
+    }
+
+    return leftKeys.every(
+      (key) =>
+        Object.prototype.hasOwnProperty.call(right, key) &&
+        areJsonValuesEqual(left[key], right[key]),
+    );
+  }
+
+  return false;
+}
+
+function isDraftPersisted(state: ContentDocumentPageReadyState): boolean {
+  return (
+    state.draftBody === state.document.body &&
+    areJsonValuesEqual(state.draftFrontmatter, state.document.frontmatter)
+  );
+}
+
+function hasDifferentSaveRequestSnapshot(input: {
+  state: ContentDocumentPageReadyState;
+  requestBody: string;
+  requestFrontmatter: Record<string, unknown>;
+}): boolean {
+  return (
+    input.state.saveRequestBody !== undefined &&
+    (input.state.saveRequestBody !== input.requestBody ||
+      !areJsonValuesEqual(
+        input.state.saveRequestFrontmatter ?? {},
+        input.requestFrontmatter,
+      ))
+  );
+}
+
+function clearFieldError(
+  fieldErrors: Record<string, string> | undefined,
+  fieldName: string,
+): Record<string, string> | undefined {
+  if (!fieldErrors?.[fieldName]) {
+    return fieldErrors;
+  }
+
+  const nextErrors = { ...fieldErrors };
+  delete nextErrors[fieldName];
+
+  return Object.keys(nextErrors).length > 0 ? nextErrors : undefined;
+}
+
+function mapErrorToFrontmatterField(error: unknown): string | undefined {
+  if (!(error instanceof RuntimeError) || !isRecord(error.details)) {
+    return undefined;
+  }
+
+  const candidate = error.details.field;
+
+  if (typeof candidate !== "string" || candidate.trim().length === 0) {
+    return undefined;
+  }
+
+  const normalized = candidate.startsWith("frontmatter.")
+    ? candidate.slice("frontmatter.".length)
+    : candidate;
+  const [fieldName] = normalized.split(/[.[\]]/, 1);
+
+  return fieldName?.trim().length ? fieldName : undefined;
+}
+
+function isUnsettableField(field: SchemaRegistryFieldSnapshot): boolean {
+  return !field.required || field.nullable;
+}
+
+function unsetFieldValue(field: SchemaRegistryFieldSnapshot): undefined | null {
+  return field.nullable ? null : undefined;
+}
+
+function updateDraftFrontmatter(input: {
+  frontmatter: Record<string, unknown>;
+  fieldName: string;
+  value: unknown;
+}): Record<string, unknown> {
+  const nextFrontmatter = { ...input.frontmatter };
+
+  if (input.value === undefined) {
+    delete nextFrontmatter[input.fieldName];
+    return nextFrontmatter;
+  }
+
+  nextFrontmatter[input.fieldName] = input.value;
+  return nextFrontmatter;
+}
+
+function getSchemaEntryForReadyState(
+  state: ContentDocumentPageReadyState,
+): SchemaRegistryEntry | undefined {
+  if (state.schemaState?.status !== "ready") {
+    return undefined;
+  }
+
+  return state.schemaState.entries.find((entry) => entry.type === state.typeId);
+}
+
+function getEnvironmentSpecificFieldLabel(
+  state: ContentDocumentPageReadyState,
+  fieldName: string,
+): string | undefined {
+  const targets =
+    state.route.environmentFieldTargets?.[state.typeId]?.[fieldName];
+
+  if (!targets?.includes(state.route.initialEnvironment)) {
+    return undefined;
+  }
+
+  return `${targets.join(", ")} only`;
+}
+
+function canEditStringField(
+  value: unknown,
+): value is string | undefined | null {
+  return value === undefined || value === null || typeof value === "string";
+}
+
+function canEditNumberField(
+  value: unknown,
+): value is number | undefined | null {
+  return (
+    value === undefined ||
+    value === null ||
+    (typeof value === "number" && Number.isFinite(value))
+  );
+}
+
+function canEditBooleanField(
+  value: unknown,
+): value is boolean | undefined | null {
+  return value === undefined || value === null || typeof value === "boolean";
+}
+
+function canEditSelectField(
+  field: SchemaRegistryFieldSnapshot,
+  value: unknown,
+): boolean {
+  const options = field.options;
+
+  if (!options || options.length === 0) {
+    return false;
+  }
+
+  const supportsOptions = options.every(
+    (option) =>
+      option === null ||
+      typeof option === "string" ||
+      typeof option === "number" ||
+      typeof option === "boolean",
+  );
+
+  if (!supportsOptions) {
+    return false;
+  }
+
+  return (
+    value === undefined ||
+    value === null ||
+    options.some((option) => areJsonValuesEqual(option, value))
+  );
+}
+
+function describeUnsupportedFieldType(
+  field: SchemaRegistryFieldSnapshot,
+): string {
+  if (field.reference) {
+    return `reference:${field.reference.targetType}`;
+  }
+
+  return field.kind;
+}
+
+function resolvePropertyDescriptor(input: {
+  state: ContentDocumentPageReadyState;
+  fieldName: string;
+  field: SchemaRegistryFieldSnapshot;
+}): ContentDocumentPropertyDescriptor {
+  const badgeLabel = getEnvironmentSpecificFieldLabel(
+    input.state,
+    input.fieldName,
+  );
+  const error = input.state.fieldErrors?.[input.fieldName];
+  const currentValue = input.state.draftFrontmatter[input.fieldName];
+
+  if (
+    currentValue === undefined &&
+    input.field.options &&
+    canEditSelectField(input.field, currentValue)
+  ) {
+    return {
+      fieldName: input.fieldName,
+      field: input.field,
+      badgeLabel,
+      error,
+      status: "editable",
+      control: {
+        kind: "select",
+        value: currentValue,
+        options: input.field.options,
+        canUnset: isUnsettableField(input.field),
+      },
+    };
+  }
+
+  if (input.field.options && canEditSelectField(input.field, currentValue)) {
+    return {
+      fieldName: input.fieldName,
+      field: input.field,
+      badgeLabel,
+      error,
+      status: "editable",
+      control: {
+        kind: "select",
+        value: currentValue,
+        options: input.field.options,
+        canUnset: isUnsettableField(input.field),
+      },
+    };
+  }
+
+  if (input.field.kind === "string" && canEditStringField(currentValue)) {
+    return {
+      fieldName: input.fieldName,
+      field: input.field,
+      badgeLabel,
+      error,
+      status: "editable",
+      control: {
+        kind: "string",
+        value: typeof currentValue === "string" ? currentValue : "",
+        canUnset: isUnsettableField(input.field),
+      },
+    };
+  }
+
+  if (input.field.kind === "number" && canEditNumberField(currentValue)) {
+    return {
+      fieldName: input.fieldName,
+      field: input.field,
+      badgeLabel,
+      error,
+      status: "editable",
+      control: {
+        kind: "number",
+        value: typeof currentValue === "number" ? currentValue : undefined,
+        canUnset: isUnsettableField(input.field),
+      },
+    };
+  }
+
+  if (input.field.kind === "boolean" && canEditBooleanField(currentValue)) {
+    return {
+      fieldName: input.fieldName,
+      field: input.field,
+      badgeLabel,
+      error,
+      status: "editable",
+      control: {
+        kind: "boolean",
+        value: currentValue === true,
+        canUnset: isUnsettableField(input.field),
+        isUnset: currentValue === undefined || currentValue === null,
+      },
+    };
+  }
+
+  return {
+    fieldName: input.fieldName,
+    field: input.field,
+    badgeLabel,
+    error,
+    status: "unsupported",
+    typeLabel: describeUnsupportedFieldType(input.field),
+  };
+}
+
+function getPropertyDescriptors(
+  state: ContentDocumentPageReadyState,
+): ContentDocumentPropertyDescriptor[] {
+  const entry = getSchemaEntryForReadyState(state);
+
+  if (!entry) {
+    return [];
+  }
+
+  return Object.entries(entry.resolvedSchema.fields).map(([fieldName, field]) =>
+    resolvePropertyDescriptor({
+      state,
+      fieldName,
+      field,
+    }),
+  );
+}
 
 function createLoadingState(input: {
   typeId: string;
@@ -387,6 +786,7 @@ function createReadyState(input: {
     ...(input.schemaState ? { schemaState: input.schemaState } : {}),
     document,
     draftBody: document.body ?? "",
+    draftFrontmatter: cloneFrontmatter(document.frontmatter),
     saveState: "saved",
     canWrite: writeAccess.canWrite,
     publishDialogOpen: false,
@@ -532,10 +932,11 @@ function applyGuardedDraftSaveFailureToReadyState(input: {
 
   return {
     ...nextState,
-    saveState:
-      input.state.draftBody === input.state.document.body ? "saved" : "unsaved",
+    saveState: isDraftPersisted(input.state) ? "saved" : "unsaved",
     mutationError: undefined,
+    fieldErrors: undefined,
     saveRequestBody: undefined,
+    saveRequestFrontmatter: undefined,
   };
 }
 
@@ -627,9 +1028,12 @@ function applyDocumentResponseToReadyState(
     locale: document.locale,
     document,
     draftBody: document.body ?? "",
+    draftFrontmatter: cloneFrontmatter(document.frontmatter),
     saveState: "saved",
     mutationError: undefined,
+    fieldErrors: undefined,
     saveRequestBody: undefined,
+    saveRequestFrontmatter: undefined,
   };
 }
 
@@ -723,21 +1127,35 @@ export async function publishContentDocumentReadyState(input: {
 export function applySuccessfulPublishToReadyState(input: {
   state: ContentDocumentPageReadyState;
   requestBody: string;
+  requestFrontmatter?: Record<string, unknown>;
   publishedState: ContentDocumentPageReadyState;
 }): ContentDocumentPageReadyState {
-  if (input.state.draftBody === input.requestBody) {
+  const requestFrontmatter =
+    input.requestFrontmatter ?? input.state.draftFrontmatter;
+
+  if (
+    input.state.draftBody === input.requestBody &&
+    areJsonValuesEqual(input.state.draftFrontmatter, requestFrontmatter)
+  ) {
     return input.publishedState;
   }
 
   return {
     ...input.publishedState,
     draftBody: input.state.draftBody,
+    draftFrontmatter: input.state.draftFrontmatter,
     saveState:
-      input.state.draftBody === input.publishedState.document.body
+      input.state.draftBody === input.publishedState.document.body &&
+      areJsonValuesEqual(
+        input.state.draftFrontmatter,
+        input.publishedState.document.frontmatter,
+      )
         ? "saved"
         : "unsaved",
     mutationError: input.state.mutationError,
+    fieldErrors: input.state.fieldErrors,
     saveRequestBody: input.state.saveRequestBody,
+    saveRequestFrontmatter: input.state.saveRequestFrontmatter,
   };
 }
 
@@ -922,8 +1340,12 @@ export async function saveContentDocumentReadyState(input: {
     !input.route.write.canWrite ||
     !input.state.canWrite ||
     input.state.saveState !== "unsaved" ||
-    input.state.draftBody === input.state.document.body ||
-    input.state.saveRequestBody === input.state.draftBody
+    isDraftPersisted(input.state) ||
+    (input.state.saveRequestBody === input.state.draftBody &&
+      areJsonValuesEqual(
+        input.state.saveRequestFrontmatter ?? {},
+        input.state.draftFrontmatter,
+      ))
   ) {
     return input.state;
   }
@@ -938,6 +1360,7 @@ export async function saveContentDocumentReadyState(input: {
       locale: input.state.document.locale,
       payload: {
         body: input.state.draftBody,
+        frontmatter: input.state.draftFrontmatter,
       },
       schemaHash: input.route.write.schemaHash,
     });
@@ -945,6 +1368,7 @@ export async function saveContentDocumentReadyState(input: {
     return reduceContentDocumentPageReadyState(savingState, {
       type: "saveSucceeded",
       body: result.body ?? input.state.draftBody,
+      frontmatter: result.frontmatter ?? input.state.draftFrontmatter,
       updatedAt: result.updatedAt ?? input.state.document.updatedAt,
     });
   } catch (error) {
@@ -966,6 +1390,7 @@ export async function saveContentDocumentReadyState(input: {
     return reduceContentDocumentPageReadyState(savingState, {
       type: "saveFailed",
       message: toRouteErrorMessage(error, "Failed to save draft."),
+      fieldName: mapErrorToFrontmatterField(error),
     });
   }
 }
@@ -1077,7 +1502,9 @@ export function reduceContentDocumentPageReadyState(
 ): ContentDocumentPageReadyState {
   switch (event.type) {
     case "draftChanged": {
-      const isPersisted = event.body === state.document.body;
+      const isPersisted =
+        event.body === state.document.body &&
+        areJsonValuesEqual(state.draftFrontmatter, state.document.frontmatter);
 
       return {
         ...state,
@@ -1085,10 +1512,31 @@ export function reduceContentDocumentPageReadyState(
         saveState: isPersisted ? "saved" : "unsaved",
         mutationError: undefined,
         saveRequestBody: undefined,
+        saveRequestFrontmatter: undefined,
+      };
+    }
+    case "frontmatterFieldChanged": {
+      const draftFrontmatter = updateDraftFrontmatter({
+        frontmatter: state.draftFrontmatter,
+        fieldName: event.fieldName,
+        value: event.value,
+      });
+      const isPersisted =
+        state.draftBody === state.document.body &&
+        areJsonValuesEqual(draftFrontmatter, state.document.frontmatter);
+
+      return {
+        ...state,
+        draftFrontmatter,
+        saveState: isPersisted ? "saved" : "unsaved",
+        mutationError: undefined,
+        fieldErrors: clearFieldError(state.fieldErrors, event.fieldName),
+        saveRequestBody: undefined,
+        saveRequestFrontmatter: undefined,
       };
     }
     case "saveStarted": {
-      if (!state.canWrite || state.draftBody === state.document.body) {
+      if (!state.canWrite || isDraftPersisted(state)) {
         return state;
       }
 
@@ -1096,36 +1544,62 @@ export function reduceContentDocumentPageReadyState(
         ...state,
         saveState: "saving",
         mutationError: undefined,
+        fieldErrors: undefined,
         saveRequestBody: state.draftBody,
+        saveRequestFrontmatter: state.draftFrontmatter,
       };
     }
     case "saveSucceeded": {
       const requestBody = state.saveRequestBody ?? state.draftBody;
+      const requestFrontmatter =
+        state.saveRequestFrontmatter ?? state.draftFrontmatter;
       const savedBody = event.body ?? requestBody;
+      const savedFrontmatter = event.frontmatter ?? requestFrontmatter;
       const draftBody =
         state.draftBody === requestBody ? savedBody : state.draftBody;
+      const draftFrontmatter = areJsonValuesEqual(
+        state.draftFrontmatter,
+        requestFrontmatter,
+      )
+        ? cloneFrontmatter(savedFrontmatter)
+        : state.draftFrontmatter;
 
       return {
         ...state,
         document: {
           ...state.document,
+          frontmatter: cloneFrontmatter(savedFrontmatter),
           body: savedBody,
           hasUnpublishedChanges: true,
           updatedAt: event.updatedAt,
         },
         draftBody,
-        saveState: draftBody === savedBody ? "saved" : "unsaved",
+        draftFrontmatter,
+        saveState:
+          draftBody === savedBody &&
+          areJsonValuesEqual(draftFrontmatter, savedFrontmatter)
+            ? "saved"
+            : "unsaved",
         mutationError: undefined,
+        fieldErrors: undefined,
         saveRequestBody: undefined,
+        saveRequestFrontmatter: undefined,
       };
     }
     case "saveFailed": {
+      const fieldErrors = event.fieldName
+        ? {
+            [event.fieldName]: event.message,
+          }
+        : undefined;
+
       return {
         ...state,
-        saveState:
-          state.draftBody === state.document.body ? "saved" : "unsaved",
-        mutationError: event.message,
+        saveState: isDraftPersisted(state) ? "saved" : "unsaved",
+        mutationError: event.fieldName ? undefined : event.message,
+        fieldErrors,
         saveRequestBody: undefined,
+        saveRequestFrontmatter: undefined,
       };
     }
   }
@@ -1134,34 +1608,56 @@ export function reduceContentDocumentPageReadyState(
 export function applySuccessfulDraftSaveToReadyState(input: {
   state: ContentDocumentPageReadyState;
   requestBody: string;
+  requestFrontmatter?: Record<string, unknown>;
   persistedBody?: string;
+  persistedFrontmatter?: Record<string, unknown>;
   updatedAt: string;
 }): ContentDocumentPageReadyState {
-  const hasNewerSaveInFlight =
-    input.state.saveRequestBody !== undefined &&
-    input.state.saveRequestBody !== input.requestBody;
+  const requestFrontmatter =
+    input.requestFrontmatter ??
+    input.state.saveRequestFrontmatter ??
+    input.state.draftFrontmatter;
+  const hasNewerSaveInFlight = hasDifferentSaveRequestSnapshot({
+    state: input.state,
+    requestBody: input.requestBody,
+    requestFrontmatter,
+  });
   const persistedBody = input.persistedBody ?? input.requestBody;
+  const persistedFrontmatter = input.persistedFrontmatter ?? requestFrontmatter;
   const draftBody =
     input.state.draftBody === input.requestBody
       ? persistedBody
       : input.state.draftBody;
+  const draftFrontmatter = areJsonValuesEqual(
+    input.state.draftFrontmatter,
+    requestFrontmatter,
+  )
+    ? cloneFrontmatter(persistedFrontmatter)
+    : input.state.draftFrontmatter;
 
   return {
     ...input.state,
     document: {
       ...input.state.document,
+      frontmatter: cloneFrontmatter(persistedFrontmatter),
       body: persistedBody,
       hasUnpublishedChanges: true,
       updatedAt: input.updatedAt,
     },
     draftBody,
+    draftFrontmatter,
     mutationError: undefined,
+    fieldErrors: undefined,
     saveRequestBody: hasNewerSaveInFlight
       ? input.state.saveRequestBody
       : undefined,
+    saveRequestFrontmatter: hasNewerSaveInFlight
+      ? input.state.saveRequestFrontmatter
+      : undefined,
     saveState: hasNewerSaveInFlight
       ? input.state.saveState
-      : draftBody === persistedBody
+      : draftBody === persistedBody &&
+          areJsonValuesEqual(draftFrontmatter, persistedFrontmatter)
         ? "saved"
         : "unsaved",
   };
@@ -1170,21 +1666,36 @@ export function applySuccessfulDraftSaveToReadyState(input: {
 export function applyFailedDraftSaveToReadyState(input: {
   state: ContentDocumentPageReadyState;
   requestBody: string;
+  requestFrontmatter?: Record<string, unknown>;
   message: string;
+  fieldName?: string;
 }): ContentDocumentPageReadyState {
+  const requestFrontmatter =
+    input.requestFrontmatter ??
+    input.state.saveRequestFrontmatter ??
+    input.state.draftFrontmatter;
+
   if (
-    input.state.saveRequestBody !== undefined &&
-    input.state.saveRequestBody !== input.requestBody
+    hasDifferentSaveRequestSnapshot({
+      state: input.state,
+      requestBody: input.requestBody,
+      requestFrontmatter,
+    })
   ) {
     return input.state;
   }
 
   return {
     ...input.state,
-    saveState:
-      input.state.draftBody === input.state.document.body ? "saved" : "unsaved",
-    mutationError: input.message,
+    saveState: isDraftPersisted(input.state) ? "saved" : "unsaved",
+    mutationError: input.fieldName ? undefined : input.message,
+    fieldErrors: input.fieldName
+      ? {
+          [input.fieldName]: input.message,
+        }
+      : undefined,
     saveRequestBody: undefined,
+    saveRequestFrontmatter: undefined,
   };
 }
 
@@ -1355,11 +1866,30 @@ function getStatusBadge(state: ContentDocumentPageReadyState): {
     : { label: "Published", color: "#22c55e" };
 }
 
-function SidebarPropertiesTab(props: { state: ContentDocumentPageReadyState }) {
+function formatPropertyOptionLabel(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    value === null
+  ) {
+    return String(value);
+  }
+
+  return JSON.stringify(value);
+}
+
+function SidebarPropertiesTab(props: {
+  state: ContentDocumentPageReadyState;
+  onFrontmatterFieldChange?: (fieldName: string, value: unknown) => void;
+}) {
   const status = getStatusBadge(props.state);
-  const environmentSpecificFieldBadges = getEnvironmentSpecificFieldBadges(
-    props.state,
-  );
+  const propertyDescriptors = getPropertyDescriptors(props.state);
+  const propertiesReadOnly =
+    !props.state.canWrite || !!props.state.viewingVersion;
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -1412,23 +1942,207 @@ function SidebarPropertiesTab(props: { state: ContentDocumentPageReadyState }) {
         </span>
       </div>
 
-      {environmentSpecificFieldBadges.length > 0 ? (
+      {propertyDescriptors.length > 0 ? (
         <div>
           <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">
-            Environment-specific fields
+            Frontmatter
           </div>
           <div className="flex flex-col gap-2">
-            {environmentSpecificFieldBadges.map(({ fieldName, label }) => (
-              <div
-                key={fieldName}
-                className="flex items-center justify-between gap-3 rounded-md border border-border bg-background-subtle px-2.5 py-2"
-              >
-                <code className="text-xs text-foreground">{fieldName}</code>
-                <Badge variant="outline" className="shrink-0 text-[10px]">
-                  {label}
-                </Badge>
-              </div>
-            ))}
+            {propertyDescriptors.map((descriptor) => {
+              const inputId = `document-property-${descriptor.fieldName}`;
+
+              return (
+                <div
+                  key={descriptor.fieldName}
+                  data-mdcms-property-field={descriptor.fieldName}
+                  data-mdcms-property-editor={
+                    descriptor.status === "editable"
+                      ? descriptor.control.kind
+                      : "unsupported"
+                  }
+                  className="rounded-md border border-border bg-background-subtle px-3 py-3"
+                >
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Label
+                        htmlFor={inputId}
+                        className="font-mono text-xs text-foreground"
+                      >
+                        {descriptor.fieldName}
+                      </Label>
+                      {descriptor.badgeLabel ? (
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 text-[10px]"
+                        >
+                          {descriptor.badgeLabel}
+                        </Badge>
+                      ) : null}
+                      {!descriptor.field.required ? (
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 text-[10px]"
+                        >
+                          Optional
+                        </Badge>
+                      ) : null}
+                    </div>
+
+                    {descriptor.status === "editable" ? (
+                      <>
+                        {descriptor.control.kind === "string" ? (
+                          <Input
+                            id={inputId}
+                            type="text"
+                            value={descriptor.control.value}
+                            disabled={propertiesReadOnly}
+                            onChange={(event) =>
+                              props.onFrontmatterFieldChange?.(
+                                descriptor.fieldName,
+                                event.currentTarget.value.length === 0 &&
+                                  descriptor.control.canUnset
+                                  ? unsetFieldValue(descriptor.field)
+                                  : event.currentTarget.value,
+                              )
+                            }
+                          />
+                        ) : null}
+
+                        {descriptor.control.kind === "number" ? (
+                          <Input
+                            id={inputId}
+                            type="number"
+                            inputMode="decimal"
+                            value={descriptor.control.value ?? ""}
+                            disabled={propertiesReadOnly}
+                            onChange={(event) => {
+                              const rawValue = event.currentTarget.value.trim();
+
+                              if (rawValue.length === 0) {
+                                if (descriptor.control.canUnset) {
+                                  props.onFrontmatterFieldChange?.(
+                                    descriptor.fieldName,
+                                    unsetFieldValue(descriptor.field),
+                                  );
+                                }
+                                return;
+                              }
+
+                              const nextValue = Number(rawValue);
+
+                              if (Number.isFinite(nextValue)) {
+                                props.onFrontmatterFieldChange?.(
+                                  descriptor.fieldName,
+                                  nextValue,
+                                );
+                              }
+                            }}
+                          />
+                        ) : null}
+
+                        {descriptor.control.kind === "boolean" ? (
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-xs text-foreground-muted">
+                              {descriptor.control.isUnset
+                                ? "Unset"
+                                : descriptor.control.value
+                                  ? "Enabled"
+                                  : "Disabled"}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {descriptor.control.canUnset &&
+                              !descriptor.control.isUnset ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={propertiesReadOnly}
+                                  onClick={() =>
+                                    props.onFrontmatterFieldChange?.(
+                                      descriptor.fieldName,
+                                      unsetFieldValue(descriptor.field),
+                                    )
+                                  }
+                                >
+                                  Unset
+                                </Button>
+                              ) : null}
+                              <Switch
+                                id={inputId}
+                                checked={descriptor.control.value}
+                                disabled={propertiesReadOnly}
+                                aria-label={descriptor.fieldName}
+                                onCheckedChange={(checked) =>
+                                  props.onFrontmatterFieldChange?.(
+                                    descriptor.fieldName,
+                                    checked,
+                                  )
+                                }
+                              />
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {descriptor.control.kind === "select" ? (
+                          <Select
+                            value={
+                              descriptor.control.value === undefined ||
+                              descriptor.control.value === null
+                                ? PROPERTY_SELECT_UNSET_VALUE
+                                : JSON.stringify(descriptor.control.value)
+                            }
+                            disabled={propertiesReadOnly}
+                            onValueChange={(value) =>
+                              props.onFrontmatterFieldChange?.(
+                                descriptor.fieldName,
+                                value === PROPERTY_SELECT_UNSET_VALUE
+                                  ? unsetFieldValue(descriptor.field)
+                                  : JSON.parse(value),
+                              )
+                            }
+                          >
+                            <SelectTrigger id={inputId} className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {descriptor.control.canUnset ? (
+                                <SelectItem value={PROPERTY_SELECT_UNSET_VALUE}>
+                                  Unset
+                                </SelectItem>
+                              ) : null}
+                              {descriptor.control.options.map((option) => (
+                                <SelectItem
+                                  key={JSON.stringify(option)}
+                                  value={JSON.stringify(option)}
+                                >
+                                  {formatPropertyOptionLabel(option)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : null}
+                      </>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-foreground-muted">
+                        <Badge variant="outline" className="text-[10px]">
+                          {descriptor.typeLabel}
+                        </Badge>
+                        <span>Not editable in Studio yet</span>
+                      </div>
+                    )}
+
+                    {descriptor.error ? (
+                      <p
+                        data-mdcms-property-error={descriptor.fieldName}
+                        className="text-xs text-destructive"
+                      >
+                        {descriptor.error}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : null}
@@ -1536,6 +2250,7 @@ function SidebarHistoryTab(props: {
 
 function ContentDocumentPageSidebar(props: {
   state: ContentDocumentPageReadyState;
+  onFrontmatterFieldChange?: (fieldName: string, value: unknown) => void;
   onViewVersion?: (version: number) => void;
   onBackToDraft?: () => void;
 }) {
@@ -1579,7 +2294,10 @@ function ContentDocumentPageSidebar(props: {
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto">
         {activeTab === "properties" ? (
-          <SidebarPropertiesTab state={props.state} />
+          <SidebarPropertiesTab
+            state={props.state}
+            onFrontmatterFieldChange={props.onFrontmatterFieldChange}
+          />
         ) : (
           <SidebarHistoryTab
             state={props.state}
@@ -1629,30 +2347,13 @@ export function resolveActiveDocumentRouteContext(
   };
 }
 
-function getEnvironmentSpecificFieldBadges(
-  state: ContentDocumentPageReadyState,
-): Array<{ fieldName: string; label: string }> {
-  const typeFieldTargets = state.route.environmentFieldTargets?.[state.typeId];
-
-  if (!typeFieldTargets) {
-    return [];
-  }
-
-  return Object.entries(typeFieldTargets)
-    .filter(([, targets]) => targets.includes(state.route.initialEnvironment))
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([fieldName, targets]) => ({
-      fieldName,
-      label: `${targets.join(", ")} only`,
-    }));
-}
-
 export function ContentDocumentPageView({
   state,
   context,
   sidebarOpen = true,
   activeMdxComponent = null,
   onDraftChange,
+  onFrontmatterFieldChange,
   onActiveMdxComponentChange,
   onToggleSidebar,
   onGoBack,
@@ -1934,6 +2635,7 @@ export function ContentDocumentPageView({
           {state.status === "ready" && sidebarOpen ? (
             <ContentDocumentPageSidebar
               state={state}
+              onFrontmatterFieldChange={onFrontmatterFieldChange}
               onViewVersion={onViewVersion}
               onBackToDraft={onBackToDraft}
             />
@@ -2245,6 +2947,7 @@ export default function ContentDocumentPage({
           ? applySuccessfulPublishToReadyState({
               state: current,
               requestBody: currentState.draftBody,
+              requestFrontmatter: currentState.draftFrontmatter,
               publishedState: nextState,
             })
           : current,
@@ -2358,13 +3061,18 @@ export default function ContentDocumentPage({
     if (
       !currentState.canWrite ||
       currentState.saveState !== "unsaved" ||
-      currentState.draftBody === currentState.document.body ||
-      currentState.saveRequestBody === currentState.draftBody
+      isDraftPersisted(currentState) ||
+      (currentState.saveRequestBody === currentState.draftBody &&
+        areJsonValuesEqual(
+          currentState.saveRequestFrontmatter ?? {},
+          currentState.draftFrontmatter,
+        ))
     ) {
       return false;
     }
 
     const requestBody = currentState.draftBody;
+    const requestFrontmatter = currentState.draftFrontmatter;
     const requestToken = createContentDocumentRouteRequestToken({
       documentId: currentState.documentId,
       route: requestRoute,
@@ -2399,7 +3107,13 @@ export default function ContentDocumentPage({
       return false;
     }
 
-    const mutationError = nextState.mutationError;
+    const failedFieldName = nextState.fieldErrors
+      ? Object.keys(nextState.fieldErrors)[0]
+      : undefined;
+    const mutationError =
+      nextState.mutationError ??
+      (failedFieldName ? nextState.fieldErrors?.[failedFieldName] : undefined);
+
     if (mutationError) {
       setState((current) =>
         current.status === "ready" &&
@@ -2407,7 +3121,9 @@ export default function ContentDocumentPage({
           ? applyFailedDraftSaveToReadyState({
               state: current,
               requestBody,
+              requestFrontmatter,
               message: mutationError,
+              fieldName: failedFieldName,
             })
           : current,
       );
@@ -2435,7 +3151,9 @@ export default function ContentDocumentPage({
         ? applySuccessfulDraftSaveToReadyState({
             state: current,
             requestBody,
+            requestFrontmatter,
             persistedBody,
+            persistedFrontmatter: nextState.document.frontmatter,
             updatedAt: nextState.document.updatedAt,
           })
         : current,
@@ -2457,7 +3175,7 @@ export default function ContentDocumentPage({
     if (
       currentState.saveState !== "saved" &&
       currentState.canWrite &&
-      currentState.draftBody !== currentState.document.body
+      !isDraftPersisted(currentState)
     ) {
       const saved = await saveDraft();
 
@@ -2558,9 +3276,8 @@ export default function ContentDocumentPage({
     );
 
     try {
-      // Always fetch the source document via loadDraft for prefill.
-      // StudioDocumentShellData does not carry frontmatter or format,
-      // so reading from local state would lose metadata.
+      // Always fetch the source document via loadDraft for prefill because the
+      // source variant may differ from the currently loaded document.
       let sourceBody = "";
       let sourceFrontmatter: Record<string, unknown> = {};
       let sourceFormat: "md" | "mdx" = "mdx";
@@ -2754,9 +3471,15 @@ export default function ContentDocumentPage({
   const readyDraftBody = state.status === "ready" ? state.draftBody : undefined;
   const readyDocumentBody =
     state.status === "ready" ? state.document.body : undefined;
+  const readyDraftFrontmatter =
+    state.status === "ready" ? state.draftFrontmatter : undefined;
+  const readyDocumentFrontmatter =
+    state.status === "ready" ? state.document.frontmatter : undefined;
   const readyCanWrite = state.status === "ready" ? state.canWrite : false;
   const readySaveRequestBody =
     state.status === "ready" ? state.saveRequestBody : undefined;
+  const readySaveRequestFrontmatter =
+    state.status === "ready" ? state.saveRequestFrontmatter : undefined;
   const readySaveState = state.status === "ready" ? state.saveState : undefined;
   const readyLeftComparisonVersion =
     state.status === "ready" ? state.selectedComparison.leftVersion : undefined;
@@ -2770,8 +3493,12 @@ export default function ContentDocumentPage({
       state.status !== "ready" ||
       !state.canWrite ||
       state.saveState !== "unsaved" ||
-      state.draftBody === state.document.body ||
-      state.saveRequestBody === state.draftBody
+      isDraftPersisted(state) ||
+      (state.saveRequestBody === state.draftBody &&
+        areJsonValuesEqual(
+          state.saveRequestFrontmatter ?? {},
+          state.draftFrontmatter,
+        ))
     ) {
       return;
     }
@@ -2786,8 +3513,11 @@ export default function ContentDocumentPage({
   }, [
     readyCanWrite,
     readyDocumentBody,
+    readyDocumentFrontmatter,
     readyDraftBody,
+    readyDraftFrontmatter,
     readySaveRequestBody,
+    readySaveRequestFrontmatter,
     readySaveState,
     state.status,
   ]);
@@ -2851,6 +3581,17 @@ export default function ContentDocumentPage({
             ? reduceContentDocumentPageReadyState(current, {
                 type: "draftChanged",
                 body,
+              })
+            : current,
+        );
+      }}
+      onFrontmatterFieldChange={(fieldName, value) => {
+        setState((current) =>
+          current.status === "ready"
+            ? reduceContentDocumentPageReadyState(current, {
+                type: "frontmatterFieldChanged",
+                fieldName,
+                value,
               })
             : current,
         );
