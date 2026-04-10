@@ -13,7 +13,11 @@ import {
   type RuntimeContext,
 } from "@mdcms/shared";
 import { extractMdxComponentProps } from "@mdcms/shared/mdx";
-import { resolveStudioDocumentRouteSchemaCapability } from "./document-route-schema.js";
+import {
+  resolveStudioDocumentRoutePreparedMetadata,
+  resolveStudioDocumentRouteSchemaCapability,
+  type StudioDocumentRoutePreparedMetadata,
+} from "./document-route-schema.js";
 
 /**
  * Studio runtime helpers align env resolution, logger setup, and error
@@ -45,6 +49,8 @@ type OptionalStudioClientConfig = Partial<
 export type MdcmsConfig = StudioEmbedConfig &
   OptionalStudioClientConfig & {
     components?: StudioComponentRegistration[];
+    _schemaHash?: string;
+    _documentRouteMetadata?: StudioDocumentRoutePreparedMetadata;
   };
 
 export { resolveStudioDocumentRouteSchemaCapability } from "./document-route-schema.js";
@@ -105,6 +111,14 @@ export async function prepareStudioConfig(
   // here ensures the Studio loader can enable writes without re-deriving.
   const schemaCapability =
     await resolveStudioDocumentRouteSchemaCapability(config);
+  let documentRouteMetadata: StudioDocumentRoutePreparedMetadata | undefined;
+
+  try {
+    documentRouteMetadata =
+      await resolveStudioDocumentRoutePreparedMetadata(config);
+  } catch {
+    documentRouteMetadata = undefined;
+  }
 
   return {
     ...config,
@@ -112,6 +126,9 @@ export async function prepareStudioConfig(
     ...(components !== undefined ? { components } : {}),
     ...(schemaCapability.canWrite
       ? { _schemaHash: schemaCapability.schemaHash }
+      : {}),
+    ...(documentRouteMetadata !== undefined
+      ? { _documentRouteMetadata: documentRouteMetadata }
       : {}),
   };
 }

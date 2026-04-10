@@ -5,6 +5,7 @@ import {
   useEffect,
   useEffectEvent,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -35,6 +36,7 @@ import {
   diffDocumentVersions,
   type DocumentVersionDiff,
 } from "../../document-version-diff.js";
+import { useStudioMountInfo } from "../app/admin/mount-info-context.js";
 import { useParams, useRouter } from "../adapters/next-navigation.js";
 import { type MdxPropsPanelSelection } from "../components/editor/mdx-props-panel.js";
 import {
@@ -1326,6 +1328,9 @@ function getStatusBadge(state: ContentDocumentPageReadyState): {
 
 function SidebarPropertiesTab(props: { state: ContentDocumentPageReadyState }) {
   const status = getStatusBadge(props.state);
+  const environmentSpecificFieldBadges = getEnvironmentSpecificFieldBadges(
+    props.state,
+  );
 
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -1377,6 +1382,27 @@ function SidebarPropertiesTab(props: { state: ContentDocumentPageReadyState }) {
           {props.state.document.path}
         </span>
       </div>
+
+      {environmentSpecificFieldBadges.length > 0 ? (
+        <div>
+          <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">
+            Environment-specific fields
+          </div>
+          <div className="flex flex-col gap-2">
+            {environmentSpecificFieldBadges.map(({ fieldName, label }) => (
+              <div
+                key={fieldName}
+                className="flex items-center justify-between gap-3 rounded-md border border-border bg-background-subtle px-2.5 py-2"
+              >
+                <code className="text-xs text-foreground">{fieldName}</code>
+                <Badge variant="outline" className="shrink-0 text-[10px]">
+                  {label}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1552,6 +1578,44 @@ export function filterLocaleOptions(input: {
       (item) =>
         item.hasVariant || (input.canWrite && !input.variantsFetchFailed),
     );
+}
+
+export function resolveActiveDocumentRouteContext(
+  route: StudioDocumentRouteMountContext,
+  environment: string | null | undefined,
+): StudioDocumentRouteMountContext {
+  const nextEnvironment = environment?.trim();
+
+  if (!nextEnvironment || nextEnvironment === route.initialEnvironment) {
+    return route;
+  }
+
+  return {
+    ...route,
+    initialEnvironment: nextEnvironment,
+    write: route.writeByEnvironment?.[nextEnvironment] ?? {
+      canWrite: false,
+      message: `Studio writes require a resolved schema for environment "${nextEnvironment}".`,
+    },
+  };
+}
+
+function getEnvironmentSpecificFieldBadges(
+  state: ContentDocumentPageReadyState,
+): Array<{ fieldName: string; label: string }> {
+  const typeFieldTargets = state.route.environmentFieldTargets?.[state.typeId];
+
+  if (!typeFieldTargets) {
+    return [];
+  }
+
+  return Object.entries(typeFieldTargets)
+    .filter(([, targets]) => targets.includes(state.route.initialEnvironment))
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([fieldName, targets]) => ({
+      fieldName,
+      label: `${targets.join(", ")} only`,
+    }));
 }
 
 export function ContentDocumentPageView({
@@ -1913,12 +1977,32 @@ export default function ContentDocumentPage({
 }: {
   context?: StudioMountContext;
 }) {
+  const mountInfo = useStudioMountInfo();
   const params = useParams();
   const router = useRouter();
   const typeId = (params.type as string) || "content";
   const documentId = (params.documentId as string) || "";
   const typeLabel = typeId;
-  const route = context?.documentRoute;
+  const route = useMemo(
+    () =>
+      context?.documentRoute
+        ? resolveActiveDocumentRouteContext(
+            context.documentRoute,
+            mountInfo.environment,
+          )
+        : undefined,
+    [context?.documentRoute, mountInfo.environment],
+  );
+  const activeContext = useMemo(
+    () =>
+      context && route
+        ? {
+            ...context,
+            documentRoute: route,
+          }
+        : context,
+    [context, route],
+  );
 
   const [state, setState] = useState<ContentDocumentPageState>(() =>
     route
@@ -1952,12 +2036,12 @@ export default function ContentDocumentPage({
   }, [state]);
 
   function createRouteApi(): StudioDocumentRouteApi | undefined {
-    if (!context || !route) {
+    if (!activeContext || !route) {
       return undefined;
     }
 
     return createContentDocumentRouteApi({
-      context,
+      context: activeContext,
       route,
     });
   }
@@ -2162,7 +2246,7 @@ export default function ContentDocumentPage({
     );
 
     const nextState = await loadContentDocumentPageState({
-      context,
+      context: activeContext,
       typeId,
       typeLabel,
       documentId,
@@ -2521,7 +2605,7 @@ export default function ContentDocumentPage({
 
   useEffect(() => {
     void loadDocument();
-  }, [context, documentId, route, typeId, typeLabel]);
+  }, [activeContext, documentId, route, typeId, typeLabel]);
 
   const readyDraftBody = state.status === "ready" ? state.draftBody : undefined;
   const readyDocumentBody =
@@ -2614,7 +2698,7 @@ export default function ContentDocumentPage({
   return (
     <ContentDocumentPageView
       state={state}
-      context={context}
+      context={activeContext}
       sidebarOpen={sidebarOpen}
       activeMdxComponent={activeMdxComponent}
       onDraftChange={(body) => {

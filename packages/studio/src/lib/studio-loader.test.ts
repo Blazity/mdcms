@@ -261,6 +261,98 @@ test("loadStudioRuntime fetches bootstrap, verifies runtime, and mounts the remo
   });
 });
 
+test("loadStudioRuntime forwards document route environment metadata to the remote runtime", async () => {
+  await withTempDir("studio-loader-route-metadata-", async (directory) => {
+    const fixture = await createRuntimeFixture(directory);
+    const contexts: unknown[] = [];
+
+    await loadStudioRuntime({
+      config: {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+        _schemaHash: "staging-schema-hash",
+        _documentRouteMetadata: {
+          schemaHashesByEnvironment: {
+            production: "production-schema-hash",
+            staging: "staging-schema-hash",
+          },
+          environmentFieldTargets: {
+            BlogPost: {
+              featured: ["staging"],
+            },
+          },
+        },
+      } as MdcmsConfig,
+      basePath: "/admin",
+      container: {},
+      hostBridge: validHostBridge,
+      fetcher: async (input) => {
+        const url = String(input);
+
+        if (url === "http://localhost:4000/api/v1/studio/bootstrap") {
+          return new Response(
+            JSON.stringify(
+              createReadyBootstrapPayload({
+                manifest: fixture.manifest,
+              }),
+            ),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        if (url === "http://localhost:4000" + fixture.manifest.entryUrl) {
+          return new Response(new Uint8Array(fixture.runtimeBytes), {
+            status: 200,
+            headers: {
+              "content-type": "text/javascript; charset=utf-8",
+            },
+          });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+      },
+      loadRemoteModule: async () => ({
+        mount: (_target: unknown, context: unknown) => {
+          contexts.push(context);
+          return () => {};
+        },
+      }),
+    });
+
+    const mountedContext = contexts[0] as {
+      documentRoute?: {
+        writeByEnvironment?: Record<
+          string,
+          { canWrite: boolean; schemaHash?: string; message?: string }
+        >;
+        environmentFieldTargets?: Record<string, Record<string, string[]>>;
+      };
+    };
+
+    assert.deepEqual(mountedContext.documentRoute?.writeByEnvironment, {
+      production: {
+        canWrite: true,
+        schemaHash: "production-schema-hash",
+      },
+      staging: {
+        canWrite: true,
+        schemaHash: "staging-schema-hash",
+      },
+    });
+    assert.deepEqual(mountedContext.documentRoute?.environmentFieldTargets, {
+      BlogPost: {
+        featured: ["staging"],
+      },
+    });
+  });
+});
+
 test("loadStudioRuntime preserves a path-prefixed studio serverUrl for bootstrap and runtime asset fetches", async () => {
   await withTempDir("studio-loader-prefixed-", async (directory) => {
     const fixture = await createRuntimeFixture(directory);

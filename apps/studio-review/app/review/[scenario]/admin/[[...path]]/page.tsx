@@ -37,6 +37,11 @@ export default async function AdminReviewPage(props: {
       scenario={scenario}
       basePath={`/review/${scenario}/admin`}
       serverUrl={createReviewScenarioServerUrl({ scenario, origin })}
+      documentRouteMetadata={
+        "_documentRouteMetadata" in preparedConfig
+          ? preparedConfig._documentRouteMetadata
+          : undefined
+      }
       preparedComponents={extractPreparedStudioComponentMetadata(
         preparedConfig,
       )}

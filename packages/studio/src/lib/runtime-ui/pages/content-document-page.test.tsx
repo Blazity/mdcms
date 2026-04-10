@@ -23,6 +23,7 @@ import {
   parseSelectedComparisonVersionValue,
   publishContentDocumentReadyState,
   reloadSchemaStateForGuard,
+  resolveActiveDocumentRouteContext,
   reduceContentDocumentPageReadyState,
   saveContentDocumentReadyState,
   syncSchemaStateForGuard,
@@ -1289,6 +1290,48 @@ test("ContentDocumentPageView blocks writes when the local schema hash capabilit
   assert.equal(state.canWrite, false);
   assert.match(markup, /data-mdcms-document-write-state="blocked"/);
   assert.match(markup, /Schema sync required before Studio can write drafts\./);
+});
+
+test("ContentDocumentPageView renders environment-specific field badges for the active environment", () => {
+  const state = createReadyState();
+  state.route.environmentFieldTargets = {
+    [state.typeId]: {
+      featured: ["staging"],
+      abTestVariant: ["preview", "staging"],
+    },
+  };
+
+  const markup = renderPageMarkup(state);
+
+  assert.match(markup, /Environment-specific fields/);
+  assert.match(markup, />featured</);
+  assert.match(markup, /staging only/);
+  assert.match(markup, />abTestVariant</);
+  assert.match(markup, /preview, staging only/);
+});
+
+test("resolveActiveDocumentRouteContext switches write metadata with the selected environment", () => {
+  const route = {
+    ...createRouteContext(true),
+    writeByEnvironment: {
+      production: {
+        canWrite: true as const,
+        schemaHash: "production-schema-hash",
+      },
+      staging: {
+        canWrite: true as const,
+        schemaHash: "staging-schema-hash",
+      },
+    },
+  };
+
+  const activeRoute = resolveActiveDocumentRouteContext(route, "production");
+
+  assert.equal(activeRoute.initialEnvironment, "production");
+  assert.deepEqual(activeRoute.write, {
+    canWrite: true,
+    schemaHash: "production-schema-hash",
+  });
 });
 
 test("locale switcher renders for localized type with supportedLocales", () => {

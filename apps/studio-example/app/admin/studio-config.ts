@@ -10,6 +10,9 @@ import {
 
 type PreparedStudioConfig = Awaited<ReturnType<typeof prepareStudioConfig>>;
 type PreparedStudioComponent = NonNullable<MdcmsConfig["components"]>[number];
+type PreparedDocumentRouteMetadata = NonNullable<
+  MdcmsConfig["_documentRouteMetadata"]
+>;
 
 export type PreparedStudioComponentMetadata = Pick<
   PreparedStudioComponent,
@@ -32,6 +35,7 @@ export function extractPreparedStudioComponentMetadata(
 export function createClientStudioConfig(
   preparedComponents: PreparedStudioComponentMetadata[],
   schemaHash?: string,
+  documentRouteMetadata?: PreparedDocumentRouteMetadata,
 ): MdcmsConfig {
   const extractedPropsByName = new Map(
     preparedComponents.map((component) => [
@@ -51,6 +55,9 @@ export function createClientStudioConfig(
     // Pre-computed schema hash from the server component where the full
     // config (with Zod types/environments) is available for derivation.
     ...(schemaHash ? { _schemaHash: schemaHash } : {}),
+    ...(documentRouteMetadata
+      ? { _documentRouteMetadata: documentRouteMetadata }
+      : {}),
     components: clientComponents.map((component) => {
       const extractedProps = extractedPropsByName.get(component.name);
 

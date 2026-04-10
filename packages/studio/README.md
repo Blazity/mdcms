@@ -152,6 +152,12 @@ export function AdminStudioClient({ config }: { config: MdcmsConfig }) {
   - `write.canWrite`
   - `write.schemaHash` when draft writes are allowed, or `write.message` when
     the route must stay read-only
+  - optional `writeByEnvironment` metadata for environment-switched editor
+    routes so Studio can use the correct local schema hash after the active
+    environment changes in-shell
+  - optional `environmentFieldTargets` metadata keyed by `type -> field ->
+environments[]` so the document sidebar can label environment-specific
+    fields such as `staging only`
 - `loadStudioRuntimeFromBootstrap(...)` derives `documentRoute.write` from the
   local authored config. Write-enabled routes require enough local config data
   to deterministically derive the active environment schema hash.

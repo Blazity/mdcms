@@ -11,3 +11,17 @@ test("review scenarios expose deterministic capability sets", () => {
   assert.equal(editor.capabilities.settings.manage, false);
   assert.equal(editor.document.documentId.length > 0, true);
 });
+
+test("review owner scenario exposes staging-only editor fields in the schema fixture", () => {
+  const owner = getReviewScenario("owner");
+  const postSchema = owner.schema.entries.find(
+    (entry) => entry.type === "post",
+  );
+
+  assert.ok(postSchema, "expected post schema entry");
+  assert.deepEqual(Object.keys(postSchema.resolvedSchema.fields).sort(), [
+    "featured",
+    "slug",
+    "title",
+  ]);
+});

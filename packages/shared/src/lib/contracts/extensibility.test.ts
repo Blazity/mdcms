@@ -376,6 +376,21 @@ test("runtime contract validators cover positive and negative shapes", () => {
         project: "marketing-site",
         initialEnvironment: "staging",
         supportedLocales: ["en-US", "fr"],
+        writeByEnvironment: {
+          production: {
+            canWrite: true,
+            schemaHash: "production-schema-hash",
+          },
+          staging: {
+            canWrite: true,
+            schemaHash: "staging-schema-hash",
+          },
+        },
+        environmentFieldTargets: {
+          BlogPost: {
+            featured: ["staging"],
+          },
+        },
         write: {
           canWrite: true,
           schemaHash: "schema-hash",

@@ -6,6 +6,7 @@ import { createStudioEmbedConfig } from "./studio.js";
 import {
   resolveStudioDocumentRouteSchemaDetails,
   resolveStudioDocumentRouteSchemaCapability,
+  resolveStudioDocumentRoutePreparedMetadata,
   type StudioDocumentRouteSchemaCapability,
 } from "./document-route-schema.js";
 import { defineConfig, defineType, reference } from "@mdcms/shared";
@@ -126,6 +127,24 @@ test("derived schema details expose the local sync payload pieces", async () => 
     "Author",
   ]);
   assert.match(details.syncPayload.schemaHash, /^[a-f0-9]{64}$/);
+});
+
+test("prepared document route metadata includes per-environment hashes and field targets", async () => {
+  const metadata = await resolveStudioDocumentRoutePreparedMetadata(
+    createAuthoredConfig(),
+  );
+
+  assert.deepEqual(Object.keys(metadata.schemaHashesByEnvironment).sort(), [
+    "production",
+    "staging",
+  ]);
+  assert.match(metadata.schemaHashesByEnvironment.production, /^[a-f0-9]{64}$/);
+  assert.match(metadata.schemaHashesByEnvironment.staging, /^[a-f0-9]{64}$/);
+  assert.deepEqual(metadata.environmentFieldTargets, {
+    Article: {
+      summary: ["staging"],
+    },
+  });
 });
 
 test("equivalent authored config data yields the same schema hash", async () => {

@@ -148,6 +148,8 @@ export type StudioDocumentRouteMountContext = {
   initialEnvironment: string;
   supportedLocales?: string[];
   defaultLocale?: string;
+  writeByEnvironment?: Record<string, StudioDocumentRouteWriteContext>;
+  environmentFieldTargets?: Record<string, Record<string, string[]>>;
   write: StudioDocumentRouteWriteContext;
 };
 
@@ -550,6 +552,15 @@ const studioDocumentRouteContextSchema = z
     initialEnvironment: nonEmptyStringSchema,
     supportedLocales: z.array(nonEmptyStringSchema).optional(),
     defaultLocale: nonEmptyStringSchema.optional(),
+    writeByEnvironment: z
+      .record(nonEmptyStringSchema, studioDocumentRouteWriteSchema)
+      .optional(),
+    environmentFieldTargets: z
+      .record(
+        nonEmptyStringSchema,
+        z.record(nonEmptyStringSchema, z.array(nonEmptyStringSchema)),
+      )
+      .optional(),
     write: studioDocumentRouteWriteSchema,
   })
   .strict()
