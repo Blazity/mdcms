@@ -20,16 +20,23 @@ test("environment routes list project-scoped environments for admin sessions", a
         store: {
           async list(project) {
             assert.equal(project, "marketing-site");
-            return [
-              {
-                id: "env-production",
-                project: "marketing-site",
-                name: "production",
-                extends: null,
-                isDefault: true,
-                createdAt: "2026-03-11T12:00:00.000Z",
+            return {
+              data: [
+                {
+                  id: "env-production",
+                  project: "marketing-site",
+                  name: "production",
+                  extends: null,
+                  isDefault: true,
+                  createdAt: "2026-03-11T12:00:00.000Z",
+                },
+              ],
+              meta: {
+                definitionsStatus: "ready",
+                configSnapshotHash: "sha256:abc123",
+                syncedAt: "2026-03-11T12:00:00.000Z",
               },
-            ];
+            };
           },
           async create() {
             throw new Error("not used");
@@ -50,6 +57,7 @@ test("environment routes list project-scoped environments for admin sessions", a
   );
   const body = (await response.json()) as {
     data: Array<{ name: string }>;
+    meta: { definitionsStatus: string };
   };
 
   assert.equal(response.status, 200);
@@ -57,6 +65,7 @@ test("environment routes list project-scoped environments for admin sessions", a
     body.data.map((entry) => entry.name),
     ["production"],
   );
+  assert.equal(body.meta.definitionsStatus, "ready");
 });
 
 test("environment routes reject create requests without admin privileges", async () => {
@@ -66,7 +75,12 @@ test("environment routes reject create requests without admin privileges", async
       mountEnvironmentApiRoutes(app, {
         store: {
           async list() {
-            return [];
+            return {
+              data: [],
+              meta: {
+                definitionsStatus: "missing",
+              },
+            };
           },
           async create() {
             throw new Error("not used");

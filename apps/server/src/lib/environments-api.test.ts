@@ -9,6 +9,7 @@ import postgres from "postgres";
 import {
   documents,
   environments,
+  projectEnvironmentTopologySnapshots,
   rbacGrants,
   schemaSyncs,
 } from "./db/schema.js";
@@ -199,6 +200,62 @@ async function grantGlobalOwner(
     .onConflictDoNothing();
 }
 
+async function insertTopologySnapshot(
+  db: ReturnType<
+    typeof createServerRequestHandlerWithModules
+  >["dbConnection"]["db"],
+  project: string,
+) {
+  await db
+    .insert(projectEnvironmentTopologySnapshots)
+    .values({
+      project,
+      configSnapshotHash: "sha256:test-topology",
+      definitions: [
+        {
+          name: "preview",
+          extends: "staging",
+          isDefault: false,
+        },
+        {
+          name: "production",
+          extends: null,
+          isDefault: true,
+        },
+        {
+          name: "staging",
+          extends: "production",
+          isDefault: false,
+        },
+      ],
+      syncedAt: new Date("2026-03-19T10:00:00.000Z"),
+    })
+    .onConflictDoUpdate({
+      target: [projectEnvironmentTopologySnapshots.project],
+      set: {
+        configSnapshotHash: "sha256:test-topology",
+        definitions: [
+          {
+            name: "preview",
+            extends: "staging",
+            isDefault: false,
+          },
+          {
+            name: "production",
+            extends: null,
+            isDefault: true,
+          },
+          {
+            name: "staging",
+            extends: "production",
+            isDefault: false,
+          },
+        ],
+        syncedAt: new Date("2026-03-19T10:00:00.000Z"),
+      },
+    });
+}
+
 type EnvironmentSummary = {
   id: string;
   project: string;
@@ -228,6 +285,7 @@ testWithDatabase(
         loginResult.session.userId,
         "test:environments-success-owner",
       );
+      await insertTopologySnapshot(dbConnection.db, project);
 
       const createResponse = await handler(
         new Request(`http://localhost/api/v1/environments?project=${project}`, {
@@ -260,9 +318,15 @@ testWithDatabase(
       );
       const listBody = (await listResponse.json()) as {
         data: EnvironmentSummary[];
+        meta: {
+          definitionsStatus: string;
+          configSnapshotHash: string;
+        };
       };
 
       assert.equal(listResponse.status, 200);
+      assert.equal(listBody.meta.definitionsStatus, "ready");
+      assert.equal(listBody.meta.configSnapshotHash, "sha256:test-topology");
       assert.deepEqual(
         listBody.data.map((entry) => ({
           project: entry.project,
@@ -307,6 +371,53 @@ testWithDatabase(
 );
 
 testWithDatabase(
+  "environments API requires a synced topology snapshot before create",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+      config: testConfig,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+    const project = uniqueProject("env-missing-topology");
+
+    try {
+      await signUp(handler, { email, password });
+      const loginResult = await login(handler, { email, password });
+      await grantGlobalOwner(
+        dbConnection.db,
+        loginResult.session.userId,
+        "test:environments-missing-topology-owner",
+      );
+
+      const createResponse = await handler(
+        new Request(`http://localhost/api/v1/environments?project=${project}`, {
+          method: "POST",
+          headers: createCsrfHeaders(loginResult, {
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({
+            name: "staging",
+            extends: "production",
+          }),
+        }),
+      );
+      const createBody = (await createResponse.json()) as {
+        code: string;
+        message: string;
+      };
+
+      assert.equal(createResponse.status, 409);
+      assert.equal(createBody.code, "CONFIG_SNAPSHOT_REQUIRED");
+      assert.match(createBody.message, /cms schema sync/i);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
   "environments API rejects session mutations without CSRF and accepts matching tokens",
   async () => {
     const { handler, dbConnection } = createServerRequestHandlerWithModules({
@@ -326,6 +437,7 @@ testWithDatabase(
         loginResult.session.userId,
         "test:environments-csrf-owner",
       );
+      await insertTopologySnapshot(dbConnection.db, project);
 
       const missingHeaderResponse = await handler(
         new Request(`http://localhost/api/v1/environments?project=${project}`, {
@@ -387,6 +499,7 @@ testWithDatabase(
         loginResult.session.userId,
         "test:environments-invalid-owner",
       );
+      await insertTopologySnapshot(dbConnection.db, project);
 
       const firstCreateResponse = await handler(
         new Request(`http://localhost/api/v1/environments?project=${project}`, {
@@ -482,6 +595,7 @@ testWithDatabase(
         loginResult.session.userId,
         "test:environments-delete-owner",
       );
+      await insertTopologySnapshot(dbConnection.db, project);
 
       const createStagingResponse = await handler(
         new Request(`http://localhost/api/v1/environments?project=${project}`, {
@@ -697,6 +811,8 @@ testWithDatabase(
         loginResult.session.userId,
         "test:environments-project-owner",
       );
+      await insertTopologySnapshot(dbConnection.db, primaryProject);
+      await insertTopologySnapshot(dbConnection.db, foreignProject);
 
       const primaryCreateResponse = await handler(
         new Request(

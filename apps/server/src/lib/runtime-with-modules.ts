@@ -37,7 +37,6 @@ import {
   createDatabaseProjectStore,
   mountProjectApiRoutes,
 } from "./projects-api.js";
-import { loadServerConfig } from "./config.js";
 import type { ParsedMdcmsConfig } from "@mdcms/shared";
 import {
   createRefreshingStudioRuntimePublicationSelection,
@@ -116,22 +115,8 @@ export function createServerRequestHandlerWithModules(
   });
   const contentStore = createDatabaseContentStore({ db: dbConnection.db });
   const schemaStore = createDatabaseSchemaStore({ db: dbConnection.db });
-  let configPromise: Promise<ParsedMdcmsConfig | undefined> | undefined;
-  const getConfig = () => {
-    if (options.config) {
-      return Promise.resolve(options.config);
-    }
-
-    configPromise ??= loadServerConfig({
-      cwd: options.cwd,
-      configPath: options.configPath,
-    }).then((loaded) => loaded?.config);
-
-    return configPromise;
-  };
   const environmentStore = createDatabaseEnvironmentStore({
     db: dbConnection.db,
-    getConfig,
   });
   const projectStore = createDatabaseProjectStore({ db: dbConnection.db });
   const actions = collectServerModuleActions(moduleLoadReport);

@@ -112,6 +112,12 @@ test("derived schema details expose the local sync payload pieces", async () => 
     project: "marketing-site",
     serverUrl: "http://localhost:4000",
     environment: "staging",
+    environments: {
+      production: {},
+      staging: {
+        extends: "production",
+      },
+    },
     contentDirectories: ["content"],
     locales: {
       default: "en",
@@ -180,6 +186,7 @@ test("equivalent authored config data yields the same schema hash", async () => 
       ],
       environments: {
         staging: {
+          extends: "production",
           types: {
             Author: {
               modify: {

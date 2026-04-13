@@ -62,10 +62,20 @@ test("list fetches environments with project header", async () => {
     auth: { mode: "cookie" },
     fetcher: async (input, init) => {
       calls.push({ input, init });
-      return new Response(JSON.stringify({ data: [validEnvSummary] }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          data: [validEnvSummary],
+          meta: {
+            definitionsStatus: "ready",
+            configSnapshotHash: "sha256:abc123",
+            syncedAt: "2026-03-19T10:00:00.000Z",
+          },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
     },
   });
 
@@ -78,22 +88,34 @@ test("list fetches environments with project header", async () => {
   );
   assert.equal(readHeader(calls[0]?.init, "x-mdcms-project"), "marketing-site");
   assert.equal(readHeader(calls[0]?.init, "x-mdcms-environment"), "production");
-  assert.equal(result.length, 1);
-  assert.equal(result[0]?.name, "production");
+  assert.equal(result.data.length, 1);
+  assert.equal(result.data[0]?.name, "production");
+  assert.equal(result.meta.definitionsStatus, "ready");
 });
 
 test("list returns empty array for empty response", async () => {
   const api = createApi({
     fetcher: async () =>
-      new Response(JSON.stringify({ data: [] }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
+      new Response(
+        JSON.stringify({
+          data: [],
+          meta: {
+            definitionsStatus: "missing",
+          },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
   });
 
   const result = await api.list();
 
-  assert.deepEqual(result, []);
+  assert.deepEqual(result.data, []);
+  assert.deepEqual(result.meta, {
+    definitionsStatus: "missing",
+  });
 });
 
 test("list resolves scenario-relative environment routes", async () => {
@@ -103,10 +125,20 @@ test("list resolves scenario-relative environment routes", async () => {
     {
       fetcher: async (input, init) => {
         calls.push({ input, init });
-        return new Response(JSON.stringify({ data: [validEnvSummary] }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({
+            data: [validEnvSummary],
+            meta: {
+              definitionsStatus: "ready",
+              configSnapshotHash: "sha256:abc123",
+              syncedAt: "2026-03-19T10:00:00.000Z",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        );
       },
     },
     {

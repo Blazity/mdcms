@@ -101,10 +101,13 @@ Backend API/runtime package boundary for MDCMS.
   - `DELETE /api/v1/environments/:id`
 - Environment management rules:
   - explicit `project` routing is required
-  - authenticated Studio session required
-  - global `owner` or `admin` only
-  - valid environment names and `extends` chains are derived from
-    `mdcms.config.ts`
+  - global `owner` or `admin` only, including list reads
+  - `GET /api/v1/environments` returns live rows plus definitions readiness
+    metadata
+  - valid environment names and `extends` chains are derived from the latest
+    synced project config snapshot, not request-time filesystem reads
+  - `POST /api/v1/environments` returns `CONFIG_SNAPSHOT_REQUIRED` (`409`)
+    until schema sync has published environment definitions for the project
   - project provisioning guarantees a default `production` environment
   - deleting `production` or any environment with content/schema state returns
     deterministic `CONFLICT` (`409`)

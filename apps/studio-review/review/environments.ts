@@ -1,4 +1,8 @@
-import { RuntimeError, type EnvironmentSummary } from "@mdcms/shared";
+import {
+  RuntimeError,
+  type EnvironmentListResponse,
+  type EnvironmentSummary,
+} from "@mdcms/shared";
 
 import { getReviewScenario } from "./scenarios";
 
@@ -87,14 +91,21 @@ export function resetReviewEnvironmentStore(): void {
 
 export function listReviewEnvironments(
   scenarioId: string,
-): EnvironmentSummary[] {
+): EnvironmentListResponse {
   if (!canManageReviewEnvironments(scenarioId)) {
     throw createForbiddenError();
   }
 
-  return readScenarioStore(scenarioId).map((environment) => ({
-    ...environment,
-  }));
+  return {
+    data: readScenarioStore(scenarioId).map((environment) => ({
+      ...environment,
+    })),
+    meta: {
+      definitionsStatus: "ready",
+      configSnapshotHash: "sha256:review-scenario",
+      syncedAt: "2026-03-19T10:00:00.000Z",
+    },
+  };
 }
 
 export function createReviewEnvironment(

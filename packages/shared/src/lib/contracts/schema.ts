@@ -768,10 +768,22 @@ export type SchemaStateFile = {
 };
 
 export function toRawConfigSnapshot(config: ParsedMdcmsConfig): JsonObject {
+  const environments = Object.fromEntries(
+    Object.entries(config.environments)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([name, definition]) => [
+        name,
+        (definition.extends
+          ? { extends: definition.extends }
+          : {}) as JsonObject,
+      ]),
+  ) as JsonObject;
+
   return {
     project: config.project,
     serverUrl: config.serverUrl,
     ...(config.environment ? { environment: config.environment } : {}),
+    environments,
     ...(config.contentDirectories.length > 0
       ? { contentDirectories: config.contentDirectories }
       : {}),

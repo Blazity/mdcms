@@ -245,9 +245,9 @@ export default function AdminLayout({
 
     void envApi
       .list()
-      .then((list) => {
+      .then((result) => {
         if (!cancelled) {
-          setEnvironments(list);
+          setEnvironments(result.data);
         }
       })
       .catch(() => {

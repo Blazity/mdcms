@@ -313,6 +313,23 @@ export const schemaSyncs = pgTable(
   ],
 );
 
+export const projectEnvironmentTopologySnapshots = pgTable(
+  "project_environment_topology_snapshots",
+  {
+    id: uuid().defaultRandom().primaryKey(),
+    project: text().notNull(),
+    configSnapshotHash: text().notNull(),
+    definitions: jsonb().notNull(),
+    syncedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    unique("unique_project_environment_topology_snapshot").on(table.project),
+    index("idx_project_environment_topology_snapshots_project").on(
+      table.project,
+    ),
+  ],
+);
+
 export const schemaRegistryEntries = pgTable(
   "schema_registry_entries",
   {

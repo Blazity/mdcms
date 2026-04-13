@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 
-import type { EnvironmentSummary } from "@mdcms/shared";
+import type {
+  EnvironmentDefinitionsMeta,
+  EnvironmentSummary,
+} from "@mdcms/shared";
 import {
   ArrowRightLeft,
   Clock,
@@ -69,6 +72,7 @@ export type EnvironmentManagementState =
       status: "ready";
       project: string;
       environments: EnvironmentSummary[];
+      definitionsMeta: EnvironmentDefinitionsMeta;
     };
 
 type EnvironmentManagementPageViewProps = {
@@ -91,6 +95,9 @@ type EnvironmentManagementPageViewProps = {
   onSwitchEnvironment?: (environment: string) => void;
   onRetry?: () => void;
 };
+
+const CREATE_SYNC_REQUIRED_MESSAGE =
+  "Environment management requires a successful cms schema sync from the host app repo before new environments can be created.";
 
 function createLoadingState(project: string): EnvironmentManagementState {
   return {
@@ -252,6 +259,9 @@ export function EnvironmentManagementPageView({
   onRetry,
 }: EnvironmentManagementPageViewProps) {
   const canManage = state.status === "ready";
+  const canCreate =
+    state.status === "ready" &&
+    state.definitionsMeta.definitionsStatus === "ready";
 
   return (
     <div className="min-h-screen">
@@ -273,7 +283,11 @@ export function EnvironmentManagementPageView({
                 onOpenChange={onCreateDialogChange}
               >
                 <DialogTrigger asChild>
-                  <Button className="w-full sm:w-auto" type="button">
+                  <Button
+                    className="w-full sm:w-auto"
+                    type="button"
+                    disabled={!canCreate}
+                  >
                     <Plus className="mr-2 h-4 w-4" />
                     New Environment
                   </Button>
@@ -327,6 +341,16 @@ export function EnvironmentManagementPageView({
             className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"
           >
             {actionError}
+          </section>
+        ) : null}
+
+        {state.status === "ready" &&
+        state.definitionsMeta.definitionsStatus === "missing" ? (
+          <section
+            data-mdcms-environments-create-gated
+            className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
+          >
+            {CREATE_SYNC_REQUIRED_MESSAGE}
           </section>
         ) : null}
 
@@ -553,7 +577,7 @@ export default function EnvironmentsPage() {
 
     void environmentApi
       .list()
-      .then((environments) => {
+      .then((result) => {
         if (cancelled) {
           return;
         }
@@ -561,7 +585,8 @@ export default function EnvironmentsPage() {
         setState({
           status: "ready",
           project,
-          environments: sortEnvironments(environments),
+          environments: sortEnvironments(result.data),
+          definitionsMeta: result.meta,
         });
       })
       .catch((error) => {
@@ -598,6 +623,14 @@ export default function EnvironmentsPage() {
   async function handleCreateSubmit() {
     if (!project || !environment) {
       setCreateError("Environment management requires an active project.");
+      return;
+    }
+
+    if (
+      state.status !== "ready" ||
+      state.definitionsMeta.definitionsStatus !== "ready"
+    ) {
+      setCreateError(CREATE_SYNC_REQUIRED_MESSAGE);
       return;
     }
 

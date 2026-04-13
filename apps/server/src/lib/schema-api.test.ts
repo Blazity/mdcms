@@ -10,6 +10,7 @@ import { createDatabaseConnection } from "./db.js";
 import {
   documents,
   environments,
+  projectEnvironmentTopologySnapshots,
   projects,
   rbacGrants,
   schemaRegistryEntries,
@@ -271,6 +272,9 @@ function createSyncPayload(input: {
   return {
     rawConfigSnapshot: {
       project: "marketing-site",
+      environments: {
+        production: {},
+      },
       ...(input.supportedLocales
         ? {
             locales: {
@@ -605,6 +609,24 @@ testWithDatabase(
         Reflect.has(syncRows[0] ?? {}, "extractedComponents"),
         false,
       );
+
+      const topologyRows = await dbConnection.db
+        .select()
+        .from(projectEnvironmentTopologySnapshots)
+        .where(eq(projectEnvironmentTopologySnapshots.project, scope.project));
+
+      assert.equal(topologyRows.length, 1);
+      assert.equal(
+        topologyRows[0]?.configSnapshotHash.startsWith("sha256:"),
+        true,
+      );
+      assert.deepEqual(topologyRows[0]?.definitions, [
+        {
+          name: "production",
+          extends: null,
+          isDefault: true,
+        },
+      ]);
 
       const entryRows = await dbConnection.db
         .select()
