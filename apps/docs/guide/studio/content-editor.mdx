@@ -1,0 +1,131 @@
+---
+title: "Content Editor"
+description: "Creating, editing, and managing documents in the Studio"
+---
+
+## Browsing content
+
+Each content type has a paginated document table at `/admin/content/:type`. The table includes:
+
+| Column | Description |
+| --- | --- |
+| Title / Path | Document title from frontmatter, with the filesystem path below it |
+| Translations | Locale coverage summary (only for localized types, e.g., "2/4 locales") |
+| Status | **Published**, **Draft**, or **Changed** (published with unpublished edits) |
+| Updated | Relative timestamp (e.g., "5 min ago", "Yesterday") |
+| Author | Avatar and initials of the creator |
+
+The table supports:
+
+- **Server-side search** -- Debounced text search across document titles and paths
+- **Status filter** -- All, Published, Draft only, Has changes
+- **Sort order** -- Last updated, Created, Path A-Z, Path Z-A
+- **Pagination** -- Server-side with page navigation controls
+
+Row actions are available via a dropdown menu on each row: Edit, Publish, Unpublish, Duplicate, and Delete (soft-delete to trash).
+
+## Creating a document
+
+<Steps>
+  <Step title="Navigate to the content type">
+    Go to **Content** in the sidebar, then select the type you want to create a document for (e.g., `BlogPost`).
+  </Step>
+  <Step title="Click New Document">
+    Click the **New Document** button in the top-right corner. A dialog appears asking for the document path and, for localized types, the locale.
+  </Step>
+  <Step title="Fill in the path">
+    Enter a path relative to the type's content directory (e.g., `my-first-post.mdx`). For localized types, select the target locale.
+  </Step>
+  <Step title="Edit frontmatter">
+    In the right sidebar under the **Fields** tab, fill in schema-driven frontmatter fields. Required fields are marked with an asterisk.
+  </Step>
+  <Step title="Write the body">
+    Use the TipTap-based MDX editor on the left panel to write your document content. The editor supports standard Markdown formatting and MDX component insertion.
+  </Step>
+  <Step title="Save">
+    Changes auto-save approximately 5 seconds after your last edit, or immediately when the editor loses focus.
+  </Step>
+</Steps>
+
+## Editor layout
+
+The document editor at `/admin/content/:type/:documentId` uses a two-panel layout:
+
+- **Left panel** -- TipTap rich text editor for the document body. Supports Markdown formatting, headings, lists, code blocks, and MDX component insertion.
+- **Right sidebar** -- Tabbed panel with:
+  - **Fields** -- Schema-driven frontmatter form with type-appropriate controls
+  - **Info** -- Read-only document metadata (document ID, translation group ID, path, schema type, content format, locale, status, published version, draft revision, created by, last updated by)
+  - **SEO** -- Coming soon (disabled tab)
+
+When an MDX component node is selected in the editor, the sidebar also shows the MDX props panel below the tabs for editing component properties.
+
+## Frontmatter editing
+
+The Fields tab generates form controls based on your schema field definitions. Each Zod type maps to a specific UI control:
+
+| Schema type | Form control | Notes |
+| --- | --- | --- |
+| `z.string()` | Text input | Supports `.min()` / `.max()` validation |
+| `z.number()` | Number input | |
+| `z.boolean()` | Toggle switch | |
+| `z.enum([...])` | Dropdown select | Options derived from enum values |
+| `z.coerce.date()` | Date picker | Calendar popover with formatted display |
+| `z.array(z.string())` | Tag input | Type and press Enter to add tags; click to remove |
+| `reference("Type")` | Document picker | Select from existing documents of the referenced type |
+
+<Accordion title="What about unsupported types?">
+  Complex or nested Zod types that don't map to a standard control display a "Not editable yet" message in the form. The underlying data is preserved -- it won't be lost if you save the document. This ensures forward compatibility as more field types gain UI support.
+</Accordion>
+
+Required fields show a red asterisk next to their label. Validation errors from Zod constraints (like `min`, `max`, `regex`) are displayed inline below the field.
+
+## MDX components
+
+If your `mdcms.config.ts` registers MDX components, you can insert them directly in the editor.
+
+### Insertion methods
+
+There are two ways to insert a component:
+
+1. **Slash command** -- Type `/` in an empty line to open the component picker. Search by name and select a component.
+2. **Toolbar action** -- Click the **Insert Component** button in the editor toolbar to browse the full component catalog.
+
+Both methods use the same catalog derived from your local config's `components` array.
+
+### Component types
+
+- **Void components** -- Render as self-closing tags (`<Banner />`) with no nested content
+- **Wrapper components** -- Render with opening/closing tags (`<Callout>...</Callout>`) and support nested rich text content inside the node view
+
+### Props editing
+
+When you select an MDX component node in the editor, the sidebar props panel activates. Props editing follows this resolution order:
+
+1. **Custom editor** -- If the component registration includes a `loadPropsEditor`, it loads asynchronously and provides a fully custom editing experience
+2. **Auto-form** -- If no custom editor exists but the component has extracted props metadata, an auto-generated form is shown. For wrapper components, the `children` prop is excluded since it's edited inline.
+3. **Empty** -- Components with no editable props show an empty state
+
+Inline preview renders through the host bridge if your host app provides one. Otherwise, a fallback label with the component name and prop summary is shown.
+
+<Note>
+  The component catalog is sourced from your local `mdcms.config.ts`, not from the server. No backend component sync is required. The server only needs to know about your content schema.
+</Note>
+
+## Auto-save
+
+Draft changes are saved automatically using a debounced strategy:
+
+- Changes trigger a save after approximately **5 seconds** of inactivity
+- Saving also fires immediately when the editor **loses focus** (blur event)
+- The save status is shown in the editor UI:
+  - **Unsaved** -- Changes pending
+  - **Saving** -- Write request in flight
+  - **Saved** -- Draft persisted successfully
+
+Each auto-save increments the `draftRevision` counter on the document. Auto-saves do not create version history entries -- only explicit [publishes](/guide/studio/publishing) do.
+
+The save operation uses `PUT /api/v1/content/:documentId` and includes the active environment's schema hash for conflict detection. If the schema has drifted (e.g., someone ran `mdcms schema sync` with a different schema), the editor switches to read-only mode and shows a schema recovery prompt.
+
+<Warning>
+  Fields that only exist in certain environments (due to schema overlays) are shown with environment badges in the sidebar. For example, a field defined only in your staging environment overlay will display a "staging" badge. Editing these fields in the wrong environment has no effect -- the server validates against the active environment's schema.
+</Warning>

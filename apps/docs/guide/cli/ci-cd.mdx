@@ -1,0 +1,162 @@
+---
+title: "CI/CD Integration"
+description: "Automating schema sync and content deployment in pipelines"
+---
+
+The MDCMS CLI is designed for headless operation in CI/CD pipelines. All commands accept configuration via environment variables, and interactive prompts are automatically skipped in non-TTY environments.
+
+## Environment variables
+
+Set these in your CI provider's secret management:
+
+| Variable | Description |
+| --- | --- |
+| `MDCMS_API_KEY` | API key for authentication (replaces `mdcms login`) |
+| `MDCMS_PROJECT` | Target project slug |
+| `MDCMS_ENVIRONMENT` | Target environment name |
+| `MDCMS_SERVER_URL` | MDCMS server URL (overrides `mdcms.config.ts`) |
+
+<Tip>
+  Create a dedicated API key with minimal scopes for CI use. Schema sync requires `schema:read` and `schema:write`. Content push requires `content:write` and `content:read:draft`.
+</Tip>
+
+## GitHub Actions: Schema sync
+
+Automatically sync the schema to the server whenever `mdcms.config.ts` changes on the main branch.
+
+```yaml .github/workflows/mdcms-schema-sync.yml
+name: MDCMS Schema Sync
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mdcms.config.ts"
+
+jobs:
+  schema-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Sync schema
+        run: bunx mdcms schema sync
+        env:
+          MDCMS_API_KEY: ${{ secrets.MDCMS_API_KEY }}
+          MDCMS_PROJECT: ${{ vars.MDCMS_PROJECT }}
+          MDCMS_ENVIRONMENT: ${{ vars.MDCMS_ENVIRONMENT }}
+          MDCMS_SERVER_URL: ${{ vars.MDCMS_SERVER_URL }}
+```
+
+## GitHub Actions: Content push
+
+Push content changes to the server on every merge to main. The `--force` flag skips interactive prompts.
+
+```yaml .github/workflows/mdcms-content-push.yml
+name: MDCMS Content Push
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "content/**"
+
+jobs:
+  content-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Sync schema
+        run: bunx mdcms schema sync
+        env:
+          MDCMS_API_KEY: ${{ secrets.MDCMS_API_KEY }}
+          MDCMS_PROJECT: ${{ vars.MDCMS_PROJECT }}
+          MDCMS_ENVIRONMENT: ${{ vars.MDCMS_ENVIRONMENT }}
+          MDCMS_SERVER_URL: ${{ vars.MDCMS_SERVER_URL }}
+
+      - name: Push content
+        run: bunx mdcms push --force
+        env:
+          MDCMS_API_KEY: ${{ secrets.MDCMS_API_KEY }}
+          MDCMS_PROJECT: ${{ vars.MDCMS_PROJECT }}
+          MDCMS_ENVIRONMENT: ${{ vars.MDCMS_ENVIRONMENT }}
+          MDCMS_SERVER_URL: ${{ vars.MDCMS_SERVER_URL }}
+```
+
+<Note>
+  Schema sync runs before content push to ensure the schema hash is available. Push requires a valid schema hash from a prior sync.
+</Note>
+
+## Status check
+
+Use `mdcms status` as a CI gate. The command exits with code `1` when drift is detected, making it suitable for blocking deployments.
+
+```yaml
+- name: Check sync status
+  run: bunx mdcms status
+  env:
+    MDCMS_API_KEY: ${{ secrets.MDCMS_API_KEY }}
+    MDCMS_PROJECT: ${{ vars.MDCMS_PROJECT }}
+    MDCMS_ENVIRONMENT: ${{ vars.MDCMS_ENVIRONMENT }}
+    MDCMS_SERVER_URL: ${{ vars.MDCMS_SERVER_URL }}
+```
+
+This step fails the workflow if local content or schema is out of sync with the server.
+
+## Schema drift detection
+
+Prevent deployments when the local schema definition has diverged from the server. This is useful as a pull request check to ensure schema changes are synced before merging.
+
+```yaml .github/workflows/mdcms-drift-check.yml
+name: MDCMS Drift Check
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  drift-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check for drift
+        run: bunx mdcms status
+        env:
+          MDCMS_API_KEY: ${{ secrets.MDCMS_API_KEY }}
+          MDCMS_PROJECT: ${{ vars.MDCMS_PROJECT }}
+          MDCMS_ENVIRONMENT: ${{ vars.MDCMS_ENVIRONMENT }}
+          MDCMS_SERVER_URL: ${{ vars.MDCMS_SERVER_URL }}
+```
+
+<Warning>
+  If `mdcms status` reports drift on a pull request, the author should run `mdcms schema sync` and `mdcms push` locally before merging, or include the schema sync step in the merge workflow.
+</Warning>

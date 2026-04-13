@@ -1,0 +1,149 @@
+---
+title: "Dashboard"
+description: "Studio dashboard overview, navigation, and embedding setup"
+---
+
+## Embedding Studio
+
+MDCMS Studio is an embeddable React component from the `@mdcms/studio` package. You mount it inside a Next.js catch-all route so it owns all `/admin/*` paths.
+
+Studio is a client component. The recommended setup splits server and client concerns:
+
+```tsx
+// app/admin/[[...path]]/page.tsx
+import { createStudioEmbedConfig } from "@mdcms/studio/runtime";
+import config from "../../../mdcms.config";
+import { AdminStudioClient } from "./admin-studio-client";
+
+export default async function AdminPage() {
+  return <AdminStudioClient config={createStudioEmbedConfig(config)} />;
+}
+```
+
+```tsx
+// app/admin/[[...path]]/admin-studio-client.tsx
+"use client";
+
+import { Studio, type MdcmsConfig } from "@mdcms/studio";
+
+export function AdminStudioClient({ config }: { config: MdcmsConfig }) {
+  return <Studio config={config} basePath="/admin" />;
+}
+```
+
+`createStudioEmbedConfig` strips client-only MDX loader callbacks so the config is safe to pass through the server-to-client boundary. If your config includes MDX component registrations with runtime loaders (`load`, `loadPropsEditor`), keep everything in the client component instead.
+
+<Note>
+  `basePath` is required because the remote runtime cannot infer its subtree root from deep links. Set it to whatever path prefix your catch-all route uses.
+</Note>
+
+### Studio props
+
+| Prop | Type | Description |
+| --- | --- | --- |
+| `config` | `MdcmsConfig` | Project, environment, server URL, and optional component registrations |
+| `basePath` | `string` | The URL prefix where Studio is mounted (e.g., `/admin`) |
+| `auth` | `{ mode: "cookie" } \| { mode: "token"; token: string }` | Authentication strategy (defaults to cookie) |
+| `hostBridge` | `HostBridgeV1` | Optional bridge for MDX preview rendering from the host app |
+| `fetcher` | `typeof fetch` | Custom fetch implementation |
+
+## Dashboard features
+
+The dashboard lives at `/admin` and provides an at-a-glance overview of your content.
+
+### Stats cards
+
+Three summary cards are shown at the top of the dashboard:
+
+- **Documents** -- Total document count across all content types, with a subtitle showing how many content types exist
+- **Published** -- Number of published documents and their percentage of the total
+- **Drafts** -- Number of unpublished documents
+
+### Content type summary
+
+Below the stats, a **Content** card lists every synced content type. Each row shows:
+
+- Type name
+- A **Localized** badge for types with `localized: true`
+- Total document count
+- A progress bar showing the published/draft ratio
+
+Content type cards are gated by read permissions. If your session lacks access to a type, it does not appear.
+
+### Recently updated documents
+
+A **Recently updated** card shows the most recently modified documents across all types. Each entry links directly to the document editor and displays the document title (or path), type, draft status, and relative timestamp.
+
+### Quick actions
+
+If you have create permissions, a **New Document** button appears above the content cards.
+
+## Navigation
+
+Studio uses a fixed sidebar for navigation. The sidebar contains these items:
+
+| Route | Label | Visibility |
+| --- | --- | --- |
+| `/admin` | Dashboard | Always |
+| `/admin/content` | Content | Always |
+| `/admin/environments` | Environments | Admin/owner only |
+| `/admin/media` | Media | Always |
+| `/admin/schema` | Schema | Users with schema read permission |
+| `/admin/users` | Users | Users with user management permission |
+| `/admin/settings` | Settings | Users with settings management permission |
+| `/admin/workflows` | Workflows | Always |
+| `/admin/api` | API | Always |
+| `/admin/trash` | Trash | Always |
+
+The sidebar is collapsible. In collapsed mode, only icons are shown with tooltips on hover.
+
+Content browsing is schema-first: navigate to **Content**, then select a content type to see its documents. The content list is organized by type rather than folder path.
+
+## Environment awareness
+
+Studio is always scoped to a single environment. The current project and environment are visible in the Settings > General panel and are determined by the `config` you pass to the `<Studio />` component.
+
+Fields that exist only in certain environments (due to schema overlays defined in `environments` config) are displayed with environment-specific badges in the document editor sidebar, such as "staging only".
+
+## Bootstrap
+
+<Note>
+  On load, Studio fetches a bootstrap manifest from `GET /api/v1/studio/bootstrap` on the MDCMS server. This manifest identifies the active runtime build, its integrity hash, and compatibility bounds. If the server is unreachable, Studio shows an error screen with the server URL, error details, and a **Retry** button.
+</Note>
+
+The bootstrap process validates:
+
+1. Manifest shape and compatibility version
+2. Runtime asset integrity (SHA-256 hash match)
+3. Signature and key ID for the served build
+
+If validation rejects the served build, Studio retries bootstrap once with `rejectedBuildId` and `rejectionReason` so the server can fall back to its `lastKnownGood` build.
+
+## Authentication modes
+
+Studio supports two authentication modes, set via the `auth` prop:
+
+<Tabs>
+  <Tab title="Cookie (default)">
+    The default mode. Studio sends requests with `credentials: "include"` and expects the MDCMS server to set session cookies. CSRF protection is handled via the `x-mdcms-csrf-token` header, which Studio obtains automatically from the session bootstrap.
+
+    ```tsx
+    <Studio config={config} basePath="/admin" />
+    // or explicitly:
+    <Studio config={config} basePath="/admin" auth={{ mode: "cookie" }} />
+    ```
+  </Tab>
+  <Tab title="Token">
+    For headless or non-browser contexts, pass a Bearer API key directly. Studio sends it as an `Authorization: Bearer <token>` header on every request.
+
+    ```tsx
+    <Studio
+      config={config}
+      basePath="/admin"
+      auth={{ mode: "token", token: process.env.MDCMS_API_KEY! }}
+    />
+    ```
+
+    API keys are created in **Settings > API Keys** and use the `mdcms_key_` prefix.
+  </Tab>
+</Tabs>

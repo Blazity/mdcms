@@ -1,0 +1,91 @@
+---
+title: "MDCMS"
+description: "Open-source headless CMS for Markdown and MDX content"
+---
+
+MDCMS is an open-source, headless CMS for teams managing structured Markdown and MDX content. Unlike file-based CMS tools that commit content directly to git, MDCMS treats a PostgreSQL database as the source of truth. Content files are synced between the database and your local filesystem via CLI commands (`mdcms push` / `mdcms pull`), keeping your repository clean and your content workflow independent of your deployment pipeline.
+
+## Why MDCMS
+
+<CardGroup cols={3}>
+  <Card title="Schema-First" icon="file-code" href="/guide/concepts">
+    Content types defined in TypeScript with Zod. The schema drives form generation, validation, and API behavior automatically.
+  </Card>
+  <Card title="Visual Studio" icon="layout-dashboard" href="/guide/studio/dashboard">
+    Embeddable React component with a TipTap-based MDX editor, frontmatter editing, and full version history.
+  </Card>
+  <Card title="CLI-Powered Sync" icon="terminal" href="/guide/cli/installation">
+    `mdcms push` and `mdcms pull` sync between your local filesystem and the CMS. Designed for CI/CD pipelines.
+  </Card>
+  <Card title="Multi-Environment" icon="git-branch" href="/guide/concepts">
+    Isolated content per environment with schema overlays. Clone and promote content between environments.
+  </Card>
+  <Card title="Localization" icon="globe" href="/guide/studio/localization">
+    Built-in i18n with translation groups and per-type localization control.
+  </Card>
+  <Card title="Extensible" icon="puzzle" href="/architecture/module-system">
+    Module system for custom server actions, CLI commands, and Studio UI extensions.
+  </Card>
+</CardGroup>
+
+## Get Started
+
+<CardGroup cols={3}>
+  <Card title="I want to use MDCMS" icon="rocket" href="/guide/concepts">
+    Learn the core concepts, set up the server, define your schema, and start managing content.
+  </Card>
+  <Card title="I want to integrate the API" icon="plug" href="/api-reference/overview">
+    Explore the REST API, authentication, and the TypeScript SDK for querying content.
+  </Card>
+  <Card title="I want to contribute" icon="code" href="/development/setup">
+    Clone the monorepo, run the dev environment, and start contributing to MDCMS.
+  </Card>
+</CardGroup>
+
+## Quick Start
+
+Define your content types in `mdcms.config.ts` at the root of your project:
+
+```typescript mdcms.config.ts
+import { defineConfig, defineType, reference } from "@mdcms/cli";
+import { z } from "zod";
+
+const Author = defineType("Author", {
+  directory: "content/authors",
+  fields: {
+    name: z.string().min(1),
+  },
+});
+
+const BlogPost = defineType("BlogPost", {
+  directory: "content/blog",
+  localized: true,
+  fields: {
+    title: z.string().min(1).max(200),
+    slug: z.string().regex(/^[a-z0-9-]+$/),
+    author: reference("Author"),
+    publishedAt: z.coerce.date(),
+    tags: z.array(z.string()).default([]),
+  },
+});
+
+export default defineConfig({
+  project: "marketing-site",
+  serverUrl: "http://localhost:4000",
+  contentDirectories: ["content"],
+  types: [Author, BlogPost],
+});
+```
+
+Then sync your schema and start editing:
+
+```bash
+# Sync schema to the server
+mdcms schema sync
+
+# Pull existing content to your filesystem
+mdcms pull
+
+# Push local content changes to the server
+mdcms push
+```

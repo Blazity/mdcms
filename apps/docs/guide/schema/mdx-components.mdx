@@ -1,0 +1,273 @@
+---
+title: "MDX Components"
+description: "Registering custom components for the Studio editor"
+---
+
+MDX components let you define custom React components that content authors can insert directly in the Studio editor. Each component gets a visual prop editor generated from its TypeScript types, so authors fill in structured data through form controls instead of writing raw JSX.
+
+## Registration
+
+Register components in the `components` array of your config. Each entry needs a `name`, an `importPath` for Studio to resolve the component, and optionally a `description` and `propHints`:
+
+```typescript mdcms.config.ts
+import { defineConfig } from "@mdcms/cli";
+
+export default defineConfig({
+  project: "marketing-site",
+  serverUrl: "http://localhost:4000",
+  contentDirectories: ["content"],
+  types: [/* ... */],
+  components: [
+    {
+      name: "Callout",
+      importPath: "./components/mdx/Callout",
+      description: "A styled callout box for tips, warnings, or notes",
+      load: () =>
+        import("./components/mdx/Callout").then((m) => m.Callout),
+    },
+    {
+      name: "VideoEmbed",
+      importPath: "./components/mdx/VideoEmbed",
+      description: "Embed a video player",
+      load: () =>
+        import("./components/mdx/VideoEmbed").then((m) => m.VideoEmbed),
+      propHints: {
+        url: { format: "url" },
+      },
+    },
+  ],
+});
+```
+
+### Registration options
+
+| Option | Type | Required | Description |
+|---|---|---|---|
+| `name` | `string` | Yes | Component name. Must match the exported React component name. |
+| `importPath` | `string` | Yes | Module path for Studio to resolve the component at runtime. |
+| `description` | `string` | No | Shown in the component catalog to help authors pick the right component. |
+| `load` | `() => Promise<unknown>` | No | Dynamic import function for Studio to load the component at runtime. |
+| `propHints` | `Record<string, PropHint>` | No | Override auto-detected prop types with specific widgets. |
+| `propsEditor` | `string` | No | Module path to a custom props editor component, for complex editing UIs. |
+| `loadPropsEditor` | `() => Promise<unknown>` | No | Dynamic import for the custom props editor. |
+
+## Prop extraction
+
+MDCMS uses TypeScript's compiler API to extract prop types from your component source files. Each prop is mapped to a form control in Studio based on its type:
+
+| TypeScript type | Extracted type | Studio control |
+|---|---|---|
+| `string` | `string` | Text input |
+| `number` | `number` | Number input |
+| `boolean` | `boolean` | Toggle switch |
+| `Date` | `date` | Date picker |
+| `"a" \| "b" \| "c"` (string literal union) | `enum` | Dropdown select |
+| `string[]` | `array` (items: `string`) | Tag input |
+| `number[]` | `array` (items: `number`) | Repeatable number inputs |
+| `ReactNode` / `children` | `rich-text` | Nested rich-text editor |
+| JSON-serializable object (with `json` hint) | `json` | JSON editor |
+
+<Note>
+  Props with function types, ref types, or other non-serializable types are automatically excluded from the form. Only serializable props appear in the Studio editor.
+</Note>
+
+### Example component
+
+```tsx components/mdx/Callout.tsx
+type CalloutProps = {
+  type: "info" | "warning" | "error";
+  title: string;
+  children: React.ReactNode;
+};
+
+export function Callout({ type, title, children }: CalloutProps) {
+  return (
+    <div className={`callout callout-${type}`}>
+      <strong>{title}</strong>
+      <div>{children}</div>
+    </div>
+  );
+}
+```
+
+From this component, MDCMS extracts:
+- `type` as `enum` with values `["info", "warning", "error"]` (dropdown)
+- `title` as `string` (text input)
+- `children` as `rich-text` (nested content editor)
+
+## Prop hints
+
+Prop hints override the auto-detected form control for a given prop. Use them when the default control doesn't match the intended input experience.
+
+### Available hints
+
+<Accordion title="format: url">
+  Renders a text input with URL validation. Only valid for `string` props.
+
+  ```typescript
+  propHints: {
+    imageUrl: { format: "url" },
+  }
+  ```
+</Accordion>
+
+<Accordion title="widget: color-picker">
+  Renders a color picker input. Only valid for `string` props.
+
+  ```typescript
+  propHints: {
+    backgroundColor: { widget: "color-picker" },
+  }
+  ```
+</Accordion>
+
+<Accordion title="widget: textarea">
+  Renders a multi-line textarea instead of a single-line text input. Only valid for `string` props.
+
+  ```typescript
+  propHints: {
+    description: { widget: "textarea" },
+  }
+  ```
+</Accordion>
+
+<Accordion title="widget: slider">
+  Renders a range slider. Only valid for `number` props. Requires `min` and `max`; `step` is optional.
+
+  ```typescript
+  propHints: {
+    opacity: { widget: "slider", min: 0, max: 100, step: 5 },
+  }
+  ```
+</Accordion>
+
+<Accordion title="widget: image">
+  Renders an image picker/uploader. Only valid for `string` props (stores the image URL).
+
+  ```typescript
+  propHints: {
+    thumbnail: { widget: "image" },
+  }
+  ```
+</Accordion>
+
+<Accordion title="widget: select">
+  Renders a dropdown with explicit options. Valid for `string`, `number`, `boolean`, or `enum` props. Options can be simple values or `{ label, value }` objects.
+
+  ```typescript
+  propHints: {
+    size: {
+      widget: "select",
+      options: [
+        { label: "Small", value: "sm" },
+        { label: "Medium", value: "md" },
+        { label: "Large", value: "lg" },
+      ],
+    },
+  }
+  ```
+</Accordion>
+
+<Accordion title="widget: hidden">
+  Hides the prop from the Studio form entirely. Useful for internal props that should not be edited by content authors.
+
+  ```typescript
+  propHints: {
+    internalId: { widget: "hidden" },
+  }
+  ```
+</Accordion>
+
+<Accordion title="widget: json">
+  Renders a JSON editor for complex structured data. Only valid for props whose TypeScript type is JSON-serializable.
+
+  ```typescript
+  propHints: {
+    config: { widget: "json" },
+  }
+  ```
+</Accordion>
+
+<Warning>
+  Prop hints must be compatible with the extracted prop type. For example, applying `widget: "slider"` to a `string` prop will cause a config validation error. The compatibility rules are enforced at build time.
+</Warning>
+
+## Inserting components in Studio
+
+Content authors can insert registered components in two ways:
+
+<Steps>
+  <Step title="Slash command">
+    Type `/` in the editor to open the command palette. The component catalog shows all registered components with their names and descriptions.
+  </Step>
+  <Step title="Toolbar">
+    Use the editor toolbar to browse and insert components from the catalog.
+  </Step>
+  <Step title="Configure props">
+    After insertion, the prop editor panel appears. Fill in the form controls to configure the component.
+  </Step>
+</Steps>
+
+## Output format
+
+Inserted components are written as standard MDX syntax in the document body:
+
+```mdx
+# My Blog Post
+
+Some introductory text.
+
+<Callout type="info" title="Did you know?">
+  MDCMS supports custom MDX components with visual editing.
+</Callout>
+
+<VideoEmbed url="https://youtube.com/watch?v=example" />
+```
+
+Components without children render as self-closing tags. Components with `children` (rich-text) props render as wrapper tags with nested content.
+
+## Wrapper components
+
+If your component accepts a `children` prop typed as `ReactNode`, it becomes a **wrapper component**. Studio renders a content hole inside the component block where authors can write rich text, insert other components, or add any editor content.
+
+```tsx components/mdx/Callout.tsx
+type CalloutProps = {
+  type: "info" | "warning" | "error";
+  title: string;
+  children: React.ReactNode;  // enables nested rich-text editing
+};
+
+export function Callout({ type, title, children }: CalloutProps) {
+  return (
+    <div className={`callout callout-${type}`}>
+      <strong>{title}</strong>
+      <div>{children}</div>
+    </div>
+  );
+}
+```
+
+Components without a `children` prop are **void components** — they render as self-closing tags and don't accept nested content.
+
+## Custom props editors
+
+For components with complex prop structures that don't map well to auto-generated forms, you can provide a fully custom props editor:
+
+```typescript
+{
+  name: "PricingTable",
+  importPath: "./components/mdx/PricingTable",
+  description: "Pricing grid with configurable tiers",
+  load: () =>
+    import("./components/mdx/PricingTable").then((m) => m.PricingTable),
+  propsEditor: "./components/mdx/PricingTable.editor",
+  loadPropsEditor: () =>
+    import("./components/mdx/PricingTable.editor").then((m) => m.default),
+}
+```
+
+The custom props editor receives the current prop values and a callback to update them. It replaces the auto-generated form entirely for that component.
+
+<Tip>
+  Use custom props editors sparingly. The auto-generated form with prop hints covers most cases. Reserve custom editors for components like data tables, chart builders, or other interactive configuration UIs.
+</Tip>

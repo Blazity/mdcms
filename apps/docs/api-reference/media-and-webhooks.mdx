@@ -1,0 +1,401 @@
+---
+title: "Media & Webhooks"
+description: "File upload, media management, and webhook configuration endpoints"
+---
+
+## Media API
+
+The Media API handles file uploads and media asset management. Media files are stored in S3-compatible object storage and are reusable across all environments within a project.
+
+<Note>
+  The Media API is a post-MVP feature. The endpoints are defined and will be available in an upcoming release.
+</Note>
+
+### Upload Media
+
+<ParamField method="POST" path="/api/v1/media">
+  Upload a file. The request must use `multipart/form-data` encoding.
+</ParamField>
+
+**Scope required:** `media:upload`
+
+**Content-Type:** `multipart/form-data`
+
+<ParamField body="file" type="file" required>
+  The file to upload. Maximum size is determined by server configuration.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl -X POST "https://cms.example.com/api/v1/media" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "Authorization: Bearer mdcms_key_live_abc123" \
+  -F "file=@/path/to/image.png"
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "id": "med_550e8400-e29b-41d4-a716-446655440000",
+    "filename": "image.png",
+    "mimeType": "image/png",
+    "sizeBytes": 245760,
+    "url": "https://cdn.example.com/marketing-site/media/550e8400-e29b-41d4-a716-446655440000/image.png",
+    "uploadedBy": "880e8400-e29b-41d4-a716-446655440002",
+    "uploadedAt": "2026-01-20T10:00:00.000Z"
+  }
+}
+```
+
+### Delete Media
+
+<ParamField method="DELETE" path="/api/v1/media/{id}">
+  Delete a media file. This removes the file from storage and invalidates all URLs.
+</ParamField>
+
+**Scope required:** `media:delete`
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  The media asset ID.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl -X DELETE "https://cms.example.com/api/v1/media/med_550e8400-e29b-41d4-a716-446655440000" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "X-MDCMS-CSRF-Token: csrf_token_value" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "success": true,
+    "id": "med_550e8400-e29b-41d4-a716-446655440000",
+    "deletedAt": "2026-01-21T10:00:00.000Z"
+  }
+}
+```
+
+<Warning>
+  Media deletion is permanent and cannot be undone. Ensure no documents reference the file before deleting.
+</Warning>
+
+---
+
+## Webhooks API
+
+Webhooks let you receive real-time HTTP notifications when content changes occur in your project. Configure webhook endpoints to trigger builds, invalidate caches, or sync data with external systems.
+
+<Note>
+  The Webhooks API is a post-MVP feature. The endpoints are defined and will be available in an upcoming release.
+</Note>
+
+### List Webhooks
+
+<ParamField method="GET" path="/api/v1/webhooks">
+  Returns all webhook configurations for the current project.
+</ParamField>
+
+**Scope required:** `webhooks:read`
+
+**Example request:**
+
+```bash
+curl "https://cms.example.com/api/v1/webhooks" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+**Response:**
+
+```json
+{
+  "data": [
+    {
+      "id": "wh_550e8400-e29b-41d4-a716-446655440000",
+      "url": "https://api.example.com/webhooks/mdcms",
+      "events": ["content.published", "content.unpublished"],
+      "active": true,
+      "createdAt": "2026-01-10T12:00:00.000Z",
+      "updatedAt": "2026-01-10T12:00:00.000Z"
+    },
+    {
+      "id": "wh_660e8400-e29b-41d4-a716-446655440001",
+      "url": "https://deploy.example.com/trigger",
+      "events": ["content.published"],
+      "active": true,
+      "createdAt": "2026-01-12T08:00:00.000Z",
+      "updatedAt": "2026-01-12T08:00:00.000Z"
+    }
+  ]
+}
+```
+
+### Create Webhook
+
+<ParamField method="POST" path="/api/v1/webhooks">
+  Register a new webhook endpoint.
+</ParamField>
+
+**Scope required:** `webhooks:write`
+
+<ParamField body="url" type="string" required>
+  The HTTPS URL to receive webhook payloads. Must use HTTPS.
+</ParamField>
+
+<ParamField body="events" type="string[]" required>
+  List of event types to subscribe to. See [Event Types](#event-types) below.
+</ParamField>
+
+<ParamField body="secret" type="string" required>
+  Shared secret for HMAC signature verification. Must be at least 32 characters.
+</ParamField>
+
+<ParamField body="active" type="boolean">
+  Whether the webhook is active. Defaults to `true`.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl -X POST "https://cms.example.com/api/v1/webhooks" \
+  -H "Content-Type: application/json" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "X-MDCMS-CSRF-Token: csrf_token_value" \
+  -H "Authorization: Bearer mdcms_key_live_abc123" \
+  -d '{
+    "url": "https://api.example.com/webhooks/mdcms",
+    "events": ["content.published", "content.unpublished", "content.deleted"],
+    "secret": "whsec_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+    "active": true
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "id": "wh_770e8400-e29b-41d4-a716-446655440002",
+    "url": "https://api.example.com/webhooks/mdcms",
+    "events": ["content.published", "content.unpublished", "content.deleted"],
+    "active": true,
+    "createdAt": "2026-01-20T10:00:00.000Z",
+    "updatedAt": "2026-01-20T10:00:00.000Z"
+  }
+}
+```
+
+### Update Webhook
+
+<ParamField method="PUT" path="/api/v1/webhooks/{id}">
+  Update an existing webhook configuration.
+</ParamField>
+
+**Scope required:** `webhooks:write`
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  The webhook ID.
+</ParamField>
+
+<ParamField body="url" type="string">
+  Updated HTTPS URL.
+</ParamField>
+
+<ParamField body="events" type="string[]">
+  Updated event subscriptions.
+</ParamField>
+
+<ParamField body="secret" type="string">
+  Updated shared secret.
+</ParamField>
+
+<ParamField body="active" type="boolean">
+  Enable or disable the webhook.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl -X PUT "https://cms.example.com/api/v1/webhooks/wh_770e8400-e29b-41d4-a716-446655440002" \
+  -H "Content-Type: application/json" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "X-MDCMS-CSRF-Token: csrf_token_value" \
+  -H "Authorization: Bearer mdcms_key_live_abc123" \
+  -d '{
+    "events": ["content.published", "content.unpublished", "content.deleted", "content.created"],
+    "active": true
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "id": "wh_770e8400-e29b-41d4-a716-446655440002",
+    "url": "https://api.example.com/webhooks/mdcms",
+    "events": ["content.published", "content.unpublished", "content.deleted", "content.created"],
+    "active": true,
+    "createdAt": "2026-01-20T10:00:00.000Z",
+    "updatedAt": "2026-01-20T11:00:00.000Z"
+  }
+}
+```
+
+### Delete Webhook
+
+<ParamField method="DELETE" path="/api/v1/webhooks/{id}">
+  Remove a webhook configuration. Pending deliveries are cancelled.
+</ParamField>
+
+**Scope required:** `webhooks:write`
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  The webhook ID.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl -X DELETE "https://cms.example.com/api/v1/webhooks/wh_770e8400-e29b-41d4-a716-446655440002" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "X-MDCMS-CSRF-Token: csrf_token_value" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "success": true,
+    "id": "wh_770e8400-e29b-41d4-a716-446655440002",
+    "deletedAt": "2026-01-21T10:00:00.000Z"
+  }
+}
+```
+
+---
+
+### Event Types
+
+| Event | Trigger |
+|-------|---------|
+| `content.created` | A new document is created. |
+| `content.updated` | A document's draft is updated (frontmatter or body change). |
+| `content.published` | A document is published, creating a new version. |
+| `content.unpublished` | A published document is unpublished. |
+| `content.deleted` | A document is soft-deleted. |
+| `content.restored` | A soft-deleted document is restored. |
+| `media.uploaded` | A media file is uploaded. |
+
+### Webhook Payload
+
+All webhook deliveries use the following envelope:
+
+```json
+{
+  "event": "content.published",
+  "timestamp": "2026-01-20T12:00:00.000Z",
+  "project": "marketing-site",
+  "environment": "production",
+  "data": {
+    "documentId": "550e8400-e29b-41d4-a716-446655440000",
+    "type": "BlogPost",
+    "path": "content/blog/hello-world",
+    "locale": "en",
+    "version": 4
+  }
+}
+```
+
+### Signature Verification
+
+Every webhook delivery includes an `X-MDCMS-Signature` header for payload verification:
+
+```
+X-MDCMS-Signature: t=1705747200,v1=5257a869e7ecebeda32affa62cdca3fa51cad7e77a0e56ff536d0ce8e108d8bd
+```
+
+The signature is an HMAC-SHA256 digest computed over the concatenation of the timestamp and the raw request body, using the webhook's `secret` as the key.
+
+**Verification algorithm:**
+
+1. Extract the `t` (timestamp) and `v1` (signature) values from the header.
+2. Construct the signed payload: `{timestamp}.{raw_body}`.
+3. Compute `HMAC-SHA256(secret, signed_payload)`.
+4. Compare the computed digest with the `v1` value (use constant-time comparison).
+5. Optionally, reject payloads where the timestamp is more than 5 minutes old to prevent replay attacks.
+
+**Verification example (Node.js):**
+
+```typescript
+import { createHmac, timingSafeEqual } from "crypto";
+
+function verifyWebhookSignature(
+  rawBody: string,
+  signatureHeader: string,
+  secret: string,
+  toleranceSeconds = 300
+): boolean {
+  const parts = Object.fromEntries(
+    signatureHeader.split(",").map((p) => {
+      const [key, value] = p.split("=");
+      return [key, value];
+    })
+  );
+
+  const timestamp = parts.t;
+  const signature = parts.v1;
+
+  if (!timestamp || !signature) {
+    return false;
+  }
+
+  // Check timestamp tolerance
+  const age = Math.floor(Date.now() / 1000) - parseInt(timestamp, 10);
+  if (age > toleranceSeconds) {
+    return false;
+  }
+
+  // Compute expected signature
+  const signedPayload = `${timestamp}.${rawBody}`;
+  const expected = createHmac("sha256", secret)
+    .update(signedPayload)
+    .digest("hex");
+
+  // Constant-time comparison
+  return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+}
+```
+
+### Delivery Behavior
+
+- **Async delivery** -- Webhooks are dispatched asynchronously and do not block the originating API request.
+- **Retries** -- Failed deliveries (non-2xx responses or network errors) are retried up to 3 times with exponential backoff (1 minute, 5 minutes, 30 minutes).
+- **HTTPS only** -- Webhook URLs must use HTTPS. HTTP URLs are rejected at configuration time.
+- **Timeout** -- Each delivery attempt has a 10-second timeout. If the endpoint does not respond within 10 seconds, the attempt is marked as failed.
+
+<Tip>
+  Return a `200` status code as quickly as possible from your webhook endpoint. Perform any heavy processing asynchronously to avoid timeouts.
+</Tip>

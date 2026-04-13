@@ -1,0 +1,167 @@
+---
+title: "API Overview"
+description: "Base URL, headers, response format, and pagination"
+---
+
+The MDCMS REST API provides programmatic access to all content management operations. This page covers the fundamentals you need to make your first request.
+
+## Base URL
+
+All API endpoints are prefixed with:
+
+```
+/api/v1
+```
+
+For a server running at `https://cms.example.com`, the full base URL is `https://cms.example.com/api/v1`.
+
+## Required Headers
+
+Every request to the MDCMS API must include the following headers:
+
+<ParamField header="X-MDCMS-Project" type="string" required>
+  The project slug (e.g., `marketing-site`). Identifies which project the request targets.
+</ParamField>
+
+<ParamField header="X-MDCMS-Environment" type="string" required>
+  The environment name (e.g., `production`, `staging`). Determines which content space the request operates against.
+</ParamField>
+
+<ParamField header="Authorization" type="string" required>
+  Authentication credential. Either a Bearer API key (`Bearer mdcms_key_<key>`) or a session cookie from a browser login.
+</ParamField>
+
+<ParamField header="X-MDCMS-CSRF-Token" type="string">
+  CSRF protection token. Required for all mutation requests (POST, PUT, DELETE) when authenticating via session cookie. Not required for API key authentication.
+</ParamField>
+
+<ParamField header="X-MDCMS-Schema-Hash" type="string">
+  Schema hash returned by `mdcms schema sync`. Required for content write operations (create, update) to ensure the client's schema is in sync with the server.
+</ParamField>
+
+<ParamField header="X-MDCMS-Locale" type="string">
+  Locale override (BCP 47 tag, e.g., `en`, `fr`, `ja`). When set, the server uses this locale instead of the default for the project.
+</ParamField>
+
+<ParamField header="Content-Type" type="string">
+  Must be `application/json` for all requests with a JSON body.
+</ParamField>
+
+## Response Envelopes
+
+All API responses follow one of three envelope formats.
+
+### Single Resource
+
+Returned by endpoints that fetch or mutate a single entity:
+
+```json
+{
+  "data": {
+    "documentId": "550e8400-e29b-41d4-a716-446655440000",
+    "type": "BlogPost",
+    "path": "content/blog/hello-world",
+    "locale": "en",
+    "format": "mdx",
+    "frontmatter": {
+      "title": "Hello World",
+      "slug": "hello-world",
+      "publishedAt": "2026-01-15T00:00:00.000Z"
+    },
+    "body": "Welcome to our blog.",
+    "version": 3,
+    "publishedVersion": 2,
+    "draftRevision": 5,
+    "createdAt": "2026-01-10T12:00:00.000Z",
+    "updatedAt": "2026-01-15T09:30:00.000Z"
+  }
+}
+```
+
+### Paginated List
+
+Returned by list endpoints:
+
+```json
+{
+  "data": [
+    {
+      "documentId": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "BlogPost",
+      "path": "content/blog/hello-world",
+      "frontmatter": {
+        "title": "Hello World",
+        "slug": "hello-world"
+      },
+      "version": 3,
+      "createdAt": "2026-01-10T12:00:00.000Z",
+      "updatedAt": "2026-01-15T09:30:00.000Z"
+    }
+  ],
+  "pagination": {
+    "total": 42,
+    "limit": 20,
+    "offset": 0,
+    "hasMore": true
+  }
+}
+```
+
+### Error
+
+Returned when a request fails:
+
+```json
+{
+  "error": {
+    "status": "error",
+    "code": "NOT_FOUND",
+    "message": "Document not found",
+    "statusCode": 404,
+    "details": {},
+    "requestId": "req_abc123def456",
+    "timestamp": "2026-01-15T09:30:00.000Z"
+  }
+}
+```
+
+See the [Error Handling](/api-reference/errors) page for the full list of error codes.
+
+## Pagination
+
+List endpoints accept pagination and sorting parameters:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | integer | `20` | Number of results per page. Maximum `100`. |
+| `offset` | integer | `0` | Number of results to skip. |
+| `sort` | string | `createdAt` | Field to sort by. Accepted values: `createdAt`, `updatedAt`, `path`. |
+| `order` | string | `desc` | Sort direction. Accepted values: `asc`, `desc`. |
+
+Example request:
+
+```bash
+curl "https://cms.example.com/api/v1/content?type=BlogPost&limit=10&offset=20&sort=updatedAt&order=desc" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+The response includes a `pagination` object so you can iterate through pages:
+
+```json
+{
+  "pagination": {
+    "total": 42,
+    "limit": 10,
+    "offset": 20,
+    "hasMore": true
+  }
+}
+```
+
+When `hasMore` is `true`, increment `offset` by `limit` to fetch the next page.
+
+<Tip>
+  Use the [`@mdcms/sdk`](/api-reference/sdk) package for type-safe access to the API instead of raw HTTP requests. The SDK handles headers, pagination, error parsing, and TypeScript types automatically.
+</Tip>

@@ -1,0 +1,302 @@
+---
+title: "Defining Content Types"
+description: "Content type definitions, field types, modifiers, and validation with Zod"
+---
+
+MDCMS uses a code-first schema system. You define content types in `mdcms.config.ts` using TypeScript and Zod, then sync the schema to your server. The schema drives Studio form generation, content validation, and API behavior automatically — there is no manual schema editor in Studio.
+
+## Basic syntax
+
+Use `defineType()` to create a content type and `defineConfig()` to register it:
+
+```typescript mdcms.config.ts
+import { defineConfig, defineType } from "@mdcms/cli";
+import { z } from "zod";
+
+const Page = defineType("Page", {
+  directory: "content/pages",
+  fields: {
+    title: z.string().min(1),
+    description: z.string().optional(),
+  },
+});
+
+export default defineConfig({
+  project: "my-site",
+  serverUrl: "http://localhost:4000",
+  contentDirectories: ["content"],
+  types: [Page],
+});
+```
+
+## Type options
+
+Each type accepts the following options:
+
+| Option | Type | Required | Description |
+|---|---|---|---|
+| `directory` | `string` | Yes | Filesystem path where documents of this type are stored. Must be covered by `contentDirectories`. |
+| `localized` | `boolean` | No (default: `false`) | Whether documents of this type support per-locale variants. Requires `locales` config when `true`. |
+| `fields` | `Record<string, ZodSchema>` | Yes | Map of field names to Zod schemas. Each field becomes a frontmatter property and a Studio form control. |
+
+## Field types
+
+Every Zod type maps to a specific Studio form control. MDCMS serializes each field into a schema registry snapshot that drives both server-side validation and client-side rendering.
+
+### Primitives
+
+| Zod schema | Registry kind | Studio control | Notes |
+|---|---|---|---|
+| `z.string()` | `string` | Text input | Base type for most text fields |
+| `z.number()` | `number` | Number input | Supports `.int()`, `.min()`, `.max()` checks |
+| `z.boolean()` | `boolean` | Toggle switch | Commonly paired with `.default(false)` |
+| `z.coerce.date()` | `date` | Date picker | Coerces string values to `Date` objects |
+
+```typescript
+fields: {
+  title: z.string(),
+  viewCount: z.number(),
+  featured: z.boolean(),
+  publishedAt: z.coerce.date(),
+}
+```
+
+### Complex types
+
+| Zod schema | Registry kind | Studio control | Notes |
+|---|---|---|---|
+| `z.array(z.string())` | `array` (item: `string`) | Tag input | Repeatable string entries |
+| `z.array(z.number())` | `array` (item: `number`) | Repeatable number inputs | |
+| `z.object({...})` | `object` | Nested fieldset | Each property rendered recursively |
+| `z.enum(["a", "b", "c"])` | `enum` | Dropdown select | Options extracted from enum entries |
+| `z.literal("x")` | `literal` | Hidden / read-only | Fixed value, useful for discriminators |
+
+```typescript
+fields: {
+  tags: z.array(z.string()),
+  scores: z.array(z.number()),
+  seo: z.object({
+    metaTitle: z.string(),
+    metaDescription: z.string().optional(),
+  }),
+  status: z.enum(["draft", "review", "published"]),
+  kind: z.literal("article"),
+}
+```
+
+## Modifiers
+
+Modifiers control whether fields are required, nullable, or have defaults. They affect both the schema registry snapshot and Studio form behavior.
+
+| Modifier | Effect | Registry impact |
+|---|---|---|
+| `.optional()` | Field can be omitted entirely | `required: false` |
+| `.nullable()` | Field can be explicitly set to `null` | `nullable: true` |
+| `.default(value)` | Provides a default value; field becomes optional | `required: false`, `default: <value>` |
+
+```typescript
+fields: {
+  subtitle: z.string().optional(),
+  deletedAt: z.coerce.date().nullable(),
+  featured: z.boolean().default(false),
+  tags: z.array(z.string()).default([]),
+}
+```
+
+<Note>
+  A field with `.default()` is implicitly optional in the schema registry. The default value is stored in the registry snapshot and applied during validation.
+</Note>
+
+## Validation
+
+Zod check methods are serialized into the schema registry as `checks` entries. They run both server-side (on write) and in Studio (on form input).
+
+### Common validators
+
+```typescript
+fields: {
+  title: z.string().min(1).max(200),
+  slug: z.string().regex(/^[a-z0-9-]+$/),
+  email: z.string().email(),
+  rating: z.number().int().min(1).max(5),
+  url: z.string().url(),
+}
+```
+
+### Available checks by type
+
+<Accordion title="String checks">
+  | Method | Description |
+  |---|---|
+  | `.min(n)` | Minimum length |
+  | `.max(n)` | Maximum length |
+  | `.email()` | Valid email format |
+  | `.url()` | Valid URL format |
+  | `.regex(pattern)` | Matches regular expression (pattern and flags are serialized) |
+</Accordion>
+
+<Accordion title="Number checks">
+  | Method | Description |
+  |---|---|
+  | `.min(n)` | Minimum value |
+  | `.max(n)` | Maximum value |
+  | `.int()` | Must be an integer |
+</Accordion>
+
+<Accordion title="Array checks">
+  | Method | Description |
+  |---|---|
+  | `.min(n)` | Minimum array length |
+  | `.max(n)` | Maximum array length |
+</Accordion>
+
+<Warning>
+  Custom Zod validators (`.refine()`, `.transform()`, `.pipe()`) cannot be serialized to the schema registry and will cause a sync error. Use only built-in Zod checks.
+</Warning>
+
+## Registering types
+
+Add your types to the `types` array in `defineConfig()`:
+
+```typescript mdcms.config.ts
+export default defineConfig({
+  project: "marketing-site",
+  serverUrl: "http://localhost:4000",
+  contentDirectories: ["content"],
+  types: [Author, BlogPost, Page],
+});
+```
+
+Then sync the schema to your server:
+
+```bash
+mdcms schema sync
+```
+
+This serializes every type into a registry snapshot, computes a schema hash, and uploads it to the server. The server stores the resolved schema and uses it for all subsequent content validation.
+
+## Schema hash
+
+Every write operation to the MDCMS API requires an `x-mdcms-schema-hash` header that matches the currently synced schema. This prevents writes against a stale schema.
+
+- The CLI and SDK handle the schema hash automatically.
+- If the hash doesn't match, the server returns a `SCHEMA_HASH_MISMATCH` error.
+- Re-run `mdcms schema sync` to update after config changes.
+
+<Tip>
+  In CI/CD pipelines, always run `mdcms schema sync` before `mdcms push` to ensure the schema hash is current.
+</Tip>
+
+## Environment overlays
+
+Environment overlays let you customize the schema per environment without duplicating type definitions. Define them in the `environments` config:
+
+```typescript mdcms.config.ts
+export default defineConfig({
+  project: "marketing-site",
+  serverUrl: "http://localhost:4000",
+  contentDirectories: ["content"],
+  types: [Author, BlogPost],
+  environments: {
+    production: {},
+    staging: {
+      extends: "production",
+      types: {
+        BlogPost: {
+          add: { previewToken: z.string().optional() },
+          modify: { title: z.string().min(1).max(500) },
+          omit: ["seoScore"],
+        },
+      },
+    },
+  },
+});
+```
+
+### Overlay operations
+
+| Operation | Description |
+|---|---|
+| `add` | Add new fields that don't exist on the base type. Errors if the field already exists. |
+| `modify` | Replace the schema for an existing field. Errors if the field doesn't exist. |
+| `omit` | Remove fields by name. Errors if the field doesn't exist. |
+| `extends` | Inherit from another environment instead of the base types. Supports chaining. |
+
+### Field-level environment targeting
+
+For simpler cases, you can use the `.env()` modifier directly on field definitions to target specific environments:
+
+```typescript
+const Post = defineType("post", {
+  directory: "content/posts",
+  fields: {
+    title: z.string().min(1),
+    featured: z.boolean().default(false).env("staging"),
+    abTestVariant: z.string().min(1).optional().env("staging"),
+  },
+});
+```
+
+Fields with `.env()` are only included in the specified environments. This is syntactic sugar that gets expanded into `add` overlays during config parsing.
+
+<Warning>
+  You cannot use `.env()` on fields inside overlay `add`/`modify` maps. Keep environment targeting on the base type only.
+</Warning>
+
+## Complete example
+
+A full configuration with multiple types, localization, validation, references, and environment overlays:
+
+```typescript mdcms.config.ts
+import { defineConfig, defineType, reference } from "@mdcms/cli";
+import { z } from "zod";
+
+const Author = defineType("Author", {
+  directory: "content/authors",
+  fields: {
+    name: z.string().min(1),
+    bio: z.string().max(500).optional(),
+    avatar: z.string().url().optional(),
+  },
+});
+
+const BlogPost = defineType("BlogPost", {
+  directory: "content/blog",
+  localized: true,
+  fields: {
+    title: z.string().min(1).max(200),
+    slug: z.string().regex(/^[a-z0-9-]+$/),
+    author: reference("Author"),
+    publishedAt: z.coerce.date(),
+    tags: z.array(z.string()).default([]),
+    excerpt: z.string().max(300).optional(),
+    featured: z.boolean().default(false),
+  },
+});
+
+export default defineConfig({
+  project: "marketing-site",
+  serverUrl: "http://localhost:4000",
+  contentDirectories: ["content"],
+  locales: {
+    default: "en",
+    supported: ["en", "fr", "de"],
+  },
+  types: [Author, BlogPost],
+  environments: {
+    production: {},
+    staging: {
+      extends: "production",
+      types: {
+        BlogPost: {
+          add: { previewToken: z.string().optional() },
+        },
+      },
+    },
+  },
+});
+```
+
+<Warning>
+  Changing type names or removing types that have existing content requires a migration. Use `mdcms migrate` to handle these changes safely.
+</Warning>

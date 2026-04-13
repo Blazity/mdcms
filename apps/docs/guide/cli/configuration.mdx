@@ -1,0 +1,211 @@
+---
+title: "Configuration"
+description: "mdcms.config.ts reference and local state files"
+---
+
+## Config file
+
+The CLI reads its configuration from `mdcms.config.ts` at the project root. Use `defineConfig` and `defineType` from `@mdcms/cli` to get full type safety.
+
+```typescript mdcms.config.ts
+import { defineConfig, defineType, reference } from "@mdcms/cli";
+import { z } from "zod";
+
+const Author = defineType("Author", {
+  directory: "content/authors",
+  fields: {
+    name: z.string().min(1),
+    bio: z.string().optional(),
+    avatar: z.string().url().optional(),
+    twitter: z.string().optional(),
+  },
+});
+
+const BlogPost = defineType("BlogPost", {
+  directory: "content/blog",
+  localized: true,
+  fields: {
+    title: z.string().min(1).max(200),
+    slug: z.string().regex(/^[a-z0-9-]+$/),
+    author: reference("Author"),
+    publishedAt: z.coerce.date(),
+    tags: z.array(z.string()).default([]),
+    featured: z.boolean().default(false),
+    excerpt: z.string().max(300).optional(),
+  },
+});
+
+export default defineConfig({
+  project: "marketing-site",
+  serverUrl: "https://cms.example.com",
+  environment: "development",
+  contentDirectories: ["content"],
+  locales: {
+    default: "en",
+    supported: ["en", "fr", "de"],
+    aliases: {
+      "en-US": "en",
+      "en-GB": "en",
+    },
+  },
+  types: [Author, BlogPost],
+  environments: {
+    staging: {
+      serverUrl: "https://cms-staging.example.com",
+    },
+    production: {
+      serverUrl: "https://cms.example.com",
+    },
+  },
+  components: [
+    { name: "Callout", importPath: "@/components/Callout" },
+    { name: "CodeBlock", importPath: "@/components/CodeBlock" },
+  ],
+});
+```
+
+## Config options
+
+All properties accepted by `defineConfig`:
+
+| Property | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | `string` | Yes | Project slug. Must match the project on the server |
+| `serverUrl` | `string` | Yes | Base URL of the MDCMS server |
+| `environment` | `string` | No | Default environment name (e.g. `development`) |
+| `contentDirectories` | `string[]` | No | Directories to scan for content files. Default: `["content"]` |
+| `locales` | `object` | No | Locale configuration (see below) |
+| `types` | `MdcmsTypeDefinition[]` | No | Content type definitions created with `defineType` |
+| `environments` | `Record<string, object>` | No | Per-environment config overlays (can override `serverUrl`, `environment`) |
+| `components` | `object[]` | No | MDX component registrations for the Studio editor |
+
+### Locale options
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `locales.default` | `string` | The default locale code (e.g. `"en"`) |
+| `locales.supported` | `string[]` | All supported locale codes |
+| `locales.aliases` | `Record<string, string>` | Map alternate locale codes to canonical ones |
+
+### Type definition options
+
+Each `defineType(name, options)` accepts:
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `directory` | `string` | Filesystem directory for this type's content files |
+| `localized` | `boolean` | Whether documents of this type are localized. Default: `false` |
+| `fields` | `Record<string, ZodSchema>` | Frontmatter field definitions using Zod schemas |
+
+---
+
+## Manifest file
+
+The manifest tracks the mapping between server documents and local files. It is stored at `.mdcms.manifest.json` in the project root, scoped to the current project and environment.
+
+<Warning>
+  The manifest file should be added to `.gitignore`. It contains local state that varies between developers and environments.
+</Warning>
+
+### Structure
+
+The manifest is a JSON object where each key is a `documentId` and the value describes the local file:
+
+```json .mdcms.manifest.json
+{
+  "doc_a1b2c3d4": {
+    "path": "content/blog/hello-world.en.mdx",
+    "format": "mdx",
+    "draftRevision": 3,
+    "publishedVersion": 1,
+    "hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "doc_e5f6g7h8": {
+    "path": "content/authors/jane-doe.md",
+    "format": "md",
+    "draftRevision": 1,
+    "publishedVersion": null,
+    "hash": "sha256:abc123..."
+  }
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `path` | `string` | Relative path to the content file from project root |
+| `format` | `"md" \| "mdx"` | File format |
+| `draftRevision` | `number` | Current draft revision number on the server |
+| `publishedVersion` | `number \| null` | Published version number, or `null` if never published |
+| `hash` | `string` | Content hash of the file at last sync |
+
+---
+
+## Schema state
+
+After each `mdcms schema sync`, the CLI writes a state file to:
+
+```
+.mdcms/schema/<project>.<environment>.json
+```
+
+For example, `marketing-site` project in the `development` environment produces:
+
+```
+.mdcms/schema/marketing-site.development.json
+```
+
+### Contents
+
+```json .mdcms/schema/marketing-site.development.json
+{
+  "schemaHash": "a1b2c3d4e5f6...",
+  "syncedAt": "2026-04-13T10:30:00.000Z",
+  "serverUrl": "https://cms.example.com"
+}
+```
+
+The `schemaHash` is required by `mdcms push` to validate that content is being pushed against the correct schema version. If this file is missing or the hash is stale, push operations will fail.
+
+<Note>
+  The `.mdcms/` directory should be added to `.gitignore`. The `mdcms init` wizard does this automatically.
+</Note>
+
+---
+
+## File mapping
+
+The CLI maps server documents to local files based on the type's `directory` setting and the document's `path` and `locale`.
+
+### Localized documents
+
+Localized types produce files with the locale code inserted before the file extension:
+
+```
+<directory>/<path>.<locale>.<ext>
+```
+
+For example, a `BlogPost` document with path `hello-world`, locale `en`, and format `mdx`:
+
+```
+content/blog/hello-world.en.mdx
+```
+
+The same document in French:
+
+```
+content/blog/hello-world.fr.mdx
+```
+
+### Non-localized documents
+
+Non-localized types use a simpler pattern without the locale segment:
+
+```
+<directory>/<path>.<ext>
+```
+
+For example, an `Author` document with path `jane-doe` and format `md`:
+
+```
+content/authors/jane-doe.md
+```
