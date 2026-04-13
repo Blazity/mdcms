@@ -32,6 +32,7 @@ import {
   SAML_TEST_NOW_MS,
 } from "./auth-saml-fixtures.js";
 import {
+  apiKeys,
   authAccounts,
   authLoginBackoffs,
   authSessions,
@@ -4423,3 +4424,276 @@ testWithDatabase("CLI login authorize rejects state mismatch", async () => {
     await dbConnection.close();
   }
 });
+
+async function seedApiKey(
+  db: ReturnType<
+    typeof createServerRequestHandlerWithModules
+  >["dbConnection"]["db"],
+  input: {
+    userId: string;
+    label: string;
+  },
+): Promise<{ id: string }> {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const [row] = await db
+    .insert(apiKeys)
+    .values({
+      label: input.label,
+      keyPrefix: `mdcms_key_test_${suffix}`,
+      keyHash: `test-hash-${suffix}`,
+      scopes: ["content:read"],
+      contextAllowlist: [
+        { project: "marketing-site", environment: "production" },
+      ],
+      createdByUserId: input.userId,
+    })
+    .returning({ id: apiKeys.id });
+  assert.ok(row);
+  return row;
+}
+
+testWithDatabase(
+  "listApiKeys returns only caller's own keys for non-admin session",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const adminEmail = uniqueEmail();
+    const userEmail = uniqueEmail();
+    const password = "Admin12345!";
+
+    try {
+      await signUp(handler, { email: adminEmail, password, name: "Admin" });
+      const adminLogin = await login(handler, {
+        email: adminEmail,
+        password,
+      });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: adminLogin.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:list-api-keys-admin",
+          createdByUserId: adminLogin.session.userId,
+        })
+        .onConflictDoNothing();
+
+      await signUp(handler, { email: userEmail, password, name: "User" });
+      const userLogin = await login(handler, {
+        email: userEmail,
+        password,
+      });
+
+      const adminKey = await seedApiKey(dbConnection.db, {
+        userId: adminLogin.session.userId,
+        label: "admin-key",
+      });
+      const userKey = await seedApiKey(dbConnection.db, {
+        userId: userLogin.session.userId,
+        label: "user-key",
+      });
+
+      const nonAdminList = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          headers: { cookie: userLogin.cookie },
+        }),
+      );
+      const nonAdminBody = (await nonAdminList.json()) as {
+        data: Array<{ id: string; label: string }>;
+      };
+
+      assert.equal(nonAdminList.status, 200);
+      const visibleIds = nonAdminBody.data.map((row) => row.id);
+      assert.equal(visibleIds.includes(userKey.id), true);
+      assert.equal(visibleIds.includes(adminKey.id), false);
+
+      const adminList = await handler(
+        new Request("http://localhost/api/v1/auth/api-keys", {
+          headers: { cookie: adminLogin.cookie },
+        }),
+      );
+      const adminBody = (await adminList.json()) as {
+        data: Array<{ id: string }>;
+      };
+      const adminVisibleIds = adminBody.data.map((row) => row.id);
+
+      assert.equal(adminList.status, 200);
+      assert.equal(adminVisibleIds.includes(adminKey.id), true);
+      assert.equal(adminVisibleIds.includes(userKey.id), true);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "revokeApiKey returns 404 when a non-admin targets another user's key and leaves the key active",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const adminEmail = uniqueEmail();
+    const userEmail = uniqueEmail();
+    const password = "Admin12345!";
+
+    try {
+      await signUp(handler, { email: adminEmail, password, name: "Admin" });
+      const adminLogin = await login(handler, {
+        email: adminEmail,
+        password,
+      });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: adminLogin.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:revoke-api-key-admin",
+          createdByUserId: adminLogin.session.userId,
+        })
+        .onConflictDoNothing();
+
+      await signUp(handler, { email: userEmail, password, name: "User" });
+      const userLogin = await login(handler, {
+        email: userEmail,
+        password,
+      });
+
+      const adminKey = await seedApiKey(dbConnection.db, {
+        userId: adminLogin.session.userId,
+        label: "admin-owned",
+      });
+
+      const revokeResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/auth/api-keys/${adminKey.id}/revoke`,
+          {
+            method: "POST",
+            headers: createCsrfHeaders(userLogin),
+          },
+        ),
+      );
+      const revokeBody = (await revokeResponse.json()) as { code: string };
+
+      assert.equal(revokeResponse.status, 404);
+      assert.equal(revokeBody.code, "NOT_FOUND");
+
+      const persistedKey = await dbConnection.db.query.apiKeys.findFirst({
+        where: eq(apiKeys.id, adminKey.id),
+      });
+
+      assert.ok(persistedKey);
+      assert.equal(persistedKey?.revokedAt, null);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "revokeApiKey allows an admin to revoke another user's key",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const adminEmail = uniqueEmail();
+    const userEmail = uniqueEmail();
+    const password = "Admin12345!";
+
+    try {
+      await signUp(handler, { email: adminEmail, password, name: "Admin" });
+      const adminLogin = await login(handler, {
+        email: adminEmail,
+        password,
+      });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: adminLogin.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:admin-revoke-foreign-key",
+          createdByUserId: adminLogin.session.userId,
+        })
+        .onConflictDoNothing();
+
+      await signUp(handler, { email: userEmail, password, name: "User" });
+      const userLogin = await login(handler, {
+        email: userEmail,
+        password,
+      });
+
+      const userKey = await seedApiKey(dbConnection.db, {
+        userId: userLogin.session.userId,
+        label: "user-owned",
+      });
+
+      const revokeResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/auth/api-keys/${userKey.id}/revoke`,
+          {
+            method: "POST",
+            headers: createCsrfHeaders(adminLogin),
+          },
+        ),
+      );
+      const revokeBody = (await revokeResponse.json()) as {
+        data: { id: string; revokedAt: string | null };
+      };
+
+      assert.equal(revokeResponse.status, 200);
+      assert.equal(revokeBody.data.id, userKey.id);
+      assert.ok(revokeBody.data.revokedAt);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "revokeApiKey allows a non-admin to revoke their own key",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const userEmail = uniqueEmail();
+    const password = "Admin12345!";
+
+    try {
+      await signUp(handler, { email: userEmail, password, name: "User" });
+      const userLogin = await login(handler, {
+        email: userEmail,
+        password,
+      });
+
+      const ownKey = await seedApiKey(dbConnection.db, {
+        userId: userLogin.session.userId,
+        label: "self-owned",
+      });
+
+      const revokeResponse = await handler(
+        new Request(
+          `http://localhost/api/v1/auth/api-keys/${ownKey.id}/revoke`,
+          {
+            method: "POST",
+            headers: createCsrfHeaders(userLogin),
+          },
+        ),
+      );
+      const revokeBody = (await revokeResponse.json()) as {
+        data: { id: string; revokedAt: string | null };
+      };
+
+      assert.equal(revokeResponse.status, 200);
+      assert.equal(revokeBody.data.id, ownKey.id);
+      assert.ok(revokeBody.data.revokedAt);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
