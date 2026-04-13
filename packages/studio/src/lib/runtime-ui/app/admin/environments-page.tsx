@@ -146,6 +146,24 @@ function readRuntimeErrorStatus(error: unknown): number | null {
   return null;
 }
 
+export function resolveDeleteFailureState(error: unknown): {
+  message: string;
+  shouldCloseDialog: boolean;
+  shouldReload: boolean;
+} {
+  const message = readRuntimeErrorMessage(
+    error,
+    "Environment deletion failed.",
+  );
+  const statusCode = readRuntimeErrorStatus(error);
+
+  return {
+    message,
+    shouldCloseDialog: statusCode === 404,
+    shouldReload: statusCode === 404,
+  };
+}
+
 function formatCreatedAt(value: string): string {
   const date = new Date(value);
 
@@ -428,9 +446,7 @@ export function EnvironmentManagementPageView({
                       variant="outline"
                       size="sm"
                       className="w-full"
-                      onClick={() =>
-                        onSwitchEnvironment?.(environment.name)
-                      }
+                      onClick={() => onSwitchEnvironment?.(environment.name)}
                     >
                       <ArrowRightLeft className="mr-2 h-4 w-4" />
                       Switch to {environment.name}
@@ -633,9 +649,17 @@ export default function EnvironmentsPage() {
       setDeleteTarget(null);
       setReloadVersion((current) => current + 1);
     } catch (error) {
-      setActionError(
-        readRuntimeErrorMessage(error, "Environment deletion failed."),
-      );
+      const failure = resolveDeleteFailureState(error);
+
+      setActionError(failure.message);
+
+      if (failure.shouldCloseDialog) {
+        setDeleteTarget(null);
+      }
+
+      if (failure.shouldReload) {
+        setReloadVersion((current) => current + 1);
+      }
     } finally {
       setPendingDeleteId(null);
     }

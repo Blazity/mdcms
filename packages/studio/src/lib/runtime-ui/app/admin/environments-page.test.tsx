@@ -4,7 +4,7 @@ import { test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { EnvironmentSummary } from "@mdcms/shared";
+import { RuntimeError, type EnvironmentSummary } from "@mdcms/shared";
 
 import { ThemeProvider } from "../../adapters/next-themes.js";
 import { StudioMountInfoProvider } from "./mount-info-context.js";
@@ -12,6 +12,7 @@ import { StudioSessionProvider } from "./session-context.js";
 import {
   EnvironmentManagementPageView,
   type EnvironmentManagementState,
+  resolveDeleteFailureState,
 } from "./environments-page.js";
 
 function createEnvironmentSummary(
@@ -130,4 +131,32 @@ test("EnvironmentManagementPageView renders forbidden and error states", () => {
     /data-mdcms-environments-page-state="forbidden"/,
   );
   assert.match(errorMarkup, /data-mdcms-environments-page-state="error"/);
+});
+
+test("resolveDeleteFailureState reloads after not-found delete failures", () => {
+  const notFound = resolveDeleteFailureState(
+    new RuntimeError({
+      code: "NOT_FOUND",
+      message: "Environment not found.",
+      statusCode: 404,
+    }),
+  );
+  const conflict = resolveDeleteFailureState(
+    new RuntimeError({
+      code: "CONFLICT",
+      message: "Environment is not empty.",
+      statusCode: 409,
+    }),
+  );
+
+  assert.deepEqual(notFound, {
+    message: "Environment not found.",
+    shouldCloseDialog: true,
+    shouldReload: true,
+  });
+  assert.deepEqual(conflict, {
+    message: "Environment is not empty.",
+    shouldCloseDialog: false,
+    shouldReload: false,
+  });
 });
