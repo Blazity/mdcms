@@ -457,12 +457,19 @@ Normative behavior:
 - The route manages only list/create/delete behavior in MVP. Clone, promote,
   rename, description editing, and other environment workflows are out of scope
   for this route until their owning work is specified.
-- Environment rows are rendered from the live `EnvironmentSummary[]` contract.
-  Studio must not render mock environment metadata, synthetic document counts,
-  or fake promotion history on this route.
+- Environment rows are rendered from the live `EnvironmentSummary[]` contract,
+  and the route also consumes the `GET /api/v1/environments` metadata that
+  reports whether synced environment definitions are available. Studio must not
+  render mock environment metadata, synthetic document counts, or fake
+  promotion history on this route.
 - The create flow submits `{ name }` to `POST /api/v1/environments`. Studio may
-  omit `extends` and rely on the server-side config validation rules defined by
-  the environment-management contract.
+  omit `extends` and rely on the server-side synced environment-definition
+  validation rules defined by the environment-management contract.
+- If `GET /api/v1/environments` reports `meta.definitionsStatus = "missing"`,
+  the route remains readable but the create affordance must stay disabled or
+  immediately explain that environment management requires a successful
+  `cms schema sync` from the host app repo before new environments can be
+  created.
 - On successful create, the creation dialog closes and the environment list
   reloads from the live API before the new row is presented as ready.
 - The default `production` environment is rendered as the non-deletable default
@@ -472,8 +479,13 @@ Normative behavior:
   UI.
 - The route must surface deterministic server failures truthfully:
   - `INVALID_INPUT` (`400`) on create is shown inline on the creation form.
+  - `CONFIG_SNAPSHOT_REQUIRED` (`409`) on create is shown inline on the
+    creation form with actionable guidance to run `cms schema sync` from the
+    host app repo.
   - `CONFLICT` (`409`) on create or delete is shown inline without replacing the
-    current ready view.
+    current ready view. When the delete confirmation dialog is still open, the
+    delete conflict is shown inside that dialog instead of as a detached page
+    error.
   - `NOT_FOUND` (`404`) on delete is surfaced as a non-destructive row/action
     failure and followed by a live list reload.
 - The shell navigation entry for `/admin/environments` follows the same
@@ -497,7 +509,8 @@ Deterministic states:
   route renders an error state with a retry action.
 - If `GET /api/v1/environments` succeeds with zero rows, the route renders an
   empty state for the active project. When the current caller is allowed to use
-  the route, the empty state may include the create affordance.
+  the route and synced environment definitions are available, the empty state
+  may include the create affordance.
 - When the list request succeeds with one or more rows, the route renders a
   ready state with per-row metadata limited to the live environment summary
   contract (`name`, `extends`, default status, `createdAt`).
