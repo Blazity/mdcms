@@ -3126,15 +3126,21 @@ export function createAuthService(
     return parsed;
   }
 
-  async function assertAdminSession(request: Request): Promise<StudioSession> {
-    const session = await requireSession(request);
+  async function sessionHasAdminPrivileges(
+    session: StudioSession,
+  ): Promise<boolean> {
     const grants = await loadSessionRbacGrants(session);
     const hasGlobalAdminGrant = grants.some(
       (grant) =>
         grant.scope.kind === "global" &&
         (grant.role === "owner" || grant.role === "admin"),
     );
-    const isAdmin = hasGlobalAdminGrant || (await isAdminSession(session));
+    return hasGlobalAdminGrant || (await isAdminSession(session));
+  }
+
+  async function assertAdminSession(request: Request): Promise<StudioSession> {
+    const session = await requireSession(request);
+    const isAdmin = await sessionHasAdminPrivileges(session);
 
     if (!isAdmin) {
       throw new RuntimeError({
@@ -3665,19 +3671,23 @@ export function createAuthService(
     },
 
     async listApiKeys(request) {
-      await requireSession(request);
+      const session = await requireSession(request);
+      const isAdmin = await sessionHasAdminPrivileges(session);
 
-      const rows = await options.db
-        .select()
-        .from(apiKeys)
-        .orderBy(desc(apiKeys.createdAt));
+      const query = options.db.select().from(apiKeys);
+      const rows = await (isAdmin
+        ? query.orderBy(desc(apiKeys.createdAt))
+        : query
+            .where(eq(apiKeys.createdByUserId, session.userId))
+            .orderBy(desc(apiKeys.createdAt)));
 
       return rows.map((row) => toApiKeyMetadata(row));
     },
 
     async revokeApiKey(request, keyId) {
-      await requireSession(request);
+      const session = await requireSession(request);
       const normalizedKeyId = assertNonEmptyString(keyId, "keyId");
+      const isAdmin = await sessionHasAdminPrivileges(session);
 
       const [existing] = await options.db
         .select()
@@ -3685,7 +3695,7 @@ export function createAuthService(
         .where(eq(apiKeys.id, normalizedKeyId))
         .limit(1);
 
-      if (!existing) {
+      if (!existing || (!isAdmin && existing.createdByUserId !== session.userId)) {
         throw new RuntimeError({
           code: "NOT_FOUND",
           message: "API key not found.",
