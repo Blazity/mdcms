@@ -29,7 +29,10 @@ function createEnvironmentSummary(
   };
 }
 
-function renderMarkup(state: EnvironmentManagementState): string {
+function renderMarkup(
+  state: EnvironmentManagementState,
+  props: Partial<Parameters<typeof EnvironmentManagementPageView>[0]> = {},
+): string {
   return renderToStaticMarkup(
     createElement(
       ThemeProvider,
@@ -54,6 +57,7 @@ function renderMarkup(state: EnvironmentManagementState): string {
           },
           createElement(EnvironmentManagementPageView, {
             state,
+            ...props,
           }),
         ),
       ),
@@ -133,6 +137,42 @@ test("EnvironmentManagementPageView renders forbidden and error states", () => {
   assert.match(errorMarkup, /data-mdcms-environments-page-state="error"/);
 });
 
+test("EnvironmentManagementPageView keeps delete conflicts inside the modal", () => {
+  const markup = renderMarkup(
+    {
+      status: "ready",
+      project: "marketing-site",
+      environments: [
+        createEnvironmentSummary(),
+        createEnvironmentSummary({
+          id: "env-staging",
+          name: "staging",
+          extends: "production",
+          isDefault: false,
+        }),
+      ],
+    },
+    {
+      deleteTarget: createEnvironmentSummary({
+        id: "env-staging",
+        name: "staging",
+        extends: "production",
+        isDefault: false,
+      }),
+      deleteError:
+        'Environment "staging" cannot be deleted while content or schema state still exists.',
+    },
+  );
+
+  assert.match(markup, /data-mdcms-delete-error/);
+  assert.match(markup, /Delete Environment/);
+  assert.match(
+    markup,
+    /Environment &quot;staging&quot; cannot be deleted while content or schema state still exists\./,
+  );
+  assert.doesNotMatch(markup, /data-mdcms-page-action-error/);
+});
+
 test("resolveDeleteFailureState reloads after not-found delete failures", () => {
   const notFound = resolveDeleteFailureState(
     new RuntimeError({
@@ -153,10 +193,12 @@ test("resolveDeleteFailureState reloads after not-found delete failures", () => 
     message: "Environment not found.",
     shouldCloseDialog: true,
     shouldReload: true,
+    renderInDialog: false,
   });
   assert.deepEqual(conflict, {
     message: "Environment is not empty.",
     shouldCloseDialog: false,
     shouldReload: false,
+    renderInDialog: true,
   });
 });

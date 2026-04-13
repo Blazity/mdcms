@@ -77,6 +77,7 @@ type EnvironmentManagementPageViewProps = {
   createName?: string;
   createError?: string | null;
   actionError?: string | null;
+  deleteError?: string | null;
   pendingCreate?: boolean;
   pendingDeleteId?: string | null;
   deleteTarget?: EnvironmentSummary | null;
@@ -120,6 +121,11 @@ function isEnvironmentSummary(value: unknown): value is EnvironmentSummary {
 }
 
 function readRuntimeErrorMessage(error: unknown, fallback: string): string {
+  const normalizeMessage = (message: string): string =>
+    message === "Server config is required to manage environments."
+      ? "Environment management is unavailable because the connected backend could not load mdcms.config.ts."
+      : message;
+
   if (
     error &&
     typeof error === "object" &&
@@ -127,10 +133,10 @@ function readRuntimeErrorMessage(error: unknown, fallback: string): string {
     typeof error.message === "string" &&
     error.message.trim().length > 0
   ) {
-    return error.message;
+    return normalizeMessage(error.message);
   }
 
-  return fallback;
+  return normalizeMessage(fallback);
 }
 
 function readRuntimeErrorStatus(error: unknown): number | null {
@@ -150,6 +156,7 @@ export function resolveDeleteFailureState(error: unknown): {
   message: string;
   shouldCloseDialog: boolean;
   shouldReload: boolean;
+  renderInDialog: boolean;
 } {
   const message = readRuntimeErrorMessage(
     error,
@@ -161,6 +168,7 @@ export function resolveDeleteFailureState(error: unknown): {
     message,
     shouldCloseDialog: statusCode === 404,
     shouldReload: statusCode === 404,
+    renderInDialog: statusCode !== 404,
   };
 }
 
@@ -229,6 +237,7 @@ export function EnvironmentManagementPageView({
   createName = "",
   createError = null,
   actionError = null,
+  deleteError = null,
   pendingCreate = false,
   pendingDeleteId = null,
   deleteTarget = null,
@@ -313,7 +322,10 @@ export function EnvironmentManagementPageView({
         </div>
 
         {actionError ? (
-          <section className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+          <section
+            data-mdcms-page-action-error
+            className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"
+          >
             {actionError}
           </section>
         ) : null}
@@ -471,6 +483,11 @@ export function EnvironmentManagementPageView({
                   : "Delete this environment?"}
               </DialogDescription>
             </DialogHeader>
+            {deleteError ? (
+              <p data-mdcms-delete-error className="text-sm text-destructive">
+                {deleteError}
+              </p>
+            ) : null}
             <DialogFooter>
               <Button
                 variant="outline"
@@ -509,6 +526,7 @@ export default function EnvironmentsPage() {
   const [createName, setCreateName] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [pendingCreate, setPendingCreate] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<EnvironmentSummary | null>(
@@ -631,6 +649,7 @@ export default function EnvironmentsPage() {
 
     setPendingDeleteId(deleteTarget.id);
     setActionError(null);
+    setDeleteError(null);
 
     try {
       const environmentApi = createStudioEnvironmentApi(
@@ -646,12 +665,14 @@ export default function EnvironmentsPage() {
       );
 
       await environmentApi.delete(deleteTarget.id);
+      setDeleteError(null);
       setDeleteTarget(null);
       setReloadVersion((current) => current + 1);
     } catch (error) {
       const failure = resolveDeleteFailureState(error);
 
-      setActionError(failure.message);
+      setActionError(failure.renderInDialog ? null : failure.message);
+      setDeleteError(failure.renderInDialog ? failure.message : null);
 
       if (failure.shouldCloseDialog) {
         setDeleteTarget(null);
@@ -687,14 +708,17 @@ export default function EnvironmentsPage() {
       onCreateSubmit={handleCreateSubmit}
       onDeleteDialogChange={(open) => {
         if (!open) {
+          setDeleteError(null);
           setDeleteTarget(null);
         }
       }}
       onRequestDelete={(environment) => {
         setActionError(null);
+        setDeleteError(null);
         setDeleteTarget(environment);
       }}
       onDeleteConfirm={handleDeleteConfirm}
+      deleteError={deleteError}
       onSwitchEnvironment={setEnvironment}
       onRetry={() => {
         setActionError(null);

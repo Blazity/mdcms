@@ -153,7 +153,8 @@ async function requireConfig(
   if (!config) {
     throw new RuntimeError({
       code: "INTERNAL_ERROR",
-      message: "Server config is required to manage environments.",
+      message:
+        "Environment management is unavailable because the connected backend could not load mdcms.config.ts.",
       statusCode: 500,
     });
   }
