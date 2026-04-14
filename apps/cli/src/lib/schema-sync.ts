@@ -82,7 +82,9 @@ export async function performSchemaSync(
     | { data?: unknown }
     | undefined;
 
-  const data = isRecord(result?.data) ? (result!.data as Record<string, unknown>) : undefined;
+  const data = isRecord(result?.data)
+    ? (result!.data as Record<string, unknown>)
+    : undefined;
   const schemaHash = data?.schemaHash;
   const syncedAt = data?.syncedAt;
   const affectedTypesRaw = data?.affectedTypes;
