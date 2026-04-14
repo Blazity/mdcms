@@ -21,9 +21,9 @@
     "migrate:check": "bash scripts/migration-startup-check.sh",
     "format": "bun x prettier --write .",
     "format:check": "bun x prettier --check .",
-    "changeset": "bun changeset",
-    "version-packages": "bun changeset version",
-    "release": "bun run build && bun changeset publish"
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "bun run build && changeset publish"
   },
   "private": true,
   "dependencies": {},
