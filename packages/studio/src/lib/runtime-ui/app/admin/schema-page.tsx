@@ -316,13 +316,13 @@ export function SchemaPageView({ state }: { state: StudioSchemaState }) {
             </p>
           </section>
         ) : (
-          <div data-mdcms-schema-page-state="ready" className="space-y-4">
+          <div data-mdcms-schema-page-state="ready" className="grid gap-4 lg:grid-cols-2">
             {sortEntries(state.entries).map((entry) => (
-              <Card key={entry.type} data-mdcms-schema-entry-type={entry.type}>
-                <CardHeader className="gap-2">
-                  <div className="space-y-2">
+              <Card key={entry.type} data-mdcms-schema-entry-type={entry.type} className="p-0 gap-0">
+                <CardHeader className="gap-2 p-5 pb-3">
+                  <div className="space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
-                      <CardTitle className="text-2xl tracking-tight">
+                      <CardTitle className="text-lg tracking-tight">
                         {entry.type}
                       </CardTitle>
                       <Badge
@@ -331,21 +331,21 @@ export function SchemaPageView({ state }: { state: StudioSchemaState }) {
                         {entry.localized ? "Localized" : "Single locale"}
                       </Badge>
                     </div>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-xs text-muted-foreground font-mono">
                       {entry.directory}
                     </p>
                   </div>
                 </CardHeader>
 
-                <CardContent className="pt-0">
+                <CardContent className="p-0">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Field</TableHead>
+                        <TableHead className="pl-5">Field</TableHead>
                         <TableHead>Kind</TableHead>
-                        <TableHead>Required</TableHead>
-                        <TableHead>Nullable</TableHead>
-                        <TableHead>Constraints</TableHead>
+                        <TableHead>Req</TableHead>
+                        <TableHead>Null</TableHead>
+                        <TableHead className="pr-5">Constraints</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -356,17 +356,21 @@ export function SchemaPageView({ state }: { state: StudioSchemaState }) {
                             data-mdcms-schema-field-name={fieldName}
                             data-mdcms-schema-field-kind={field.kind}
                           >
-                            <TableCell className="font-medium">
+                            <TableCell className="pl-5 font-medium">
                               {fieldName}
                             </TableCell>
-                            <TableCell>{field.kind}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-[10px]">
+                                {field.kind}
+                              </Badge>
+                            </TableCell>
                             <TableCell>
                               {field.required ? "Yes" : "No"}
                             </TableCell>
                             <TableCell>
                               {field.nullable ? "Yes" : "No"}
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="pr-5">
                               <div
                                 data-mdcms-schema-field-constraints={describeSchemaFieldConstraints(
                                   field,
