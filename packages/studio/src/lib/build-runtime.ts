@@ -241,7 +241,9 @@ async function compileRuntimeStylesheet(input: {
         return `url(${seen.get(absPath)})`;
       }
 
-      const outputName = basename(absPath);
+      const base = basename(absPath);
+      const prefix = sha256Hex(absPath).slice(0, 6);
+      const outputName = `${prefix}-${base}`;
       fontAssets.set(absPath, outputName);
       seen.set(absPath, outputName);
       return `url(${outputName})`;
@@ -270,26 +272,26 @@ export async function buildStudioRuntimeArtifacts(
     projectRoot,
     sourceFile,
   });
-  const entryBytes = new TextEncoder().encode(bundledEntry);
-  const integritySha256 = sha256Hex(entryBytes);
-  const buildId = integritySha256.slice(0, 16);
-  const entryFile = createRuntimeEntryFileName(buildId);
-
-  const entryPath = join(
-    outDir,
-    STUDIO_RUNTIME_ASSETS_DIRNAME,
-    buildId,
-    entryFile,
-  );
-  await mkdir(dirname(entryPath), { recursive: true });
-  await writeFile(entryPath, bundledEntry, "utf8");
-
-  const cssFile = createRuntimeStylesheetFileName(buildId);
-  const buildAssetDir = join(outDir, STUDIO_RUNTIME_ASSETS_DIRNAME, buildId);
-  const cssPath = join(buildAssetDir, cssFile);
   const stylesheetResult = await compileRuntimeStylesheet({
     projectRoot,
   });
+
+  const entryBytes = new TextEncoder().encode(bundledEntry);
+  const integritySha256 = sha256Hex(entryBytes);
+
+  const buildIdHash = createHash("sha256");
+  buildIdHash.update(entryBytes);
+  buildIdHash.update(new TextEncoder().encode(stylesheetResult.css));
+  const buildId = buildIdHash.digest("hex").slice(0, 16);
+
+  const entryFile = createRuntimeEntryFileName(buildId);
+  const buildAssetDir = join(outDir, STUDIO_RUNTIME_ASSETS_DIRNAME, buildId);
+  const entryPath = join(buildAssetDir, entryFile);
+  await mkdir(buildAssetDir, { recursive: true });
+  await writeFile(entryPath, bundledEntry, "utf8");
+
+  const cssFile = createRuntimeStylesheetFileName(buildId);
+  const cssPath = join(buildAssetDir, cssFile);
   await writeFile(cssPath, stylesheetResult.css, "utf8");
 
   for (const [srcPath, outputName] of stylesheetResult.fontAssets) {

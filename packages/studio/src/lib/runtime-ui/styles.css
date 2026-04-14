@@ -194,8 +194,8 @@
   --color-divider: var(--divider);
 
   /* Radius scale */
-  --radius-sm: calc(var(--radius) - 0.375rem);
-  --radius-md: calc(var(--radius) - 0.25rem);
+  --radius-sm: max(0rem, calc(var(--radius) - 0.375rem));
+  --radius-md: max(0rem, calc(var(--radius) - 0.25rem));
   --radius-lg: var(--radius);
   --radius-pill: calc(var(--radius) + 0.25rem);
   --radius-xl: calc(var(--radius) + 0.5rem);

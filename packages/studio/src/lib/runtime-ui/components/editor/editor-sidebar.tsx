@@ -205,7 +205,7 @@ export function EditorSidebar({ document, mdxPropsPanel }: EditorSidebarProps) {
                       <Badge
                         key={tag}
                         variant="default"
-                        className="cursor-pointer hover:bg-destructive/10"
+                        className="cursor-pointer hover:bg-destructive/10 hover:text-destructive"
                         onClick={() =>
                           setFormData({
                             ...formData,
