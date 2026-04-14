@@ -125,7 +125,7 @@ function ToolbarButton({
       title={label}
       className={cn(
         "h-8 px-2.5",
-        active && "bg-accent-subtle text-accent",
+        active && "bg-accent-subtle text-primary",
         className,
       )}
     >
@@ -627,7 +627,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
                         ? `${item.label} (unavailable in read-only mode)`
                         : item.label
                   }
-                  className="border-accent text-accent hover:bg-accent-subtle hover:text-accent"
+                  className="border-primary text-primary hover:bg-accent-subtle hover:text-primary"
                 >
                   {renderToolbarItem(item.id)}
                 </Button>
