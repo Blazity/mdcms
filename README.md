@@ -1,178 +1,91 @@
-# MDCMS Workspace
+# MDCMS
 
-This repository hosts the MDCMS monorepo foundation.
+A collaborative CMS built around Markdown and MDX for React-based frameworks.
 
-It is initialized as a Bun-based Nx workspace with app/package boundaries and module/runtime topology required by the roadmap:
+MDCMS treats your database as the source of truth for content while letting you author and manage it through familiar Markdown workflows. Define your content schema in code, sync it to the server, and manage everything through the Studio UI, CLI, or SDK.
 
-| Package          | Purpose                                                         |
-| ---------------- | --------------------------------------------------------------- |
-| `@mdcms/server`  | Backend server package boundary for API/runtime implementation. |
-| `@mdcms/studio`  | Host-embedded Studio package boundary for runtime loader work.  |
-| `@mdcms/sdk`     | Client SDK package boundary for content API consumption.        |
-| `@mdcms/cli`     | CLI package boundary for operator workflows.                    |
-| `@mdcms/shared`  | Shared contracts/types/utilities boundary used across packages. |
-| `@mdcms/modules` | Deterministic local module registry (`packages/modules`).       |
+## Features
 
-## Workspace Commands
+- **Markdown/MDX content** — Author content in Markdown or MDX with custom component support
+- **Code-first schema** — Define content types, fields, and references in TypeScript with Zod validation
+- **Studio UI** — Embeddable React admin interface with a rich document editor, schema browser, and environment management
+- **CLI workflows** — Pull content to local files, edit with any tool, push changes back
+- **Client SDK** — Type-safe read API for fetching content in your app
+- **Versioning and publishing** — Full draft/publish lifecycle with immutable version history
+- **Auth and RBAC** — Session auth, OIDC/SAML SSO, API keys, and role-based access control
+- **Environments** — Manage multiple environments (production, staging, preview) with schema overlays
+- **i18n** — Locale-aware content with translation groups
+- **Extensible modules** — First-party module system for extending server and CLI behavior
 
-Run from the workspace root:
+## Quick Start
 
-- `bun install` - Install workspace dependencies and register the repo-managed Git hooks.
-- `bun run build` - Build all projects with Nx.
-- `bun run typecheck` - Typecheck all projects with Nx.
-- `bun run quality` - Run foundational quality checks (`format:check` + `typecheck`).
-- `bun run unit` - Run unit test targets through Nx.
-- `bun run integration` - Run integration harness checks (`compose:health` + `migrate:check`).
-- `bun run ci:required` - Run all required CI gates locally in sequence.
-- `bun run check` - Run `build` and `typecheck` targets across projects.
-- `bun run hooks:install` - Re-register the tracked Git hooks if local Git config was reset.
-- `bun run dev` - Start Studio watch build, server auto-restart, and the Studio example Next.js dev server in one command.
-- `bun run studio:review:runtime` - Build the private Studio review runtime artifacts used by the review app bootstrap route.
-- `bun run studio:review:dev` - Build the review runtime artifacts and start the private Studio review app.
-- `bun run compose:dev` - Run the full dev loop in Docker Compose (infra + migrations + hot-reload app/server/studio).
-- `bun run compose:dev:down` - Stop the Docker Compose dev stack.
-- `bun run compose:health` - Run the Docker Compose integration health and persistence checks.
-- `bun run migrate:check` - Verify auto-run SQL migrations and server startup in Docker Compose.
-- `bun run format` - Format repository files with Prettier.
-- `bun run format:check` - Check repository formatting with Prettier.
-
-The repository targets Bun `1.3.11` in CI. Use the version recorded in [`.bun-version`](/Users/karol/Desktop/mdcms/.bun-version) for local parity when possible.
-
-## Git Hooks
-
-`bun install` configures `core.hooksPath` to the tracked [`.githooks`](/Users/karol/Desktop/mdcms/.githooks) directory when the repo is installed inside a Git worktree.
-
-The [`.githooks/pre-push`](/Users/karol/Desktop/mdcms/.githooks/pre-push) hook runs `bun run ci:required` from the workspace root and blocks `git push` when any required gate fails.
-
-## Workspace Layout
-
-- `apps/server`
-- `apps/cli`
-- `apps/studio-example`
-- `apps/studio-review`
-- `packages/studio`
-- `packages/sdk`
-- `packages/shared`
-- `packages/modules`
-
-## Local Docker Stack
-
-Run from the workspace root:
+### 1. Start the infrastructure
 
 ```bash
+git clone https://github.com/Blazity/mdcms.git
+cd mdcms
+bun install
 docker compose up -d --build
 ```
 
-For a full containerized development loop (infra + db migration + `bun run dev` watchers):
+### 2. Start the dev server
 
 ```bash
-bun run compose:dev
+bun run dev
 ```
 
-Service endpoints:
+This starts the backend API server, Studio UI build watcher, and the example Next.js host app.
 
-- Server API: `http://localhost:4000` (`GET /healthz`)
-- Postgres: `localhost:5432`
-- Redis: `localhost:6379`
-- MinIO API: `http://localhost:9000`
-- MinIO Console: `http://localhost:9001`
-- Mailhog SMTP: `localhost:1025`
-- Mailhog UI: `http://localhost:8025`
-- Studio example app: `http://127.0.0.1:4173`
-- Studio review app: `http://127.0.0.1:3000`
+### 3. Open Studio
 
-Stop stack:
+Visit [http://127.0.0.1:4173/admin](http://127.0.0.1:4173/admin) to open the Studio UI.
+
+Default demo credentials:
+- Email: `demo@mdcms.local`
+- Password: `Demo12345!`
+
+### 4. Pull and push content with the CLI
 
 ```bash
-docker compose down
+# Authenticate
+bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts login --config apps/studio-example/mdcms.config.ts
+
+# Pull content to local files
+bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts pull --force
+
+# Edit a .md or .mdx file, then push changes back
+bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts push --force
 ```
 
-Stop containerized dev stack:
+## Packages
 
-```bash
-bun run compose:dev:down
-```
+| Package | npm | Description |
+| --- | --- | --- |
+| [`@mdcms/cli`](apps/cli) | `npm install @mdcms/cli` | CLI for content workflows (pull, push, login, schema sync) |
+| [`@mdcms/studio`](packages/studio) | `npm install @mdcms/studio` | Embeddable Studio UI component for host apps |
+| [`@mdcms/sdk`](packages/sdk) | `npm install @mdcms/sdk` | Read-focused client SDK for content APIs |
+| [`@mdcms/shared`](packages/shared) | `npm install @mdcms/shared` | Shared contracts, types, and validators |
+| [`@mdcms/server`](apps/server) | Private | Backend API server (Elysia + PostgreSQL) |
+| [`@mdcms/modules`](packages/modules) | Private | First-party module registry |
 
-Run integration verification:
+## Coming Soon
 
-```bash
-bun run compose:health
-```
+<p align="center">
+  <img src=".github/assets/coming-soon.png" alt="Coming soon" width="600" />
+</p>
 
-The verification script boots the stack, waits for healthy services, validates `/healthz`, checks required host port mappings, verifies `pgdata` and `miniodata` persistence across restart, and tears everything down.
+- **Real-time collaboration** — Live co-editing with conflict resolution
+- **Media management** — Upload, organize, and serve media assets via MinIO/S3
+- **Webhooks** — Notify external systems on content lifecycle events
+- **Full-text search** — Search across content with indexing and ranking
+- **Bulk operations** — Batch publish, unpublish, and delete actions
 
-## Private Studio Review App
+## Documentation
 
-The repository also contains a private review-only Next.js app at
-[`apps/studio-review`](/Users/karol/Desktop/mdcms/apps/studio-review). It is
-intended for PR visual review of Studio shell and editor changes without
-starting the full Compose stack.
+Full documentation is available at [docs.mdcms.ai](https://docs.mdcms.ai/).
 
-The review app keeps production Studio contracts unchanged:
+For architecture decisions and specs, see the [`docs/`](docs) directory.
 
-- it mounts the normal `@mdcms/studio` `<Studio />` shell
-- it serves a local review-only `/api/v1/studio/bootstrap` and
-  `/api/v1/studio/assets/*` subtree from prebuilt runtime artifacts
-- it serves deterministic mock API responses under a scenario-scoped
-  `serverUrl` subtree
+## License
 
-Local run:
-
-```bash
-bun run studio:review:dev
-```
-
-Useful routes:
-
-- `http://127.0.0.1:3000/`
-- `http://127.0.0.1:3000/review/editor/admin`
-- `http://127.0.0.1:3000/review/editor/admin/content/post/11111111-1111-4111-8111-111111111111`
-- `http://127.0.0.1:3000/review/owner/admin/schema`
-
-## Demo Runbook (Pull + Push + Raw Content Page)
-
-1. Start the local stack:
-   - local-hosted dev: `bun run dev` (requires local infra dependencies)
-   - containerized dev: `bun run compose:dev`
-2. Pull content:
-   - `bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts pull --force`
-3. Edit one pulled `.md`/`.mdx` file.
-4. Push content back:
-   - `bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts push --force`
-5. Open:
-   - `http://127.0.0.1:4173/demo/content`
-6. Verify the page renders updated raw `frontmatter` and raw `body`.
-
-Current demo limitation:
-
-- collaboration-aware push rejection remains deferred until CMS-53/CMS-82 closure.
-
-## SQL Migrations
-
-The DB adapter baseline uses Drizzle + `postgres.js` in `@mdcms/server`.
-
-SQL migration authoring flow:
-
-```bash
-bun run --cwd apps/server db:generate
-```
-
-SQL migration apply flow:
-
-```bash
-bun run --cwd apps/server db:migrate
-```
-
-In local Docker Compose, SQL migrations are applied automatically by the one-shot
-`db-migrate` service before `server` starts.
-
-### Environment Defaults
-
-`.env` is optional. If present, Compose reads it automatically. Use `.env.example` as a starting point for overrides.
-
-### Bun and `node-gyp` Workarounds
-
-Some auth tooling (notably `better-auth` via `better-sqlite3`) may require native `node-gyp` compilation that can fail in Bun-focused environments.
-
-- Prefer `npx` over `bunx` for CLI operations that invoke affected tooling (e.g., schema/migration helper commands).
-- If Bun-native install fails, run dependency installation/build steps with Node.js in a build stage or local bootstrap step, then run the app with Bun.
+[MIT](LICENSE)

@@ -23,3 +23,4 @@ This directory is the live documentation entrypoint for MDCMS. It replaces the o
 
 - Specs index: `specs/README.md`
 - ADR index: `adrs/README.md`
+- Full documentation: [docs.mdcms.ai](https://docs.mdcms.ai/)
