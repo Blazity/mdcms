@@ -2,6 +2,12 @@
 
 Read-focused client SDK for MDCMS content APIs.
 
+## Install
+
+```bash
+npm install @mdcms/sdk
+```
+
 ## Usage
 
 ```ts
@@ -14,12 +20,14 @@ const cms = createClient({
   environment: "production",
 });
 
+// Fetch a single document by slug
 const post = await cms.get("BlogPost", {
   slug: "hello-world",
   locale: "en",
   resolve: ["author"],
 });
 
+// List documents with filtering and pagination
 const posts = await cms.list("BlogPost", {
   locale: "en",
   published: true,
@@ -29,20 +37,34 @@ const posts = await cms.list("BlogPost", {
 });
 ```
 
-## Contract
+## API
 
-- `createClient` stores the default `serverUrl`, API key, project, and environment.
-- `get` accepts either `{ id }` or `{ slug }` plus optional `locale`, `resolve`, `draft`, `project`, and `environment`.
-- `list` supports the content list query parameters owned by the content API contract, including `locale`, `resolve`, `draft`, `published`, pagination, and sorting.
-- Per-call `project` and `environment` override the client defaults for that request only.
-- API error envelopes throw `MdcmsApiError`.
-- Transport failures, malformed success payloads, and SDK-derived lookup failures throw `MdcmsClientError`.
+### `createClient(options)`
 
-## Build
+Creates an SDK client instance.
 
-- `bun nx build sdk`
-- `bun nx typecheck sdk`
+| Option | Required | Description |
+| --- | --- | --- |
+| `serverUrl` | Yes | MDCMS server URL |
+| `apiKey` | Yes | API key for authentication |
+| `project` | Yes | Default project name |
+| `environment` | Yes | Default environment name |
 
-## Test
+### `client.get(type, options)`
 
-- `cd packages/sdk && bun test ./src`
+Fetch a single document. Accepts either `{ id }` or `{ slug }` to identify the document, plus optional `locale`, `resolve`, `draft`, `project`, and `environment`.
+
+### `client.list(type, options)`
+
+List documents with filtering, pagination, and sorting. Supports `locale`, `resolve`, `draft`, `published`, `limit`, `offset`, `sort`, and `order`.
+
+Per-call `project` and `environment` override the client defaults for that request.
+
+### Error Handling
+
+- `MdcmsApiError` — thrown for API error envelopes (4xx/5xx responses)
+- `MdcmsClientError` — thrown for transport failures, malformed responses, and SDK-derived lookup failures
+
+## Documentation
+
+Full SDK reference at [docs.mdcms.ai](https://docs.mdcms.ai/).

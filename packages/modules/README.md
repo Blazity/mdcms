@@ -1,41 +1,35 @@
 # @mdcms/modules
 
-Compile-time module registry for MDCMS first-party modules.
+First-party module registry for MDCMS. Modules extend server and CLI behavior through a compile-time plugin system.
 
-## Topology
+> **Note:** This package is internal to the MDCMS monorepo and is not published to npm.
 
-Each module follows:
+## Module Structure
 
-```txt
+Each module follows a standard layout:
+
+```
 packages/modules/<module-id>/src/
-  manifest.ts
-  server/index.ts
-  cli/index.ts
-  index.ts
+  manifest.ts       # Module metadata, dependencies, compatibility
+  server/index.ts   # Server-side routes and actions
+  cli/index.ts      # CLI preflight hooks, aliases, formatters
+  index.ts          # Package entry
 ```
 
-Current seed modules:
+## Current Modules
 
-- `core.system`
-- `domain.content`
+| Module | Description |
+| --- | --- |
+| `core.system` | System-level preflight validation and server routes |
+| `domain.content` | Content domain preflight hooks and server routes |
 
-## Deterministic Registry
+## How It Works
 
-`src/index.ts` exports `installedModules` sorted by `manifest.id`.
+- `src/index.ts` exports an `installedModules` registry, sorted by module ID
+- Server and CLI each have their own module loader that mounts module surfaces at startup
+- Module loading is deterministic — no runtime filesystem discovery
+- The shared bootstrap planner validates dependencies, detects cycles, and computes load order before any module is mounted
 
-- Only local compile-time bundled modules are exported.
-- No runtime filesystem discovery is used.
+## Documentation
 
-## Runtime Behavior
-
-- CLI preflight hooks are executed before command handlers.
-  - `core.system.default-preflight` validates action id presence.
-  - `domain.content.default-preflight` validates `pull` target context.
-- Module server routes return dynamic payloads (route + generation timestamp)
-  instead of fixed stub bodies.
-
-## Build
-
-- `bun nx build modules`
-- `bun nx typecheck modules`
-- `bun nx test modules`
+Full module system reference at [docs.mdcms.ai](https://docs.mdcms.ai/).
