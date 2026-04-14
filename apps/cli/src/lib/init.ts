@@ -79,9 +79,64 @@ function stripExtension(relativePath: string): string {
   return relativePath;
 }
 
+function createLocaleMarkerAllowlist(
+  file: DiscoveredFile,
+  localeConfig: LocaleConfig | null,
+): Set<string> {
+  const markers = new Set<string>();
+
+  if (localeConfig) {
+    for (const locale of localeConfig.supported) {
+      markers.add(locale);
+      const normalized = normalizeLocale(locale);
+      if (normalized) {
+        markers.add(normalized);
+      }
+    }
+
+    for (const [alias, target] of Object.entries(localeConfig.aliases)) {
+      markers.add(alias);
+      markers.add(target);
+
+      const normalizedAlias = normalizeLocale(alias);
+      if (normalizedAlias) {
+        markers.add(normalizedAlias);
+      }
+
+      const normalizedTarget = normalizeLocale(target);
+      if (normalizedTarget) {
+        markers.add(normalizedTarget);
+      }
+    }
+  }
+
+  if (file.localeHint) {
+    markers.add(file.localeHint.rawValue);
+    const normalizedHint = normalizeLocale(file.localeHint.rawValue);
+    if (normalizedHint) {
+      markers.add(normalizedHint);
+    }
+  }
+
+  return markers;
+}
+
+function isKnownLocaleMarker(
+  candidate: string,
+  localeMarkerAllowlist: ReadonlySet<string>,
+): boolean {
+  if (localeMarkerAllowlist.has(candidate)) {
+    return true;
+  }
+
+  const normalized = normalizeLocale(candidate);
+  return normalized !== null && localeMarkerAllowlist.has(normalized);
+}
+
 function normalizeLocalizedImportPath(
   relativePath: string,
   directory?: string,
+  localeMarkerAllowlist: ReadonlySet<string> = new Set(),
 ): string {
   const strippedPath = stripExtension(relativePath);
   const pathSegments = strippedPath.split("/");
@@ -109,16 +164,16 @@ function normalizeLocalizedImportPath(
     basenameSegments.length >= 2
       ? basenameSegments[basenameSegments.length - 1]!
       : null;
-  const normalizedSuffix =
-    suffixCandidate !== null ? normalizeLocale(suffixCandidate) : null;
-  const normalizedBasename =
-    normalizedSuffix !== null
-      ? basenameSegments.slice(0, -1).join(".")
-      : basename;
+  const hasLocaleSuffix =
+    suffixCandidate !== null &&
+    isKnownLocaleMarker(suffixCandidate, localeMarkerAllowlist);
+  const normalizedBasename = hasLocaleSuffix
+    ? basenameSegments.slice(0, -1).join(".")
+    : basename;
 
   const normalizedDirectorySegments = contentSegments
     .slice(0, -1)
-    .filter((segment) => normalizeLocale(segment) === null);
+    .filter((segment) => !isKnownLocaleMarker(segment, localeMarkerAllowlist));
 
   return [
     ...prefixSegments,
@@ -619,11 +674,16 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
             const { frontmatter, body } = parseMarkdownDocument(rawContent);
             const type = findTypeForFile(file, inferredTypes);
             const typeName = type?.name ?? "unknown";
+            const localeMarkerAllowlist = createLocaleMarkerAllowlist(
+              file,
+              localeConfig,
+            );
             const path =
               type?.localized === true
                 ? normalizeLocalizedImportPath(
                     file.relativePath,
                     type.directory,
+                    localeMarkerAllowlist,
                   )
                 : stripExtension(file.relativePath);
 
