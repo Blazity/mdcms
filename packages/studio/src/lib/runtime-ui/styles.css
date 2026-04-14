@@ -274,6 +274,11 @@
       linear-gradient(180deg, var(--background) 0%, var(--background-subtle) 100%);
   }
 
+  .mdcms-studio-runtime :is(h1, h2, h3, h4, h5, h6) {
+    font-family: var(--font-heading);
+    font-weight: 700;
+  }
+
   .mdcms-studio-runtime a {
     color: inherit;
     text-decoration: none;
