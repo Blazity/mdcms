@@ -52,7 +52,7 @@ import {
 } from "../../../../components/ui/pagination.js";
 import { PageHeader } from "../../../../components/layout/page-header.js";
 import { Skeleton } from "../../../../components/ui/skeleton.js";
-import { cn } from "../../../../lib/utils.js";
+
 import { useAdminCapabilities } from "../../capabilities-context.js";
 import { useStudioMountInfo } from "../../mount-info-context.js";
 import {
@@ -77,15 +77,15 @@ import {
 const statusConfig = {
   published: {
     label: "Published",
-    className: "bg-success/10 text-success border-success/20",
+    className: "bg-success/10 text-success",
   },
   draft: {
     label: "Draft",
-    className: "bg-warning/10 text-warning border-warning/20",
+    className: "bg-warning/10 text-warning",
   },
   changed: {
     label: "Changed",
-    className: "bg-warning/10 text-warning border-warning/20",
+    className: "bg-warning/10 text-warning",
   },
 };
 
@@ -640,11 +640,8 @@ export default function ContentTypePage() {
                         ) : null}
                         <TableCell>
                           <Badge
-                            variant="outline"
-                            className={cn(
-                              "text-xs",
-                              statusConfig[doc.status].className,
-                            )}
+                            variant="tag"
+                            className={statusConfig[doc.status].className}
                           >
                             {statusConfig[doc.status].label}
                           </Badge>

@@ -1860,15 +1860,15 @@ function formatRelativeTime(isoDate: string): string {
 
 function getStatusBadge(state: ContentDocumentPageReadyState): {
   label: string;
-  color: string;
+  className: string;
 } {
   if (state.document.publishedVersion === null) {
-    return { label: "Draft", color: "#888" };
+    return { label: "Draft", className: "bg-muted text-foreground-muted" };
   }
 
   return state.document.hasUnpublishedChanges
-    ? { label: "Changed", color: "#f59e0b" }
-    : { label: "Published", color: "#22c55e" };
+    ? { label: "Changed", className: "bg-warning/10 text-warning" }
+    : { label: "Published", className: "bg-success/10 text-success" };
 }
 
 function formatPropertyOptionLabel(value: unknown): string {
@@ -1898,13 +1898,9 @@ export function SidebarInfoTab(props: {
         <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">
           Status
         </div>
-        <div className="inline-flex items-center gap-1.5 rounded-full bg-background-subtle px-2.5 py-1">
-          <span
-            className="h-1.5 w-1.5 rounded-full"
-            style={{ background: status.color }}
-          />
-          <span className="text-xs font-medium">{status.label}</span>
-        </div>
+        <Badge variant="tag" className={status.className}>
+          {status.label}
+        </Badge>
       </div>
 
       <div>

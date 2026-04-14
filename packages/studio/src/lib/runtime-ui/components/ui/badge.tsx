@@ -11,18 +11,14 @@ const badgeVariants = cva(
       variant: {
         default:
           "bg-muted text-foreground",
-        white:
-          "bg-card text-foreground",
-        grey:
-          "bg-neutral-grey text-foreground",
-        "light-blue":
-          "bg-light-blue text-primary",
-        accent:
-          "bg-vibrant-green text-foreground text-tag-2 rounded-sm px-4 py-2",
         destructive:
           "bg-destructive/10 text-destructive",
         outline:
           "border-border text-foreground [a&]:hover:bg-muted",
+        tag:
+          "text-tag rounded-pill gap-1.5 px-2.5 py-0.5",
+        "tag-accent":
+          "text-tag-2 bg-vibrant-green text-foreground rounded-sm px-3 py-1",
       },
     },
     defaultVariants: {
