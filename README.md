@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/Blazity/mdcms/assets/logo-horizontal-light.svg" height="60" alt="MDCMS" />
+  <img src=".github/assets/logo-horizontal-dark.svg" height="60" alt="MDCMS" />
 </p>
 
 <p align="center">

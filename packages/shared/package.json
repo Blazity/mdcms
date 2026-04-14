@@ -1,6 +1,6 @@
 {
   "name": "@mdcms/shared",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Shared contracts, types, and validators for MDCMS",
   "type": "module",
   "main": "./dist/index.js",
@@ -18,28 +18,24 @@
     "./package.json": "./package.json",
     "./mdx": {
       "@mdcms/source": "./src/lib/mdx/index.ts",
-      "bun": "./src/lib/mdx/index.ts",
       "types": "./dist/lib/mdx/index.d.ts",
       "import": "./dist/lib/mdx/index.js",
       "default": "./dist/lib/mdx/index.js"
     },
     "./action-catalog-contract": {
       "@mdcms/source": "./src/lib/contracts/action-catalog-contract.ts",
-      "bun": "./src/lib/contracts/action-catalog-contract.ts",
       "types": "./dist/lib/contracts/action-catalog-contract.d.ts",
       "import": "./dist/lib/contracts/action-catalog-contract.js",
       "default": "./dist/lib/contracts/action-catalog-contract.js"
     },
     "./server": {
       "@mdcms/source": "./src/lib/contracts/schema-hash.ts",
-      "bun": "./src/lib/contracts/schema-hash.ts",
       "types": "./dist/lib/contracts/schema-hash.d.ts",
       "import": "./dist/lib/contracts/schema-hash.js",
       "default": "./dist/lib/contracts/schema-hash.js"
     },
     ".": {
       "@mdcms/source": "./src/index.ts",
-      "bun": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
