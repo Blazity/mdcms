@@ -1232,22 +1232,23 @@ testWithDatabase(
 
     try {
       await seedScope(dbConnection, scope);
+      const payload = createSyncPayload({
+        project: scope.project,
+        schemaHash:
+          "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        resolvedSchema: {
+          Post: createRegistryType({
+            type: "Post",
+            directory: "content/posts",
+            fields: {
+              title: createField({ kind: "string" }),
+            },
+          }),
+        },
+      });
       await store.sync(
         scope,
-        createSyncPayload({
-          project: scope.project,
-          schemaHash:
-            "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
-          resolvedSchema: {
-            Post: createRegistryType({
-              type: "Post",
-              directory: "content/posts",
-              fields: {
-                title: createField({ kind: "string" }),
-              },
-            }),
-          },
-        }),
+        payload as unknown as Parameters<typeof store.sync>[1],
       );
 
       const result = await store.getCurrentSync(scope);

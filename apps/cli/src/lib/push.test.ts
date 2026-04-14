@@ -125,7 +125,10 @@ const BLOG_POST_CONFIG = parseMdcmsConfig(
   }),
 );
 
-function isSchemaGetRequest(input: RequestInfo | URL, init?: RequestInit): boolean {
+function isSchemaGetRequest(
+  input: string | URL | Request,
+  init?: RequestInit,
+): boolean {
   return (
     String(input).endsWith("/api/v1/schema") &&
     (init?.method ?? "GET") === "GET"
