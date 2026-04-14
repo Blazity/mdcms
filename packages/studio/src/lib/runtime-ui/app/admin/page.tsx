@@ -147,7 +147,7 @@ export default function DashboardPage() {
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             {Array.from({ length: 3 }).map((_, i) => (
-              <Card key={i} className="border-border py-0 gap-0">
+              <Card key={i} className="border-border p-0 gap-0">
                 <CardContent className="p-4">
                   <div className="space-y-2">
                     <Skeleton className="h-4 w-20" />
@@ -275,7 +275,7 @@ export default function DashboardPage() {
         {/* Stats Row */}
         <div className="grid gap-4 md:grid-cols-3">
           {statCards.map((stat) => (
-            <Card key={stat.label} className="border-border py-0 gap-0">
+            <Card key={stat.label} className="border-border p-0 gap-0">
               <CardContent className="p-4">
                 <div className="flex items-start justify-between">
                   <div className="space-y-1">
