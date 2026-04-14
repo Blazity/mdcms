@@ -282,6 +282,9 @@ export async function buildStudioRuntimeArtifacts(
   const buildIdHash = createHash("sha256");
   buildIdHash.update(entryBytes);
   buildIdHash.update(new TextEncoder().encode(stylesheetResult.css));
+  for (const [srcPath] of stylesheetResult.fontAssets) {
+    buildIdHash.update(await readFile(srcPath));
+  }
   const buildId = buildIdHash.digest("hex").slice(0, 16);
 
   const entryFile = createRuntimeEntryFileName(buildId);

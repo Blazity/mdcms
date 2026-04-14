@@ -268,7 +268,7 @@
     background:
       radial-gradient(
         circle at top left,
-        rgba(47, 73, 229, 0.08),
+        var(--accent-subtle),
         transparent 24rem
       ),
       linear-gradient(180deg, var(--background) 0%, var(--background-subtle) 100%);

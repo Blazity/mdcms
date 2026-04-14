@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { cn } from "../lib/utils.js";
 
 interface MDCMSLogoProps {
@@ -7,16 +8,23 @@ interface MDCMSLogoProps {
   className?: string;
 }
 
-function LogoIcon({ className }: { className?: string }) {
+function LogoIcon({
+  className,
+  maskId,
+}: {
+  className?: string;
+  maskId: string;
+}) {
   return (
     <svg
       viewBox="0 4 35 35"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
+      aria-hidden="true"
     >
       <mask
-        id="mdcms-logo-mask"
+        id={maskId}
         style={{ maskType: "luminance" }}
         maskUnits="userSpaceOnUse"
         x="0"
@@ -26,7 +34,7 @@ function LogoIcon({ className }: { className?: string }) {
       >
         <path d="M0 4.01196H34.3316V38.1987H0V4.01196Z" fill="white" />
       </mask>
-      <g mask="url(#mdcms-logo-mask)">
+      <g mask={`url(#${maskId})`}>
         <path
           d="M17.4954 19.8468C16.8523 19.7988 16.5695 19.8252 16.0137 20.1448C13.9577 21.3269 11.8896 22.4902 9.84301 23.6884C8.71035 24.3515 8.86327 25.4939 8.86856 26.6135L8.87323 29.049L8.86754 31.4129C8.86208 33.6365 8.87086 33.7353 10.8305 34.8569L12.7272 35.9412C13.5772 36.4271 16.0648 37.9743 16.7961 38.1227C17.4032 38.1839 17.7316 38.1169 18.2555 37.8171C20.2878 36.6538 22.3256 35.499 24.3513 34.3245C25.5248 33.644 25.3944 32.6758 25.3941 31.522L25.3915 28.8691L25.396 26.5205C25.4007 24.3233 25.3797 24.2285 23.4707 23.1348L21.5627 22.0412L19.3001 20.7437C18.7928 20.4531 18.047 19.9646 17.4954 19.8468Z"
           fill="currentColor"
@@ -45,10 +53,14 @@ function LogoIcon({ className }: { className?: string }) {
 }
 
 export function MDCMSLogo({ collapsed = false, className }: MDCMSLogoProps) {
+  const maskId = useId();
+
   return (
     <div className={cn("flex items-center gap-2", className)}>
-      <LogoIcon className="h-7 w-7 shrink-0" />
-      {!collapsed && (
+      <LogoIcon className="h-7 w-7 shrink-0" maskId={maskId} />
+      {collapsed ? (
+        <span className="sr-only">MDCMS</span>
+      ) : (
         <span className="font-heading text-lg font-bold tracking-tight text-foreground">
           MDCMS
         </span>
