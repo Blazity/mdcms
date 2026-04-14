@@ -30,7 +30,7 @@
   "icons": {
     "library": "lucide"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "/favicon.ico",
   "logo": {
     "light": "/logo/light.svg",
     "dark": "/logo/dark.svg",
