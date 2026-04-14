@@ -1341,6 +1341,13 @@ async function runSchemaPreflight(
   const isInteractive = process.stdin.isTTY === true;
 
   const runSyncInline = async (): Promise<PreflightResult> => {
+    if (options.dryRun) {
+      context.stdout.write(
+        `Dry run: skipping schema sync (local hash ${localPayload.schemaHash.slice(0, 12)}...).\n`,
+      );
+      return { outcome: "ok" };
+    }
+
     const syncResult = await performSchemaSync({
       config: context.config as ParsedMdcmsConfig,
       serverUrl: context.serverUrl,
@@ -1371,6 +1378,13 @@ async function runSchemaPreflight(
       }),
     );
 
+    if (options.dryRun) {
+      context.stdout.write(
+        "Dry run: schema drift detected but no sync will be attempted.\n",
+      );
+      return { outcome: "ok" };
+    }
+
     const accepted = await context.confirm(
       "Sync schema to server before pushing content?",
     );
@@ -1392,8 +1406,7 @@ async function runSchemaPreflight(
           .toString()
           .slice(0, 12)}...\n\n` +
         `To sync schema as part of this push, re-run with --sync-schema.\n` +
-        `To inspect drift first, run: cms schema status\n` +
-        `To sync explicitly without push, run: cms schema sync\n`,
+        `To sync explicitly without push, run: mdcms schema sync\n`,
     );
     return { outcome: "abort", exitCode: 1 };
   }

@@ -40,6 +40,15 @@ export async function performSchemaSync(
     environment,
   );
 
+  if (Object.keys(payload.resolvedSchema).length === 0) {
+    return {
+      outcome: "failure",
+      errorCode: "NO_TYPES_DEFINED",
+      message:
+        "Refusing to sync an empty schema. Define at least one type in mdcms.config.ts before syncing.",
+    };
+  }
+
   const headers: Record<string, string> = {
     "content-type": "application/json",
     "x-mdcms-project": project,
@@ -70,12 +79,22 @@ export async function performSchemaSync(
   }
 
   const result = (await response.json().catch(() => undefined)) as
-    | {
-        data: { schemaHash: string; syncedAt: string; affectedTypes: string[] };
-      }
+    | { data?: unknown }
     | undefined;
 
-  if (!result?.data) {
+  const data = isRecord(result?.data) ? (result!.data as Record<string, unknown>) : undefined;
+  const schemaHash = data?.schemaHash;
+  const syncedAt = data?.syncedAt;
+  const affectedTypesRaw = data?.affectedTypes;
+
+  if (
+    typeof schemaHash !== "string" ||
+    schemaHash.length === 0 ||
+    typeof syncedAt !== "string" ||
+    syncedAt.length === 0 ||
+    !Array.isArray(affectedTypesRaw) ||
+    !affectedTypesRaw.every((entry) => typeof entry === "string")
+  ) {
     return {
       outcome: "failure",
       errorCode: "SCHEMA_SYNC_FAILED",
@@ -83,21 +102,27 @@ export async function performSchemaSync(
     };
   }
 
+  const affectedTypes = affectedTypesRaw as string[];
+
   await writeSchemaState(
     { cwd, project, environment },
     {
-      schemaHash: result.data.schemaHash,
-      syncedAt: result.data.syncedAt,
+      schemaHash,
+      syncedAt,
       serverUrl,
     },
   );
 
   return {
     outcome: "success",
-    schemaHash: result.data.schemaHash,
-    syncedAt: result.data.syncedAt,
-    affectedTypes: result.data.affectedTypes,
+    schemaHash,
+    syncedAt,
+    affectedTypes,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function runSchemaSync(context: CliCommandContext): Promise<number> {
