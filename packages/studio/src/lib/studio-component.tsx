@@ -69,17 +69,17 @@ const STUDIO_SHELL_STYLES = `
   isolation: isolate;
   overflow-x: hidden;
   overflow-y: auto;
-  background: linear-gradient(180deg, #0d1320 0%, #090d16 48%, #06070b 100%);
-  color: #f8fafc;
-  font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  background: #FCF9F8;
+  color: #1C1B1B;
+  font-family: Inter, -apple-system, system-ui, sans-serif;
 }
 
 .mdcms-studio-shell__backdrop {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(148, 163, 184, 0.06), transparent 10rem),
-    radial-gradient(circle at top left, rgba(56, 189, 248, 0.08), transparent 24%);
+    radial-gradient(circle at top left, rgba(47, 73, 229, 0.08), transparent 24rem),
+    linear-gradient(180deg, #FCF9F8 0%, #F6F3F2 100%);
 }
 
 .mdcms-studio-shell__frame {
@@ -97,11 +97,11 @@ const STUDIO_SHELL_STYLES = `
   width: 100%;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid rgba(197, 197, 216, 0.2);
   border-radius: 1.125rem;
-  background: rgba(8, 12, 20, 0.86);
+  background: #FFFFFF;
   padding: 1.25rem;
-  box-shadow: 0 20px 60px rgba(2, 6, 23, 0.32);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .mdcms-studio-shell__header {
@@ -109,7 +109,7 @@ const STUDIO_SHELL_STYLES = `
   flex-direction: column;
   gap: 1rem;
   padding-bottom: 1rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  border-bottom: 1px solid rgba(197, 197, 216, 0.3);
 }
 
 .mdcms-studio-shell__brand-group {
@@ -133,16 +133,16 @@ const STUDIO_SHELL_STYLES = `
 }
 
 .mdcms-studio-shell__brand-badge {
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(148, 163, 184, 0.08);
-  color: #cbd5e1;
+  border: 1px solid rgba(197, 197, 216, 0.3);
+  background: rgba(47, 73, 229, 0.08);
+  color: #2F49E5;
 }
 
 .mdcms-studio-shell__path-chip {
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(15, 23, 42, 0.55);
-  color: #cbd5e1;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  border: 1px solid rgba(197, 197, 216, 0.3);
+  background: #F6F3F2;
+  color: #444655;
+  font-family: "Geist Mono", ui-monospace, monospace;
   letter-spacing: 0.04em;
   text-transform: none;
 }
@@ -150,10 +150,10 @@ const STUDIO_SHELL_STYLES = `
 .mdcms-studio-shell__display,
 .mdcms-studio-shell__title {
   margin: 0;
-  font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
-  font-weight: 600;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-weight: 700;
   letter-spacing: -0.03em;
-  color: #fff;
+  color: #1C1B1B;
 }
 
 .mdcms-studio-shell__display {
@@ -175,8 +175,10 @@ const STUDIO_SHELL_STYLES = `
 .mdcms-studio-shell__meta-label,
 .mdcms-studio-shell__details-hint {
   margin: 0;
-  color: #94a3b8;
+  color: #444655;
+  font-family: "Geist Mono", ui-monospace, monospace;
   font-size: 0.72rem;
+  font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
@@ -195,29 +197,29 @@ const STUDIO_SHELL_STYLES = `
 .mdcms-studio-shell__copy,
 .mdcms-studio-shell__summary {
   max-width: 42rem;
-  color: #cbd5e1;
+  color: #444655;
 }
 
 .mdcms-studio-shell__note {
   max-width: 42rem;
-  color: rgba(254, 243, 199, 0.92);
+  color: #92400e;
 }
 
 .mdcms-studio-shell__surface,
 .mdcms-studio-shell__aside,
 .mdcms-studio-shell__details {
   border-radius: 0.95rem;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(197, 197, 216, 0.3);
 }
 
 .mdcms-studio-shell__surface,
 .mdcms-studio-shell__details {
-  background: rgba(2, 6, 23, 0.46);
+  background: #F6F3F2;
   padding: 1rem;
 }
 
 .mdcms-studio-shell__aside {
-  background: rgba(15, 23, 42, 0.42);
+  background: #F6F3F2;
   padding: 1rem;
 }
 
@@ -237,14 +239,14 @@ const STUDIO_SHELL_STYLES = `
   height: 0.75rem;
   width: 7rem;
   border-radius: 999px;
-  background: rgba(71, 85, 105, 0.82);
+  background: rgba(197, 197, 216, 0.5);
 }
 
 .mdcms-studio-shell__skeleton-bar {
   height: 2.25rem;
   width: 100%;
-  border-radius: 1rem;
-  background: rgba(30, 41, 59, 0.75);
+  border-radius: 0.5rem;
+  background: rgba(197, 197, 216, 0.25);
 }
 
 .mdcms-studio-shell__skeleton-grid {
@@ -254,16 +256,16 @@ const STUDIO_SHELL_STYLES = `
 
 .mdcms-studio-shell__skeleton-card {
   height: 6rem;
-  border-radius: 1rem;
-  background: rgba(15, 23, 42, 0.72);
+  border-radius: 0.5rem;
+  background: rgba(197, 197, 216, 0.2);
 }
 
 .mdcms-studio-shell__skeleton-card:nth-child(2) {
-  background: rgba(15, 23, 42, 0.6);
+  background: rgba(197, 197, 216, 0.15);
 }
 
 .mdcms-studio-shell__skeleton-card:nth-child(3) {
-  background: rgba(15, 23, 42, 0.48);
+  background: rgba(197, 197, 216, 0.1);
 }
 
 .mdcms-studio-shell__check-list {
@@ -277,23 +279,23 @@ const STUDIO_SHELL_STYLES = `
   align-items: center;
   gap: 0.75rem;
   padding: 0.8rem 0.9rem;
-  border-radius: 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  background: rgba(0, 0, 0, 0.1);
+  border-radius: 0.5rem;
+  border: 1px solid rgba(197, 197, 216, 0.2);
+  background: #FFFFFF;
 }
 
 .mdcms-studio-shell__check-dot {
   width: 0.55rem;
   height: 0.55rem;
   border-radius: 50%;
-  background: #cbd5e1;
+  background: #2F49E5;
 }
 
 .mdcms-studio-shell__category-badge {
   margin-bottom: 0.75rem;
-  border: 1px solid rgba(248, 113, 113, 0.18);
-  background: rgba(127, 29, 29, 0.22);
-  color: #fecaca;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  background: rgba(239, 68, 68, 0.06);
+  color: #ef4444;
 }
 
 .mdcms-studio-shell__details {
@@ -303,7 +305,7 @@ const STUDIO_SHELL_STYLES = `
 .mdcms-studio-shell__details-summary {
   cursor: pointer;
   list-style: none;
-  color: #f8fafc;
+  color: #1C1B1B;
   font-weight: 500;
 }
 
@@ -318,17 +320,17 @@ const STUDIO_SHELL_STYLES = `
 }
 
 .mdcms-studio-shell__details[open] .mdcms-studio-shell__details-hint {
-  color: #cbd5e1;
+  color: #444655;
 }
 
 .mdcms-studio-shell__details-pre {
   margin: 1rem 0 0;
   padding: 1rem;
-  border-radius: 0.8rem;
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  background: #02040a;
-  color: #cbd5e1;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(197, 197, 216, 0.3);
+  background: #F0EDEC;
+  color: #1C1B1B;
+  font-family: "Geist Mono", ui-monospace, monospace;
   font-size: 0.78rem;
   line-height: 1.7;
   white-space: pre-wrap;
@@ -349,7 +351,7 @@ const STUDIO_SHELL_STYLES = `
   display: grid;
   gap: 0.3rem;
   padding: 0.75rem 0;
-  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  border-top: 1px solid rgba(197, 197, 216, 0.3);
 }
 
 .mdcms-studio-shell__meta-row:first-child {
@@ -358,14 +360,14 @@ const STUDIO_SHELL_STYLES = `
 }
 
 .mdcms-studio-shell__meta-value {
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  color: #f8fafc;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  color: #1C1B1B;
   word-break: break-word;
 }
 
 @keyframes mdcms-studio-shell-pulse {
   0%, 100% {
-    opacity: 0.55;
+    opacity: 0.4;
   }
 
   50% {
