@@ -20,11 +20,15 @@
     "compose:health": "bash scripts/compose-health-check.sh",
     "migrate:check": "bash scripts/migration-startup-check.sh",
     "format": "bun x prettier --write .",
-    "format:check": "bun x prettier --check ."
+    "format:check": "bun x prettier --check .",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "bun run build && changeset publish"
   },
   "private": true,
   "dependencies": {},
   "devDependencies": {
+    "@changesets/cli": "^2.30.0",
     "@nx/js": "22.5.1",
     "@swc-node/register": "~1.11.1",
     "@swc/core": "~1.15.5",

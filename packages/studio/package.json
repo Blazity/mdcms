@@ -1,11 +1,19 @@
 {
   "name": "@mdcms/studio",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Embeddable Studio UI component for MDCMS",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Blazity/mdcms.git",
+    "directory": "packages/studio"
+  },
+  "homepage": "https://github.com/Blazity/mdcms#readme",
+  "bugs": "https://github.com/Blazity/mdcms/issues",
   "exports": {
     "./package.json": "./package.json",
     "./action-catalog-adapter": {
@@ -57,7 +65,7 @@
       "build": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "bun tsc --build packages/studio/tsconfig.lib.json && bun --conditions @mdcms/source packages/studio/src/lib/build-runtime.ts"
+          "command": "rm -rf packages/studio/dist/assets packages/studio/dist/bootstrap && bun tsc --build packages/studio/tsconfig.lib.json && bun --conditions @mdcms/source packages/studio/src/lib/build-runtime.ts"
         }
       }
     }
@@ -75,7 +83,7 @@
     "@fontsource-variable/geist-mono": "^5.2.7",
     "@fontsource-variable/inter": "^5.2.8",
     "@fontsource-variable/space-grotesk": "^5.2.10",
-    "@mdcms/shared": "workspace:*",
+    "@mdcms/shared": "^0.1.0",
     "@radix-ui/react-avatar": "1.1.11",
     "@radix-ui/react-checkbox": "1.3.3",
     "@radix-ui/react-collapsible": "1.1.12",

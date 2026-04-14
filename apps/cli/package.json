@@ -1,11 +1,19 @@
 {
   "name": "@mdcms/cli",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.1.0",
+  "description": "CLI for MDCMS content workflows",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Blazity/mdcms.git",
+    "directory": "apps/cli"
+  },
+  "homepage": "https://github.com/Blazity/mdcms#readme",
+  "bugs": "https://github.com/Blazity/mdcms/issues",
   "bin": {
     "mdcms": "./dist/bin/mdcms.js"
   },
@@ -20,7 +28,15 @@
     }
   },
   "nx": {
-    "name": "cli"
+    "name": "cli",
+    "targets": {
+      "build": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "rm -rf apps/cli/dist && bun tsc --build apps/cli/tsconfig.lib.json && cd apps/cli && bun scripts/build.ts"
+        }
+      }
+    }
   },
   "scripts": {
     "test": "bun test ./src",
@@ -29,13 +45,15 @@
   "dependencies": {
     "@elysiajs/eden": "^1.4.8",
     "@inquirer/prompts": "^7.0.0",
-    "@mdcms/modules": "workspace:*",
-    "@mdcms/shared": "workspace:*",
+    "@mdcms/shared": "^0.1.0",
     "elysia": "^1.4.25",
     "ora": "^8.0.0",
     "tslib": "^2.3.0",
     "yaml": "^2.8.2",
     "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@mdcms/modules": "workspace:*"
   },
   "license": "MIT"
 }

@@ -1,11 +1,19 @@
 {
   "name": "@mdcms/shared",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Shared contracts, types, and validators for MDCMS",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Blazity/mdcms.git",
+    "directory": "packages/shared"
+  },
+  "homepage": "https://github.com/Blazity/mdcms#readme",
+  "bugs": "https://github.com/Blazity/mdcms/issues",
   "exports": {
     "./package.json": "./package.json",
     "./mdx": {
