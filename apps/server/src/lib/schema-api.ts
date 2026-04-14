@@ -14,7 +14,10 @@ import { and, eq, sql } from "drizzle-orm";
 import type { ApiKeyOperationScope, AuthorizationRequirement } from "./auth.js";
 import type { DrizzleDatabase } from "./db.js";
 import { documents, schemaRegistryEntries, schemaSyncs } from "./db/schema.js";
-import { upsertProjectEnvironmentTopologySnapshot } from "./environment-topology.js";
+import {
+  toProjectTopologySnapshot,
+  upsertProjectEnvironmentTopologySnapshot,
+} from "./environment-topology.js";
 import { executeWithRuntimeErrorsHandled } from "./http-utils.js";
 import { resolveProjectEnvironmentScope } from "./project-provisioning.js";
 
@@ -703,6 +706,9 @@ export function createDatabaseSchemaStore(
         const affectedTypes = Object.keys(payload.resolvedSchema).sort(
           (left, right) => left.localeCompare(right),
         );
+        const topologySnapshot = toProjectTopologySnapshot(
+          payload.rawConfigSnapshot,
+        );
 
         await tx
           .insert(schemaSyncs)
@@ -726,7 +732,7 @@ export function createDatabaseSchemaStore(
           tx as unknown as DrizzleDatabase,
           {
             project: scope.project,
-            rawConfigSnapshot: payload.rawConfigSnapshot,
+            rawConfigSnapshot: topologySnapshot,
             syncedAt,
           },
         );

@@ -14,6 +14,7 @@ import {
   assertSchemaRegistryEntry,
   assertSchemaRegistrySyncPayload,
   serializeResolvedEnvironmentSchema,
+  stableStringifyJson,
   toRawConfigSnapshot,
   type SchemaRegistryEntry,
 } from "./schema.js";
@@ -437,6 +438,41 @@ test("toRawConfigSnapshot omits contentDirectories when empty", () => {
   const snapshot = toRawConfigSnapshot(parsed);
 
   assert.equal(snapshot.contentDirectories, undefined);
+});
+
+test("stableStringifyJson sorts object keys recursively and preserves array order", () => {
+  const left = stableStringifyJson({
+    z: [
+      {
+        beta: 2,
+        alpha: 1,
+      },
+      "tail",
+    ],
+    a: {
+      delta: 4,
+      gamma: 3,
+    },
+  });
+  const right = stableStringifyJson({
+    a: {
+      gamma: 3,
+      delta: 4,
+    },
+    z: [
+      {
+        alpha: 1,
+        beta: 2,
+      },
+      "tail",
+    ],
+  });
+
+  assert.equal(
+    left,
+    '{"a":{"delta":4,"gamma":3},"z":[{"alpha":1,"beta":2},"tail"]}',
+  );
+  assert.equal(left, right);
 });
 
 test("buildSchemaSyncPayload returns rawConfigSnapshot, resolvedSchema and a deterministic hash", () => {

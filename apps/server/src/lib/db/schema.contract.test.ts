@@ -315,6 +315,10 @@ test("snapshot includes required named constraints and indexes", () => {
   assert.ok(authVerificationsTable, "expected verifications table in snapshot");
   assert.ok(schemaSyncsTable, "expected schema_syncs table in snapshot");
   assert.ok(
+    projectEnvironmentTopologySnapshotsTable,
+    "expected project_environment_topology_snapshots table in snapshot",
+  );
+  assert.ok(
     schemaRegistryEntriesTable,
     "expected schema_registry_entries table in snapshot",
   );
@@ -448,11 +452,6 @@ test("snapshot includes required named constraints and indexes", () => {
     projectEnvironmentTopologySnapshotsTable.uniqueConstraints
       .unique_project_environment_topology_snapshot,
     "expected unique constraint unique_project_environment_topology_snapshot on project_environment_topology_snapshots",
-  );
-  assert.ok(
-    projectEnvironmentTopologySnapshotsTable.indexes
-      .idx_project_environment_topology_snapshots_project,
-    "expected index idx_project_environment_topology_snapshots_project on project_environment_topology_snapshots",
   );
   assert.ok(
     schemaRegistryEntriesTable.uniqueConstraints

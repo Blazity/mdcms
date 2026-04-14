@@ -718,6 +718,77 @@ testWithDatabase(
 );
 
 testWithDatabase(
+  "schema API keeps the project topology hash stable across environment-specific sync payloads",
+  async () => {
+    const dbConnection = createDatabaseConnection({ env: dbEnv });
+    const store = createDatabaseSchemaStore({
+      db: dbConnection.db,
+      now: () => fixedNow,
+    });
+    const project = `schema-topology-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const productionScope = { project, environment: "production" };
+    const stagingScope = { project, environment: "staging" };
+    const baseRawConfigSnapshot = {
+      project,
+      serverUrl: "http://localhost:4000",
+      environments: {
+        production: {},
+        staging: {
+          extends: "production",
+        },
+      },
+    };
+
+    try {
+      await seedScope(dbConnection, productionScope);
+      await seedScope(dbConnection, stagingScope);
+
+      await store.sync(productionScope, {
+        rawConfigSnapshot: {
+          ...baseRawConfigSnapshot,
+          environment: "production",
+        },
+        resolvedSchema: {},
+        schemaHash: "hash-production",
+      });
+
+      const firstTopologyRow =
+        await dbConnection.db.query.projectEnvironmentTopologySnapshots.findFirst(
+          {
+            where: eq(projectEnvironmentTopologySnapshots.project, project),
+          },
+        );
+      assert.ok(firstTopologyRow);
+
+      await store.sync(stagingScope, {
+        rawConfigSnapshot: {
+          ...baseRawConfigSnapshot,
+          environment: "staging",
+        },
+        resolvedSchema: {},
+        schemaHash: "hash-staging",
+      });
+
+      const secondTopologyRow =
+        await dbConnection.db.query.projectEnvironmentTopologySnapshots.findFirst(
+          {
+            where: eq(projectEnvironmentTopologySnapshots.project, project),
+          },
+        );
+      assert.ok(secondTopologyRow);
+      assert.equal(
+        firstTopologyRow.configSnapshotHash,
+        secondTopologyRow.configSnapshotHash,
+      );
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
   "schema API rejects removing a type that still has active documents",
   async () => {
     const { handler, dbConnection } = createHandler();

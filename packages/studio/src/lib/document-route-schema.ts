@@ -1,10 +1,10 @@
 import {
   parseMdcmsConfig,
   serializeResolvedEnvironmentSchema,
-  type JsonObject,
   type MdcmsConfig as SharedMdcmsConfig,
   type ParsedMdcmsConfig,
   type SchemaRegistrySyncPayload,
+  toRawConfigSnapshot,
 } from "@mdcms/shared";
 
 export type StudioDocumentRouteSchemaCapability =
@@ -39,40 +39,6 @@ export type StudioDocumentRoutePreparedMetadata = {
   schemaHashesByEnvironment: Record<string, string>;
   environmentFieldTargets: Record<string, Record<string, string[]>>;
 };
-
-function toRawConfigSnapshot(config: ParsedMdcmsConfig): JsonObject {
-  const environments = Object.fromEntries(
-    Object.entries(config.environments)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([name, definition]) => [
-        name,
-        (definition.extends
-          ? { extends: definition.extends }
-          : {}) as JsonObject,
-      ]),
-  ) as JsonObject;
-
-  return {
-    project: config.project,
-    serverUrl: config.serverUrl,
-    ...(config.environment ? { environment: config.environment } : {}),
-    environments,
-    ...(config.contentDirectories.length > 0
-      ? { contentDirectories: config.contentDirectories }
-      : {}),
-    ...(config.locales.implicit
-      ? {}
-      : {
-          locales: {
-            default: config.locales.default,
-            supported: config.locales.supported,
-            ...(Object.keys(config.locales.aliases).length > 0
-              ? { aliases: config.locales.aliases }
-              : {}),
-          },
-        }),
-  };
-}
 
 function encodeUtf8(value: string): Uint8Array {
   return new TextEncoder().encode(value);

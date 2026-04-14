@@ -6,5 +6,3 @@ CREATE TABLE "project_environment_topology_snapshots" (
 	"synced_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "unique_project_environment_topology_snapshot" UNIQUE("project")
 );
---> statement-breakpoint
-CREATE INDEX "idx_project_environment_topology_snapshots_project" ON "project_environment_topology_snapshots" USING btree ("project");

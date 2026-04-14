@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 
-import { RuntimeError, type JsonObject } from "@mdcms/shared";
+import {
+  RuntimeError,
+  stableStringifyJson,
+  type JsonObject,
+} from "@mdcms/shared";
 import { eq } from "drizzle-orm";
 
 import type { DrizzleDatabase } from "./db.js";
@@ -132,11 +136,32 @@ export function readEnvironmentDefinitionsFromRawConfigSnapshot(
     });
 }
 
+export function toProjectTopologySnapshot(
+  rawConfigSnapshot: JsonObject,
+): JsonObject {
+  const project = parseRequiredString(
+    rawConfigSnapshot.project,
+    "payload.rawConfigSnapshot.project",
+  );
+  const definitions =
+    readEnvironmentDefinitionsFromRawConfigSnapshot(rawConfigSnapshot);
+
+  return {
+    project,
+    environments: Object.fromEntries(
+      definitions.map((definition) => [
+        definition.name,
+        definition.extends ? { extends: definition.extends } : {},
+      ]),
+    ) as JsonObject,
+  };
+}
+
 export function createConfigSnapshotHash(
   rawConfigSnapshot: JsonObject,
 ): string {
   return `sha256:${createHash("sha256")
-    .update(JSON.stringify(rawConfigSnapshot))
+    .update(stableStringifyJson(rawConfigSnapshot))
     .digest("hex")}`;
 }
 
@@ -187,10 +212,10 @@ export async function upsertProjectEnvironmentTopologySnapshot(
     syncedAt: Date;
   },
 ): Promise<void> {
-  const definitions = readEnvironmentDefinitionsFromRawConfigSnapshot(
-    input.rawConfigSnapshot,
-  );
-  const configSnapshotHash = createConfigSnapshotHash(input.rawConfigSnapshot);
+  const topologySnapshot = toProjectTopologySnapshot(input.rawConfigSnapshot);
+  const definitions =
+    readEnvironmentDefinitionsFromRawConfigSnapshot(topologySnapshot);
+  const configSnapshotHash = createConfigSnapshotHash(topologySnapshot);
 
   await db
     .insert(projectEnvironmentTopologySnapshots)

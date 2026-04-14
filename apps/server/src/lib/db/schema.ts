@@ -324,9 +324,6 @@ export const projectEnvironmentTopologySnapshots = pgTable(
   },
   (table) => [
     unique("unique_project_environment_topology_snapshot").on(table.project),
-    index("idx_project_environment_topology_snapshots_project").on(
-      table.project,
-    ),
   ],
 );
 

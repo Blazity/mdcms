@@ -140,6 +140,31 @@ export function assertJsonObject(
   assertJsonValue(value, path);
 }
 
+export function stableStringifyJson(value: JsonValue): string {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringifyJson(entry)).join(",")}]`;
+  }
+
+  const entries = Object.entries(value).sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+
+  return `{${entries
+    .map(
+      ([key, entry]) => `${JSON.stringify(key)}:${stableStringifyJson(entry)}`,
+    )
+    .join(",")}}`;
+}
+
 function readSchemaMetadata(value: object): unknown {
   const candidate = value as { meta?: () => unknown };
   return typeof candidate.meta === "function" ? candidate.meta() : undefined;
