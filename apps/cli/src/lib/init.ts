@@ -555,6 +555,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
           const manifest: ScopedManifest = {};
           let successCount = 0;
           let failCount = 0;
+          const localizedGroupSeeds = new Map<string, string>();
 
           for (const file of filesToImport) {
             const fullPath = join(cwd, file.relativePath);
@@ -607,6 +608,11 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
               locale = localeConfig?.defaultLocale ?? "en";
             }
             const hash = hashContent(rawContent);
+            const translationGroupKey =
+              type?.localized === true ? `${typeName}:${path}` : null;
+            const sourceDocumentId = translationGroupKey
+              ? localizedGroupSeeds.get(translationGroupKey)
+              : undefined;
 
             const contentHeaders: Record<string, string> = {
               "content-type": "application/json",
@@ -629,6 +635,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
                     format: file.format,
                     frontmatter,
                     body,
+                    ...(sourceDocumentId ? { sourceDocumentId } : {}),
                   }),
                 },
               );
@@ -707,6 +714,15 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
               };
 
               manifest[contentResult.data.documentId] = entry;
+              if (
+                translationGroupKey &&
+                !localizedGroupSeeds.has(translationGroupKey)
+              ) {
+                localizedGroupSeeds.set(
+                  translationGroupKey,
+                  contentResult.data.documentId,
+                );
+              }
               successCount++;
               stdout.write(
                 `Imported ${file.relativePath} -> ${contentResult.data.documentId}\n`,

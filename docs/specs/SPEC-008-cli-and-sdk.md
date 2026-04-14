@@ -113,7 +113,7 @@ The setup wizard uses `@inquirer/prompts` for the interactive TUI and walks thro
 9. **Schema + locale confirmation** — Present inferred schema and locale mapping plan, let developer adjust. Locale detection precedence is `frontmatter > filename suffix > folder segment`; frontmatter keys checked are `locale`, `lang`, and `language`.
 10. **Config generation** — Generate `mdcms.config.ts` with the confirmed schema, server URL, and settings. If localized types are present, generate `locales.default`, `locales.supported`, and persisted remaps in `locales.aliases`. The wizard recommends `locales.default` as the most frequently detected locale and prompts for confirmation/override.
 11. **Schema sync** — Sync schema to server via `PUT /api/v1/schema`. Persist the server-returned `schemaHash` to `.mdcms/schema/<project>.<environment>.json`. Skipped if no content types are defined.
-12. **Initial import** — Push all selected content to the CMS server with explicit `locale` and `content_format` per document. On `409` path conflict, the wizard falls back to `PUT` (update) using the `conflictDocumentId` from the error response. Manifest entries are written to `.mdcms/manifests/<project>.<environment>.json` on success.
+12. **Initial import** — Push all selected content to the CMS server with explicit `locale` and `content_format` per document. For localized types, the wizard creates one seed locale document per derived translation group, then creates remaining locale siblings as variants of that seed so they share a single `translation_group_id`. On `409` path conflict, the wizard falls back to `PUT` (update) using the `conflictDocumentId` from the error response. Manifest entries are written to `.mdcms/manifests/<project>.<environment>.json` on success.
 13. **Gitignore + untracking update** — Add managed content directories to `.gitignore` and explicitly remove already tracked managed content files from the Git index (`git rm -r --cached <dir>`), so they are no longer tracked.
 
 After the credential exchange, the wizard stores the API key in the credential store (keyed by `serverUrl`, `project`, `environment`) for use by subsequent commands.
@@ -140,6 +140,7 @@ For each candidate file discovered during `cms init`:
    - Two or more distinct locales => `localized: true`.
 8. For localized types, files with no locale marker are imported as default-locale variants and reported as warnings.
 9. Build translation groups from normalized base paths (locale markers stripped from suffix/folder forms) before initial import.
+10. During initial import, create one seed locale document per derived translation group and create remaining locale siblings as variants of that seed, so localized brownfield imports surface as one logical document with multiple translations in Studio.
 
 #### Brownfield Verification Scenarios
 
