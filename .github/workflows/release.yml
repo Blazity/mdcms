@@ -41,10 +41,8 @@ jobs:
       - name: Update npm for Trusted Publishers
         run: npm install -g npm@latest
 
-      - name: Install & Build
-        run: |
-          bun install --frozen-lockfile
-          bun run build
+      - name: Install Dependencies
+        run: bun install --frozen-lockfile
 
       - name: Create Release PR or Publish
         id: changesets
@@ -61,10 +59,12 @@ jobs:
 
       - name: Create Git Tags for Published Packages
         if: steps.changesets.outputs.published == 'true'
+        env:
+          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.publishedPackages }}
         run: |
           git fetch --tags
 
-          echo '${{ steps.changesets.outputs.publishedPackages }}' | jq -c '.[]' | while read -r pkg; do
+          echo "$PUBLISHED_PACKAGES" | jq -c '.[]' | while read -r pkg; do
             NAME=$(echo "$pkg" | jq -r '.name')
             VERSION=$(echo "$pkg" | jq -r '.version')
             # Strip @mdcms/ scope for tag name
