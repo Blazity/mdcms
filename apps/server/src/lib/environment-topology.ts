@@ -213,6 +213,20 @@ export async function upsertProjectEnvironmentTopologySnapshot(
   },
 ): Promise<void> {
   const topologySnapshot = toProjectTopologySnapshot(input.rawConfigSnapshot);
+  const snapshotProject = topologySnapshot.project;
+
+  if (snapshotProject !== input.project) {
+    throw createInvalidInputError(
+      "payload.rawConfigSnapshot.project",
+      `Field "payload.rawConfigSnapshot.project" must match project "${input.project}".`,
+      {
+        path: "payload.rawConfigSnapshot.project",
+        expected: input.project,
+        actual: snapshotProject,
+      },
+    );
+  }
+
   const definitions =
     readEnvironmentDefinitionsFromRawConfigSnapshot(topologySnapshot);
   const configSnapshotHash = createConfigSnapshotHash(topologySnapshot);

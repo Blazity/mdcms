@@ -49,6 +49,15 @@ export type SchemaRegistrySyncPayload = {
   schemaHash: string;
 };
 
+export type SchemaRegistrySyncPayloadBase = Omit<
+  SchemaRegistrySyncPayload,
+  "schemaHash"
+>;
+
+export type SchemaRegistrySyncHashInput = SchemaRegistrySyncPayloadBase & {
+  environment: string;
+};
+
 type SerializerContext = {
   required: boolean;
   nullable: boolean;
@@ -791,6 +800,22 @@ export type SchemaStateFile = {
   syncedAt: string;
   serverUrl: string;
 };
+
+export function buildSchemaRegistrySyncPayloadBase(
+  config: ParsedMdcmsConfig,
+  environmentName: string,
+): SchemaRegistrySyncPayloadBase {
+  return {
+    rawConfigSnapshot: toRawConfigSnapshot(config),
+    resolvedSchema: serializeResolvedEnvironmentSchema(config, environmentName),
+  };
+}
+
+export function serializeSchemaRegistrySyncHashInput(
+  input: SchemaRegistrySyncHashInput,
+): string {
+  return stableStringifyJson(input as JsonValue);
+}
 
 export function toRawConfigSnapshot(config: ParsedMdcmsConfig): JsonObject {
   const environments = Object.fromEntries(

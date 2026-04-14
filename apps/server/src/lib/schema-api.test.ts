@@ -265,13 +265,14 @@ async function insertDocument(
 }
 
 function createSyncPayload(input: {
+  project?: string;
   schemaHash: string;
   supportedLocales?: string[];
   resolvedSchema: Record<string, unknown>;
 }) {
   return {
     rawConfigSnapshot: {
-      project: "marketing-site",
+      project: input.project ?? "marketing-site",
       environments: {
         production: {},
       },
@@ -459,6 +460,7 @@ testWithDatabase(
     const scope = createScope();
     const scopeHeaders = toScopeHeaders(scope);
     const payload = createSyncPayload({
+      project: scope.project,
       schemaHash: "csrf-hash-1",
       resolvedSchema: {
         Post: createRegistryType({
@@ -539,6 +541,7 @@ testWithDatabase(
       const scopeIds = await seedScope(dbConnection, scope);
       const scopeHeaders = toScopeHeaders(scope);
       const payload = createSyncPayload({
+        project: scope.project,
         schemaHash: "hash-1",
         supportedLocales: ["en", "fr"],
         resolvedSchema: {
@@ -798,6 +801,7 @@ testWithDatabase(
       const scopeIds = await seedScope(dbConnection, scope);
       const scopeHeaders = toScopeHeaders(scope);
       const initialPayload = createSyncPayload({
+        project: scope.project,
         schemaHash: "hash-1",
         resolvedSchema: {
           Post: createRegistryType({
@@ -837,6 +841,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-2",
               resolvedSchema: {},
             }),
@@ -876,6 +881,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-1",
               resolvedSchema: {
                 Post: createRegistryType({
@@ -911,6 +917,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-2",
               resolvedSchema: {
                 Post: createRegistryType({
@@ -959,6 +966,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-1",
               supportedLocales: ["en", "fr"],
               resolvedSchema: {
@@ -992,6 +1000,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-2",
               supportedLocales: ["en"],
               resolvedSchema: {
@@ -1041,6 +1050,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-1",
               supportedLocales: ["en", "fr"],
               resolvedSchema: {
@@ -1081,6 +1091,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-2",
               supportedLocales: ["en", "fr"],
               resolvedSchema: {
@@ -1131,6 +1142,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-1",
               resolvedSchema: {
                 Post: createRegistryType({
@@ -1163,6 +1175,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-2",
               resolvedSchema: {},
             }),
@@ -1204,6 +1217,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: marketingScope.project,
               schemaHash: "hash-marketing",
               resolvedSchema: {
                 Post: createRegistryType({

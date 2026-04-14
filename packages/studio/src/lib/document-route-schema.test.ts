@@ -9,7 +9,13 @@ import {
   resolveStudioDocumentRoutePreparedMetadata,
   type StudioDocumentRouteSchemaCapability,
 } from "./document-route-schema.js";
-import { defineConfig, defineType, reference } from "@mdcms/shared";
+import {
+  defineConfig,
+  defineType,
+  parseMdcmsConfig,
+  reference,
+} from "@mdcms/shared";
+import { buildSchemaSyncPayload } from "@mdcms/shared/server";
 
 const unsupportedExecutableFieldSchema = {
   "~standard": {
@@ -133,6 +139,31 @@ test("derived schema details expose the local sync payload pieces", async () => 
     "Author",
   ]);
   assert.match(details.syncPayload.schemaHash, /^[a-f0-9]{64}$/);
+});
+
+test("derived schema details use the shared schema-hash construction", async () => {
+  const config = createAuthoredConfig();
+  const details = await resolveStudioDocumentRouteSchemaDetails(config);
+
+  assert.equal(details.canWrite, true);
+  if (!details.canWrite) {
+    throw new Error("Expected a write-capable schema result.");
+  }
+
+  const sharedPayload = buildSchemaSyncPayload(
+    parseMdcmsConfig(config),
+    "staging",
+  );
+
+  assert.equal(details.syncPayload.schemaHash, sharedPayload.schemaHash);
+  assert.deepEqual(
+    details.syncPayload.rawConfigSnapshot,
+    sharedPayload.rawConfigSnapshot,
+  );
+  assert.deepEqual(
+    details.syncPayload.resolvedSchema,
+    sharedPayload.resolvedSchema,
+  );
 });
 
 test("prepared document route metadata includes per-environment hashes and field targets", async () => {
