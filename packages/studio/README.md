@@ -219,6 +219,8 @@ environments[]` so the document sidebar can label environment-specific
 - Remote runtime route: `/admin/schema`
 - The schema page is a live read-only browser over `GET /api/v1/schema` for the
   active `(project, environment)` route context.
+- It keeps the page explicitly code-first: schema definitions stay in the host
+  app repo and operators publish updates with `cms schema sync`.
 - It renders loading, empty, forbidden, error, and ready states from shared
   schema registry data.
 - The browser is intentionally descriptive only:
@@ -226,7 +228,8 @@ environments[]` so the document sidebar can label environment-specific
   - directory
   - localization mode
   - field kind / required / nullable metadata
-  - simple constraint summaries derived from the synced schema snapshot
+  - readable validation and schema-detail summaries derived from the synced
+    schema snapshot
 - `/admin/settings` now links users to `/admin/schema` instead of maintaining a
   second mock schema viewer.
 
