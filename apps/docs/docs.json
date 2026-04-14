@@ -37,6 +37,12 @@
     "href": "https://github.com/Blazity/mdcms"
   },
   "navbar": {
+    "links": [
+      {
+        "label": "Agent Setup",
+        "href": "/agent-instructions"
+      }
+    ],
     "primary": {
       "type": "button",
       "label": "Get Started",
@@ -55,7 +61,7 @@
         "groups": [
           {
             "group": "Introduction",
-            "pages": ["index", "guide/concepts"]
+            "pages": ["index", "guide/concepts", "agent-instructions"]
           },
           {
             "group": "Studio",
