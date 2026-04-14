@@ -1,11 +1,19 @@
 {
   "name": "@mdcms/sdk",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Client SDK for MDCMS",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Blazity/mdcms.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://github.com/Blazity/mdcms#readme",
+  "bugs": "https://github.com/Blazity/mdcms/issues",
   "exports": {
     "./package.json": "./package.json",
     ".": {
@@ -23,7 +31,7 @@
     "test": "bun test ./src"
   },
   "dependencies": {
-    "@mdcms/shared": "workspace:*",
+    "@mdcms/shared": "workspace:^",
     "tslib": "^2.3.0"
   },
   "license": "MIT"
