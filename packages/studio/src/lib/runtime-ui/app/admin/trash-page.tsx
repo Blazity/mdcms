@@ -340,7 +340,7 @@ export default function TrashPage() {
             <p className="mb-4 text-sm text-foreground-muted">
               {list.errorMessage}
             </p>
-            <Button variant="outline" onClick={list.refresh}>
+            <Button variant="ghost" onClick={list.refresh}>
               Try again
             </Button>
           </div>

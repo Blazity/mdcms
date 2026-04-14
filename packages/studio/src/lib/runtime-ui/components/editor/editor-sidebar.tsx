@@ -59,19 +59,19 @@ export function EditorSidebar({ document, mdxPropsPanel }: EditorSidebarProps) {
           <TabsList className="w-full justify-start rounded-none border-b border-border bg-transparent p-0 h-auto">
             <TabsTrigger
               value="fields"
-              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-accent data-[state=active]:bg-transparent"
+              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent"
             >
               Fields
             </TabsTrigger>
             <TabsTrigger
               value="info"
-              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-accent data-[state=active]:bg-transparent"
+              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent"
             >
               Info
             </TabsTrigger>
             <TabsTrigger
               value="seo"
-              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-accent data-[state=active]:bg-transparent text-foreground-muted"
+              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent text-foreground-muted"
               disabled
             >
               SEO
@@ -145,7 +145,7 @@ export function EditorSidebar({ document, mdxPropsPanel }: EditorSidebarProps) {
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         className="w-full justify-start text-left font-normal"
                       >
                         {publishDate
@@ -204,8 +204,8 @@ export function EditorSidebar({ document, mdxPropsPanel }: EditorSidebarProps) {
                     {formData.tags.map((tag) => (
                       <Badge
                         key={tag}
-                        variant="secondary"
-                        className="cursor-pointer hover:bg-destructive/10"
+                        variant="default"
+                        className="cursor-pointer hover:bg-destructive/10 hover:text-destructive"
                         onClick={() =>
                           setFormData({
                             ...formData,
@@ -448,8 +448,8 @@ export function EditorSidebar({ document, mdxPropsPanel }: EditorSidebarProps) {
           {/* SEO Tab (Coming Soon) */}
           <TabsContent value="seo" className="flex-1 mt-0">
             <div className="flex flex-col items-center justify-center h-full p-6 text-center">
-              <div className="mb-4 rounded-full bg-accent/10 p-3">
-                <Sparkles className="h-6 w-6 text-accent" />
+              <div className="mb-4 rounded-full bg-primary/10 p-3">
+                <Sparkles className="h-6 w-6 text-primary" />
               </div>
               <h3 className="mb-2 font-semibold">SEO Analysis</h3>
               <p className="text-sm text-foreground-muted max-w-xs">

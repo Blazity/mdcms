@@ -168,7 +168,7 @@ export function CreateDocumentDialog({
           <DialogFooter>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               onClick={onClose}
               disabled={isSubmitting}
             >
@@ -176,7 +176,7 @@ export function CreateDocumentDialog({
             </Button>
             <Button
               type="submit"
-              className="bg-accent hover:bg-accent-hover text-white"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
               disabled={!canSubmit}
             >
               {isSubmitting ? "Creating..." : "Create"}

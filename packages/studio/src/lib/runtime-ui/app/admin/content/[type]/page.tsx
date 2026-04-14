@@ -52,7 +52,7 @@ import {
 } from "../../../../components/ui/pagination.js";
 import { PageHeader } from "../../../../components/layout/page-header.js";
 import { Skeleton } from "../../../../components/ui/skeleton.js";
-import { cn } from "../../../../lib/utils.js";
+
 import { useAdminCapabilities } from "../../capabilities-context.js";
 import { useStudioMountInfo } from "../../mount-info-context.js";
 import {
@@ -77,15 +77,15 @@ import {
 const statusConfig = {
   published: {
     label: "Published",
-    className: "bg-success/10 text-success border-success/20",
+    className: "bg-success/10 text-success",
   },
   draft: {
     label: "Draft",
-    className: "bg-warning/10 text-warning border-warning/20",
+    className: "bg-warning/10 text-warning",
   },
   changed: {
     label: "Changed",
-    className: "bg-warning/10 text-warning border-warning/20",
+    className: "bg-warning/10 text-warning",
   },
 };
 
@@ -449,7 +449,6 @@ export default function ContentTypePage() {
           <h1 className="text-2xl font-semibold">{typeName}</h1>
           {capabilities.canCreateContent && schemaEntry && (
             <Button
-              className="bg-accent hover:bg-accent-hover text-white"
               onClick={create.open}
             >
               <Plus className="mr-2 h-4 w-4" />
@@ -565,7 +564,7 @@ export default function ContentTypePage() {
             <p className="mb-4 text-sm text-foreground-muted">
               {list.errorMessage}
             </p>
-            <Button variant="outline" onClick={list.refresh}>
+            <Button variant="ghost" onClick={list.refresh}>
               Try again
             </Button>
           </div>
@@ -582,7 +581,6 @@ export default function ContentTypePage() {
             </p>
             {capabilities.canCreateContent && schemaEntry && (
               <Button
-                className="bg-accent hover:bg-accent-hover text-white"
                 onClick={create.open}
               >
                 <Plus className="mr-2 h-4 w-4" />
@@ -642,11 +640,8 @@ export default function ContentTypePage() {
                         ) : null}
                         <TableCell>
                           <Badge
-                            variant="outline"
-                            className={cn(
-                              "text-xs",
-                              statusConfig[doc.status].className,
-                            )}
+                            variant="tag"
+                            className={statusConfig[doc.status].className}
                           >
                             {statusConfig[doc.status].label}
                           </Badge>

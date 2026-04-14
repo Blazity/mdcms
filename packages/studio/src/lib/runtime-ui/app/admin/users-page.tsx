@@ -68,7 +68,7 @@ import { useStudioMountInfo } from "./mount-info-context.js";
 const roleConfig = {
   owner: {
     label: "Owner",
-    className: "bg-accent/10 text-accent border-accent/20",
+    className: "bg-primary/10 text-primary border-primary/20",
   },
   admin: {
     label: "Admin",
@@ -321,7 +321,7 @@ export default function UsersPage() {
           <h1 className="text-2xl font-semibold">Users</h1>
           <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-accent hover:bg-accent-hover text-white">
+              <Button>
                 <Plus className="mr-2 h-4 w-4" />
                 Invite User
               </Button>
@@ -411,7 +411,6 @@ export default function UsersPage() {
                   Cancel
                 </Button>
                 <Button
-                  className="bg-accent hover:bg-accent-hover text-white"
                   disabled={isInviting || !inviteData.email}
                   onClick={handleInvite}
                 >
@@ -435,7 +434,7 @@ export default function UsersPage() {
             <AlertCircle className="mb-4 h-8 w-8 text-destructive" />
             <h3 className="mb-2 text-lg font-semibold">Failed to load users</h3>
             <p className="mb-4 text-sm text-foreground-muted">{errorMessage}</p>
-            <Button variant="outline" onClick={refresh}>
+            <Button variant="ghost" onClick={refresh}>
               Try again
             </Button>
           </div>
@@ -685,7 +684,6 @@ export default function UsersPage() {
                 Cancel
               </Button>
               <Button
-                className="bg-accent hover:bg-accent-hover text-white"
                 disabled={isUpdatingGrants}
                 onClick={handleEditRole}
               >

@@ -67,7 +67,7 @@ export function PageHeaderHeading({
 }: React.HTMLAttributes<HTMLHeadingElement>) {
   return (
     <h1
-      className={cn("text-2xl font-semibold tracking-tight", className)}
+      className={cn("text-h5 font-heading font-bold", className)}
       {...props}
     >
       {children}

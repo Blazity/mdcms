@@ -121,7 +121,7 @@ export function AppSidebar({
                   className={cn(
                     "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
                     isActive
-                      ? "bg-accent-subtle text-accent border-l-[3px] border-accent -ml-0.5 pl-[9px]"
+                      ? "bg-accent-subtle text-primary border-l-[3px] border-primary -ml-0.5 pl-[9px]"
                       : "text-foreground-muted hover:bg-background-subtle hover:text-foreground",
                     collapsed && "justify-center px-0 gap-0",
                   )}

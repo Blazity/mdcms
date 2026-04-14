@@ -147,7 +147,7 @@ export default function DashboardPage() {
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             {Array.from({ length: 3 }).map((_, i) => (
-              <Card key={i} className="border-border py-0 gap-0">
+              <Card key={i} className="border-border p-0 gap-0">
                 <CardContent className="p-4">
                   <div className="space-y-2">
                     <Skeleton className="h-4 w-20" />
@@ -275,7 +275,7 @@ export default function DashboardPage() {
         {/* Stats Row */}
         <div className="grid gap-4 md:grid-cols-3">
           {statCards.map((stat) => (
-            <Card key={stat.label} className="border-border py-0 gap-0">
+            <Card key={stat.label} className="border-border p-0 gap-0">
               <CardContent className="p-4">
                 <div className="flex items-start justify-between">
                   <div className="space-y-1">
@@ -289,8 +289,8 @@ export default function DashboardPage() {
                       </p>
                     )}
                   </div>
-                  <div className="rounded-md bg-accent/10 p-2">
-                    <stat.icon className="h-5 w-5 text-accent" />
+                  <div className="rounded-md bg-primary/10 p-2">
+                    <stat.icon className="h-5 w-5 text-primary" />
                   </div>
                 </div>
               </CardContent>
@@ -304,7 +304,6 @@ export default function DashboardPage() {
             <Button
               variant="default"
               asChild
-              className="bg-accent hover:bg-accent-hover text-white"
             >
               <Link href="/admin/content">
                 <Plus className="mr-2 h-4 w-4" />
@@ -322,7 +321,7 @@ export default function DashboardPage() {
               <CardTitle className="text-lg font-semibold">Content</CardTitle>
               <Link
                 href="/admin/content"
-                className="text-sm text-foreground-muted hover:text-accent flex items-center gap-1"
+                className="text-sm text-foreground-muted hover:text-primary flex items-center gap-1"
               >
                 View all <ChevronRight className="h-4 w-4" />
               </Link>
@@ -344,8 +343,8 @@ export default function DashboardPage() {
                       href={`/admin/content/${ct.type}`}
                       className="flex items-center gap-4 rounded-lg p-3 transition-colors hover:bg-background-subtle"
                     >
-                      <div className="flex h-10 w-10 items-center justify-center rounded-md bg-accent/10">
-                        <FileText className="h-5 w-5 text-accent" />
+                      <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10">
+                        <FileText className="h-5 w-5 text-primary" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -393,7 +392,7 @@ export default function DashboardPage() {
               </CardTitle>
               <Link
                 href="/admin/content"
-                className="text-sm text-foreground-muted hover:text-accent flex items-center gap-1"
+                className="text-sm text-foreground-muted hover:text-primary flex items-center gap-1"
               >
                 View all <ChevronRight className="h-4 w-4" />
               </Link>
@@ -411,8 +410,8 @@ export default function DashboardPage() {
                       href={`/admin/content/${doc.type}/${doc.documentId}`}
                       className="flex items-start gap-3 rounded-lg p-2 transition-colors hover:bg-background-subtle"
                     >
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent/10">
-                        <FileText className="h-4 w-4 text-accent" />
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
+                        <FileText className="h-4 w-4 text-primary" />
                       </div>
                       <div className="flex-1 min-w-0 text-sm">
                         <p className="font-medium truncate">

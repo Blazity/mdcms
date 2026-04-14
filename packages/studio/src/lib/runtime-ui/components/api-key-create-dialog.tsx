@@ -263,7 +263,7 @@ export function ApiKeyCreateDialog({
             <DialogFooter>
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 onClick={handleDismiss}
                 disabled={isSubmitting}
               >
@@ -271,7 +271,7 @@ export function ApiKeyCreateDialog({
               </Button>
               <Button
                 type="submit"
-                className="bg-accent hover:bg-accent-hover text-white"
+                className="bg-primary hover:bg-primary/90 text-primary-foreground"
                 disabled={!canSubmit}
               >
                 {isSubmitting ? "Creating..." : "Create API Key"}
@@ -298,7 +298,7 @@ export function ApiKeyCreateDialog({
                   </code>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="icon"
                     onClick={handleCopy}
                   >
@@ -315,7 +315,7 @@ export function ApiKeyCreateDialog({
             <DialogFooter>
               <Button
                 type="button"
-                className="bg-accent hover:bg-accent-hover text-white"
+                className="bg-primary hover:bg-primary/90 text-primary-foreground"
                 onClick={handleDismiss}
               >
                 I've saved this key

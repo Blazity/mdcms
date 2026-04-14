@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import tailwindcss from "@tailwindcss/postcss";
@@ -207,9 +207,15 @@ async function bundleRuntimeEntry(input: {
   return await entryOutput.text();
 }
 
+type StylesheetCompileResult = {
+  css: string;
+  /** Absolute source path → output filename for each font asset. */
+  fontAssets: Map<string, string>;
+};
+
 async function compileRuntimeStylesheet(input: {
   projectRoot: string;
-}): Promise<string> {
+}): Promise<StylesheetCompileResult> {
   const stylesheetSourcePath = join(
     input.projectRoot,
     "src/lib/runtime-ui/styles.css",
@@ -219,7 +225,32 @@ async function compileRuntimeStylesheet(input: {
     from: stylesheetSourcePath,
   });
 
-  return result.css;
+  const cssDir = dirname(stylesheetSourcePath);
+  const fontAssets = new Map<string, string>();
+  const seen = new Map<string, string>();
+
+  const rewritten = result.css.replace(
+    /url\(([^)]+\.woff2[^)]*)\)/g,
+    (_match, rawUrl: string) => {
+      const cleanUrl = rawUrl.replace(/['"]/g, "").split("?")[0]!.trim();
+      const absPath = isAbsolute(cleanUrl)
+        ? cleanUrl
+        : resolve(cssDir, cleanUrl);
+
+      if (seen.has(absPath)) {
+        return `url(${seen.get(absPath)})`;
+      }
+
+      const base = basename(absPath);
+      const prefix = sha256Hex(absPath).slice(0, 6);
+      const outputName = `${prefix}-${base}`;
+      fontAssets.set(absPath, outputName);
+      seen.set(absPath, outputName);
+      return `url(${outputName})`;
+    },
+  );
+
+  return { css: rewritten, fontAssets };
 }
 
 export async function buildStudioRuntimeArtifacts(
@@ -241,26 +272,34 @@ export async function buildStudioRuntimeArtifacts(
     projectRoot,
     sourceFile,
   });
+  const stylesheetResult = await compileRuntimeStylesheet({
+    projectRoot,
+  });
+
   const entryBytes = new TextEncoder().encode(bundledEntry);
   const integritySha256 = sha256Hex(entryBytes);
-  const buildId = integritySha256.slice(0, 16);
-  const entryFile = createRuntimeEntryFileName(buildId);
 
-  const entryPath = join(
-    outDir,
-    STUDIO_RUNTIME_ASSETS_DIRNAME,
-    buildId,
-    entryFile,
-  );
-  await mkdir(dirname(entryPath), { recursive: true });
+  const buildIdHash = createHash("sha256");
+  buildIdHash.update(entryBytes);
+  buildIdHash.update(new TextEncoder().encode(stylesheetResult.css));
+  for (const [srcPath] of stylesheetResult.fontAssets) {
+    buildIdHash.update(await readFile(srcPath));
+  }
+  const buildId = buildIdHash.digest("hex").slice(0, 16);
+
+  const entryFile = createRuntimeEntryFileName(buildId);
+  const buildAssetDir = join(outDir, STUDIO_RUNTIME_ASSETS_DIRNAME, buildId);
+  const entryPath = join(buildAssetDir, entryFile);
+  await mkdir(buildAssetDir, { recursive: true });
   await writeFile(entryPath, bundledEntry, "utf8");
 
   const cssFile = createRuntimeStylesheetFileName(buildId);
-  const cssPath = join(outDir, STUDIO_RUNTIME_ASSETS_DIRNAME, buildId, cssFile);
-  const compiledStylesheet = await compileRuntimeStylesheet({
-    projectRoot,
-  });
-  await writeFile(cssPath, compiledStylesheet, "utf8");
+  const cssPath = join(buildAssetDir, cssFile);
+  await writeFile(cssPath, stylesheetResult.css, "utf8");
+
+  for (const [srcPath, outputName] of stylesheetResult.fontAssets) {
+    await copyFile(srcPath, join(buildAssetDir, outputName));
+  }
 
   const entryUrl = createStudioRuntimeEntryUrl({
     assetsBasePath,
