@@ -139,7 +139,7 @@ For each candidate file discovered during `cms init`:
    - No multi-locale evidence => `localized: false`.
    - Two or more distinct locales => `localized: true`.
 8. For localized types, files with no locale marker are imported as default-locale variants and reported as warnings.
-9. Build translation groups from normalized base paths (locale markers stripped from suffix/folder forms) before initial import.
+9. Build translation groups from normalized base paths before initial import. Base-path normalization is derived from the filesystem path and strips locale markers from suffix/folder forms even when frontmatter provides the canonical locale value for the document.
 10. During initial import, create one seed locale document per derived translation group and create remaining locale siblings as variants of that seed, so localized brownfield imports surface as one logical document with multiple translations in Studio.
 
 #### Brownfield Verification Scenarios
