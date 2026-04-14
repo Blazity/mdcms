@@ -1,6 +1,6 @@
 {
   "name": "@mdcms/cli",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "CLI for MDCMS content workflows",
   "type": "module",
   "main": "./dist/index.js",
