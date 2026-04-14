@@ -4,6 +4,7 @@ import { buildSchemaSyncPayload } from "@mdcms/shared/server";
 import { createDatabaseEnvironmentStore } from "./environments-api.js";
 import { loadServerConfig } from "./config.js";
 import type { DrizzleDatabase } from "./db.js";
+import { upsertProjectEnvironmentTopologySnapshot } from "./environment-topology.js";
 import {
   DEFAULT_ENVIRONMENT_NAME,
   ensureProjectProvisioned,
@@ -86,9 +87,17 @@ export async function ensureDemoScopeProvisioned(
     );
   }
 
+  await upsertProjectEnvironmentTopologySnapshot(options.db, {
+    project: options.project,
+    rawConfigSnapshot: buildSchemaSyncPayload(
+      loaded.config,
+      DEFAULT_ENVIRONMENT_NAME,
+    ).rawConfigSnapshot,
+    syncedAt: new Date(),
+  });
+
   const environmentStore = createDatabaseEnvironmentStore({
     db: options.db,
-    getConfig: async () => loaded.config,
   });
 
   await environmentStore.create(options.project, {

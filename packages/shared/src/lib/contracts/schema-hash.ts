@@ -2,22 +2,27 @@ import { createHash } from "node:crypto";
 
 import type { ParsedMdcmsConfig } from "./config.js";
 import {
+  buildSchemaRegistrySyncPayloadBase,
+  serializeSchemaRegistrySyncHashInput,
   type SchemaRegistrySyncPayload,
-  serializeResolvedEnvironmentSchema,
-  toRawConfigSnapshot,
 } from "./schema.js";
 
 export function buildSchemaSyncPayload(
   config: ParsedMdcmsConfig,
   environment: string,
 ): SchemaRegistrySyncPayload {
-  const rawConfigSnapshot = toRawConfigSnapshot(config);
-  const resolvedSchema = serializeResolvedEnvironmentSchema(
-    config,
-    environment,
-  );
+  const payloadBase = buildSchemaRegistrySyncPayloadBase(config, environment);
   const schemaHash = createHash("sha256")
-    .update(JSON.stringify({ environment, rawConfigSnapshot, resolvedSchema }))
+    .update(
+      serializeSchemaRegistrySyncHashInput({
+        environment,
+        ...payloadBase,
+      }),
+    )
     .digest("hex");
-  return { rawConfigSnapshot, resolvedSchema, schemaHash };
+
+  return {
+    ...payloadBase,
+    schemaHash,
+  };
 }

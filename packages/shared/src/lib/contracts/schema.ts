@@ -49,6 +49,15 @@ export type SchemaRegistrySyncPayload = {
   schemaHash: string;
 };
 
+export type SchemaRegistrySyncPayloadBase = Omit<
+  SchemaRegistrySyncPayload,
+  "schemaHash"
+>;
+
+export type SchemaRegistrySyncHashInput = SchemaRegistrySyncPayloadBase & {
+  environment: string;
+};
+
 type SerializerContext = {
   required: boolean;
   nullable: boolean;
@@ -138,6 +147,31 @@ export function assertJsonObject(
   }
 
   assertJsonValue(value, path);
+}
+
+export function stableStringifyJson(value: JsonValue): string {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringifyJson(entry)).join(",")}]`;
+  }
+
+  const entries = Object.entries(value).sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+
+  return `{${entries
+    .map(
+      ([key, entry]) => `${JSON.stringify(key)}:${stableStringifyJson(entry)}`,
+    )
+    .join(",")}}`;
 }
 
 function readSchemaMetadata(value: object): unknown {
@@ -767,11 +801,39 @@ export type SchemaStateFile = {
   serverUrl: string;
 };
 
+export function buildSchemaRegistrySyncPayloadBase(
+  config: ParsedMdcmsConfig,
+  environmentName: string,
+): SchemaRegistrySyncPayloadBase {
+  return {
+    rawConfigSnapshot: toRawConfigSnapshot(config),
+    resolvedSchema: serializeResolvedEnvironmentSchema(config, environmentName),
+  };
+}
+
+export function serializeSchemaRegistrySyncHashInput(
+  input: SchemaRegistrySyncHashInput,
+): string {
+  return stableStringifyJson(input as JsonValue);
+}
+
 export function toRawConfigSnapshot(config: ParsedMdcmsConfig): JsonObject {
+  const environments = Object.fromEntries(
+    Object.entries(config.environments)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([name, definition]) => [
+        name,
+        (definition.extends
+          ? { extends: definition.extends }
+          : {}) as JsonObject,
+      ]),
+  ) as JsonObject;
+
   return {
     project: config.project,
     serverUrl: config.serverUrl,
     ...(config.environment ? { environment: config.environment } : {}),
+    environments,
     ...(config.contentDirectories.length > 0
       ? { contentDirectories: config.contentDirectories }
       : {}),

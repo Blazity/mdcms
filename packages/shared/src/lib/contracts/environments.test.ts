@@ -4,6 +4,8 @@ import { test } from "bun:test";
 import { RuntimeError } from "../runtime/error.js";
 import {
   assertEnvironmentCreateInput,
+  assertEnvironmentDefinitionsMeta,
+  assertEnvironmentListResponse,
   assertEnvironmentSummary,
 } from "./environments.js";
 
@@ -91,5 +93,57 @@ test("assertEnvironmentSummary uses the provided path in error messages", () => 
       error instanceof RuntimeError &&
       error.code === "INVALID_INPUT" &&
       error.message.includes("response.data"),
+  );
+});
+
+test("assertEnvironmentDefinitionsMeta accepts ready and missing metadata", () => {
+  assert.doesNotThrow(() =>
+    assertEnvironmentDefinitionsMeta({
+      definitionsStatus: "ready",
+      configSnapshotHash: "sha256:abc123",
+      syncedAt: "2026-03-19T10:00:00.000Z",
+    }),
+  );
+
+  assert.doesNotThrow(() =>
+    assertEnvironmentDefinitionsMeta({
+      definitionsStatus: "missing",
+    }),
+  );
+});
+
+test("assertEnvironmentDefinitionsMeta rejects incomplete ready metadata", () => {
+  assert.throws(
+    () =>
+      assertEnvironmentDefinitionsMeta({
+        definitionsStatus: "ready",
+        syncedAt: "2026-03-19T10:00:00.000Z",
+      }),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "INVALID_INPUT" &&
+      error.message.includes("value.configSnapshotHash"),
+  );
+});
+
+test("assertEnvironmentListResponse validates environment rows with readiness metadata", () => {
+  assert.doesNotThrow(() =>
+    assertEnvironmentListResponse({
+      data: [
+        {
+          id: "env-production",
+          project: "marketing-site",
+          name: "production",
+          extends: null,
+          isDefault: true,
+          createdAt: "2026-03-19T10:00:00.000Z",
+        },
+      ],
+      meta: {
+        definitionsStatus: "ready",
+        configSnapshotHash: "sha256:abc123",
+        syncedAt: "2026-03-19T10:00:00.000Z",
+      },
+    }),
   );
 });

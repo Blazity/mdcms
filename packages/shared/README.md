@@ -85,8 +85,12 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
 
 - Shared environment management surface:
   - `EnvironmentSummary`
+  - `EnvironmentDefinitionsMeta`
+  - `EnvironmentListResponse`
   - `EnvironmentCreateInput`
   - `assertEnvironmentSummary(...)`
+  - `assertEnvironmentDefinitionsMeta(...)`
+  - `assertEnvironmentListResponse(...)`
   - `assertEnvironmentCreateInput(...)`
 - `EnvironmentSummary` is the canonical admin-facing environment payload:
   - `id`
@@ -96,8 +100,12 @@ This package is intentionally scaffolded in CMS-1 to provide a stable import bou
   - `isDefault`
   - `createdAt`
 - Environment management remains config-authoritative:
-  - valid environment names come from `mdcms.config.ts`
-  - `extends` metadata is derived from config, not authored in the database
+  - valid environment names come from the latest synced config snapshot derived
+    from `mdcms.config.ts`
+  - `GET /api/v1/environments` returns `EnvironmentListResponse` with
+    definitions readiness metadata
+  - `extends` metadata is derived from the synced topology snapshot, not
+    authored in the database
 
 ## Schema Registry Contracts (CMS-17)
 

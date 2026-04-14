@@ -1,8 +1,10 @@
 import {
   RuntimeError,
   assertEnvironmentCreateInput,
+  assertEnvironmentListResponse,
   assertEnvironmentSummary,
   type EnvironmentCreateInput,
+  type EnvironmentListResponse,
   type EnvironmentSummary,
 } from "@mdcms/shared";
 
@@ -25,7 +27,7 @@ export type StudioEnvironmentApiOptions = {
 };
 
 export type StudioEnvironmentApi = {
-  list: () => Promise<EnvironmentSummary[]>;
+  list: () => Promise<EnvironmentListResponse>;
   create: (input: EnvironmentCreateInput) => Promise<EnvironmentSummary>;
   delete: (environmentId: string) => Promise<void>;
 };
@@ -110,6 +112,14 @@ function parseEnvironmentSummaryFromPayload(
   return data;
 }
 
+function parseEnvironmentListResponseFromPayload(
+  payload: unknown,
+  path: string,
+): EnvironmentListResponse {
+  assertEnvironmentListResponse(payload, path);
+  return payload;
+}
+
 export function createStudioEnvironmentApi(
   config: StudioEnvironmentApiConfig,
   options: StudioEnvironmentApiOptions = {},
@@ -141,15 +151,7 @@ export function createStudioEnvironmentApi(
         );
       }
 
-      if (!isRecord(payload) || !Array.isArray(payload.data)) {
-        return [];
-      }
-
-      payload.data.forEach((item, index) => {
-        assertEnvironmentSummary(item, `response.data[${index}]`);
-      });
-
-      return payload.data;
+      return parseEnvironmentListResponseFromPayload(payload, "response");
     },
 
     async create(input) {

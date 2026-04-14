@@ -14,6 +14,7 @@ import {
   assertSchemaRegistryEntry,
   assertSchemaRegistrySyncPayload,
   serializeResolvedEnvironmentSchema,
+  stableStringifyJson,
   toRawConfigSnapshot,
   type SchemaRegistryEntry,
 } from "./schema.js";
@@ -328,7 +329,37 @@ test("toRawConfigSnapshot includes project, serverUrl and omits implicit locales
   assert.equal(snapshot.project, "my-site");
   assert.equal(snapshot.serverUrl, "http://localhost:4000");
   assert.deepEqual(snapshot.contentDirectories, ["content"]);
+  assert.deepEqual(snapshot.environments, {
+    production: {},
+  });
   assert.equal(snapshot.locales, undefined);
+});
+
+test("toRawConfigSnapshot includes environment topology definitions", () => {
+  const parsed = parseMdcmsConfig(
+    defineConfig({
+      project: "marketing-site",
+      serverUrl: "http://localhost:4000",
+      types: [
+        defineType("Post", {
+          fields: { title: z.string() },
+        }),
+      ],
+      environments: {
+        production: {},
+        staging: { extends: "production" },
+        preview: { extends: "staging" },
+      },
+    }),
+  );
+
+  const snapshot = toRawConfigSnapshot(parsed);
+
+  assert.deepEqual(snapshot.environments, {
+    preview: { extends: "staging" },
+    production: {},
+    staging: { extends: "production" },
+  });
 });
 
 test("toRawConfigSnapshot includes explicit locales with aliases when configured", () => {
@@ -407,6 +438,41 @@ test("toRawConfigSnapshot omits contentDirectories when empty", () => {
   const snapshot = toRawConfigSnapshot(parsed);
 
   assert.equal(snapshot.contentDirectories, undefined);
+});
+
+test("stableStringifyJson sorts object keys recursively and preserves array order", () => {
+  const left = stableStringifyJson({
+    z: [
+      {
+        beta: 2,
+        alpha: 1,
+      },
+      "tail",
+    ],
+    a: {
+      delta: 4,
+      gamma: 3,
+    },
+  });
+  const right = stableStringifyJson({
+    a: {
+      gamma: 3,
+      delta: 4,
+    },
+    z: [
+      {
+        alpha: 1,
+        beta: 2,
+      },
+      "tail",
+    ],
+  });
+
+  assert.equal(
+    left,
+    '{"a":{"delta":4,"gamma":3},"z":[{"alpha":1,"beta":2},"tail"]}',
+  );
+  assert.equal(left, right);
 });
 
 test("buildSchemaSyncPayload returns rawConfigSnapshot, resolvedSchema and a deterministic hash", () => {

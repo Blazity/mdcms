@@ -238,6 +238,13 @@ test("schema snapshot includes CMS-11/CMS-12 core tables and columns", () => {
       "raw_config_snapshot",
       "synced_at",
     ],
+    "public.project_environment_topology_snapshots": [
+      "id",
+      "project",
+      "config_snapshot_hash",
+      "definitions",
+      "synced_at",
+    ],
     "public.schema_registry_entries": [
       "id",
       "project_id",
@@ -281,6 +288,8 @@ test("snapshot includes required named constraints and indexes", () => {
   const authAccountsTable = snapshot.tables["public.accounts"];
   const authVerificationsTable = snapshot.tables["public.verifications"];
   const schemaSyncsTable = snapshot.tables["public.schema_syncs"];
+  const projectEnvironmentTopologySnapshotsTable =
+    snapshot.tables["public.project_environment_topology_snapshots"];
   const schemaRegistryEntriesTable =
     snapshot.tables["public.schema_registry_entries"];
 
@@ -305,6 +314,10 @@ test("snapshot includes required named constraints and indexes", () => {
   assert.ok(authAccountsTable, "expected accounts table in snapshot");
   assert.ok(authVerificationsTable, "expected verifications table in snapshot");
   assert.ok(schemaSyncsTable, "expected schema_syncs table in snapshot");
+  assert.ok(
+    projectEnvironmentTopologySnapshotsTable,
+    "expected project_environment_topology_snapshots table in snapshot",
+  );
   assert.ok(
     schemaRegistryEntriesTable,
     "expected schema_registry_entries table in snapshot",
@@ -434,6 +447,11 @@ test("snapshot includes required named constraints and indexes", () => {
   assert.ok(
     schemaSyncsTable.foreignKeys.fk_schema_syncs_env_project,
     "expected foreign key fk_schema_syncs_env_project on schema_syncs",
+  );
+  assert.ok(
+    projectEnvironmentTopologySnapshotsTable.uniqueConstraints
+      .unique_project_environment_topology_snapshot,
+    "expected unique constraint unique_project_environment_topology_snapshot on project_environment_topology_snapshots",
   );
   assert.ok(
     schemaRegistryEntriesTable.uniqueConstraints

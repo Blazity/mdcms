@@ -1818,6 +1818,9 @@ function createSchemaSyncPayload(
   return {
     rawConfigSnapshot: {
       project,
+      environments: {
+        production: {},
+      },
     },
     resolvedSchema: {
       Post: {

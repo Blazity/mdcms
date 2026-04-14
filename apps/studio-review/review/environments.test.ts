@@ -16,9 +16,10 @@ beforeEach(() => {
 test("listReviewEnvironments allows owner scenarios and returns seeded rows", () => {
   const environments = listReviewEnvironments("owner");
 
-  assert.equal(environments.length, 2);
-  assert.equal(environments[0]?.name, "production");
-  assert.equal(environments[1]?.name, "staging");
+  assert.equal(environments.meta.definitionsStatus, "ready");
+  assert.equal(environments.data.length, 2);
+  assert.equal(environments.data[0]?.name, "production");
+  assert.equal(environments.data[1]?.name, "staging");
 });
 
 test("listReviewEnvironments forbids non-admin scenarios", () => {
@@ -33,12 +34,18 @@ test("listReviewEnvironments forbids non-admin scenarios", () => {
 });
 
 test("createReviewEnvironment persists newly created review rows", () => {
+  const before = listReviewEnvironments("owner");
   const created = createReviewEnvironment("owner", { name: "preview" });
   const environments = listReviewEnvironments("owner");
 
   assert.equal(created.name, "preview");
-  assert.equal(environments.length, 3);
-  assert.equal(environments[2]?.name, "preview");
+  assert.equal(environments.data.length, 3);
+  assert.equal(environments.data[2]?.name, "preview");
+  assert.notEqual(
+    before.meta.configSnapshotHash,
+    environments.meta.configSnapshotHash,
+  );
+  assert.notEqual(before.meta.syncedAt, environments.meta.syncedAt);
 });
 
 test("createReviewEnvironment forbids non-admin scenarios", () => {
@@ -53,13 +60,20 @@ test("createReviewEnvironment forbids non-admin scenarios", () => {
 });
 
 test("deleteReviewEnvironment removes non-default rows and rejects deleting production", () => {
+  const before = listReviewEnvironments("owner");
   const deleted = deleteReviewEnvironment("owner", "env-staging");
+  const after = listReviewEnvironments("owner");
 
   assert.deepEqual(deleted, {
     deleted: true,
     id: "env-staging",
   });
-  assert.equal(listReviewEnvironments("owner").length, 1);
+  assert.equal(after.data.length, 1);
+  assert.notEqual(
+    before.meta.configSnapshotHash,
+    after.meta.configSnapshotHash,
+  );
+  assert.notEqual(before.meta.syncedAt, after.meta.syncedAt);
 
   assert.throws(
     () => deleteReviewEnvironment("owner", "env-production"),

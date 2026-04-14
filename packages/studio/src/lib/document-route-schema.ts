@@ -1,7 +1,7 @@
 import {
+  buildSchemaRegistrySyncPayloadBase,
   parseMdcmsConfig,
-  serializeResolvedEnvironmentSchema,
-  type JsonObject,
+  serializeSchemaRegistrySyncHashInput,
   type MdcmsConfig as SharedMdcmsConfig,
   type ParsedMdcmsConfig,
   type SchemaRegistrySyncPayload,
@@ -39,28 +39,6 @@ export type StudioDocumentRoutePreparedMetadata = {
   schemaHashesByEnvironment: Record<string, string>;
   environmentFieldTargets: Record<string, Record<string, string[]>>;
 };
-
-function toRawConfigSnapshot(config: ParsedMdcmsConfig): JsonObject {
-  return {
-    project: config.project,
-    serverUrl: config.serverUrl,
-    ...(config.environment ? { environment: config.environment } : {}),
-    ...(config.contentDirectories.length > 0
-      ? { contentDirectories: config.contentDirectories }
-      : {}),
-    ...(config.locales.implicit
-      ? {}
-      : {
-          locales: {
-            default: config.locales.default,
-            supported: config.locales.supported,
-            ...(Object.keys(config.locales.aliases).length > 0
-              ? { aliases: config.locales.aliases }
-              : {}),
-          },
-        }),
-  };
-}
 
 function encodeUtf8(value: string): Uint8Array {
   return new TextEncoder().encode(value);
@@ -178,25 +156,32 @@ function resolveEnvironmentFieldTargets(
   return result;
 }
 
+async function buildStudioSchemaSyncPayload(
+  config: ParsedMdcmsConfig,
+  environment: string,
+): Promise<SchemaRegistrySyncPayload> {
+  const payloadBase = buildSchemaRegistrySyncPayloadBase(config, environment);
+  const schemaHash = await sha256Hex(
+    serializeSchemaRegistrySyncHashInput({
+      environment,
+      ...payloadBase,
+    }),
+  );
+
+  return {
+    ...payloadBase,
+    schemaHash,
+  };
+}
+
 async function resolveSchemaHashesByEnvironment(
   config: ParsedMdcmsConfig,
 ): Promise<Record<string, string>> {
-  const rawConfigSnapshot = toRawConfigSnapshot(config);
   const entries = await Promise.all(
     listResolvedEnvironments(config).map(async (environment) => {
-      const resolvedSchema = serializeResolvedEnvironmentSchema(
-        config,
-        environment,
-      );
-      const schemaHash = await sha256Hex(
-        JSON.stringify({
-          environment,
-          rawConfigSnapshot,
-          resolvedSchema,
-        }),
-      );
+      const payload = await buildStudioSchemaSyncPayload(config, environment);
 
-      return [environment, schemaHash] as const;
+      return [environment, payload.schemaHash] as const;
     }),
   );
 
@@ -277,29 +262,15 @@ export async function resolveStudioDocumentRouteSchemaDetails(
   }
 
   try {
-    const rawConfigSnapshot = toRawConfigSnapshot(parsedConfig);
-    const resolvedSchema = serializeResolvedEnvironmentSchema(
+    const syncPayload = await buildStudioSchemaSyncPayload(
       parsedConfig,
       environment,
     );
-    const schemaHash = (await resolveSchemaHashesByEnvironment(parsedConfig))[
-      environment
-    ];
-
-    if (!schemaHash) {
-      throw new Error(
-        `Studio writes require a resolved schema for environment "${environment}".`,
-      );
-    }
 
     return {
       canWrite: true,
       environment,
-      syncPayload: {
-        rawConfigSnapshot,
-        resolvedSchema,
-        schemaHash,
-      },
+      syncPayload,
     };
   } catch (error) {
     return createReadOnlyCapability(

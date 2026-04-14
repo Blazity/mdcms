@@ -4,7 +4,11 @@ import { test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { EnvironmentSummary } from "@mdcms/shared";
+import {
+  RuntimeError,
+  type EnvironmentDefinitionsMeta,
+  type EnvironmentSummary,
+} from "@mdcms/shared";
 
 import { ThemeProvider } from "../../adapters/next-themes.js";
 import { StudioMountInfoProvider } from "./mount-info-context.js";
@@ -12,6 +16,7 @@ import { StudioSessionProvider } from "./session-context.js";
 import {
   EnvironmentManagementPageView,
   type EnvironmentManagementState,
+  resolveDeleteFailureState,
 } from "./environments-page.js";
 
 function createEnvironmentSummary(
@@ -28,7 +33,10 @@ function createEnvironmentSummary(
   };
 }
 
-function renderMarkup(state: EnvironmentManagementState): string {
+function renderMarkup(
+  state: EnvironmentManagementState,
+  props: Partial<Parameters<typeof EnvironmentManagementPageView>[0]> = {},
+): string {
   return renderToStaticMarkup(
     createElement(
       ThemeProvider,
@@ -53,11 +61,23 @@ function renderMarkup(state: EnvironmentManagementState): string {
           },
           createElement(EnvironmentManagementPageView, {
             state,
+            ...props,
           }),
         ),
       ),
     ),
   );
+}
+
+function createDefinitionsMeta(
+  overrides: Partial<EnvironmentDefinitionsMeta> = {},
+): EnvironmentDefinitionsMeta {
+  return {
+    definitionsStatus: "ready",
+    configSnapshotHash: "sha256:abc123",
+    syncedAt: "2026-03-19T10:00:00.000Z",
+    ...overrides,
+  };
 }
 
 test("EnvironmentManagementPageView renders loading and empty states deterministically", () => {
@@ -70,6 +90,7 @@ test("EnvironmentManagementPageView renders loading and empty states determinist
     status: "ready",
     project: "marketing-site",
     environments: [],
+    definitionsMeta: createDefinitionsMeta(),
   });
 
   assert.match(loadingMarkup, /class="min-h-screen"/);
@@ -98,6 +119,7 @@ test("EnvironmentManagementPageView renders live environment summaries and only 
         createdAt: "2026-03-20T11:30:45.000Z",
       }),
     ],
+    definitionsMeta: createDefinitionsMeta(),
   });
 
   assert.match(markup, /data-mdcms-environments-page-state="ready"/);
@@ -130,4 +152,89 @@ test("EnvironmentManagementPageView renders forbidden and error states", () => {
     /data-mdcms-environments-page-state="forbidden"/,
   );
   assert.match(errorMarkup, /data-mdcms-environments-page-state="error"/);
+});
+
+test("EnvironmentManagementPageView keeps delete conflicts inside the modal", () => {
+  const markup = renderMarkup(
+    {
+      status: "ready",
+      project: "marketing-site",
+      environments: [
+        createEnvironmentSummary(),
+        createEnvironmentSummary({
+          id: "env-staging",
+          name: "staging",
+          extends: "production",
+          isDefault: false,
+        }),
+      ],
+      definitionsMeta: createDefinitionsMeta(),
+    },
+    {
+      deleteTarget: createEnvironmentSummary({
+        id: "env-staging",
+        name: "staging",
+        extends: "production",
+        isDefault: false,
+      }),
+      deleteError:
+        'Environment "staging" cannot be deleted while content or schema state still exists.',
+    },
+  );
+
+  assert.match(markup, /data-mdcms-delete-error/);
+  assert.match(markup, /Delete Environment/);
+  assert.match(
+    markup,
+    /Environment &quot;staging&quot; cannot be deleted while content or schema state still exists\./,
+  );
+  assert.doesNotMatch(markup, /data-mdcms-page-action-error/);
+});
+
+test("EnvironmentManagementPageView disables creation when synced definitions are missing", () => {
+  const markup = renderMarkup({
+    status: "ready",
+    project: "marketing-site",
+    environments: [createEnvironmentSummary()],
+    definitionsMeta: {
+      definitionsStatus: "missing",
+    },
+  });
+
+  assert.match(
+    markup,
+    /Environment management requires a successful cms schema sync/i,
+  );
+  assert.match(markup, /New Environment/);
+  assert.match(markup, /disabled=""/);
+});
+
+test("resolveDeleteFailureState reloads after not-found delete failures", () => {
+  const notFound = resolveDeleteFailureState(
+    new RuntimeError({
+      code: "NOT_FOUND",
+      message: "Environment not found.",
+      statusCode: 404,
+    }),
+  );
+  const conflict = resolveDeleteFailureState(
+    new RuntimeError({
+      code: "CONFLICT",
+      message: "Environment is not empty.",
+      statusCode: 409,
+    }),
+  );
+
+  assert.deepEqual(notFound, {
+    message: "Environment not found.",
+    shouldCloseDialog: true,
+    shouldReload: true,
+    renderInDialog: false,
+  });
+  assert.deepEqual(conflict, {
+    message: "Environment is not empty.",
+    shouldCloseDialog: false,
+    shouldReload: false,
+    renderInDialog: true,
+  });
 });

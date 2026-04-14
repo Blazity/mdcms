@@ -10,6 +10,7 @@ import { createDatabaseConnection } from "./db.js";
 import {
   documents,
   environments,
+  projectEnvironmentTopologySnapshots,
   projects,
   rbacGrants,
   schemaRegistryEntries,
@@ -264,13 +265,17 @@ async function insertDocument(
 }
 
 function createSyncPayload(input: {
+  project?: string;
   schemaHash: string;
   supportedLocales?: string[];
   resolvedSchema: Record<string, unknown>;
 }) {
   return {
     rawConfigSnapshot: {
-      project: "marketing-site",
+      project: input.project ?? "marketing-site",
+      environments: {
+        production: {},
+      },
       ...(input.supportedLocales
         ? {
             locales: {
@@ -455,6 +460,7 @@ testWithDatabase(
     const scope = createScope();
     const scopeHeaders = toScopeHeaders(scope);
     const payload = createSyncPayload({
+      project: scope.project,
       schemaHash: "csrf-hash-1",
       resolvedSchema: {
         Post: createRegistryType({
@@ -535,6 +541,7 @@ testWithDatabase(
       const scopeIds = await seedScope(dbConnection, scope);
       const scopeHeaders = toScopeHeaders(scope);
       const payload = createSyncPayload({
+        project: scope.project,
         schemaHash: "hash-1",
         supportedLocales: ["en", "fr"],
         resolvedSchema: {
@@ -605,6 +612,24 @@ testWithDatabase(
         Reflect.has(syncRows[0] ?? {}, "extractedComponents"),
         false,
       );
+
+      const topologyRows = await dbConnection.db
+        .select()
+        .from(projectEnvironmentTopologySnapshots)
+        .where(eq(projectEnvironmentTopologySnapshots.project, scope.project));
+
+      assert.equal(topologyRows.length, 1);
+      assert.equal(
+        topologyRows[0]?.configSnapshotHash.startsWith("sha256:"),
+        true,
+      );
+      assert.deepEqual(topologyRows[0]?.definitions, [
+        {
+          name: "production",
+          extends: null,
+          isDefault: true,
+        },
+      ]);
 
       const entryRows = await dbConnection.db
         .select()
@@ -696,6 +721,77 @@ testWithDatabase(
 );
 
 testWithDatabase(
+  "schema API keeps the project topology hash stable across environment-specific sync payloads",
+  async () => {
+    const dbConnection = createDatabaseConnection({ env: dbEnv });
+    const store = createDatabaseSchemaStore({
+      db: dbConnection.db,
+      now: () => fixedNow,
+    });
+    const project = `schema-topology-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const productionScope = { project, environment: "production" };
+    const stagingScope = { project, environment: "staging" };
+    const baseRawConfigSnapshot = {
+      project,
+      serverUrl: "http://localhost:4000",
+      environments: {
+        production: {},
+        staging: {
+          extends: "production",
+        },
+      },
+    };
+
+    try {
+      await seedScope(dbConnection, productionScope);
+      await seedScope(dbConnection, stagingScope);
+
+      await store.sync(productionScope, {
+        rawConfigSnapshot: {
+          ...baseRawConfigSnapshot,
+          environment: "production",
+        },
+        resolvedSchema: {},
+        schemaHash: "hash-production",
+      });
+
+      const firstTopologyRow =
+        await dbConnection.db.query.projectEnvironmentTopologySnapshots.findFirst(
+          {
+            where: eq(projectEnvironmentTopologySnapshots.project, project),
+          },
+        );
+      assert.ok(firstTopologyRow);
+
+      await store.sync(stagingScope, {
+        rawConfigSnapshot: {
+          ...baseRawConfigSnapshot,
+          environment: "staging",
+        },
+        resolvedSchema: {},
+        schemaHash: "hash-staging",
+      });
+
+      const secondTopologyRow =
+        await dbConnection.db.query.projectEnvironmentTopologySnapshots.findFirst(
+          {
+            where: eq(projectEnvironmentTopologySnapshots.project, project),
+          },
+        );
+      assert.ok(secondTopologyRow);
+      assert.equal(
+        firstTopologyRow.configSnapshotHash,
+        secondTopologyRow.configSnapshotHash,
+      );
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
   "schema API rejects removing a type that still has active documents",
   async () => {
     const { handler, dbConnection } = createHandler();
@@ -705,6 +801,7 @@ testWithDatabase(
       const scopeIds = await seedScope(dbConnection, scope);
       const scopeHeaders = toScopeHeaders(scope);
       const initialPayload = createSyncPayload({
+        project: scope.project,
         schemaHash: "hash-1",
         resolvedSchema: {
           Post: createRegistryType({
@@ -744,6 +841,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-2",
               resolvedSchema: {},
             }),
@@ -783,6 +881,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-1",
               resolvedSchema: {
                 Post: createRegistryType({
@@ -818,6 +917,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-2",
               resolvedSchema: {
                 Post: createRegistryType({
@@ -866,6 +966,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-1",
               supportedLocales: ["en", "fr"],
               resolvedSchema: {
@@ -899,6 +1000,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-2",
               supportedLocales: ["en"],
               resolvedSchema: {
@@ -948,6 +1050,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-1",
               supportedLocales: ["en", "fr"],
               resolvedSchema: {
@@ -988,6 +1091,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-2",
               supportedLocales: ["en", "fr"],
               resolvedSchema: {
@@ -1038,6 +1142,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-1",
               resolvedSchema: {
                 Post: createRegistryType({
@@ -1070,6 +1175,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: scope.project,
               schemaHash: "hash-2",
               resolvedSchema: {},
             }),
@@ -1111,6 +1217,7 @@ testWithDatabase(
           },
           body: JSON.stringify(
             createSyncPayload({
+              project: marketingScope.project,
               schemaHash: "hash-marketing",
               resolvedSchema: {
                 Post: createRegistryType({

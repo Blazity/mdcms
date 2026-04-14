@@ -1,8 +1,21 @@
-import { RuntimeError, type EnvironmentSummary } from "@mdcms/shared";
+import { createHash } from "node:crypto";
+
+import {
+  RuntimeError,
+  type EnvironmentListResponse,
+  type EnvironmentSummary,
+  stableStringifyJson,
+  type JsonValue,
+} from "@mdcms/shared";
 
 import { getReviewScenario } from "./scenarios";
 
-type ReviewEnvironmentStore = Map<string, EnvironmentSummary[]>;
+type ReviewEnvironmentStoreEntry = {
+  environments: EnvironmentSummary[];
+  syncedAt: string;
+};
+
+type ReviewEnvironmentStore = Map<string, ReviewEnvironmentStoreEntry>;
 
 const reviewEnvironmentSeeds: readonly EnvironmentSummary[] = [
   {
@@ -23,20 +36,42 @@ const reviewEnvironmentSeeds: readonly EnvironmentSummary[] = [
   },
 ] as const;
 
+const REVIEW_ENVIRONMENT_SEED_SYNCED_AT = "2026-03-20T10:00:00.000Z";
+
 const store: ReviewEnvironmentStore = new Map();
 
 function cloneSeedData(): EnvironmentSummary[] {
   return reviewEnvironmentSeeds.map((environment) => ({ ...environment }));
 }
 
-function readScenarioStore(scenarioId: string): EnvironmentSummary[] {
+function createReviewConfigSnapshotHash(
+  environments: EnvironmentSummary[],
+): string {
+  return `sha256:${createHash("sha256")
+    .update(stableStringifyJson(environments as unknown as JsonValue))
+    .digest("hex")}`;
+}
+
+function bumpSyncedAt(currentSyncedAt: string): string {
+  const currentTimestamp = Date.parse(currentSyncedAt);
+  const minimumNextTimestamp = Number.isNaN(currentTimestamp)
+    ? 0
+    : currentTimestamp + 1;
+
+  return new Date(Math.max(Date.now(), minimumNextTimestamp)).toISOString();
+}
+
+function readScenarioStore(scenarioId: string): ReviewEnvironmentStoreEntry {
   const existing = store.get(scenarioId);
 
   if (existing) {
     return existing;
   }
 
-  const seeded = cloneSeedData();
+  const seeded: ReviewEnvironmentStoreEntry = {
+    environments: cloneSeedData(),
+    syncedAt: REVIEW_ENVIRONMENT_SEED_SYNCED_AT,
+  };
   store.set(scenarioId, seeded);
   return seeded;
 }
@@ -87,14 +122,23 @@ export function resetReviewEnvironmentStore(): void {
 
 export function listReviewEnvironments(
   scenarioId: string,
-): EnvironmentSummary[] {
+): EnvironmentListResponse {
   if (!canManageReviewEnvironments(scenarioId)) {
     throw createForbiddenError();
   }
 
-  return readScenarioStore(scenarioId).map((environment) => ({
-    ...environment,
-  }));
+  const entry = readScenarioStore(scenarioId);
+
+  return {
+    data: entry.environments.map((environment) => ({
+      ...environment,
+    })),
+    meta: {
+      definitionsStatus: "ready",
+      configSnapshotHash: createReviewConfigSnapshotHash(entry.environments),
+      syncedAt: entry.syncedAt,
+    },
+  };
 }
 
 export function createReviewEnvironment(
@@ -111,7 +155,8 @@ export function createReviewEnvironment(
     throw createInvalidInputError();
   }
 
-  const environments = readScenarioStore(scenarioId);
+  const entry = readScenarioStore(scenarioId);
+  const environments = entry.environments;
 
   if (environments.some((environment) => environment.name === name)) {
     throw createConflictError(`Environment "${name}" already exists.`);
@@ -127,6 +172,7 @@ export function createReviewEnvironment(
   };
 
   environments.push(created);
+  entry.syncedAt = bumpSyncedAt(entry.syncedAt);
 
   return { ...created };
 }
@@ -139,7 +185,8 @@ export function deleteReviewEnvironment(
     throw createForbiddenError();
   }
 
-  const environments = readScenarioStore(scenarioId);
+  const entry = readScenarioStore(scenarioId);
+  const environments = entry.environments;
   const index = environments.findIndex(
     (environment) => environment.id === environmentId,
   );
@@ -161,6 +208,7 @@ export function deleteReviewEnvironment(
   }
 
   environments.splice(index, 1);
+  entry.syncedAt = bumpSyncedAt(entry.syncedAt);
 
   return {
     deleted: true,

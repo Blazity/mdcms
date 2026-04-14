@@ -2,7 +2,30 @@ import assert from "node:assert/strict";
 
 import { test } from "bun:test";
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
+
+test("environment review GET returns environments with readiness metadata", async () => {
+  const response = await GET(
+    new Request("http://localhost/review-api/owner/api/v1/environments"),
+    {
+      params: Promise.resolve({
+        scenario: "owner",
+      }),
+    },
+  );
+
+  const payload = (await response.json()) as {
+    data: Array<{ name: string }>;
+    meta: { definitionsStatus: string };
+  };
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.meta.definitionsStatus, "ready");
+  assert.deepEqual(
+    payload.data.map((environment) => environment.name),
+    ["production", "staging"],
+  );
+});
 
 test("environment review POST returns 400 for malformed json bodies", async () => {
   const response = await POST(

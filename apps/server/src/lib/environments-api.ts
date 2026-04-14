@@ -2,8 +2,9 @@ import {
   RuntimeError,
   assertEnvironmentCreateInput,
   type EnvironmentCreateInput,
+  type EnvironmentDefinitionsMeta,
+  type EnvironmentListResponse,
   type EnvironmentSummary,
-  type ParsedMdcmsConfig,
   resolveRequestTargetRouting,
 } from "@mdcms/shared";
 import { and, eq, sql } from "drizzle-orm";
@@ -17,6 +18,10 @@ import {
   schemaRegistryEntries,
   schemaSyncs,
 } from "./db/schema.js";
+import {
+  loadProjectEnvironmentTopologySnapshot,
+  type PersistedEnvironmentDefinition,
+} from "./environment-topology.js";
 import { executeWithRuntimeErrorsHandled } from "./http-utils.js";
 import {
   DEFAULT_ENVIRONMENT_NAME,
@@ -36,7 +41,7 @@ type EnvironmentRouteApp = {
 };
 
 export type EnvironmentStore = {
-  list: (project: string) => Promise<EnvironmentSummary[]>;
+  list: (project: string) => Promise<EnvironmentListResponse>;
   create: (
     project: string,
     input: EnvironmentCreateInput,
@@ -68,7 +73,6 @@ export type MountEnvironmentApiRoutesOptions = {
 
 export type CreateDatabaseEnvironmentStoreOptions = {
   db: DrizzleDatabase;
-  getConfig: () => Promise<ParsedMdcmsConfig | undefined>;
 };
 
 function createInvalidInputError(
@@ -96,6 +100,18 @@ function createConflictError(
     message,
     statusCode: 409,
     details,
+  });
+}
+
+function createConfigSnapshotRequiredError(project: string): RuntimeError {
+  return new RuntimeError({
+    code: "CONFIG_SNAPSHOT_REQUIRED",
+    message:
+      "Environment management is unavailable until this project's config has been synced to the backend. Run cms schema sync from the host app repo.",
+    statusCode: 409,
+    details: {
+      project,
+    },
   });
 }
 
@@ -133,44 +149,54 @@ function toIsoString(value: unknown): string {
 function toEnvironmentSummary(input: {
   project: string;
   row: typeof environments.$inferSelect;
-  config?: ParsedMdcmsConfig;
+  definition?: PersistedEnvironmentDefinition;
 }): EnvironmentSummary {
   return {
     id: input.row.id,
     project: input.project,
     name: input.row.name,
-    extends: input.config?.environments[input.row.name]?.extends ?? null,
-    isDefault: input.row.name === DEFAULT_ENVIRONMENT_NAME,
+    extends: input.definition?.extends ?? null,
+    isDefault:
+      input.definition?.isDefault ??
+      input.row.name === DEFAULT_ENVIRONMENT_NAME,
     createdAt: toIsoString(input.row.createdAt),
   };
 }
 
-async function requireConfig(
-  getConfig: () => Promise<ParsedMdcmsConfig | undefined>,
-): Promise<ParsedMdcmsConfig> {
-  const config = await getConfig();
-
-  if (!config) {
-    throw new RuntimeError({
-      code: "INTERNAL_ERROR",
-      message: "Server config is required to manage environments.",
-      statusCode: 500,
-    });
+function toDefinitionsMeta(
+  snapshot: Awaited<ReturnType<typeof loadProjectEnvironmentTopologySnapshot>>,
+): EnvironmentDefinitionsMeta {
+  if (!snapshot) {
+    return {
+      definitionsStatus: "missing",
+    };
   }
 
-  return config;
+  return {
+    definitionsStatus: "ready",
+    configSnapshotHash: snapshot.configSnapshotHash,
+    syncedAt: snapshot.syncedAt,
+  };
 }
 
-function assertEnvironmentAllowedByConfig(
-  config: ParsedMdcmsConfig,
+function toDefinitionMap(
+  definitions: readonly PersistedEnvironmentDefinition[],
+): Map<string, PersistedEnvironmentDefinition> {
+  return new Map(
+    definitions.map((definition) => [definition.name, definition]),
+  );
+}
+
+function assertEnvironmentAllowedByDefinitions(
+  definitions: Map<string, PersistedEnvironmentDefinition>,
   input: EnvironmentCreateInput,
 ): void {
-  const definition = config.environments[input.name];
+  const definition = definitions.get(input.name);
 
   if (!definition) {
     throw createInvalidInputError(
       "name",
-      `Environment "${input.name}" is not defined in mdcms.config.ts.`,
+      `Environment "${input.name}" is not defined in the latest synced project config snapshot.`,
       {
         environment: input.name,
       },
@@ -183,7 +209,7 @@ function assertEnvironmentAllowedByConfig(
   if (providedExtends !== null && providedExtends !== expectedExtends) {
     throw createInvalidInputError(
       "extends",
-      `Environment "${input.name}" must extend "${expectedExtends ?? "null"}" according to mdcms.config.ts.`,
+      `Environment "${input.name}" must extend "${expectedExtends ?? "null"}" according to the latest synced project config snapshot.`,
       {
         environment: input.name,
         expectedExtends,
@@ -196,34 +222,41 @@ function assertEnvironmentAllowedByConfig(
 export function createDatabaseEnvironmentStore(
   options: CreateDatabaseEnvironmentStoreOptions,
 ): EnvironmentStore {
-  const { db, getConfig } = options;
+  const { db } = options;
 
   return {
     async list(project) {
       const normalizedProject = assertRequiredString(project, "project");
-      const [projectRow, config] = await Promise.all([
+      const [projectRow, snapshot] = await Promise.all([
         findProjectBySlug(db, normalizedProject),
-        getConfig(),
+        loadProjectEnvironmentTopologySnapshot(db, normalizedProject),
       ]);
 
       if (!projectRow) {
-        return [];
+        return {
+          data: [],
+          meta: toDefinitionsMeta(snapshot),
+        };
       }
 
       const rows = await db
         .select()
         .from(environments)
         .where(eq(environments.projectId, projectRow.id));
+      const definitions = toDefinitionMap(snapshot?.definitions ?? []);
 
-      return rows
-        .map((row) =>
-          toEnvironmentSummary({
-            project: normalizedProject,
-            row,
-            config: config ?? undefined,
-          }),
-        )
-        .sort((left, right) => left.name.localeCompare(right.name));
+      return {
+        data: rows
+          .map((row) =>
+            toEnvironmentSummary({
+              project: normalizedProject,
+              row,
+              definition: definitions.get(row.name),
+            }),
+          )
+          .sort((left, right) => left.name.localeCompare(right.name)),
+        meta: toDefinitionsMeta(snapshot),
+      };
     },
 
     async create(project, input) {
@@ -236,9 +269,18 @@ export function createDatabaseEnvironmentStore(
             }
           : {}),
       } satisfies EnvironmentCreateInput;
-      const config = await requireConfig(getConfig);
+      const snapshot = await loadProjectEnvironmentTopologySnapshot(
+        db,
+        normalizedProject,
+      );
 
-      assertEnvironmentAllowedByConfig(config, payload);
+      if (!snapshot) {
+        throw createConfigSnapshotRequiredError(normalizedProject);
+      }
+
+      const definitions = toDefinitionMap(snapshot.definitions);
+
+      assertEnvironmentAllowedByDefinitions(definitions, payload);
 
       return db.transaction(async (tx) => {
         const existingProject = await findProjectBySlug(
@@ -294,7 +336,7 @@ export function createDatabaseEnvironmentStore(
           return toEnvironmentSummary({
             project: normalizedProject,
             row: productionRow,
-            config,
+            definition: definitions.get(productionRow.name),
           });
         }
 
@@ -329,7 +371,7 @@ export function createDatabaseEnvironmentStore(
         return toEnvironmentSummary({
           project: normalizedProject,
           row: created,
-          config,
+          definition: definitions.get(created.name),
         });
       });
     },
@@ -473,11 +515,9 @@ export function mountEnvironmentApiRoutes(
   environmentApp.get?.("/api/v1/environments", ({ request }: any) => {
     return executeWithRuntimeErrorsHandled(request, async () => {
       const project = pickProject(request);
-      await options.authorizeSession(request);
+      await options.authorizeAdmin(request);
 
-      return {
-        data: await options.store.list(project),
-      };
+      return options.store.list(project);
     });
   });
 

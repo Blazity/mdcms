@@ -63,9 +63,7 @@ export async function GET(
   try {
     const { scenario } = await context.params;
 
-    return Response.json({
-      data: listReviewEnvironments(scenario),
-    });
+    return Response.json(listReviewEnvironments(scenario));
   } catch (error) {
     return toErrorResponse(error);
   }

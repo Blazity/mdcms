@@ -120,6 +120,7 @@ Schema updates are persisted to the backend schema registry only through explici
 - Studio may trigger the same sync operation as a developer convenience action (for example, a "Sync Schema" button in Settings) for privileged users (Owner/Admin). It only forwards the local `mdcms.config.ts` snapshot; it does not create or edit schema definitions in the UI.
 - `cms migrate` is used only when existing content must be transformed/backfilled to satisfy schema changes.
 - CI/CD pipelines should run `cms schema sync` before deploy-time writes.
+- The backend does not read `mdcms.config.ts` from the host app repo at request time. Sync publishes the config-derived backend state needed for schema and environment operations.
 
 **Registry model:**
 
@@ -127,6 +128,7 @@ Schema updates are persisted to the backend schema registry only through explici
 - The read surface is type-centric: `GET /schema` returns one entry per content type for the target environment.
 - The server persists:
   - one environment-level sync record containing `schemaHash`, `rawConfigSnapshot`, and `syncedAt`
+  - one project-level environment topology snapshot derived from `rawConfigSnapshot`, containing the latest synced environment names and `extends` graph for the project
   - derived per-type registry entries for the target environment
 
 **Snapshot fidelity limitation:**
@@ -216,7 +218,7 @@ export default defineConfig({
 
 **Environment inheritance:** Environments can extend other environments via `extends`, creating a chain (e.g., `production → staging → preview`). Each level only specifies its incremental changes.
 
-**Runtime environment provisioning:** The environments API provisions and removes project-local database rows for environments, but it does not author schema topology. Runtime environment records must correspond to names defined in `mdcms.config.ts`, and any reported `extends` value is derived from the config-defined environment graph rather than persisted separately in the database.
+**Runtime environment provisioning:** The environments API provisions and removes project-local database rows for environments, but it does not author schema topology. Runtime environment records must correspond to names defined in the latest synced project environment topology snapshot derived from `mdcms.config.ts`. The backend does not require direct filesystem access to the host app repo at request time; request-time validation uses the most recent successful sync state.
 
 **Validation per environment:** When content is read or written, the server validates against the **target environment's resolved schema**. Fields that exist in one environment but not another are silently stripped from API responses (Zod's default `strip` behavior). Data is preserved in the database — it's just invisible at the API layer for environments whose schema doesn't include that field.
 
@@ -323,6 +325,7 @@ Notes:
 
 - `schemaHash` and `syncedAt` are repeated on each entry for the target environment.
 - `rawConfigSnapshot` is stored with the environment-level sync record and is not returned by `GET` endpoints.
+- The latest successful `PUT /api/v1/schema` also refreshes the project-level environment topology snapshot derived from `rawConfigSnapshot`.
 - `resolvedSchema` is a descriptive JSON snapshot for the type, not an executable validator.
 
 | Method | Path                   | Auth Mode          | Required Scope | Target Routing                  | Request                                                   | Success                                                   | Deterministic Errors                                                                                                                                                     |

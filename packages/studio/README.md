@@ -201,13 +201,17 @@ environments[]` so the document sidebar can label environment-specific
   - `DELETE /api/v1/environments/:id`
 - The page is intentionally scoped to list/create/delete only.
 - It renders deterministic loading, empty, forbidden, error, and ready states.
+- `GET /api/v1/environments` metadata gates create when synced environment
+  definitions are missing.
 - Environment rows render only contract-backed metadata:
   - `name`
   - `extends`
   - default status
   - `createdAt`
 - The create dialog submits `{ name }`; the server remains authoritative for
-  config-defined environment validation.
+  validation against the latest synced project config snapshot.
+- When definitions are missing, Studio keeps the page readable but disables
+  create with guidance to run `cms schema sync` from the host app repo.
 - The default `production` environment is rendered as non-deletable.
 
 ## Schema Browser

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { RuntimeError } from "@mdcms/shared";
+import { RuntimeError, type JsonObject } from "@mdcms/shared";
 import { test } from "bun:test";
 
 import {
@@ -45,6 +45,22 @@ function createSchemaRouteApi(options: StudioSchemaRouteApiOptions = {}) {
     },
     options,
   );
+}
+
+function createRawConfigSnapshot(
+  overrides: Record<string, unknown> = {},
+): JsonObject {
+  return {
+    project: "marketing-site",
+    environment: "staging",
+    environments: {
+      production: {},
+      staging: {
+        extends: "production",
+      },
+    },
+    ...(overrides as JsonObject),
+  } satisfies JsonObject;
 }
 
 test("list fetches schema entries with scoped headers", async () => {
@@ -128,11 +144,9 @@ test("cookie-authenticated sync bootstraps csrf from auth/session", async () => 
       assert.equal(readHeader(init, "authorization"), null);
       assert.equal(init?.credentials, "include");
       assert.deepEqual(readJsonBody(init), {
-        rawConfigSnapshot: {
-          project: "marketing-site",
-          environment: "staging",
+        rawConfigSnapshot: createRawConfigSnapshot({
           contentDirectories: ["content/blog"],
-        },
+        }),
         resolvedSchema: {
           BlogPost: {
             type: "BlogPost",
@@ -163,11 +177,9 @@ test("cookie-authenticated sync bootstraps csrf from auth/session", async () => 
   });
 
   const result = await api.sync({
-    rawConfigSnapshot: {
-      project: "marketing-site",
-      environment: "staging",
+    rawConfigSnapshot: createRawConfigSnapshot({
       contentDirectories: ["content/blog"],
-    },
+    }),
     resolvedSchema: {
       BlogPost: {
         type: "BlogPost",
@@ -215,10 +227,7 @@ test("token-authenticated sync does not bootstrap csrf", async () => {
   });
 
   const result = await api.sync({
-    rawConfigSnapshot: {
-      project: "marketing-site",
-      environment: "staging",
-    },
+    rawConfigSnapshot: createRawConfigSnapshot(),
     resolvedSchema: {},
     schemaHash: "schema-hash-123",
   });
@@ -289,11 +298,9 @@ test("cookie-authenticated sync preserves a path-prefixed studio serverUrl", asy
   );
 
   await api.sync({
-    rawConfigSnapshot: {
-      project: "marketing-site",
-      environment: "staging",
+    rawConfigSnapshot: createRawConfigSnapshot({
       contentDirectories: ["content/blog"],
-    },
+    }),
     resolvedSchema: {
       BlogPost: {
         type: "BlogPost",
@@ -334,10 +341,7 @@ test("sync surfaces forbidden responses as runtime errors", async () => {
   await assert.rejects(
     () =>
       api.sync({
-        rawConfigSnapshot: {
-          project: "marketing-site",
-          environment: "staging",
-        },
+        rawConfigSnapshot: createRawConfigSnapshot(),
         resolvedSchema: {},
         schemaHash: "schema-hash-123",
       }),
@@ -368,10 +372,7 @@ test("sync surfaces incompatible responses as runtime errors", async () => {
   await assert.rejects(
     () =>
       api.sync({
-        rawConfigSnapshot: {
-          project: "marketing-site",
-          environment: "staging",
-        },
+        rawConfigSnapshot: createRawConfigSnapshot(),
         resolvedSchema: {},
         schemaHash: "schema-hash-123",
       }),

@@ -271,25 +271,46 @@ All `/api/v1/environments*` endpoints require explicit project routing. Clone/pr
 }
 ```
 
+`EnvironmentDefinitionsMeta`:
+
+```json
+{
+  "definitionsStatus": "ready",
+  "configSnapshotHash": "sha256:abc123",
+  "syncedAt": "2026-03-11T12:00:00.000Z"
+}
+```
+
+Notes:
+
+- `definitionsStatus` is `ready` or `missing`.
+- `configSnapshotHash` and `syncedAt` are returned only when
+  `definitionsStatus` is `ready`.
+
 Rules:
 
 - Environment management requires an authenticated Studio session with global `owner` or `admin` privileges.
-- `mdcms.config.ts` is authoritative for valid environment names and `extends` chains.
+- The latest synced project config snapshot derived from `mdcms.config.ts` is authoritative for valid environment names and `extends` chains.
+- `GET /api/v1/environments` may return existing environment rows even when no synced project config snapshot is available yet. In that case:
+  - `meta.definitionsStatus` is `missing`
+  - `extends` may be `null` for rows whose parent chain cannot be derived from synced config
 - `POST /api/v1/environments` may create the project row implicitly if it does not yet exist; any such provisioning must also ensure a default `production` environment row exists transactionally.
 - `POST /api/v1/environments` accepts `{ name, extends? }`.
+  - a synced project config snapshot must exist; otherwise the request fails with `CONFIG_SNAPSHOT_REQUIRED` (`409`)
   - `name` must be non-empty and unique within the routed project.
-  - `name` must exist in config-defined environments.
-  - if `extends` is provided, it must exactly match the config-defined parent for that environment.
+  - `name` must exist in the synced environment definitions for the routed project.
+  - if `extends` is provided, it must exactly match the synced parent for that environment.
   - creating `production` succeeds only when that row is missing; otherwise it returns `CONFLICT`.
 - `DELETE /api/v1/environments/:id`:
   - must reject deleting `production`
   - must reject deleting environments that still have content rows or schema sync state
   - returns `NOT_FOUND` when the environment id does not belong to the routed project
+  - must not fail solely because the latest synced project config snapshot is missing
 
-| Method | Path                                     | Auth Mode          | Required Scope         | Target Routing      | Request                                                                                                  | Success                                                    | Deterministic Errors                                                                                                                                          |
-| ------ | ---------------------------------------- | ------------------ | ---------------------- | ------------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/v1/environments`                   | session            | none                   | required: `project` | explicit project routing only                                                                            | `200` `{ data: EnvironmentSummary[] }`                     | `MISSING_TARGET_ROUTING` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`)                                                                                 |
-| POST   | `/api/v1/environments`                   | session            | none                   | required: `project` | JSON: `{ name, extends? }`                                                                               | `200` `{ data: EnvironmentSummary }`                       | `MISSING_TARGET_ROUTING` (`400`), `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `CONFLICT` (`409`)                                    |
-| DELETE | `/api/v1/environments/:id`               | session            | none                   | required: `project` | path `id`                                                                                                | `200` `{ data: { deleted: true, id } }`                    | `MISSING_TARGET_ROUTING` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `CONFLICT` (`409`)                                        |
-| POST   | `/api/v1/environments/:id/clone`         | session_or_api_key | `environments:clone`   | required: `project` | path `id`; JSON: `{ sourceEnvironmentId, include: { content, settings }, includeDrafts, preservePaths }` | `200` `{ data: { targetEnvironmentId, documentsCloned } }` | `MISSING_TARGET_ROUTING` (`400`), `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `REFERENCE_REMAP_FAILED` (`409`) |
-| POST   | `/api/v1/environments/:targetId/promote` | session_or_api_key | `environments:promote` | required: `project` | path `targetId`; JSON: `{ sourceEnvironmentId, documentIds, includeUnpublished, dryRun }`                | `200` `{ data: { promoted: DocumentPromotionResult[] } }`  | `MISSING_TARGET_ROUTING` (`400`), `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `REFERENCE_REMAP_FAILED` (`409`) |
+| Method | Path                                     | Auth Mode          | Required Scope         | Target Routing      | Request                                                                                                  | Success                                                                  | Deterministic Errors                                                                                                                                           |
+| ------ | ---------------------------------------- | ------------------ | ---------------------- | ------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/v1/environments`                   | session            | none                   | required: `project` | explicit project routing only                                                                            | `200` `{ data: EnvironmentSummary[], meta: EnvironmentDefinitionsMeta }` | `MISSING_TARGET_ROUTING` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`)                                                                                  |
+| POST   | `/api/v1/environments`                   | session            | none                   | required: `project` | JSON: `{ name, extends? }`                                                                               | `200` `{ data: EnvironmentSummary }`                                     | `MISSING_TARGET_ROUTING` (`400`), `INVALID_INPUT` (`400`), `CONFIG_SNAPSHOT_REQUIRED` (`409`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `CONFLICT` (`409`) |
+| DELETE | `/api/v1/environments/:id`               | session            | none                   | required: `project` | path `id`                                                                                                | `200` `{ data: { deleted: true, id } }`                                  | `MISSING_TARGET_ROUTING` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `CONFLICT` (`409`)                                         |
+| POST   | `/api/v1/environments/:id/clone`         | session_or_api_key | `environments:clone`   | required: `project` | path `id`; JSON: `{ sourceEnvironmentId, include: { content, settings }, includeDrafts, preservePaths }` | `200` `{ data: { targetEnvironmentId, documentsCloned } }`               | `MISSING_TARGET_ROUTING` (`400`), `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `REFERENCE_REMAP_FAILED` (`409`)  |
+| POST   | `/api/v1/environments/:targetId/promote` | session_or_api_key | `environments:promote` | required: `project` | path `targetId`; JSON: `{ sourceEnvironmentId, documentIds, includeUnpublished, dryRun }`                | `200` `{ data: { promoted: DocumentPromotionResult[] } }`                | `MISSING_TARGET_ROUTING` (`400`), `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `REFERENCE_REMAP_FAILED` (`409`)  |
