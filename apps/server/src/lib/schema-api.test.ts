@@ -332,6 +332,9 @@ function createValidationHandler() {
     async getByType() {
       return undefined;
     },
+    async getCurrentSync() {
+      return undefined;
+    },
     async sync() {
       syncCallCount += 1;
 
@@ -649,18 +652,22 @@ testWithDatabase(
         }),
       );
       const listBody = (await listResponse.json()) as {
-        data: Array<{
-          type: string;
-          directory: string;
-          localized: boolean;
-          schemaHash: string;
-          syncedAt: string;
-        }>;
+        data: {
+          types: Array<{
+            type: string;
+            directory: string;
+            localized: boolean;
+            schemaHash: string;
+            syncedAt: string;
+          }>;
+          schemaHash: string | null;
+          syncedAt: string | null;
+        };
       };
 
       assert.equal(listResponse.status, 200);
       assert.deepEqual(
-        listBody.data.map((entry) => ({
+        listBody.data.types.map((entry) => ({
           type: entry.type,
           directory: entry.directory,
           localized: entry.localized,
@@ -1195,6 +1202,157 @@ testWithDatabase(
 );
 
 testWithDatabase(
+  "getCurrentSync returns undefined when no sync exists for scope",
+  async () => {
+    const { dbConnection } = createHandler();
+    const store = createDatabaseSchemaStore({
+      db: dbConnection.db,
+      now: () => fixedNow,
+    });
+    const scope = createScope();
+
+    try {
+      const result = await store.getCurrentSync(scope);
+      assert.equal(result, undefined);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "getCurrentSync returns schemaHash and syncedAt after sync",
+  async () => {
+    const { dbConnection } = createHandler();
+    const store = createDatabaseSchemaStore({
+      db: dbConnection.db,
+      now: () => fixedNow,
+    });
+    const scope = createScope();
+
+    try {
+      await seedScope(dbConnection, scope);
+      await store.sync(
+        scope,
+        createSyncPayload({
+          project: scope.project,
+          schemaHash:
+            "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+          resolvedSchema: {
+            Post: createRegistryType({
+              type: "Post",
+              directory: "content/posts",
+              fields: {
+                title: createField({ kind: "string" }),
+              },
+            }),
+          },
+        }),
+      );
+
+      const result = await store.getCurrentSync(scope);
+      assert.ok(result);
+      assert.match(result!.schemaHash, /^[a-f0-9]{64}$/);
+      assert.equal(result!.syncedAt, fixedNow.toISOString());
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "GET /api/v1/schema returns types, schemaHash, syncedAt",
+  async () => {
+    const { handler, dbConnection } = createHandler();
+    const scope = createScope();
+
+    try {
+      await seedScope(dbConnection, scope);
+      const scopeHeaders = toScopeHeaders(scope);
+      const payload = createSyncPayload({
+        project: scope.project,
+        schemaHash:
+          "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        resolvedSchema: {
+          Post: createRegistryType({
+            type: "Post",
+            directory: "content/posts",
+            fields: {
+              title: createField({ kind: "string" }),
+            },
+          }),
+        },
+      });
+
+      const putResponse = await handler(
+        new Request("http://localhost/api/v1/schema", {
+          method: "PUT",
+          headers: {
+            ...scopeHeaders,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        }),
+      );
+      assert.equal(putResponse.status, 200);
+
+      const response = await handler(
+        new Request("http://localhost/api/v1/schema", {
+          headers: scopeHeaders,
+        }),
+      );
+      const body = (await response.json()) as {
+        data: {
+          types: unknown[];
+          schemaHash: string | null;
+          syncedAt: string | null;
+        };
+      };
+
+      assert.equal(response.status, 200);
+      assert.ok(Array.isArray(body.data.types));
+      assert.match(body.data.schemaHash ?? "", /^[a-f0-9]{64}$/);
+      assert.match(body.data.syncedAt ?? "", /^\d{4}-\d{2}-\d{2}T/);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "GET /api/v1/schema returns null hash for never-synced scope",
+  async () => {
+    const { handler, dbConnection } = createHandler();
+    const scope = createScope();
+
+    try {
+      await seedScope(dbConnection, scope);
+      const scopeHeaders = toScopeHeaders(scope);
+
+      const response = await handler(
+        new Request("http://localhost/api/v1/schema", {
+          headers: scopeHeaders,
+        }),
+      );
+      const body = (await response.json()) as {
+        data: {
+          types: unknown[];
+          schemaHash: string | null;
+          syncedAt: string | null;
+        };
+      };
+
+      assert.equal(response.status, 200);
+      assert.deepEqual(body.data.types, []);
+      assert.equal(body.data.schemaHash, null);
+      assert.equal(body.data.syncedAt, null);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
   "schema API keeps registry state isolated across projects",
   async () => {
     const { handler, dbConnection } = createHandler();
@@ -1240,10 +1398,14 @@ testWithDatabase(
         }),
       );
       const foreignListBody = (await foreignListResponse.json()) as {
-        data: unknown[];
+        data: {
+          types: unknown[];
+          schemaHash: string | null;
+          syncedAt: string | null;
+        };
       };
       assert.equal(foreignListResponse.status, 200);
-      assert.deepEqual(foreignListBody.data, []);
+      assert.deepEqual(foreignListBody.data.types, []);
 
       const foreignGetResponse = await handler(
         new Request("http://localhost/api/v1/schema/Post", {

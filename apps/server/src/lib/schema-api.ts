@@ -55,6 +55,10 @@ export type SchemaRegistryStore = {
     },
     type: string,
   ) => Promise<SchemaRegistryEntry | undefined>;
+  getCurrentSync: (scope: {
+    project: string;
+    environment: string;
+  }) => Promise<{ schemaHash: string; syncedAt: string } | undefined>;
   sync: (
     scope: {
       project: string;
@@ -656,6 +660,30 @@ export function createDatabaseSchemaStore(
       return row ? toSchemaRegistryEntry(row) : undefined;
     },
 
+    async getCurrentSync(scope) {
+      const scopeIds = await resolveScopeIds(db, scope);
+
+      if (!scopeIds) {
+        return undefined;
+      }
+
+      const row = await db.query.schemaSyncs.findFirst({
+        where: and(
+          eq(schemaSyncs.projectId, scopeIds.projectId),
+          eq(schemaSyncs.environmentId, scopeIds.environmentId),
+        ),
+      });
+
+      if (!row) {
+        return undefined;
+      }
+
+      return {
+        schemaHash: row.schemaHash,
+        syncedAt: row.syncedAt.toISOString(),
+      };
+    },
+
     async sync(scope, payload) {
       const scopeIds = await resolveScopeIds(db, scope);
 
@@ -793,8 +821,17 @@ export function mountSchemaApiRoutes(
         environment: scope.environment,
       });
 
+      const [types, currentSync] = await Promise.all([
+        options.store.list(scope),
+        options.store.getCurrentSync(scope),
+      ]);
+
       return {
-        data: await options.store.list(scope),
+        data: {
+          types,
+          schemaHash: currentSync?.schemaHash ?? null,
+          syncedAt: currentSync?.syncedAt ?? null,
+        },
       };
     });
   });

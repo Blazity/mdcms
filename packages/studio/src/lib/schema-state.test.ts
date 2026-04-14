@@ -98,21 +98,25 @@ test("loadStudioSchemaState keeps local hash data but hides sync when schema.wri
 
     return new Response(
       JSON.stringify({
-        data: [
-          {
-            type: "BlogPost",
-            directory: "content/blog",
-            localized: true,
-            schemaHash: "server-hash",
-            syncedAt: "2026-03-31T12:00:00.000Z",
-            resolvedSchema: {
+        data: {
+          types: [
+            {
               type: "BlogPost",
               directory: "content/blog",
               localized: true,
-              fields: {},
+              schemaHash: "server-hash",
+              syncedAt: "2026-03-31T12:00:00.000Z",
+              resolvedSchema: {
+                type: "BlogPost",
+                directory: "content/blog",
+                localized: true,
+                fields: {},
+              },
             },
-          },
-        ],
+          ],
+          schemaHash: "server-hash",
+          syncedAt: "2026-03-31T12:00:00.000Z",
+        },
       }),
       {
         status: 200,
@@ -154,21 +158,25 @@ test("loadStudioSchemaState enables sync only when schema.write is allowed and l
     async () =>
       new Response(
         JSON.stringify({
-          data: [
-            {
-              type: "BlogPost",
-              directory: "content/blog",
-              localized: true,
-              schemaHash: "server-hash",
-              syncedAt: "2026-03-31T12:00:00.000Z",
-              resolvedSchema: {
+          data: {
+            types: [
+              {
                 type: "BlogPost",
                 directory: "content/blog",
                 localized: true,
-                fields: {},
+                schemaHash: "server-hash",
+                syncedAt: "2026-03-31T12:00:00.000Z",
+                resolvedSchema: {
+                  type: "BlogPost",
+                  directory: "content/blog",
+                  localized: true,
+                  fields: {},
+                },
               },
-            },
-          ],
+            ],
+            schemaHash: "server-hash",
+            syncedAt: "2026-03-31T12:00:00.000Z",
+          },
         }),
         {
           status: 200,
@@ -256,21 +264,25 @@ test("loadStudioSchemaState falls back to read-only ready state when local schem
     async () =>
       new Response(
         JSON.stringify({
-          data: [
-            {
-              type: "BlogPost",
-              directory: "content/blog",
-              localized: true,
-              schemaHash: "server-hash",
-              syncedAt: "2026-03-31T12:00:00.000Z",
-              resolvedSchema: {
+          data: {
+            types: [
+              {
                 type: "BlogPost",
                 directory: "content/blog",
                 localized: true,
-                fields: {},
+                schemaHash: "server-hash",
+                syncedAt: "2026-03-31T12:00:00.000Z",
+                resolvedSchema: {
+                  type: "BlogPost",
+                  directory: "content/blog",
+                  localized: true,
+                  fields: {},
+                },
               },
-            },
-          ],
+            ],
+            schemaHash: "server-hash",
+            syncedAt: "2026-03-31T12:00:00.000Z",
+          },
         }),
         {
           status: 200,
@@ -334,21 +346,25 @@ test("loadStudioSchemaState keeps ready-state data when a sync attempt fails", a
 
         return new Response(
           JSON.stringify({
-            data: [
-              {
-                type: "BlogPost",
-                directory: "content/blog",
-                localized: true,
-                schemaHash: "server-hash",
-                syncedAt: "2026-03-31T12:00:00.000Z",
-                resolvedSchema: {
+            data: {
+              types: [
+                {
                   type: "BlogPost",
                   directory: "content/blog",
                   localized: true,
-                  fields: {},
+                  schemaHash: "server-hash",
+                  syncedAt: "2026-03-31T12:00:00.000Z",
+                  resolvedSchema: {
+                    type: "BlogPost",
+                    directory: "content/blog",
+                    localized: true,
+                    fields: {},
+                  },
                 },
-              },
-            ],
+              ],
+              schemaHash: "server-hash",
+              syncedAt: "2026-03-31T12:00:00.000Z",
+            },
           }),
           {
             status: 200,

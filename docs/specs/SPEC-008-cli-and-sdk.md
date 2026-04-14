@@ -86,6 +86,7 @@ The SDK follows the same reference-resolution contract documented in SPEC-003. R
 | `cms pull`                   | Download all content from CMS to local `.md`/`.mdx` files                   |
 | `cms push`                   | Upload local `.md`/`.mdx` files to CMS                                      |
 | `cms push --validate`        | Validate content against schema before pushing                              |
+| `cms push --sync-schema`     | Allow push to sync schema in non-interactive mode on drift (ignored in TTY) |
 | `cms schema sync`            | Sync `mdcms.config.ts` schema to the server registry                        |
 | `cms migrate`                | Generate and apply content migrations for schema changes                    |
 | `cms status`                 | Show content drift and schema drift (local vs server)                       |
@@ -280,12 +281,13 @@ The manifest is flushed atomically (via `writeScopedManifestAtomic`) after each 
 
 #### Schema and validation
 
+- **Schema preflight:** Before any content writes, `cms push` calls `GET /api/v1/schema` and compares the server's current `schemaHash` for the target `(project, environment)` against the hash computed from the local config. On drift in interactive mode (TTY), push prints a rich diff (added / modified / deleted types with names) and prompts once to sync. Acceptance triggers an inline schema sync (same code path as `cms schema sync`, sharing the `performSchemaSync` helper) and continues with content writes in the same invocation; decline exits 1 with zero content writes. In non-interactive mode push fails closed with `SCHEMA_DRIFT` unless `--sync-schema` is supplied. With `--sync-schema`, push runs sync first and aborts the whole push if sync fails. In TTY mode `--sync-schema` is silently ignored — the prompt always wins so the user sees the drift before approving.
 - **Schema hash requirement:** Before sending any content write request, `cms push` reads the schema hash from `.mdcms/schema/<project>.<environment>.json` (see SPEC-004 "Local Schema State File"). If the file does not exist, push fails immediately with an actionable multi-line error that distinguishes fresh-clone scenarios from missing-sync scenarios (exit code 1). The hash is sent as `x-mdcms-schema-hash` on every `POST`, `PUT`, and `DELETE` content request.
-- **Schema mismatch handling:** If the server returns `SCHEMA_HASH_MISMATCH` (`409`) for a document, that document is reported as failed with reason code `schema_hash_mismatch`. Other documents in the same push run continue (partial success). The exit summary directs the developer to run `cms schema sync` before retrying.
+- **Schema mismatch handling:** With preflight active, the per-doc `SCHEMA_HASH_MISMATCH` (`409`) path covers race conditions only — a concurrent sync changed the server hash between preflight and content writes. Failed documents are reported with reason code `schema_hash_mismatch`; the exit summary directs the developer to re-run `cms push` rather than `cms schema sync`, since the local state may already be fresh. Other documents in the same push run continue (partial success).
 - **Path conflict handling:** If the server returns `CONTENT_PATH_CONFLICT` (`409`) for a document (update, create, or new-file), that document is reported as failed with reason code `content_path_conflict`. The exit summary directs the developer to run `cms pull` to re-sync the manifest.
 - **Draft optimistic concurrency:** If the server's current `draft_revision` differs from the base draft revision in the manifest, the push is **rejected** for that document with reason code `stale_draft_revision`. The developer must `cms pull` first, then re-apply their changes.
 - On success, the server updates `documents`, increments `draft_revision`, and does not create new `document_versions` rows.
-- Optional `--validate` flag runs schema validation locally before pushing. Validation covers both changed and selected new documents. If the local schema hash differs from the last synced hash, a warning is printed before validation proceeds.
+- Optional `--validate` flag runs schema validation locally before pushing. Validation covers both changed and selected new documents. Because preflight has already normalized local vs server schema state (or aborted), the old "local schema differs from last synced" warning inside `--validate` is no longer needed.
 
 ### `cms schema sync`
 

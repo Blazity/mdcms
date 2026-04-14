@@ -1,8 +1,8 @@
 import {
   RuntimeError,
-  assertSchemaRegistryEntry,
   assertSchemaRegistrySyncPayload,
-  type SchemaRegistryEntry,
+  validateSchemaRegistryListResponse,
+  type SchemaRegistryListResponse,
   type SchemaRegistrySyncPayload,
 } from "@mdcms/shared";
 
@@ -31,7 +31,7 @@ export type StudioSchemaRouteSyncResult = {
 };
 
 export type StudioSchemaRouteApi = {
-  list: () => Promise<SchemaRegistryEntry[]>;
+  list: () => Promise<SchemaRegistryListResponse>;
   sync: (
     payload: SchemaRegistrySyncPayload,
   ) => Promise<StudioSchemaRouteSyncResult>;
@@ -149,13 +149,13 @@ function toInvalidRouteResponseError(
   });
 }
 
-function validateSchemaRegistryEntriesResponse(
+function validateSchemaRegistryListRoutePayload(
   operation: string,
   payload: unknown,
-): SchemaRegistryEntry[] {
+): SchemaRegistryListResponse {
   const parsed = extractRoutePayload(payload);
 
-  if (!isRecord(parsed.data) && !Array.isArray(parsed.data)) {
+  if (!isRecord(parsed.data)) {
     throw toInvalidRouteResponseError(
       operation,
       "Schema registry response is invalid.",
@@ -163,18 +163,21 @@ function validateSchemaRegistryEntriesResponse(
     );
   }
 
-  if (!Array.isArray(parsed.data)) {
-    throw toInvalidRouteResponseError(
-      operation,
-      "Schema registry response is invalid.",
-      payload,
+  try {
+    return validateSchemaRegistryListResponse(
+      `${operation}.data`,
+      parsed.data,
     );
+  } catch (error) {
+    if (error instanceof RuntimeError) {
+      throw toInvalidRouteResponseError(
+        operation,
+        "Schema registry response is invalid.",
+        payload,
+      );
+    }
+    throw error;
   }
-
-  return parsed.data.map((entry, index) => {
-    assertSchemaRegistryEntry(entry, `${operation}.data[${index}]`);
-    return entry;
-  });
 }
 
 function validateSchemaRegistrySyncResponse(
@@ -295,7 +298,7 @@ export function createStudioSchemaRouteApi(
         },
       );
 
-      return validateSchemaRegistryEntriesResponse(
+      return validateSchemaRegistryListRoutePayload(
         "GET /api/v1/schema",
         payload,
       );

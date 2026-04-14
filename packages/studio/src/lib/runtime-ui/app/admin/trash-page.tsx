@@ -133,7 +133,7 @@ export default function TrashPage() {
   });
 
   const schemaTypes = useMemo(() => {
-    return (schemaQuery.data ?? []).map((entry) => entry.type);
+    return (schemaQuery.data?.types ?? []).map((entry) => entry.type);
   }, [schemaQuery.data]);
 
   // Document route API for restore action

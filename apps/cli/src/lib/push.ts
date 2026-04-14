@@ -8,11 +8,18 @@ import type { ContentDocumentResponse } from "@mdcms/shared";
 import {
   RuntimeError,
   serializeResolvedEnvironmentSchema,
+  validateSchemaRegistryListResponse,
   type ParsedMdcmsConfig,
 } from "@mdcms/shared";
 import { buildSchemaSyncPayload } from "@mdcms/shared/server";
 import { parse as parseYaml } from "yaml";
 import { readSchemaState } from "./schema-state.js";
+import {
+  computeSchemaDiff,
+  hashSchemaTypeSnapshot,
+  type SchemaDiff,
+} from "./schema-diff.js";
+import { performSchemaSync } from "./schema-sync.js";
 import {
   validateCandidates,
   type DocumentValidationResult,
@@ -33,6 +40,7 @@ type PushOptions = {
   published: boolean;
   validate: boolean;
   dryRun: boolean;
+  syncSchema: boolean;
 };
 
 type PushCandidate = {
@@ -91,13 +99,14 @@ type ContentDocumentPayload = Pick<
   | "publishedVersion"
 >;
 
-function parsePushOptions(args: string[]): PushOptions {
+export function parsePushOptions(args: string[]): PushOptions {
   for (const token of args) {
     if (
       token === "--published" ||
       token === "--force" ||
       token === "--validate" ||
-      token === "--dry-run"
+      token === "--dry-run" ||
+      token === "--sync-schema"
     ) {
       continue;
     }
@@ -118,12 +127,13 @@ function parsePushOptions(args: string[]): PushOptions {
     published: args.includes("--published"),
     validate: args.includes("--validate"),
     dryRun: args.includes("--dry-run"),
+    syncSchema: args.includes("--sync-schema"),
   };
 }
 
-function renderPushHelp(): string {
+export function renderPushHelp(): string {
   return [
-    "Usage: mdcms push [--force] [--dry-run] [--validate] [--published]",
+    "Usage: mdcms push [--force] [--dry-run] [--validate] [--published] [--sync-schema]",
     "",
     "Upload local markdown files to CMS as draft content.",
     "",
@@ -133,12 +143,19 @@ function renderPushHelp(): string {
     "    detected and offered for upload via interactive selection.",
     "  - Locally-deleted files (in manifest but missing on disk) are",
     "    detected and offered for server-side deletion via interactive selection.",
+    "  - Before any content writes, push runs a schema preflight: it compares",
+    "    the local config's schema hash against the server. On drift in",
+    "    interactive mode, push prompts once to sync. In non-interactive mode,",
+    "    push fails closed unless --sync-schema is supplied.",
     "",
     "Options:",
-    "  --force       Skip all prompts; auto-select all new/deleted files",
-    "  --dry-run     Show push plan only (no API writes)",
-    "  --validate    Validate frontmatter against local schema before pushing",
-    "  --published   Reserved for future behavior (unsupported in demo mode)",
+    "  --force         Skip all prompts; auto-select all new/deleted files",
+    "  --dry-run       Show push plan only (no API writes)",
+    "  --validate      Validate frontmatter against local schema before pushing",
+    "  --sync-schema   In non-interactive mode, allow push to sync schema before",
+    "                  content writes if drift is detected. In interactive mode,",
+    "                  this flag is ignored — drift always triggers a prompt.",
+    "  --published     Reserved for future behavior (unsupported in demo mode)",
     "",
   ].join("\n");
 }
@@ -795,7 +812,7 @@ function printPushResults(
 
   if (schemaMismatchCount > 0) {
     context.stdout.write(
-      `\nSome documents were rejected due to schema mismatch. Run 'cms schema sync' to update the server schema, then retry.\n`,
+      `\nSome documents were rejected: schema changed during push (server schema hash now differs from preflight check). Another sync may have happened concurrently.\nRe-run: cms push\n`,
     );
   }
 
@@ -1212,6 +1229,175 @@ async function applyPush(
   };
 }
 
+type PreflightResult = { outcome: "ok" } | { outcome: "abort"; exitCode: number };
+
+function renderDriftSummary(input: {
+  localHash: string;
+  serverHash: string | null;
+  diff: SchemaDiff;
+}): string {
+  const lines: string[] = [];
+  lines.push("Schema drift detected:");
+  lines.push(`  Local hash:  ${input.localHash.slice(0, 12)}...`);
+  lines.push(
+    `  Server hash: ${(input.serverHash ?? "null").toString().slice(0, 12)}...`,
+  );
+  lines.push("");
+  if (
+    input.diff.added.length ||
+    input.diff.removed.length ||
+    input.diff.modified.length
+  ) {
+    lines.push("Changes:");
+    for (const name of input.diff.modified) lines.push(`  ~ ${name} (modified)`);
+    for (const name of input.diff.added) lines.push(`  + ${name} (new)`);
+    for (const name of input.diff.removed)
+      lines.push(`  - ${name} (will be removed from server)`);
+    lines.push("");
+  }
+  return lines.join("\n") + "\n";
+}
+
+async function runSchemaPreflight(
+  context: CliCommandContext,
+  options: PushOptions,
+): Promise<PreflightResult> {
+  const headers: Record<string, string> = {
+    "x-mdcms-project": context.project,
+    "x-mdcms-environment": context.environment,
+  };
+  if (context.apiKey) {
+    headers.authorization = `Bearer ${context.apiKey}`;
+  }
+
+  let response: Response;
+  try {
+    response = await context.fetcher(`${context.serverUrl}/api/v1/schema`, {
+      method: "GET",
+      headers,
+    });
+  } catch (error) {
+    context.stderr.write(
+      `SCHEMA_PREFLIGHT_FAILED: Network error fetching /api/v1/schema: ${
+        error instanceof Error ? error.message : String(error)
+      }\n`,
+    );
+    return { outcome: "abort", exitCode: 1 };
+  }
+
+  if (!response.ok) {
+    context.stderr.write(
+      `SCHEMA_PREFLIGHT_FAILED: GET /api/v1/schema returned ${response.status}.\n`,
+    );
+    return { outcome: "abort", exitCode: 1 };
+  }
+
+  const rawBody = (await response.json().catch(() => undefined)) as
+    | { data?: unknown }
+    | undefined;
+
+  let serverList;
+  try {
+    serverList = validateSchemaRegistryListResponse(
+      "GET /api/v1/schema",
+      rawBody?.data,
+    );
+  } catch (error) {
+    context.stderr.write(
+      `SCHEMA_PREFLIGHT_FAILED: Invalid response from /api/v1/schema: ${
+        error instanceof Error ? error.message : String(error)
+      }\n`,
+    );
+    return { outcome: "abort", exitCode: 1 };
+  }
+
+  const localPayload = buildSchemaSyncPayload(
+    context.config as ParsedMdcmsConfig,
+    context.environment,
+  );
+
+  if (serverList.schemaHash === localPayload.schemaHash) {
+    return { outcome: "ok" };
+  }
+
+  // Drift detected. Compute per-type diff using deterministic snapshot hash.
+  const localHashesByType: Record<string, { schemaHash: string }> = {};
+  for (const [typeName, snapshot] of Object.entries(
+    localPayload.resolvedSchema,
+  )) {
+    localHashesByType[typeName] = {
+      schemaHash: hashSchemaTypeSnapshot(snapshot),
+    };
+  }
+  const serverHashesByType = serverList.types.map((entry) => ({
+    type: entry.type,
+    schemaHash: hashSchemaTypeSnapshot(entry.resolvedSchema),
+  }));
+  const diff = computeSchemaDiff(localHashesByType, serverHashesByType);
+
+  const isInteractive = process.stdin.isTTY === true;
+
+  const runSyncInline = async (): Promise<PreflightResult> => {
+    const syncResult = await performSchemaSync({
+      config: context.config as ParsedMdcmsConfig,
+      serverUrl: context.serverUrl,
+      project: context.project,
+      environment: context.environment,
+      apiKey: context.apiKey,
+      cwd: context.cwd,
+      fetcher: context.fetcher,
+    });
+
+    if (syncResult.outcome === "failure") {
+      context.stderr.write(`${syncResult.errorCode}: ${syncResult.message}\n`);
+      return { outcome: "abort", exitCode: 1 };
+    }
+
+    context.stdout.write(
+      `Schema synced (hash: ${syncResult.schemaHash.slice(0, 12)}...)\n`,
+    );
+    return { outcome: "ok" };
+  };
+
+  if (isInteractive) {
+    context.stdout.write(
+      renderDriftSummary({
+        localHash: localPayload.schemaHash,
+        serverHash: serverList.schemaHash,
+        diff,
+      }),
+    );
+
+    const accepted = await context.confirm(
+      "Sync schema to server before pushing content?",
+    );
+
+    if (!accepted) {
+      context.stdout.write("Sync declined. No content writes performed.\n");
+      return { outcome: "abort", exitCode: 1 };
+    }
+
+    return runSyncInline();
+  }
+
+  // Non-interactive branch
+  if (!options.syncSchema) {
+    context.stderr.write(
+      `SCHEMA_DRIFT: Local schema differs from server schema for ${context.project}/${context.environment}.\n` +
+        `  Local hash:  ${localPayload.schemaHash.slice(0, 12)}...\n` +
+        `  Server hash: ${(serverList.schemaHash ?? "null")
+          .toString()
+          .slice(0, 12)}...\n\n` +
+        `To sync schema as part of this push, re-run with --sync-schema.\n` +
+        `To inspect drift first, run: cms schema status\n` +
+        `To sync explicitly without push, run: cms schema sync\n`,
+    );
+    return { outcome: "abort", exitCode: 1 };
+  }
+
+  return runSyncInline();
+}
+
 export async function runPushCommand(
   context: CliCommandContext,
 ): Promise<number> {
@@ -1230,13 +1416,13 @@ export async function runPushCommand(
     });
   }
 
-  const schemaState = await readSchemaState({
+  const initialSchemaState = await readSchemaState({
     cwd: context.cwd,
     project: context.project,
     environment: context.environment,
   });
 
-  if (!schemaState) {
+  if (!initialSchemaState) {
     throw new RuntimeError({
       code: "SCHEMA_STATE_MISSING",
       message:
@@ -1248,6 +1434,20 @@ export async function runPushCommand(
       statusCode: 400,
     });
   }
+
+  const preflight = await runSchemaPreflight(context, options);
+  if (preflight.outcome === "abort") {
+    return preflight.exitCode;
+  }
+
+  // Preflight may have synced schema and updated the local state file.
+  // Re-read so content writes carry the fresh hash, not the stale one.
+  const schemaState =
+    (await readSchemaState({
+      cwd: context.cwd,
+      project: context.project,
+      environment: context.environment,
+    })) ?? initialSchemaState;
 
   const manifestPath = resolveScopedManifestPath({
     cwd: context.cwd,
@@ -1360,24 +1560,6 @@ export async function runPushCommand(
       context.config as ParsedMdcmsConfig,
       context.environment,
     );
-
-    const schemaSyncState = await readSchemaState({
-      cwd: context.cwd,
-      project: context.project,
-      environment: context.environment,
-    });
-
-    if (schemaSyncState) {
-      const currentPayload = buildSchemaSyncPayload(
-        context.config as ParsedMdcmsConfig,
-        context.environment,
-      );
-      if (schemaSyncState.schemaHash !== currentPayload.schemaHash) {
-        context.stderr.write(
-          "Warning: Local schema differs from last synced schema. Run `cms schema sync` to update the server.\n",
-        );
-      }
-    }
 
     const changedValidationCandidates = pushPlan.changedCandidates.map(
       (candidate) => {

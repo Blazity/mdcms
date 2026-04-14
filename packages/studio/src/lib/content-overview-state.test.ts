@@ -26,8 +26,8 @@ function createSchemaApi(
   }>,
 ): StudioSchemaRouteApi {
   return {
-    list: async () =>
-      entries.map((entry) => ({
+    list: async () => ({
+      types: entries.map((entry) => ({
         type: entry.type,
         directory: entry.directory,
         localized: entry.localized ?? false,
@@ -40,6 +40,9 @@ function createSchemaApi(
           fields: {},
         },
       })),
+      schemaHash: entries.length > 0 ? "schema-hash" : null,
+      syncedAt: entries.length > 0 ? "2026-04-06T00:00:00.000Z" : null,
+    }),
     sync: async () => emptySyncResult,
   };
 }

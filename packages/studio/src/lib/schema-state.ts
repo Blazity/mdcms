@@ -258,7 +258,8 @@ export async function loadStudioSchemaState(
   );
 
   try {
-    const entries = await api.list();
+    const listResult = await api.list();
+    const entries = listResult.types;
     let capabilities = createEmptyCurrentPrincipalCapabilities();
 
     try {

@@ -383,7 +383,7 @@ export async function loadStudioContentOverviewState(
 
     const schemaEntries = await schemaApi.list();
     const baseEntries = sortEntries(
-      schemaEntries.map((entry) =>
+      schemaEntries.types.map((entry) =>
         createOverviewEntry({
           type: entry.type,
           directory: entry.directory,

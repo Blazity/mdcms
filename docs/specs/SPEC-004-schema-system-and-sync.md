@@ -254,10 +254,10 @@ This ensures schemas only change through deliberate, reviewable actions.
 }
 ```
 
-- Written atomically by `cms schema sync` using the write-temp-then-rename pattern.
+- Written atomically using the write-temp-then-rename pattern.
 - One file per `(project, environment)` tuple.
 - `.gitignore`d — local to each developer's machine, not a shared artifact.
-- `cms schema sync` is the sole writer of this file. No other command or process may create or update it.
+- The file is written by `cms schema sync` and by `cms push` when its bundled preflight performs a sync (interactive prompt acceptance or `--sync-schema` flag in non-interactive mode, see SPEC-008 and ADR-006). Both paths use the same `performSchemaSync` helper with identical atomic-write semantics, so file invariants are preserved regardless of the entry point.
 - Write clients (`cms push`, future SDK write methods) read the `schemaHash` value from this file and send it as the `x-mdcms-schema-hash` header. If the file does not exist, the write command fails immediately with an actionable error directing the developer to run `cms schema sync`.
 
 ### Reference Field Identity
@@ -330,9 +330,11 @@ Notes:
 
 | Method | Path                   | Auth Mode          | Required Scope | Target Routing                  | Request                                                   | Success                                                   | Deterministic Errors                                                                                                                                                     |
 | ------ | ---------------------- | ------------------ | -------------- | ------------------------------- | --------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| GET    | `/api/v1/schema`       | session_or_api_key | `schema:read`  | required: `project_environment` | explicit routing only                                     | `200` `{ data: SchemaRegistryEntry[] }`                   | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`)                                                         |
+| GET    | `/api/v1/schema`       | session_or_api_key | `schema:read`  | required: `project_environment` | explicit routing only                                     | `200` `{ data: { types: SchemaRegistryEntry[], schemaHash: string \| null, syncedAt: string \| null } }` | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`)                                                         |
 | GET    | `/api/v1/schema/:type` | session_or_api_key | `schema:read`  | required: `project_environment` | path `type`                                               | `200` `{ data: SchemaRegistryEntry }`                     | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`)                                    |
 | PUT    | `/api/v1/schema`       | session_or_api_key | `schema:write` | required: `project_environment` | JSON: `{ rawConfigSnapshot, resolvedSchema, schemaHash }` | `200` `{ data: { schemaHash, syncedAt, affectedTypes } }` | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `SCHEMA_INCOMPATIBLE` (`409`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`) |
+
+`GET /api/v1/schema` returns `{ types, schemaHash, syncedAt }` where `schemaHash` and `syncedAt` are `null` when the scope has never been synced. `types` is always an array (possibly empty). Read clients use `types`; write clients (e.g. `cms push` schema preflight) use `schemaHash` to detect drift before content writes.
 
 Error split:
 
