@@ -44,7 +44,7 @@ function renderCard(
     <Card
       data-mdcms-content-card-type={entry.type}
       data-mdcms-content-card-disabled={entry.canNavigate ? "false" : "true"}
-      className="h-full border-border py-0 transition-all hover:border-primary/50 hover:shadow-sm"
+      className="h-full border-border p-0 gap-0 transition-all hover:border-primary/50 hover:shadow-sm"
     >
       <CardContent className="p-4">
         <div className="flex items-start gap-4">
