@@ -114,14 +114,51 @@
 }
 
 @theme inline {
-  --font-sans: "Inter", "Inter Fallback", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+  /* Font families */
+  --font-heading: "Space Grotesk Variable", "Space Grotesk", system-ui, sans-serif;
+  --font-body: "Inter Variable", "Inter", "Inter Fallback", system-ui, sans-serif;
+  --font-sans: "Inter Variable", "Inter", "Inter Fallback", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", "Geist Mono", monospace;
+
+  /* Heading type scale */
+  --text-h1: 5.5rem;
+  --text-h1--line-height: 1;
+  --text-h1--letter-spacing: -0.0455em;
+  --text-h2: 3rem;
+  --text-h2--line-height: 1;
+  --text-h3: 2.25rem;
+  --text-h3--line-height: 1;
+  --text-h4: 1.875rem;
+  --text-h4--line-height: 1.2;
+  --text-h5: 1.5rem;
+  --text-h5--line-height: 1;
+  --text-h6: 1.25rem;
+  --text-h6--line-height: 1;
+
+  /* Body type scale */
+  --text-body-lg: 1.25rem;
+  --text-body-lg--line-height: 1.5;
+  --text-body-md: 1rem;
+  --text-body-md--line-height: 1.5;
+  --text-body-sm: 0.875rem;
+  --text-body-sm--line-height: 1.4;
+
+  /* Button label type scale */
+  --text-btn-lg: 1.25rem;
+  --text-btn-lg--line-height: 1.4;
+  --text-btn-md: 1.125rem;
+  --text-btn-md--line-height: 1.556;
+  --text-btn-sm: 0.875rem;
+  --text-btn-sm--line-height: 2;
+
+  /* Colors */
   --color-background: var(--background);
   --color-background-subtle: var(--background-subtle);
   --color-foreground: var(--foreground);
   --color-foreground-muted: var(--foreground-muted);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-card-border: var(--card-border);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
@@ -149,10 +186,24 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --color-blue-100: var(--blue-100);
+  --color-vibrant-green: var(--vibrant-green);
+  --color-neutral-grey: var(--neutral-grey);
+  --color-light-blue: var(--light-blue);
+  --color-code-bg: var(--code-bg);
+  --color-divider: var(--divider);
+
+  /* Radius scale */
+  --radius-sm: calc(var(--radius) - 0.375rem);
+  --radius-md: calc(var(--radius) - 0.25rem);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-pill: calc(var(--radius) + 0.25rem);
+  --radius-xl: calc(var(--radius) + 0.5rem);
+
+  /* Shadows */
+  --shadow-primary-btn: var(--shadow-primary-btn-value);
+
+  /* Sidebar */
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -161,6 +212,44 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@utility text-eyebrow {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+@utility text-technical {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+@utility text-tag {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.625rem;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+@utility text-tag-2 {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+@utility text-mono-label {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 0.75rem;
+  line-height: 1.333;
 }
 
 @layer base {
@@ -179,10 +268,10 @@
     background:
       radial-gradient(
         circle at top left,
-        rgba(253, 97, 39, 0.08),
+        rgba(47, 73, 229, 0.08),
         transparent 24rem
       ),
-      linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      linear-gradient(180deg, var(--background) 0%, var(--background-subtle) 100%);
   }
 
   .mdcms-studio-runtime a {
