@@ -59,19 +59,19 @@ export function EditorSidebar({ document, mdxPropsPanel }: EditorSidebarProps) {
           <TabsList className="w-full justify-start rounded-none border-b border-border bg-transparent p-0 h-auto">
             <TabsTrigger
               value="fields"
-              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-accent data-[state=active]:bg-transparent"
+              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent"
             >
               Fields
             </TabsTrigger>
             <TabsTrigger
               value="info"
-              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-accent data-[state=active]:bg-transparent"
+              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent"
             >
               Info
             </TabsTrigger>
             <TabsTrigger
               value="seo"
-              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-accent data-[state=active]:bg-transparent text-foreground-muted"
+              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent text-foreground-muted"
               disabled
             >
               SEO

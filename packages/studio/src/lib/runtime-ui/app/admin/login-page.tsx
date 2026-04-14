@@ -218,7 +218,7 @@ export default function LoginPage() {
 
           <Button
             type="submit"
-            className="w-full bg-accent hover:bg-accent-hover text-white"
+            className="w-full"
             disabled={submitting || !email || !password}
           >
             {submitting ? "Signing in..." : "Sign in"}

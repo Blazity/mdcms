@@ -117,7 +117,7 @@ export default function InviteAcceptPage({
           </div>
           <Button
             type="button"
-            className="w-full bg-accent hover:bg-accent-hover text-white"
+            className="w-full"
             onClick={() => {
               window.location.href = `${window.location.origin}${window.location.pathname.replace(/\/invite\/.*$/, "/login")}`;
             }}
@@ -168,7 +168,7 @@ export default function InviteAcceptPage({
           </div>
           <Button
             type="button"
-            className="w-full bg-accent hover:bg-accent-hover text-white"
+            className="w-full"
             onClick={() => {
               window.location.href = `${window.location.origin}${window.location.pathname.replace(/\/invite\/.*$/, "/login")}`;
             }}
@@ -240,7 +240,7 @@ export default function InviteAcceptPage({
 
           <Button
             type="submit"
-            className="w-full bg-accent hover:bg-accent-hover text-white"
+            className="w-full"
             disabled={state.status === "submitting" || !isFormValid}
           >
             {state.status === "submitting"

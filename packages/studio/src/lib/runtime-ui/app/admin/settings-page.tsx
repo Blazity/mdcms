@@ -75,7 +75,7 @@ export default function SettingsPage({
                 className={cn(
                   "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   activeTab === tab.id
-                    ? "bg-accent-subtle text-accent"
+                    ? "bg-accent-subtle text-primary"
                     : "text-foreground-muted hover:bg-background-subtle hover:text-foreground",
                 )}
               >
@@ -133,7 +133,6 @@ export default function SettingsPage({
                   </p>
                 </div>
                 <Button
-                  className="bg-accent hover:bg-accent-hover text-white"
                   onClick={() => setCreateDialogOpen(true)}
                 >
                   <Plus className="mr-2 h-4 w-4" />

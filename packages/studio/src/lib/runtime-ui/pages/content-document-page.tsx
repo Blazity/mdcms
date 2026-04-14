@@ -2216,7 +2216,7 @@ function SidebarHistoryTab(props: {
             type="button"
             className={cn(
               "relative mb-4 w-full rounded-md px-2 py-1.5 text-left transition-colors",
-              isViewingLatest ? "bg-accent/10" : "hover:bg-background-subtle",
+              isViewingLatest ? "bg-primary/10" : "hover:bg-background-subtle",
             )}
             onClick={() => {
               if (!isViewingLatest) {
@@ -2224,11 +2224,11 @@ function SidebarHistoryTab(props: {
               }
             }}
           >
-            <div className="absolute -left-[21px] top-2.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-accent" />
+            <div className="absolute -left-[21px] top-2.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-primary" />
             <p className="text-sm font-medium">
               Latest
               {isViewingLatest ? (
-                <span className="ml-1.5 text-xs font-normal text-accent">
+                <span className="ml-1.5 text-xs font-normal text-primary">
                   viewing
                 </span>
               ) : null}
@@ -2249,7 +2249,7 @@ function SidebarHistoryTab(props: {
                 data-mdcms-version={version.version}
                 className={cn(
                   "relative mb-4 w-full rounded-md px-2 py-1.5 text-left transition-colors last:mb-0",
-                  isViewing ? "bg-accent/10" : "hover:bg-background-subtle",
+                  isViewing ? "bg-primary/10" : "hover:bg-background-subtle",
                 )}
                 onClick={() => {
                   if (isViewing) {
@@ -2259,11 +2259,11 @@ function SidebarHistoryTab(props: {
                   }
                 }}
               >
-                <div className="absolute -left-[21px] top-2.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-accent" />
+                <div className="absolute -left-[21px] top-2.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-primary" />
                 <p className="text-sm font-medium">
                   v{version.version}
                   {isViewing ? (
-                    <span className="ml-1.5 text-xs font-normal text-accent">
+                    <span className="ml-1.5 text-xs font-normal text-primary">
                       viewing
                     </span>
                   ) : null}
@@ -2305,7 +2305,7 @@ function ContentDocumentPageSidebar(props: {
           className={cn(
             "flex-1 py-2.5 text-center text-xs font-semibold transition-colors",
             activeTab === "info"
-              ? "border-b-2 border-accent text-accent"
+              ? "border-b-2 border-primary text-primary"
               : "text-foreground-muted hover:text-foreground",
           )}
           onClick={() => setActiveTab("info")}
@@ -2317,7 +2317,7 @@ function ContentDocumentPageSidebar(props: {
           className={cn(
             "flex-1 py-2.5 text-center text-xs font-semibold transition-colors",
             activeTab === "properties"
-              ? "border-b-2 border-accent text-accent"
+              ? "border-b-2 border-primary text-primary"
               : "text-foreground-muted hover:text-foreground",
           )}
           onClick={() => setActiveTab("properties")}
@@ -2329,7 +2329,7 @@ function ContentDocumentPageSidebar(props: {
           className={cn(
             "flex-1 py-2.5 text-center text-xs font-semibold transition-colors",
             activeTab === "history"
-              ? "border-b-2 border-accent text-accent"
+              ? "border-b-2 border-primary text-primary"
               : "text-foreground-muted hover:text-foreground",
           )}
           onClick={() => setActiveTab("history")}
@@ -2534,7 +2534,6 @@ export function ContentDocumentPageView({
 
             {state.status === "ready" ? (
               <Button
-                className="bg-accent text-white hover:bg-accent-hover"
                 disabled={!canPublish}
                 onClick={() => onPublishDialogOpenChange?.(true)}
               >
@@ -2596,7 +2595,6 @@ export function ContentDocumentPageView({
                         Create empty
                       </Button>
                       <Button
-                        className="bg-accent text-white hover:bg-accent-hover"
                         disabled={state.variantCreation.status === "creating"}
                         onClick={() => onCreateVariant?.(true)}
                       >
@@ -2643,7 +2641,7 @@ export function ContentDocumentPageView({
                   ) : null}
 
                   {state.viewingVersion ? (
-                    <div className="mb-3 flex items-center justify-between rounded-md border border-accent/30 bg-accent/5 px-4 py-2.5">
+                    <div className="mb-3 flex items-center justify-between rounded-md border border-primary/30 bg-primary/5 px-4 py-2.5">
                       <p className="text-sm font-medium">
                         Viewing version {state.viewingVersion.version}
                         {state.viewingVersion.status === "loading"
@@ -2735,7 +2733,6 @@ export function ContentDocumentPageView({
                   Cancel
                 </Button>
                 <Button
-                  className="bg-accent text-white hover:bg-accent-hover"
                   disabled={state.publishState === "publishing"}
                   onClick={onPublishSubmit}
                 >

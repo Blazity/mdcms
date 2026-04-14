@@ -44,12 +44,12 @@ function renderCard(
     <Card
       data-mdcms-content-card-type={entry.type}
       data-mdcms-content-card-disabled={entry.canNavigate ? "false" : "true"}
-      className="h-full border-border py-0 transition-all hover:border-accent/50 hover:shadow-sm"
+      className="h-full border-border py-0 transition-all hover:border-primary/50 hover:shadow-sm"
     >
       <CardContent className="p-4">
         <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-accent/10">
-            <FileText className="h-6 w-6 text-accent" />
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+            <FileText className="h-6 w-6 text-primary" />
           </div>
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex items-center gap-2">

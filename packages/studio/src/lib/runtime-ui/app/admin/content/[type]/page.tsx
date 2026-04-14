@@ -449,7 +449,6 @@ export default function ContentTypePage() {
           <h1 className="text-2xl font-semibold">{typeName}</h1>
           {capabilities.canCreateContent && schemaEntry && (
             <Button
-              className="bg-accent hover:bg-accent-hover text-white"
               onClick={create.open}
             >
               <Plus className="mr-2 h-4 w-4" />
@@ -582,7 +581,6 @@ export default function ContentTypePage() {
             </p>
             {capabilities.canCreateContent && schemaEntry && (
               <Button
-                className="bg-accent hover:bg-accent-hover text-white"
                 onClick={create.open}
               >
                 <Plus className="mr-2 h-4 w-4" />
