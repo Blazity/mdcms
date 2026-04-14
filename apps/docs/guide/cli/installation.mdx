@@ -3,6 +3,14 @@ title: "Installation"
 description: "Installing and setting up the MDCMS CLI"
 ---
 
+<Prompt
+  description="**Set up MDCMS automatically** — paste this into Claude Code, Codex, or any AI coding agent"
+  icon="terminal"
+  actions={["copy", "cursor"]}
+>
+Install and configure the MDCMS CLI in this project. Run `bun add -D @mdcms/cli` (or npm equivalent). Then run `bunx mdcms init` to interactively set up the project — it will prompt for server URL (default http://localhost:4000), project name, and environment. After init completes, run `bunx mdcms schema sync` to push the generated schema to the server. Verify with `bunx mdcms status` (exit code 0 means success). If the MDCMS server isn't running, start it with Docker: clone the mdcms repo and run `docker compose -f docker-compose.dev.yml up -d`.
+</Prompt>
+
 The MDCMS CLI lets you sync content and schema between your local filesystem and the MDCMS server. It handles authentication, push/pull workflows, and CI/CD integration.
 
 ## Install
