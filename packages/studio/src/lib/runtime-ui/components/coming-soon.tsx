@@ -21,8 +21,8 @@ export function ComingSoon({
 
       {/* Content */}
       <div className="relative z-10 flex flex-col items-center text-center max-w-md">
-        <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-lg bg-accent/10">
-          <Icon className="h-6 w-6 text-accent" />
+        <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
+          <Icon className="h-6 w-6 text-primary" />
         </div>
         <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
         <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
@@ -40,7 +40,7 @@ export function ComingSoon({
             href="https://github.com/blazity/mdcms"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-accent/70 hover:text-accent hover:underline"
+            className="text-primary/70 hover:text-primary hover:underline"
           >
             Contribute on GitHub
           </a>
