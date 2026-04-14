@@ -93,7 +93,7 @@ export function mapContentDocument(
       doc.hasUnpublishedChanges,
     ),
     updatedAt: doc.updatedAt,
-    createdBy: doc.createdBy,
+    createdBy: doc.updatedBy,
   };
 }
 
@@ -225,6 +225,9 @@ export function useContentTypeList(
     queryFn: async () => {
       const result = await api!.list({
         type: typeId,
+        ...(enableTranslationCoverage
+          ? { groupBy: "translationGroup" as const }
+          : {}),
         ...queryParams,
         draft: true,
         isDeleted: false,

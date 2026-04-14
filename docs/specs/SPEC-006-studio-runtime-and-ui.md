@@ -259,8 +259,10 @@ Deterministic states:
 The `/admin/content/:type` route is a live document list for a specific schema
 type within the active `(project, environment)` target. It is backed by:
 
-- `GET /api/v1/content?type=<typeId>` for the paginated document list with
-  server-side search, status filtering, sort, and pagination
+- `GET /api/v1/content?type=<typeId>&groupBy=translationGroup` for localized
+  schema types so the route paginates logical documents instead of locale
+  variants
+- `GET /api/v1/content?type=<typeId>` for non-localized schema types
 - `GET /api/v1/schema` for type metadata (name, directory, localized flag)
 - `GET /api/v1/me/capabilities` for action gating (inherited from layout)
 
@@ -272,13 +274,40 @@ Normative behavior:
 
 - The document list is keyed by the `type` route parameter resolved against live
   schema entries. Studio must not use mock content-type fixtures.
+- For localized schema types, the list renders one row per
+  `translationGroupId`, not one row per locale variant.
+- For non-localized schema types, the list renders one row per document as it
+  does today.
+- For localized schema types, Studio must request grouped rows from the content
+  API instead of grouping client-side after pagination.
 - Server-side search uses the `q` query parameter. The Studio search input is
   debounced before issuing requests.
+- For localized schema types, search matches any locale variant in the
+  translation group, but the route renders a single grouped row for that
+  logical document.
 - Status filtering maps UI states (`published`, `draft`, `changed`) to the
   `published` and `hasUnpublishedChanges` query parameters.
 - Pagination is server-side with `limit` and `offset`. Page size is fixed at 20.
+- For localized schema types, pagination and total counts operate on grouped
+  rows returned by the backend, not raw locale variants.
 - Author initials are derived from the `users` sidecar email. When a user
   cannot be resolved, a placeholder is shown.
+- For localized schema types, grouped rows use these representative-field
+  rules:
+  - title and path come from the representative locale variant
+  - the representative locale prefers the project default locale, then the
+    first available supported locale in configured order, then lexical locale
+    order
+  - `Updated` and `Author` use the most recently updated locale variant in the
+    group
+  - `Translations` reflects group coverage, not the representative locale only
+- For localized schema types, grouped row status is derived from the full
+  translation group:
+  - `Draft` when no locale variant in the group has a published version
+  - `Changed` when at least one locale variant is published and at least one
+    locale variant is unpublished or has unpublished changes
+  - `Published` only when every existing locale variant in the group has a
+    published version and none have unpublished changes
 
 Deterministic states:
 
@@ -318,6 +347,10 @@ Row-level actions:
 | Delete    | `DELETE .../content/:id`, invalidate list      | `capabilities.content.delete`    | Always                  |
 
 - Row action failures are surfaced inline with a dismissible error banner.
+- For localized grouped rows, row click, `Edit`, `Publish`, `Unpublish`,
+  `Duplicate`, and `Delete` target the representative locale variant's
+  `documentId`. Grouped rows do not implicitly turn these actions into
+  group-wide mutations.
 - The `content.list.row.actions` extensibility slot applies to these actions.
 
 ### Document Editor (`/admin/content/:type/:documentId`)

@@ -21,6 +21,7 @@ import {
   assertJsonObject,
   assertRequiredString,
   parseBoolean,
+  parseContentListGroupBy,
   parseContentFormat,
   parseOptionalString,
   parsePositiveInt,
@@ -28,6 +29,7 @@ import {
   validateContentPath,
   parseSortOrder,
 } from "./parsing.js";
+import { groupDocumentsByTranslationGroup } from "./grouped-list.js";
 import { validateReferenceFieldIdentities } from "./reference-validation.js";
 import { matchesDeletedListVisibility } from "./visibility.js";
 
@@ -47,8 +49,24 @@ export function createInMemoryContentStore(
     string,
     Map<string, SchemaRegistryTypeSnapshot>
   >();
+  const scopedLocales = new Map<
+    string,
+    {
+      defaultLocale?: string;
+      supportedLocales?: string[];
+    }
+  >();
 
   for (const scope of options.schemaScopes ?? []) {
+    if (scope.locales) {
+      scopedLocales.set(toScopeKey(scope.project, scope.environment), {
+        defaultLocale: scope.locales.default?.trim() || undefined,
+        supportedLocales:
+          scope.locales.supported
+            ?.map((locale) => locale.trim())
+            .filter((locale) => locale.length > 0) ?? undefined,
+      });
+    }
     scopedSchemas.set(
       toScopeKey(scope.project, scope.environment),
       new Map(Object.entries(scope.schemas)),
@@ -85,6 +103,15 @@ export function createInMemoryContentStore(
     scope: ContentScope,
   ): Map<string, SchemaRegistryTypeSnapshot> | undefined {
     return scopedSchemas.get(toScopeKey(scope.project, scope.environment));
+  }
+
+  function getScopeLocales(scope: ContentScope):
+    | {
+        defaultLocale?: string;
+        supportedLocales?: string[];
+      }
+    | undefined {
+    return scopedLocales.get(toScopeKey(scope.project, scope.environment));
   }
 
   function findPathConflict(
@@ -392,6 +419,7 @@ export function createInMemoryContentStore(
       const normalizedLocale = query.locale?.trim();
       const normalizedSlug = query.slug?.trim();
       const normalizedQ = query.q?.trim().toLowerCase();
+      const groupBy = parseContentListGroupBy(query.groupBy);
 
       const rows = [...store.values()]
         .map((document) =>
@@ -453,22 +481,45 @@ export function createInMemoryContentStore(
           return true;
         });
 
-      rows.sort((left, right) => {
-        let compared = 0;
+      const scopeLocales = getScopeLocales(scope);
+      const sortedRows =
+        groupBy === "translationGroup" && normalizedType
+          ? groupDocumentsByTranslationGroup({
+              matchedRows: rows,
+              allRows: [...store.values()]
+                .map((document) =>
+                  resolveReadDocument({
+                    document,
+                    draft,
+                    publishedSnapshots,
+                  }),
+                )
+                .filter((doc): doc is ContentDocument => Boolean(doc))
+                .filter(
+                  (doc) =>
+                    doc.type === normalizedType && doc.isDeleted === false,
+                ),
+              sort,
+              order,
+              defaultLocale: scopeLocales?.defaultLocale,
+              supportedLocales: scopeLocales?.supportedLocales,
+            })
+          : rows.sort((left, right) => {
+              let compared = 0;
 
-        if (sort === "path") {
-          compared = left.path.localeCompare(right.path);
-        } else if (sort === "createdAt") {
-          compared = left.createdAt.localeCompare(right.createdAt);
-        } else {
-          compared = left.updatedAt.localeCompare(right.updatedAt);
-        }
+              if (sort === "path") {
+                compared = left.path.localeCompare(right.path);
+              } else if (sort === "createdAt") {
+                compared = left.createdAt.localeCompare(right.createdAt);
+              } else {
+                compared = left.updatedAt.localeCompare(right.updatedAt);
+              }
 
-        return order === "asc" ? compared : compared * -1;
-      });
+              return order === "asc" ? compared : compared * -1;
+            });
 
-      const total = rows.length;
-      const pagedRows = rows.slice(offset, offset + limit);
+      const total = sortedRows.length;
+      const pagedRows = sortedRows.slice(offset, offset + limit);
 
       return {
         rows: pagedRows,

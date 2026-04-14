@@ -357,6 +357,249 @@ testWithDatabase(
 );
 
 testWithDatabase(
+  "content API DB list can group localized variants into logical translation rows",
+  async () => {
+    const { handler, dbConnection, cookie, csrfHeaders } =
+      await createDatabaseTestContext("test:content-api-db-grouped-list");
+    const testScopeHeaders = {
+      ...scopeHeaders,
+      "x-mdcms-project": stableFixtureName("content-db-grouped-list"),
+      "x-mdcms-environment": "production",
+    };
+    const scope = {
+      project: testScopeHeaders["x-mdcms-project"],
+      environment: testScopeHeaders["x-mdcms-environment"],
+    };
+
+    try {
+      await resetDatabaseTestScope(dbConnection.db, scope);
+      await seedSchemaRegistryScope(dbConnection.db, {
+        scope,
+        supportedLocales: ["fr", "en"],
+        entries: [
+          {
+            type: "Campaign",
+            directory: "content/campaigns",
+            localized: true,
+            fields: {
+              slug: {
+                kind: "string",
+                required: true,
+                nullable: false,
+              },
+              title: {
+                kind: "string",
+                required: false,
+                nullable: true,
+              },
+            },
+          },
+        ],
+      });
+
+      const launchPath = stableFixturePath("content/campaigns", "launch");
+      const summerPath = stableFixturePath("content/campaigns", "summer-sale");
+
+      const launchFr = (await createContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        {
+          path: launchPath,
+          type: "Campaign",
+          locale: "fr",
+          format: "mdx",
+          frontmatter: {
+            slug: "launch",
+            title: "Lancement de printemps",
+          },
+          body: "Bonjour depuis le lancement.",
+        },
+      )) as { documentId: string };
+      await createContentDocument(handler, csrfHeaders, testScopeHeaders, {
+        path: launchPath,
+        type: "Campaign",
+        locale: "en",
+        format: "mdx",
+        sourceDocumentId: launchFr.documentId,
+        frontmatter: {
+          slug: "launch",
+          title: "Spring launch",
+        },
+        body: "Hello from launch.",
+      });
+
+      const publishLaunchFr = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${launchFr.documentId}/publish`,
+          {
+            method: "POST",
+            headers: csrfHeaders({
+              ...testScopeHeaders,
+              "content-type": "application/json",
+            }),
+            body: JSON.stringify({
+              change_summary: "Publish French launch",
+            }),
+          },
+        ),
+      );
+      assert.equal(publishLaunchFr.status, 200);
+
+      const summerFr = (await createContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        {
+          path: summerPath,
+          type: "Campaign",
+          locale: "fr",
+          format: "md",
+          frontmatter: {
+            slug: "summer-sale",
+            title: "Vente d'été",
+          },
+          body: "Bonjour depuis la vente d'été.",
+        },
+      )) as { documentId: string };
+      const summerEn = (await createContentDocument(
+        handler,
+        csrfHeaders,
+        testScopeHeaders,
+        {
+          path: summerPath,
+          type: "Campaign",
+          locale: "en",
+          format: "md",
+          sourceDocumentId: summerFr.documentId,
+          frontmatter: {
+            slug: "summer-sale",
+            title: "Summer sale",
+          },
+          body: "Hello from the summer sale.",
+        },
+      )) as { documentId: string };
+
+      const publishSummerFr = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${summerFr.documentId}/publish`,
+          {
+            method: "POST",
+            headers: csrfHeaders({
+              ...testScopeHeaders,
+              "content-type": "application/json",
+            }),
+            body: JSON.stringify({
+              change_summary: "Publish French summer sale",
+            }),
+          },
+        ),
+      );
+      assert.equal(publishSummerFr.status, 200);
+
+      const publishSummerEn = await handler(
+        new Request(
+          `http://localhost/api/v1/content/${summerEn.documentId}/publish`,
+          {
+            method: "POST",
+            headers: csrfHeaders({
+              ...testScopeHeaders,
+              "content-type": "application/json",
+            }),
+            body: JSON.stringify({
+              change_summary: "Publish English summer sale",
+            }),
+          },
+        ),
+      );
+      assert.equal(publishSummerEn.status, 200);
+
+      const response = await handler(
+        new Request(
+          "http://localhost/api/v1/content?draft=true&type=Campaign&groupBy=translationGroup&sort=path&order=asc",
+          {
+            headers: {
+              ...testScopeHeaders,
+              cookie,
+            },
+          },
+        ),
+      );
+      const body = (await response.json()) as {
+        data: Array<{
+          documentId: string;
+          translationGroupId: string;
+          path: string;
+          locale: string;
+          frontmatter: { title?: string };
+          publishedVersion: number | null;
+          hasUnpublishedChanges: boolean;
+          localesPresent?: string[];
+          publishedLocales?: string[];
+        }>;
+        pagination: {
+          total: number;
+          limit: number;
+          offset: number;
+          hasMore: boolean;
+        };
+      };
+
+      assert.equal(response.status, 200);
+      assert.equal(body.pagination.total, 2);
+      assert.equal(body.data.length, 2);
+      assert.deepEqual(
+        body.data.map((row) => row.path),
+        [launchPath, summerPath],
+      );
+      assert.deepEqual(
+        body.data.map((row) => row.locale),
+        ["fr", "fr"],
+      );
+      assert.deepEqual(
+        body.data.map((row) => row.frontmatter.title),
+        ["Lancement de printemps", "Vente d'été"],
+      );
+      assert.deepEqual(
+        body.data.map((row) => [...(row.localesPresent ?? [])].sort()),
+        [
+          ["en", "fr"],
+          ["en", "fr"],
+        ],
+      );
+      assert.deepEqual(
+        body.data.map((row) => [...(row.publishedLocales ?? [])].sort()),
+        [["fr"], ["en", "fr"]],
+      );
+      assert.deepEqual(
+        body.data.map((row) => ({
+          translationGroupId: row.translationGroupId,
+          documentId: row.documentId,
+          publishedVersion: row.publishedVersion,
+          hasUnpublishedChanges: row.hasUnpublishedChanges,
+        })),
+        [
+          {
+            translationGroupId: body.data[0]!.translationGroupId,
+            documentId: launchFr.documentId,
+            publishedVersion: 1,
+            hasUnpublishedChanges: true,
+          },
+          {
+            translationGroupId: body.data[1]!.translationGroupId,
+            documentId: summerFr.documentId,
+            publishedVersion: 1,
+            hasUnpublishedChanges: false,
+          },
+        ],
+      );
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
   "content API overview returns metadata counts without exposing draft rows",
   async () => {
     const { handler, dbConnection, cookie, csrfHeaders } =

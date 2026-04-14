@@ -46,6 +46,8 @@ export type ContentDocumentResponse = {
   frontmatter: Record<string, unknown>;
   body: string;
   resolveErrors?: ResolveErrorsMap;
+  localesPresent?: string[];
+  publishedLocales?: string[];
   createdBy: string;
   createdAt: string;
   updatedBy: string;

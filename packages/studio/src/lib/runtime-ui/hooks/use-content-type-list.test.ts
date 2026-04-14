@@ -77,6 +77,16 @@ test("mapContentDocument transforms API response to view model", () => {
   assert.equal(mapped.createdBy, "user-1");
 });
 
+test("mapContentDocument uses the latest updater as the row author", () => {
+  const mapped = mapContentDocument({
+    ...baseDoc,
+    createdBy: "creator-1",
+    updatedBy: "editor-2",
+  });
+
+  assert.equal(mapped.createdBy, "editor-2");
+});
+
 test("mapFiltersToQuery maps status filter to API params", () => {
   assert.deepEqual(mapFiltersToQuery({ status: "all" }), {});
   assert.deepEqual(mapFiltersToQuery({ status: "published" }), {

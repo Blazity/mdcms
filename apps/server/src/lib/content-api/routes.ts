@@ -7,6 +7,7 @@ import { executeWithRuntimeErrorsHandled } from "../http-utils.js";
 import {
   assertRequiredString,
   parseBoolean,
+  parseContentListGroupBy,
   parseOptionalString,
   parsePathInt,
   parseRestoreTargetStatus,
@@ -140,7 +141,31 @@ export function mountContentApiRoutes(
         },
         requireType: true,
       });
+      const groupBy = parseContentListGroupBy(typedQuery.groupBy);
       const resolvedType = typedQuery.type?.trim();
+      if (groupBy === "translationGroup") {
+        if (!resolvedType) {
+          throw new RuntimeError({
+            code: "INVALID_QUERY_PARAM",
+            message:
+              'Query parameter "type" is required when "groupBy" is provided.',
+            statusCode: 400,
+            details: { field: "type" },
+          });
+        }
+
+        const schema = await options.store.getSchema(scope, resolvedType);
+
+        if (!schema?.localized) {
+          throw new RuntimeError({
+            code: "INVALID_QUERY_PARAM",
+            message:
+              'Query parameter "groupBy" is only valid for localized schema types.',
+            statusCode: 400,
+            details: { field: "groupBy", value: groupBy },
+          });
+        }
+      }
       await options.authorize(request, {
         requiredScope,
         project: scope.project,

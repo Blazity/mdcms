@@ -27,6 +27,29 @@ test("buildContentTranslationCoverageMap counts unique locales per translation g
   });
 });
 
+test("buildContentTranslationCoverageMap prefers grouped locale metadata when present", () => {
+  const coverage = buildContentTranslationCoverageMap(
+    [
+      {
+        translationGroupId: "tg-1",
+        locale: "fr",
+        localesPresent: ["en", "fr"],
+      },
+      {
+        translationGroupId: "tg-2",
+        locale: "en",
+        localesPresent: ["en"],
+      },
+    ],
+    2,
+  );
+
+  assert.deepEqual(coverage, {
+    "tg-1": { translatedLocales: 2, totalLocales: 2 },
+    "tg-2": { translatedLocales: 1, totalLocales: 2 },
+  });
+});
+
 test("formatContentTranslationCoverageLabel renders the translated locale count", () => {
   assert.equal(
     formatContentTranslationCoverageLabel({
@@ -53,7 +76,7 @@ test("loadContentTranslationCoverageMap paginates through the full type list", a
               environment: "production",
               path: "blog/hello-world",
               type: "BlogPost",
-              locale: "en",
+              locale: "fr",
               format: "md",
               isDeleted: false,
               hasUnpublishedChanges: false,
@@ -62,27 +85,8 @@ test("loadContentTranslationCoverageMap paginates through the full type list", a
               draftRevision: 0,
               frontmatter: { title: "Hello World" },
               body: "# Hello",
-              createdBy: "user-1",
-              createdAt: "2026-03-01T00:00:00.000Z",
-              updatedBy: "user-1",
-              updatedAt: "2026-03-20T00:00:00.000Z",
-            },
-            {
-              documentId: "doc-2",
-              translationGroupId: "tg-1",
-              project: "marketing-site",
-              environment: "production",
-              path: "blog/bonjour",
-              type: "BlogPost",
-              locale: "fr",
-              format: "md",
-              isDeleted: false,
-              hasUnpublishedChanges: false,
-              version: 1,
-              publishedVersion: 1,
-              draftRevision: 0,
-              frontmatter: { title: "Bonjour" },
-              body: "# Bonjour",
+              localesPresent: ["en", "fr"],
+              publishedLocales: ["en", "fr"],
               createdBy: "user-1",
               createdAt: "2026-03-01T00:00:00.000Z",
               updatedBy: "user-1",
@@ -90,8 +94,8 @@ test("loadContentTranslationCoverageMap paginates through the full type list", a
             },
           ],
           pagination: {
-            total: 3,
-            limit: 2,
+            total: 2,
+            limit: 100,
             offset: 0,
             hasMore: true,
           },
@@ -116,6 +120,8 @@ test("loadContentTranslationCoverageMap paginates through the full type list", a
             draftRevision: 0,
             frontmatter: { title: "Hallo" },
             body: "# Hallo",
+            localesPresent: ["de"],
+            publishedLocales: ["de"],
             createdBy: "user-1",
             createdAt: "2026-03-01T00:00:00.000Z",
             updatedBy: "user-1",
@@ -123,9 +129,9 @@ test("loadContentTranslationCoverageMap paginates through the full type list", a
           },
         ],
         pagination: {
-          total: 3,
-          limit: 2,
-          offset: 2,
+          total: 2,
+          limit: 100,
+          offset: 100,
           hasMore: false,
         },
       };
@@ -146,6 +152,7 @@ test("loadContentTranslationCoverageMap paginates through the full type list", a
       type: "BlogPost",
       draft: true,
       isDeleted: false,
+      groupBy: "translationGroup",
       limit: 100,
       offset: 0,
     },
@@ -153,8 +160,9 @@ test("loadContentTranslationCoverageMap paginates through the full type list", a
       type: "BlogPost",
       draft: true,
       isDeleted: false,
+      groupBy: "translationGroup",
       limit: 100,
-      offset: 2,
+      offset: 100,
     },
   ]);
 });

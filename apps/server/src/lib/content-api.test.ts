@@ -251,6 +251,64 @@ test("content API supports create/list filters/sort/pagination", async () => {
   assert.equal(body.data[0]?.type, "BlogPost");
 });
 
+test("content API rejects translation group grouping for non-localized types", async () => {
+  const store = createInMemoryContentStore({
+    schemaScopes: [
+      {
+        project: scopeHeaders["x-mdcms-project"],
+        environment: scopeHeaders["x-mdcms-environment"],
+        schemas: {
+          SettingsPage: {
+            type: "SettingsPage",
+            directory: "content/settings",
+            localized: false,
+            fields: {},
+          },
+        },
+      },
+    ],
+  });
+  const rawHandler = createServerRequestHandler({
+    env: baseEnv,
+    configureApp: (app) => {
+      mountContentApiRoutes(app, {
+        store,
+        authorize: async () => undefined,
+        requireCsrf: async () => undefined,
+        getWriteSchemaSyncState: async () => ({
+          schemaHash: inMemorySchemaHash,
+        }),
+      });
+    },
+    now: () => new Date("2026-03-02T10:00:00.000Z"),
+  });
+  const handler = wrapHandlerWithAutoSchemaHash(
+    rawHandler,
+    () => inMemorySchemaHash,
+  );
+
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/content?draft=true&type=SettingsPage&groupBy=translationGroup",
+      {
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const body = (await response.json()) as {
+    code: string;
+    details?: {
+      field?: string;
+      value?: string;
+    };
+  };
+
+  assert.equal(response.status, 400);
+  assert.equal(body.code, "INVALID_QUERY_PARAM");
+  assert.equal(body.details?.field, "groupBy");
+  assert.equal(body.details?.value, "translationGroup");
+});
+
 test("content API overview returns metadata-only counts per type using content:read scope", async () => {
   const authorizeCalls: Array<Record<string, unknown>> = [];
   const store = createInMemoryContentStore({
