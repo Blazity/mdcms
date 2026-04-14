@@ -6,6 +6,7 @@ import type { StudioMountContext } from "@mdcms/shared";
 import {
   createAdminLayoutCapabilitiesLoadInput,
   createAdminLayoutSessionLoadInput,
+  createAdminLayoutTokenSessionState,
 } from "./layout.js";
 
 function createContext(): StudioMountContext {
@@ -52,4 +53,25 @@ test("createAdminLayoutSessionLoadInput maps the server URL and auth", () => {
     config: { serverUrl: "http://localhost:4000" },
     auth: { mode: "cookie" },
   });
+});
+
+test("createAdminLayoutTokenSessionState returns an authenticated shell session for token auth", () => {
+  const context = createContext();
+  context.auth = { mode: "token", token: "mdcms_key_test" };
+
+  assert.deepEqual(createAdminLayoutTokenSessionState(context.auth), {
+    status: "authenticated",
+    session: {
+      id: "token-auth-session",
+      userId: "token-auth-user",
+      email: "API token",
+      issuedAt: "",
+      expiresAt: "",
+    },
+    csrfToken: "",
+  });
+});
+
+test("createAdminLayoutTokenSessionState returns null for cookie auth", () => {
+  assert.equal(createAdminLayoutTokenSessionState(createContext().auth), null);
 });

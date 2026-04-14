@@ -62,6 +62,26 @@ export function createAdminLayoutSessionLoadInput(
   };
 }
 
+export function createAdminLayoutTokenSessionState(
+  auth: StudioMountContext["auth"],
+): StudioSessionState | null {
+  if (auth.mode !== "token" || !auth.token) {
+    return null;
+  }
+
+  return {
+    status: "authenticated",
+    session: {
+      id: "token-auth-session",
+      userId: "token-auth-user",
+      email: "API token",
+      issuedAt: "",
+      expiresAt: "",
+    },
+    csrfToken: "",
+  };
+}
+
 export default function AdminLayout({
   children,
   context,
@@ -181,6 +201,13 @@ export default function AdminLayout({
 
   // Fetch session
   useEffect(() => {
+    const tokenSessionState = createAdminLayoutTokenSessionState(context.auth);
+
+    if (tokenSessionState) {
+      setSessionState(tokenSessionState);
+      return;
+    }
+
     const loadInput = createAdminLayoutSessionLoadInput(context);
     let cancelled = false;
 
