@@ -15,6 +15,12 @@ import {
   PageHeaderDescription,
   PageHeaderHeading,
 } from "../../components/layout/page-header.js";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "../../components/ui/card.js";
 import { Badge } from "../../components/ui/badge.js";
 import {
   Table,
@@ -37,6 +43,9 @@ type SchemaPageLoadInput = {
 type SchemaFieldSnapshot =
   SchemaRegistryEntry["resolvedSchema"]["fields"][string];
 
+const SCHEMA_READ_ONLY_COPY =
+  "Schema definitions are managed in code and synced with cms schema sync. Studio shows the active types, fields, and validation rules for this target.";
+
 function formatConstraintValue(value: unknown): string {
   if (typeof value === "string") {
     return value;
@@ -51,6 +60,35 @@ function formatConstraintValue(value: unknown): string {
   }
 
   return JSON.stringify(value);
+}
+
+function formatCheckValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map((entry) => formatConstraintValue(entry)).join(", ");
+  }
+
+  return formatConstraintValue(value);
+}
+
+function describeCheckDefinition(
+  check: Record<string, unknown>,
+): string | null {
+  const kind = typeof check.kind === "string" ? check.kind : "rule";
+  const details = Object.entries(check).filter(
+    ([key, value]) => key !== "kind" && value !== undefined,
+  );
+
+  if (details.length === 0) {
+    return kind;
+  }
+
+  if (details.length === 1) {
+    return `${kind}: ${formatCheckValue(details[0][1])}`;
+  }
+
+  return `${kind}: ${details
+    .map(([key, value]) => `${key} ${formatCheckValue(value)}`)
+    .join(", ")}`;
 }
 
 function describeSchemaFieldConstraints(field: SchemaFieldSnapshot): string[] {
@@ -79,7 +117,11 @@ function describeSchemaFieldConstraints(field: SchemaFieldSnapshot): string[] {
   }
 
   if (field.checks?.length) {
-    constraints.push(`checks: ${field.checks.length}`);
+    constraints.push(
+      ...field.checks
+        .map((check) => describeCheckDefinition(check))
+        .filter((summary): summary is string => summary !== null),
+    );
   }
 
   return constraints;
@@ -146,143 +188,204 @@ function sortFields(fields: SchemaRegistryEntry["resolvedSchema"]["fields"]) {
   );
 }
 
+function getSharedSchemaSyncSummary(entries: SchemaRegistryEntry[]): {
+  schemaHash?: string;
+  syncedAt?: string;
+} | null {
+  const firstEntry = entries[0];
+
+  if (!firstEntry) {
+    return null;
+  }
+
+  const schemaHash = firstEntry.schemaHash.trim();
+  const syncedAt = firstEntry.syncedAt.trim();
+
+  return {
+    ...(schemaHash.length > 0 &&
+    entries.every((entry) => entry.schemaHash === schemaHash)
+      ? { schemaHash }
+      : {}),
+    ...(syncedAt.length > 0 &&
+    entries.every((entry) => entry.syncedAt === syncedAt)
+      ? { syncedAt }
+      : {}),
+  };
+}
+
 export function SchemaPageView({ state }: { state: StudioSchemaState }) {
   const pageDescription =
     state.status === "loading"
       ? state.message
       : `Read-only schema browser for ${state.project} / ${state.environment}.`;
+  const sharedSyncSummary =
+    state.status === "ready" ? getSharedSchemaSyncSummary(state.entries) : null;
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader>
+    <div className="min-h-screen">
+      <PageHeader breadcrumbs={[{ label: "Schema" }]} />
+
+      <div className="space-y-6 p-6">
         <div className="space-y-1">
           <PageHeaderHeading>Schema</PageHeaderHeading>
           <PageHeaderDescription>{pageDescription}</PageHeaderDescription>
         </div>
-      </PageHeader>
 
-      {state.status === "loading" ? (
-        <div
-          data-mdcms-schema-page-state="loading"
-          className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
-        >
-          {state.message}
-        </div>
-      ) : state.status === "forbidden" ? (
-        <section
-          data-mdcms-schema-page-state="forbidden"
-          className="space-y-3 rounded-lg border border-dashed p-6"
-        >
-          <Badge variant="secondary">Forbidden</Badge>
-          <p className="text-sm text-muted-foreground">{state.message}</p>
-          <p className="text-xs text-muted-foreground">
-            {state.project} / {state.environment}
-          </p>
-        </section>
-      ) : state.status === "error" ? (
-        <section
-          data-mdcms-schema-page-state="error"
-          className="space-y-3 rounded-lg border border-dashed p-6"
-        >
-          <Badge variant="destructive">Error</Badge>
-          <p className="text-sm text-muted-foreground">{state.message}</p>
-          <p className="text-xs text-muted-foreground">
-            {state.project} / {state.environment}
-          </p>
-        </section>
-      ) : state.entries.length === 0 ? (
-        <section
-          data-mdcms-schema-page-state="empty"
-          className="space-y-3 rounded-lg border border-dashed p-6"
-        >
-          <Badge variant="outline">Empty</Badge>
-          <p className="text-sm text-muted-foreground">
-            No schema entries were returned for this project and environment.
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {state.project} / {state.environment}
-          </p>
-        </section>
-      ) : (
-        <div data-mdcms-schema-page-state="ready" className="space-y-4">
-          {sortEntries(state.entries).map((entry) => (
-            <article
-              key={entry.type}
-              data-mdcms-schema-entry-type={entry.type}
-              className="space-y-4 rounded-lg border p-4"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-lg font-semibold tracking-tight">
-                      {entry.type}
-                    </h2>
-                    <Badge variant={entry.localized ? "secondary" : "outline"}>
-                      {entry.localized ? "Localized" : "Single locale"}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    {entry.directory}
-                  </p>
-                </div>
-                <div className="space-y-1 text-right text-xs text-muted-foreground">
-                  <p>
+        <Card>
+          <CardContent className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+            <div className="flex flex-wrap items-start gap-3">
+              <Badge variant="secondary">Read-only</Badge>
+              <p className="max-w-3xl text-sm text-muted-foreground">
+                {SCHEMA_READ_ONLY_COPY}
+              </p>
+            </div>
+
+            {sharedSyncSummary &&
+            (sharedSyncSummary.schemaHash || sharedSyncSummary.syncedAt) ? (
+              <div
+                data-mdcms-schema-sync-summary="page"
+                className="grid gap-2 text-xs text-muted-foreground xl:justify-items-end"
+              >
+                {sharedSyncSummary.syncedAt ? (
+                  <p className="flex flex-wrap items-baseline gap-1 xl:justify-end">
                     <span className="font-medium text-foreground">
                       Synced at
-                    </span>{" "}
-                    {entry.syncedAt}
+                    </span>
+                    <span>{sharedSyncSummary.syncedAt}</span>
                   </p>
-                  <p>
+                ) : null}
+                {sharedSyncSummary.schemaHash ? (
+                  <p className="flex flex-wrap items-start gap-1 xl:justify-end">
                     <span className="font-medium text-foreground">
                       Schema hash
-                    </span>{" "}
-                    <code>{entry.schemaHash}</code>
+                    </span>
+                    <code className="break-all font-mono text-[11px] leading-relaxed">
+                      {sharedSyncSummary.schemaHash}
+                    </code>
                   </p>
-                </div>
+                ) : null}
               </div>
+            ) : null}
+          </CardContent>
+        </Card>
 
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Field</TableHead>
-                    <TableHead>Kind</TableHead>
-                    <TableHead>Required</TableHead>
-                    <TableHead>Nullable</TableHead>
-                    <TableHead>Constraints</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortFields(entry.resolvedSchema.fields).map(
-                    ([fieldName, field]) => (
-                      <TableRow
-                        key={fieldName}
-                        data-mdcms-schema-field-name={fieldName}
-                        data-mdcms-schema-field-kind={field.kind}
+        {state.status === "loading" ? (
+          <div
+            data-mdcms-schema-page-state="loading"
+            className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
+          >
+            {state.message}
+          </div>
+        ) : state.status === "forbidden" ? (
+          <section
+            data-mdcms-schema-page-state="forbidden"
+            className="space-y-3 rounded-lg border border-dashed p-6"
+          >
+            <Badge variant="secondary">Forbidden</Badge>
+            <p className="text-sm text-muted-foreground">{state.message}</p>
+            <p className="text-xs text-muted-foreground">
+              {state.project} / {state.environment}
+            </p>
+          </section>
+        ) : state.status === "error" ? (
+          <section
+            data-mdcms-schema-page-state="error"
+            className="space-y-3 rounded-lg border border-dashed p-6"
+          >
+            <Badge variant="destructive">Error</Badge>
+            <p className="text-sm text-muted-foreground">{state.message}</p>
+            <p className="text-xs text-muted-foreground">
+              {state.project} / {state.environment}
+            </p>
+          </section>
+        ) : state.entries.length === 0 ? (
+          <section
+            data-mdcms-schema-page-state="empty"
+            className="space-y-3 rounded-lg border border-dashed p-6"
+          >
+            <Badge variant="outline">Empty</Badge>
+            <p className="text-sm text-muted-foreground">
+              No synced schema is available for this project and environment.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Ask an admin or developer to run <code>cms schema sync</code> from
+              the host app repo to publish the latest schema.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {state.project} / {state.environment}
+            </p>
+          </section>
+        ) : (
+          <div data-mdcms-schema-page-state="ready" className="space-y-4">
+            {sortEntries(state.entries).map((entry) => (
+              <Card key={entry.type} data-mdcms-schema-entry-type={entry.type}>
+                <CardHeader className="gap-2">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <CardTitle className="text-2xl tracking-tight">
+                        {entry.type}
+                      </CardTitle>
+                      <Badge
+                        variant={entry.localized ? "secondary" : "outline"}
                       >
-                        <TableCell className="font-medium">
-                          {fieldName}
-                        </TableCell>
-                        <TableCell>{field.kind}</TableCell>
-                        <TableCell>{field.required ? "Yes" : "No"}</TableCell>
-                        <TableCell>{field.nullable ? "Yes" : "No"}</TableCell>
-                        <TableCell>
-                          <div
-                            data-mdcms-schema-field-constraints={describeSchemaFieldConstraints(
-                              field,
-                            ).join(" | ")}
-                          >
-                            {renderConstraintSummary(field)}
-                          </div>
-                        </TableCell>
+                        {entry.localized ? "Localized" : "Single locale"}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {entry.directory}
+                    </p>
+                  </div>
+                </CardHeader>
+
+                <CardContent className="pt-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Field</TableHead>
+                        <TableHead>Kind</TableHead>
+                        <TableHead>Required</TableHead>
+                        <TableHead>Nullable</TableHead>
+                        <TableHead>Constraints</TableHead>
                       </TableRow>
-                    ),
-                  )}
-                </TableBody>
-              </Table>
-            </article>
-          ))}
-        </div>
-      )}
+                    </TableHeader>
+                    <TableBody>
+                      {sortFields(entry.resolvedSchema.fields).map(
+                        ([fieldName, field]) => (
+                          <TableRow
+                            key={fieldName}
+                            data-mdcms-schema-field-name={fieldName}
+                            data-mdcms-schema-field-kind={field.kind}
+                          >
+                            <TableCell className="font-medium">
+                              {fieldName}
+                            </TableCell>
+                            <TableCell>{field.kind}</TableCell>
+                            <TableCell>
+                              {field.required ? "Yes" : "No"}
+                            </TableCell>
+                            <TableCell>
+                              {field.nullable ? "Yes" : "No"}
+                            </TableCell>
+                            <TableCell>
+                              <div
+                                data-mdcms-schema-field-constraints={describeSchemaFieldConstraints(
+                                  field,
+                                ).join(" | ")}
+                              >
+                                {renderConstraintSummary(field)}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ),
+                      )}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

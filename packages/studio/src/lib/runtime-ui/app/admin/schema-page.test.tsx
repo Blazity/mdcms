@@ -8,6 +8,10 @@ import {
   createEmptyCurrentPrincipalCapabilities,
   type StudioMountContext,
 } from "@mdcms/shared";
+import { ThemeProvider } from "../../adapters/next-themes.js";
+import { StudioNavigationProvider } from "../../navigation.js";
+import { StudioMountInfoProvider } from "./mount-info-context.js";
+import { StudioSessionProvider } from "./session-context.js";
 import {
   createStudioSchemaLoadingState,
   type StudioSchemaReadyState,
@@ -37,9 +41,46 @@ function createReadyState(
 
 function renderMarkup(state: StudioSchemaState): string {
   return renderToStaticMarkup(
-    createElement(SchemaPageView, {
-      state,
-    }),
+    createElement(
+      ThemeProvider,
+      null,
+      createElement(
+        StudioSessionProvider,
+        {
+          value: { status: "unauthenticated" },
+        },
+        createElement(
+          StudioMountInfoProvider,
+          {
+            value: {
+              project: "marketing-site",
+              environment: "staging",
+              setEnvironment: () => {},
+              apiBaseUrl: "http://localhost:4000",
+              auth: { mode: "cookie" },
+              environments: [],
+              hostBridge: null,
+            },
+          },
+          createElement(
+            StudioNavigationProvider,
+            {
+              value: {
+                pathname: "/schema",
+                params: {},
+                basePath: "/admin",
+                push: () => {},
+                replace: () => {},
+                back: () => {},
+              },
+            },
+            createElement(SchemaPageView, {
+              state,
+            }),
+          ),
+        ),
+      ),
+    ),
   );
 }
 
@@ -76,6 +117,9 @@ test("createSchemaPageLoadInput maps the mounted project and environment", () =>
 test("SchemaPageView renders the loading state deterministically", () => {
   const markup = renderMarkup(createStudioSchemaLoadingState());
 
+  assert.match(markup, /class="min-h-screen"/);
+  assert.match(markup, /sticky top-0/);
+  assert.match(markup, /p-6 space-y-6|space-y-6 p-6/);
   assert.match(markup, /data-mdcms-schema-page-state="loading"/);
   assert.match(markup, /Loading schema state/i);
   assert.match(markup, /Schema/i);
@@ -85,7 +129,9 @@ test("SchemaPageView renders an empty read-only browser state", () => {
   const markup = renderMarkup(createReadyState());
 
   assert.match(markup, /data-mdcms-schema-page-state="empty"/);
-  assert.match(markup, /No schema entries/i);
+  assert.match(markup, /Schema definitions are managed in code/i);
+  assert.match(markup, /No synced schema is available/i);
+  assert.match(markup, /cms schema sync/i);
   assert.match(markup, /marketing-site/);
   assert.match(markup, /staging/);
 });
@@ -112,6 +158,17 @@ test("SchemaPageView renders live schema entries with simple constraint metadata
                 reference: {
                   targetType: "Author",
                 },
+              },
+              title: {
+                kind: "string",
+                required: true,
+                nullable: false,
+                checks: [
+                  {
+                    kind: "min_length",
+                    minimum: 1,
+                  },
+                ],
               },
               status: {
                 kind: "enum",
@@ -144,15 +201,19 @@ test("SchemaPageView renders live schema entries with simple constraint metadata
   );
 
   assert.match(markup, /data-mdcms-schema-page-state="ready"/);
+  assert.match(markup, /Schema definitions are managed in code/i);
+  assert.match(markup, /validation rules/i);
   assert.match(markup, /data-mdcms-schema-entry-type="BlogPost"/);
   assert.match(markup, /content\/blog/);
   assert.match(markup, /Localized/);
   assert.match(markup, /data-mdcms-schema-field-name="author"/);
   assert.match(markup, /data-mdcms-schema-field-kind="string"/);
   assert.match(markup, /reference: Author/);
+  assert.match(markup, /data-mdcms-schema-field-name="title"/);
+  assert.match(markup, /min_length: 1/);
   assert.match(markup, /data-mdcms-schema-field-name="status"/);
   assert.match(markup, /options: draft, published/);
-  assert.match(markup, /checks: 1/);
+  assert.doesNotMatch(markup, /checks: 1/);
   assert.match(markup, /data-mdcms-schema-field-name="tags"/);
   assert.match(markup, /default: \[\]/);
   assert.match(markup, /item: string/);
@@ -178,4 +239,80 @@ test("SchemaPageView renders forbidden and error states", () => {
   assert.match(forbiddenMarkup, /Forbidden\./);
   assert.match(errorMarkup, /data-mdcms-schema-page-state="error"/);
   assert.match(errorMarkup, /Failed to load schema state\./);
+});
+
+test("SchemaPageView remains descriptive-only even when schema sync capability exists", () => {
+  const markup = renderMarkup(
+    createReadyState({
+      canSync: true,
+      hasLocalSyncPayload: true,
+      capabilities: {
+        ...createEmptyCurrentPrincipalCapabilities(),
+        schema: {
+          read: true,
+          write: true,
+        },
+      },
+      entries: [
+        {
+          type: "BlogPost",
+          directory: "content/blog",
+          localized: false,
+          schemaHash: "server-hash",
+          syncedAt: "2026-03-31T12:00:00.000Z",
+          resolvedSchema: {
+            type: "BlogPost",
+            directory: "content/blog",
+            localized: false,
+            fields: {},
+          },
+        },
+      ],
+    }),
+  );
+
+  assert.match(markup, /Read-only/i);
+  assert.doesNotMatch(markup, /Sync Schema/);
+  assert.doesNotMatch(markup, /Edit schema/i);
+  assert.doesNotMatch(markup, /Schema Builder/i);
+});
+
+test("SchemaPageView renders shared sync metadata once for the whole page", () => {
+  const markup = renderMarkup(
+    createReadyState({
+      entries: [
+        {
+          type: "Author",
+          directory: "content/authors",
+          localized: false,
+          schemaHash: "server-hash",
+          syncedAt: "2026-03-31T12:00:00.000Z",
+          resolvedSchema: {
+            type: "Author",
+            directory: "content/authors",
+            localized: false,
+            fields: {},
+          },
+        },
+        {
+          type: "BlogPost",
+          directory: "content/blog",
+          localized: true,
+          schemaHash: "server-hash",
+          syncedAt: "2026-03-31T12:00:00.000Z",
+          resolvedSchema: {
+            type: "BlogPost",
+            directory: "content/blog",
+            localized: true,
+            fields: {},
+          },
+        },
+      ],
+    }),
+  );
+
+  assert.equal(markup.match(/Schema hash/g)?.length ?? 0, 1);
+  assert.equal(markup.match(/Synced at/g)?.length ?? 0, 1);
+  assert.match(markup, /data-mdcms-schema-entry-type="Author"/);
+  assert.match(markup, /data-mdcms-schema-entry-type="BlogPost"/);
 });
