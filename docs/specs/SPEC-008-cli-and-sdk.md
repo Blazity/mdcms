@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-04-08
+last_updated: 2026-04-14
 ---
 
 # SPEC-008 CLI and SDK
@@ -104,7 +104,7 @@ The setup wizard uses `@inquirer/prompts` for the interactive TUI and walks thro
 
 1. **Server URL** — Prompt for the MDCMS server URL + health check (`GET /healthz`).
 2. **Project + environment names** — Prompt for project name and environment name (default: `"production"`). These are collected before authentication so the login challenge can scope the API key to `(project, environment)`.
-3. **Authentication** — Open browser for login via OAuth flow. The login challenge includes the project and environment from step 2. Scopes: `projects:write`, `schema:write`, `content:read`, `content:read:draft`, `content:write`. The resulting API key has `contextAllowlist: [{project, environment}]`.
+3. **Authentication** — Open browser for login via OAuth flow. The login challenge includes the project and environment from step 2. Scopes: `projects:read`, `projects:write`, `schema:read`, `schema:write`, `content:read`, `content:read:draft`, `content:write`, `content:delete`. The resulting API key has `contextAllowlist: [{project, environment}]`.
 4. **Project creation** — `POST /api/v1/projects` with the project name from step 2. Slug is auto-generated from name; a default "production" environment is created automatically. If the server returns `409` (project already exists), the wizard exits with an error.
 5. **Environment creation** — If the environment already exists in the project-create response, the wizard skips creation; otherwise `POST /api/v1/projects/:slug/environments`.
 6. **Directory scanning** — Scan the project for directories containing `.md`/`.mdx` files and collect locale hints from frontmatter, filename suffixes, and locale folder segments. Root-level files (no parent directory) are excluded.
@@ -368,8 +368,9 @@ export const migration: Migration = {
 - After obtaining the key, `cms login` verifies the project exists on the server (`GET /api/v1/projects`). If the project does not exist, the key is revoked (`POST /api/v1/auth/api-keys/self/revoke`) and the command exits with an error directing the user to run `cms init`.
 - The credential store is keyed by server URL, project, and environment and supports one active profile per tuple.
 - In interactive mode, credentials are stored in the OS credential store when available (fallback to `~/.mdcms/credentials.json` with `0600` permissions).
-- Login-generated API keys request scopes: `projects:read`, `projects:write`, `schema:read`, `schema:write`, `content:read`, `content:read:draft`, `content:write`. The server filters these to the subset permitted by the session's effective role. **MVP limitation:** CLI operations (`push`, `pull`, `init`) require `schema:write` and `projects:write` which are only available to Admin and Owner roles. Editor and Viewer users cannot use the CLI until role-aware scope narrowing is implemented.
+- Login-generated API keys request scopes: `projects:read`, `projects:write`, `schema:read`, `schema:write`, `content:read`, `content:read:draft`, `content:write`, `content:delete`. The server filters these to the subset permitted by the session's effective role. **MVP limitation:** CLI operations (`push`, `pull`, `init`) require `schema:write` and `projects:write` which are only available to Admin and Owner roles. Editor and Viewer users cannot use the CLI until role-aware scope narrowing is implemented.
 - CLI auth precedence is: `--api-key` > `MDCMS_API_KEY` > stored profile.
+- On success, `cms login` prints a confirmation message and outputs the API key as `MDCMS_DEMO_API_KEY` for convenience (e.g., demo app requests).
 - `cms logout` always clears the local profile for the current tuple and performs best-effort remote self-revoke of the active API key.
 
 ### Action Runner and Alias Resolution
