@@ -164,10 +164,7 @@ function validateSchemaRegistryListRoutePayload(
   }
 
   try {
-    return validateSchemaRegistryListResponse(
-      `${operation}.data`,
-      parsed.data,
-    );
+    return validateSchemaRegistryListResponse(`${operation}.data`, parsed.data);
   } catch (error) {
     if (error instanceof RuntimeError) {
       throw toInvalidRouteResponseError(

@@ -1229,7 +1229,9 @@ async function applyPush(
   };
 }
 
-type PreflightResult = { outcome: "ok" } | { outcome: "abort"; exitCode: number };
+type PreflightResult =
+  | { outcome: "ok" }
+  | { outcome: "abort"; exitCode: number };
 
 function renderDriftSummary(input: {
   localHash: string;
@@ -1249,7 +1251,8 @@ function renderDriftSummary(input: {
     input.diff.modified.length
   ) {
     lines.push("Changes:");
-    for (const name of input.diff.modified) lines.push(`  ~ ${name} (modified)`);
+    for (const name of input.diff.modified)
+      lines.push(`  ~ ${name} (modified)`);
     for (const name of input.diff.added) lines.push(`  + ${name} (new)`);
     for (const name of input.diff.removed)
       lines.push(`  - ${name} (will be removed from server)`);

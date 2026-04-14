@@ -43,8 +43,16 @@ test("detects modified types by hash difference", () => {
 });
 
 test("hashSchemaTypeSnapshot is deterministic regardless of key order", () => {
-  const a = { type: "post", fields: { a: 1, b: 2 }, directory: "content/posts" };
-  const b = { fields: { b: 2, a: 1 }, directory: "content/posts", type: "post" };
+  const a = {
+    type: "post",
+    fields: { a: 1, b: 2 },
+    directory: "content/posts",
+  };
+  const b = {
+    fields: { b: 2, a: 1 },
+    directory: "content/posts",
+    type: "post",
+  };
   assert.equal(hashSchemaTypeSnapshot(a), hashSchemaTypeSnapshot(b));
 });
 

@@ -11,7 +11,11 @@ export type SchemaDiff = {
 
 export function hashSchemaTypeSnapshot(snapshot: unknown): string {
   return createHash("sha256")
-    .update(stableStringifyJson(snapshot as Parameters<typeof stableStringifyJson>[0]))
+    .update(
+      stableStringifyJson(
+        snapshot as Parameters<typeof stableStringifyJson>[0],
+      ),
+    )
     .digest("hex");
 }
 
