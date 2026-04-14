@@ -295,6 +295,133 @@ test("init imports localized suffix files into one translation group", async () 
   });
 });
 
+test("init strips locale suffixes from import paths even when locale comes from frontmatter", async () => {
+  await withTempDir(async (cwd) => {
+    await mkdir(join(cwd, "content", "campaigns"), { recursive: true });
+    await writeFile(
+      join(cwd, "content", "campaigns", "launch.en.mdx"),
+      [
+        "---",
+        "title: Spring launch",
+        "slug: launch",
+        "locale: en",
+        "---",
+        "",
+        "English body",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(
+      join(cwd, "content", "campaigns", "launch.fr.mdx"),
+      [
+        "---",
+        "title: Lancement de printemps",
+        "slug: launch",
+        "locale: fr",
+        "---",
+        "",
+        "French body",
+        "",
+      ].join("\n"),
+    );
+
+    const createPayloads: Array<Record<string, unknown>> = [];
+    let contentCreateCount = 0;
+
+    const fetcher = createMockFetcher({
+      "/healthz": () =>
+        new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+      "/api/v1/projects": (url: string, init?: RequestInit) => {
+        if (init?.method === "POST") {
+          const body = JSON.parse(String(init.body)) as { name: string };
+          return new Response(
+            JSON.stringify({
+              data: {
+                id: "proj-001",
+                slug: body.name,
+                name: body.name,
+                environments: [{ id: "env-001", name: "production" }],
+              },
+            }),
+            { status: 201, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (url.includes("/environments")) {
+          return new Response(
+            JSON.stringify({
+              data: [{ id: "env-002", name: "staging" }],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        return new Response("Not Found", { status: 404 });
+      },
+      "/api/v1/schema": () =>
+        new Response(
+          JSON.stringify({
+            data: {
+              schemaHash:
+                "abc123def456abc123def456abc123def456abc123def456abc123def456abcd",
+              syncedAt: "2026-03-31T12:00:00.000Z",
+              affectedTypes: ["campaign"],
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      "/api/v1/content": (_url: string, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        createPayloads.push(body);
+        contentCreateCount += 1;
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              documentId: `doc-${contentCreateCount}`,
+              draftRevision: 1,
+              publishedVersion: null,
+            },
+          }),
+          { status: 201, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    const prompter = createMockPrompter({
+      text: ["http://localhost:4000", "marketing-demo", "staging"],
+      select: [],
+      multiSelect: [["content/campaigns"]],
+      confirm: [true, true, true],
+    });
+
+    const command = createInitCommand({
+      prompter,
+      fetcher,
+      skipAuth: true,
+    });
+
+    const exitCode = await runMdcmsCli(["init"], {
+      cwd,
+      commands: [command],
+      stdout: { write: () => undefined },
+      stderr: { write: () => undefined },
+      fetcher,
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(createPayloads.length, 2);
+    assert.deepEqual(
+      createPayloads.map((payload) => payload.path),
+      ["content/campaigns/launch", "content/campaigns/launch"],
+    );
+    assert.deepEqual(
+      createPayloads.map((payload) => payload.locale),
+      ["en", "fr"],
+    );
+    assert.equal(createPayloads[0]!.sourceDocumentId, undefined);
+    assert.equal(createPayloads[1]!.sourceDocumentId, "doc-1");
+  });
+});
+
 test("init fails when server unreachable", async () => {
   await withTempDir(async (cwd) => {
     const fetcher = createMockFetcher({

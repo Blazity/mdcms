@@ -79,6 +79,54 @@ function stripExtension(relativePath: string): string {
   return relativePath;
 }
 
+function normalizeLocalizedImportPath(
+  relativePath: string,
+  directory?: string,
+): string {
+  const strippedPath = stripExtension(relativePath);
+  const pathSegments = strippedPath.split("/");
+  const directorySegments = directory?.split("/") ?? [];
+  const hasDirectoryPrefix =
+    directorySegments.length > 0 &&
+    directorySegments.every(
+      (segment, index) => pathSegments[index] === segment,
+    );
+
+  const prefixSegments = hasDirectoryPrefix
+    ? pathSegments.slice(0, directorySegments.length)
+    : [];
+  const contentSegments = hasDirectoryPrefix
+    ? pathSegments.slice(directorySegments.length)
+    : [...pathSegments];
+
+  if (contentSegments.length === 0) {
+    return strippedPath;
+  }
+
+  const basename = contentSegments[contentSegments.length - 1]!;
+  const basenameSegments = basename.split(".");
+  const suffixCandidate =
+    basenameSegments.length >= 2
+      ? basenameSegments[basenameSegments.length - 1]!
+      : null;
+  const normalizedSuffix =
+    suffixCandidate !== null ? normalizeLocale(suffixCandidate) : null;
+  const normalizedBasename =
+    normalizedSuffix !== null
+      ? basenameSegments.slice(0, -1).join(".")
+      : basename;
+
+  const normalizedDirectorySegments = contentSegments
+    .slice(0, -1)
+    .filter((segment) => normalizeLocale(segment) === null);
+
+  return [
+    ...prefixSegments,
+    ...normalizedDirectorySegments,
+    normalizedBasename,
+  ].join("/");
+}
+
 function findTypeForFile(
   file: DiscoveredFile,
   inferredTypes: InferredType[],
@@ -571,26 +619,13 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
             const { frontmatter, body } = parseMarkdownDocument(rawContent);
             const type = findTypeForFile(file, inferredTypes);
             const typeName = type?.name ?? "unknown";
-            let path = stripExtension(file.relativePath);
-
-            // For localized types with suffix locale, strip the locale from the path
-            if (type?.localized && file.localeHint?.source === "suffix") {
-              const lastDot = path.lastIndexOf(".");
-              if (lastDot > 0) {
-                path = path.slice(0, lastDot);
-              }
-            }
-
-            // For localized types with folder locale, strip the locale folder segment
-            if (type?.localized && file.localeHint?.source === "folder") {
-              const rawLocale = file.localeHint.rawValue;
-              const normalized = normalizeLocale(rawLocale);
-              const segments = path.split("/");
-              const filtered = segments.filter(
-                (s) => s !== rawLocale && s !== normalized,
-              );
-              path = filtered.join("/");
-            }
+            const path =
+              type?.localized === true
+                ? normalizeLocalizedImportPath(
+                    file.relativePath,
+                    type.directory,
+                  )
+                : stripExtension(file.relativePath);
 
             // Determine locale: normalize raw hint, or use default for localized types
             let locale: string;
