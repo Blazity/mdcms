@@ -913,30 +913,56 @@ function appendQueryParams(
   return parsed.toString();
 }
 
+function renderCliPageShell(title: string, body: string): string {
+  return [
+    "<!doctype html>",
+    '<html lang="en">',
+    "<head>",
+    '<meta charset="utf-8" />',
+    '<meta name="viewport" content="width=device-width,initial-scale=1" />',
+    `<title>${title}</title>`,
+    "<style>",
+    "*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}",
+    "body{font-family:Inter,-apple-system,system-ui,sans-serif;background:#FCF9F8;color:#1C1B1B;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px;}",
+    ".card{width:100%;max-width:384px;background:#FFFFFF;border:1px solid rgba(197,197,216,0.2);border-radius:12px;padding:32px;box-shadow:0 1px 3px rgba(0,0,0,0.04);}",
+    ".logo{font-family:system-ui,sans-serif;font-weight:700;font-size:20px;letter-spacing:-0.02em;text-align:center;margin-bottom:4px;}",
+    ".subtitle{text-align:center;font-size:14px;color:#444655;margin-bottom:24px;}",
+    ".field{margin-bottom:16px;}",
+    ".field label{display:block;font-size:14px;font-weight:500;margin-bottom:6px;}",
+    ".field input{width:100%;height:40px;padding:0 12px;font-size:14px;border:1px solid #C5C5D8;border-radius:6px;outline:none;transition:border-color 0.15s;}",
+    ".field input:focus{border-color:#2F49E5;box-shadow:0 0 0 2px rgba(47,73,229,0.15);}",
+    "button[type=submit]{display:block;width:100%;height:40px;margin-top:8px;font-size:14px;font-weight:500;color:#FFFFFF;background:#2F49E5;border:none;border-radius:6px;cursor:pointer;transition:background 0.15s;}",
+    "button[type=submit]:hover{background:#2338b8;}",
+    ".success-icon{width:48px;height:48px;margin:0 auto 16px;border-radius:50%;background:#f0fdf4;display:flex;align-items:center;justify-content:center;}",
+    ".success-icon svg{width:24px;height:24px;color:#22c55e;}",
+    ".hint{text-align:center;font-size:13px;color:#444655;margin-top:8px;}",
+    "</style>",
+    "</head>",
+    "<body>",
+    '<div class="card">',
+    body,
+    "</div>",
+    "</body>",
+    "</html>",
+  ].join("");
+}
+
 function renderCliAuthorizeLoginForm(input: {
   challengeId: string;
   state: string;
 }): string {
-  return [
-    "<!doctype html>",
-    "<html>",
-    "<head>",
-    '<meta charset="utf-8" />',
-    '<meta name="viewport" content="width=device-width,initial-scale=1" />',
-    "<title>MDCMS CLI Login</title>",
-    "<style>body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;max-width:420px;margin:48px auto;padding:0 16px;}label{display:block;font-size:14px;margin-top:12px;}input{width:100%;padding:8px;margin-top:4px;box-sizing:border-box;}button{margin-top:16px;padding:10px 14px;cursor:pointer;}</style>",
-    "</head>",
-    "<body>",
-    "<h1>MDCMS CLI Login</h1>",
-    "<p>Zaloguj się, aby autoryzować CLI.</p>",
-    `<form method="post" action="/api/v1/auth/cli/login/authorize?challenge=${encodeURIComponent(input.challengeId)}&state=${encodeURIComponent(input.state)}">`,
-    '<label>Email<input name="email" type="email" autocomplete="email" required /></label>',
-    '<label>Password<input name="password" type="password" autocomplete="current-password" required /></label>',
-    '<button type="submit">Authorize CLI</button>',
-    "</form>",
-    "</body>",
-    "</html>",
-  ].join("");
+  return renderCliPageShell(
+    "MDCMS CLI Login",
+    [
+      '<div class="logo">MDCMS</div>',
+      '<p class="subtitle">Sign in to authorize the CLI</p>',
+      `<form method="post" action="/api/v1/auth/cli/login/authorize?challenge=${encodeURIComponent(input.challengeId)}&state=${encodeURIComponent(input.state)}">`,
+      '<div class="field"><label for="cli-email">Email</label><input id="cli-email" name="email" type="email" placeholder="you@company.com" autocomplete="email" required autofocus /></div>',
+      '<div class="field"><label for="cli-password">Password</label><input id="cli-password" name="password" type="password" placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" autocomplete="current-password" required /></div>',
+      '<button type="submit">Authorize CLI</button>',
+      "</form>",
+    ].join(""),
+  );
 }
 
 function ensureValidApiKeyToken(token: string): void {

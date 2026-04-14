@@ -126,7 +126,34 @@ export function createLoopbackCallbackListener(): Promise<LoopbackCallbackListen
           response.statusCode = 200;
           response.setHeader("content-type", "text/html; charset=utf-8");
           response.end(
-            "<html><body><h1>MDCMS CLI</h1><p>Login complete. You can close this tab.</p></body></html>",
+            [
+              "<!doctype html>",
+              '<html lang="en">',
+              "<head>",
+              '<meta charset="utf-8" />',
+              '<meta name="viewport" content="width=device-width,initial-scale=1" />',
+              "<title>MDCMS CLI</title>",
+              "<style>",
+              "*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}",
+              "body{font-family:Inter,-apple-system,system-ui,sans-serif;background:#FCF9F8;color:#1C1B1B;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px;}",
+              ".card{width:100%;max-width:384px;background:#FFFFFF;border:1px solid rgba(197,197,216,0.2);border-radius:12px;padding:32px;box-shadow:0 1px 3px rgba(0,0,0,0.04);}",
+              ".logo{font-weight:700;font-size:20px;letter-spacing:-0.02em;text-align:center;margin-bottom:16px;}",
+              ".icon{width:48px;height:48px;margin:0 auto 16px;border-radius:50%;background:#f0fdf4;display:flex;align-items:center;justify-content:center;}",
+              ".icon svg{width:24px;height:24px;}",
+              ".title{text-align:center;font-size:16px;font-weight:600;margin-bottom:4px;}",
+              ".hint{text-align:center;font-size:14px;color:#444655;}",
+              "</style>",
+              "</head>",
+              "<body>",
+              '<div class="card">',
+              '<div class="logo">MDCMS</div>',
+              '<div class="icon"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="#22c55e"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg></div>',
+              '<p class="title">Login complete</p>',
+              '<p class="hint">You can close this tab and return to the terminal.</p>',
+              "</div>",
+              "</body>",
+              "</html>",
+            ].join(""),
           );
 
           finalize(() => {
