@@ -229,7 +229,7 @@ export default function ContentTypePage() {
   });
 
   const schemaEntry = useMemo(() => {
-    return schemaQuery.data?.find(
+    return schemaQuery.data?.types.find(
       (entry) => entry.type.toLowerCase() === typeId.toLowerCase(),
     );
   }, [schemaQuery.data, typeId]);

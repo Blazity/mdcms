@@ -3695,7 +3695,10 @@ export function createAuthService(
         .where(eq(apiKeys.id, normalizedKeyId))
         .limit(1);
 
-      if (!existing || (!isAdmin && existing.createdByUserId !== session.userId)) {
+      if (
+        !existing ||
+        (!isAdmin && existing.createdByUserId !== session.userId)
+      ) {
         throw new RuntimeError({
           code: "NOT_FOUND",
           message: "API key not found.",
@@ -4513,9 +4516,7 @@ export function createAuthService(
               isNull(rbacGrants.revokedAt),
             ),
           );
-        const isCurrentlyOwner = currentGrants.some(
-          (g) => g.role === "owner",
-        );
+        const isCurrentlyOwner = currentGrants.some((g) => g.role === "owner");
         if (isCurrentlyOwner && !willBeOwner) {
           const ownerCountRow = await tx
             .select({ count: sql<number>`count(*)::int` })

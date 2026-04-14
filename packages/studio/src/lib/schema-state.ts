@@ -108,38 +108,19 @@ function createCapabilitiesRouteApi(
   );
 }
 
-function getSchemaHash(entries: SchemaRegistryEntry[]): string | undefined {
-  const firstHash = entries[0]?.schemaHash?.trim();
-
-  if (!firstHash) {
+function normalizeServerSchemaHash(hash: string | null): string | undefined {
+  if (typeof hash !== "string") {
     return undefined;
   }
-
-  const hasMismatch = entries.some(
-    (entry) =>
-      entry.schemaHash.trim().length > 0 && entry.schemaHash !== firstHash,
-  );
-
-  if (hasMismatch) {
-    throw new RuntimeError({
-      code: "SCHEMA_ROUTE_RESPONSE_INVALID",
-      message: "Schema registry entries returned inconsistent schema hashes.",
-      statusCode: 500,
-      details: {
-        schemaHashes: Array.from(
-          new Set(entries.map((entry) => entry.schemaHash)),
-        ),
-      },
-    });
-  }
-
-  return firstHash;
+  const trimmed = hash.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function createReadyState(input: {
   project: string;
   environment: string;
   localSchemaHash?: string;
+  serverSchemaHash?: string;
   syncPayload?: SchemaRegistrySyncPayload;
   capabilities: CurrentPrincipalCapabilities;
   syncError?: string;
@@ -147,7 +128,7 @@ function createReadyState(input: {
   api: StudioSchemaRouteApi;
   reloadInput: LoadStudioSchemaStateInput;
 }): StudioSchemaReadyState {
-  const serverSchemaHash = getSchemaHash(input.entries);
+  const serverSchemaHash = input.serverSchemaHash;
   const isMismatch =
     input.localSchemaHash !== undefined &&
     serverSchemaHash !== undefined &&
@@ -258,7 +239,9 @@ export async function loadStudioSchemaState(
   );
 
   try {
-    const entries = await api.list();
+    const listResult = await api.list();
+    const entries = listResult.types;
+    const serverSchemaHash = normalizeServerSchemaHash(listResult.schemaHash);
     let capabilities = createEmptyCurrentPrincipalCapabilities();
 
     try {
@@ -278,6 +261,7 @@ export async function loadStudioSchemaState(
             syncPayload: localDetails.syncPayload,
           }
         : {}),
+      ...(serverSchemaHash ? { serverSchemaHash } : {}),
       entries,
       api,
       reloadInput: input,

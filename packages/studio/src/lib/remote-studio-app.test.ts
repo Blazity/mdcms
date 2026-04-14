@@ -338,4 +338,3 @@ test("RemoteStudioApp renders the expanded admin route surfaces", () => {
   assert.match(workflowsMarkup, /Workflows/);
   assert.match(settingsMarkup, /Settings/);
 });
-

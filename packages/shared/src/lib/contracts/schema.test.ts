@@ -16,6 +16,7 @@ import {
   serializeResolvedEnvironmentSchema,
   stableStringifyJson,
   toRawConfigSnapshot,
+  validateSchemaRegistryListResponse,
   type SchemaRegistryEntry,
 } from "./schema.js";
 import { buildSchemaSyncPayload } from "./schema-hash.js";
@@ -82,6 +83,32 @@ test("assertSchemaRegistryEntry rejects contradictory entry metadata", () => {
         },
       }),
     "entry.resolvedSchema.localized",
+  );
+});
+
+test("validateSchemaRegistryListResponse accepts valid payload with hash", () => {
+  const payload = {
+    types: [],
+    schemaHash: "a".repeat(64),
+    syncedAt: "2026-04-14T12:00:00.000Z",
+  };
+  assert.doesNotThrow(() =>
+    validateSchemaRegistryListResponse("test", payload),
+  );
+});
+
+test("validateSchemaRegistryListResponse accepts null hash and syncedAt", () => {
+  const payload = { types: [], schemaHash: null, syncedAt: null };
+  assert.doesNotThrow(() =>
+    validateSchemaRegistryListResponse("test", payload),
+  );
+});
+
+test("validateSchemaRegistryListResponse rejects non-null non-string hash", () => {
+  const payload = { types: [], schemaHash: 123, syncedAt: null };
+  expectInvalidInput(
+    () => validateSchemaRegistryListResponse("test", payload),
+    "test.schemaHash",
   );
 });
 

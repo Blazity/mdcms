@@ -3,10 +3,22 @@ import assert from "node:assert/strict";
 import { RuntimeError } from "@mdcms/shared";
 import { test } from "bun:test";
 
+import type { SchemaRegistryEntry } from "@mdcms/shared";
+
 import { loadDashboardData } from "./dashboard-data.js";
 import type { StudioSchemaRouteApi } from "./schema-route-api.js";
 import type { StudioContentListApi } from "./content-list-api.js";
 import type { StudioContentOverviewApi } from "./content-overview-api.js";
+
+function makeSchemaListResponse(entries: SchemaRegistryEntry[]) {
+  const hash = entries[0]?.schemaHash ?? null;
+  const syncedAt = entries[0]?.syncedAt ?? null;
+  return {
+    types: entries,
+    schemaHash: hash,
+    syncedAt,
+  };
+}
 
 function paginatedResponse(
   total: number,
@@ -82,10 +94,11 @@ const emptyOverviewApi = makeOverviewApi({});
 
 test("returns loaded state with real data", async () => {
   const schemaApi: StudioSchemaRouteApi = {
-    list: async () => [
-      makeSchemaEntry("BlogPost", true),
-      makeSchemaEntry("Page"),
-    ],
+    list: async () =>
+      makeSchemaListResponse([
+        makeSchemaEntry("BlogPost", true),
+        makeSchemaEntry("Page"),
+      ]),
     sync: async () => emptySyncResult,
   };
 
@@ -124,7 +137,7 @@ test("returns loaded state with real data", async () => {
 
 test("zero documents returns loaded with 0 counts, not a special empty state", async () => {
   const schemaApi: StudioSchemaRouteApi = {
-    list: async () => [],
+    list: async () => makeSchemaListResponse([]),
     sync: async () => emptySyncResult,
   };
 
@@ -149,7 +162,7 @@ test("zero documents returns loaded with 0 counts, not a special empty state", a
 
 test("schema types with zero documents returns loaded with type stats", async () => {
   const schemaApi: StudioSchemaRouteApi = {
-    list: async () => [makeSchemaEntry("BlogPost")],
+    list: async () => makeSchemaListResponse([makeSchemaEntry("BlogPost")]),
     sync: async () => emptySyncResult,
   };
 
@@ -197,7 +210,7 @@ test("returns forbidden on schema 403", async () => {
 
 test("returns forbidden on content 403", async () => {
   const schemaApi: StudioSchemaRouteApi = {
-    list: async () => [],
+    list: async () => makeSchemaListResponse([]),
     sync: async () => emptySyncResult,
   };
 
@@ -297,7 +310,7 @@ test("caps content types at 5", async () => {
   );
 
   const schemaApi: StudioSchemaRouteApi = {
-    list: async () => types,
+    list: async () => makeSchemaListResponse(types),
     sync: async () => emptySyncResult,
   };
 
@@ -324,7 +337,7 @@ test("caps content types at 5", async () => {
 
 test("recent documents include frontmatter and hasUnpublishedChanges", async () => {
   const schemaApi: StudioSchemaRouteApi = {
-    list: async () => [makeSchemaEntry("BlogPost")],
+    list: async () => makeSchemaListResponse([makeSchemaEntry("BlogPost")]),
     sync: async () => emptySyncResult,
   };
 

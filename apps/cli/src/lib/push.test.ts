@@ -6,11 +6,13 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
 
-import type { ContentDocumentResponse } from "@mdcms/shared";
+import type { ContentDocumentResponse, ParsedMdcmsConfig } from "@mdcms/shared";
 import { z } from "zod";
 import { defineConfig, defineType, parseMdcmsConfig } from "@mdcms/shared";
+import { buildSchemaSyncPayload } from "@mdcms/shared/server";
 
 import { runMdcmsCli } from "./framework.js";
+import { parsePushOptions, renderPushHelp } from "./push.js";
 
 type RemoteDocument = Pick<
   ContentDocumentResponse,
@@ -45,6 +47,106 @@ function createSuccessResponse(data: RemoteDocument): Response {
       },
     },
   );
+}
+
+function createSchemaListResponse(
+  config: ParsedMdcmsConfig,
+  environment: string,
+): Response {
+  const payload = buildSchemaSyncPayload(config, environment);
+  return new Response(
+    JSON.stringify({
+      data: {
+        types: Object.entries(payload.resolvedSchema).map(
+          ([type, snapshot]) => ({
+            type,
+            directory: (snapshot as { directory: string }).directory,
+            localized: (snapshot as { localized: boolean }).localized,
+            schemaHash: payload.schemaHash,
+            syncedAt: "2026-04-14T00:00:00.000Z",
+            resolvedSchema: snapshot,
+          }),
+        ),
+        schemaHash: payload.schemaHash,
+        syncedAt: "2026-04-14T00:00:00.000Z",
+      },
+    }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
+}
+
+function createSchemaListResponseWithHash(input: {
+  types: Array<{
+    type: string;
+    directory: string;
+    localized: boolean;
+    resolvedSchema: unknown;
+  }>;
+  schemaHash: string | null;
+}): Response {
+  return new Response(
+    JSON.stringify({
+      data: {
+        types: input.types.map((entry) => ({
+          ...entry,
+          schemaHash: input.schemaHash ?? "no-hash",
+          syncedAt: "2026-04-14T00:00:00.000Z",
+        })),
+        schemaHash: input.schemaHash,
+        syncedAt: input.schemaHash ? "2026-04-14T00:00:00.000Z" : null,
+      },
+    }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
+}
+
+const BLOG_POST_CONFIG = parseMdcmsConfig(
+  defineConfig({
+    serverUrl: "http://localhost:4000",
+    project: "marketing-site",
+    environment: "staging",
+    contentDirectories: ["content"],
+    locales: {
+      default: "en",
+      supported: ["en"],
+    },
+    types: [
+      defineType("BlogPost", {
+        directory: "content/blog",
+        localized: true,
+        fields: {
+          title: z.string(),
+        },
+      }),
+    ],
+    environments: { staging: {} },
+  }),
+);
+
+function isSchemaGetRequest(
+  input: string | URL | Request,
+  init?: RequestInit,
+): boolean {
+  return (
+    String(input).endsWith("/api/v1/schema") &&
+    (init?.method ?? "GET") === "GET"
+  );
+}
+
+function setTTY(value: boolean): () => void {
+  const previous = process.stdin.isTTY;
+  Object.defineProperty(process.stdin, "isTTY", {
+    value,
+    configurable: true,
+    writable: true,
+  });
+  return () => {
+    Object.defineProperty(process.stdin, "isTTY", {
+      value: previous,
+      configurable: true,
+      writable: true,
+    });
+  };
 }
 
 function hashRawContent(content: string): string {
@@ -110,6 +212,9 @@ test("push updates an existing manifest-tracked document via PUT", async () => {
       cwd,
       env: {} as NodeJS.ProcessEnv,
       fetcher: async (input, init) => {
+        if (isSchemaGetRequest(input, init)) {
+          return createSchemaListResponse(BLOG_POST_CONFIG, "staging");
+        }
         requestCount += 1;
         assert.equal(String(input).endsWith("/api/v1/content/doc-1"), true);
         assert.equal(init?.method, "PUT");
@@ -144,18 +249,7 @@ test("push updates an existing manifest-tracked document via PUT", async () => {
         });
       },
       loadConfig: async () => ({
-        config: {
-          serverUrl: "http://localhost:4000",
-          project: "marketing-site",
-          environment: "staging",
-          types: [
-            {
-              name: "BlogPost",
-              directory: "content/blog",
-              localized: true,
-            },
-          ],
-        },
+        config: BLOG_POST_CONFIG,
         configPath: join(cwd, "mdcms.config.ts"),
       }),
       stdout: { write: () => undefined },
@@ -220,6 +314,9 @@ test("push falls back to POST and rewrites manifest key when PUT target is missi
       cwd,
       env: {} as NodeJS.ProcessEnv,
       fetcher: async (input, init) => {
+        if (isSchemaGetRequest(input, init)) {
+          return createSchemaListResponse(BLOG_POST_CONFIG, "staging");
+        }
         const url = String(input);
 
         if (url.endsWith("/api/v1/content/doc-missing")) {
@@ -264,18 +361,7 @@ test("push falls back to POST and rewrites manifest key when PUT target is missi
         });
       },
       loadConfig: async () => ({
-        config: {
-          serverUrl: "http://localhost:4000",
-          project: "marketing-site",
-          environment: "staging",
-          types: [
-            {
-              name: "BlogPost",
-              directory: "content/blog",
-              localized: true,
-            },
-          ],
-        },
+        config: BLOG_POST_CONFIG,
         configPath: join(cwd, "mdcms.config.ts"),
       }),
       stdout: { write: () => undefined },
@@ -368,6 +454,9 @@ test("push sends only changed documents and skips unchanged manifest entries", a
       cwd,
       env: {} as NodeJS.ProcessEnv,
       fetcher: async (input, init) => {
+        if (isSchemaGetRequest(input, init)) {
+          return createSchemaListResponse(BLOG_POST_CONFIG, "staging");
+        }
         requestCount += 1;
         assert.equal(
           String(input).endsWith("/api/v1/content/doc-changed"),
@@ -385,18 +474,7 @@ test("push sends only changed documents and skips unchanged manifest entries", a
         });
       },
       loadConfig: async () => ({
-        config: {
-          serverUrl: "http://localhost:4000",
-          project: "marketing-site",
-          environment: "staging",
-          types: [
-            {
-              name: "BlogPost",
-              directory: "content/blog",
-              localized: true,
-            },
-          ],
-        },
+        config: BLOG_POST_CONFIG,
         configPath: join(cwd, "mdcms.config.ts"),
       }),
       stdout: {
@@ -456,23 +534,15 @@ test("push exits successfully without API calls when no changed documents are fo
     const exitCode = await runMdcmsCli(["push"], {
       cwd,
       env: {} as NodeJS.ProcessEnv,
-      fetcher: async () => {
+      fetcher: async (input, init) => {
+        if (isSchemaGetRequest(input, init)) {
+          return createSchemaListResponse(BLOG_POST_CONFIG, "staging");
+        }
         requestCount += 1;
         throw new Error("fetch should not be called");
       },
       loadConfig: async () => ({
-        config: {
-          serverUrl: "http://localhost:4000",
-          project: "marketing-site",
-          environment: "staging",
-          types: [
-            {
-              name: "BlogPost",
-              directory: "content/blog",
-              localized: true,
-            },
-          ],
-        },
+        config: BLOG_POST_CONFIG,
         configPath: join(cwd, "mdcms.config.ts"),
       }),
       stdout: {
@@ -533,7 +603,10 @@ test("push treats missing manifest hash as changed and repairs hash after succes
     const exitCode = await runMdcmsCli(["push", "--force"], {
       cwd,
       env: {} as NodeJS.ProcessEnv,
-      fetcher: async () => {
+      fetcher: async (input, init) => {
+        if (isSchemaGetRequest(input, init)) {
+          return createSchemaListResponse(BLOG_POST_CONFIG, "staging");
+        }
         requestCount += 1;
         return createSuccessResponse({
           documentId: "doc-legacy",
@@ -546,18 +619,7 @@ test("push treats missing manifest hash as changed and repairs hash after succes
         });
       },
       loadConfig: async () => ({
-        config: {
-          serverUrl: "http://localhost:4000",
-          project: "marketing-site",
-          environment: "staging",
-          types: [
-            {
-              name: "BlogPost",
-              directory: "content/blog",
-              localized: true,
-            },
-          ],
-        },
+        config: BLOG_POST_CONFIG,
         configPath: join(cwd, "mdcms.config.ts"),
       }),
       stdout: { write: () => undefined },
@@ -612,22 +674,14 @@ test("push fails with deterministic error on unsupported file extension", async 
     const exitCode = await runMdcmsCli(["push", "--force"], {
       cwd,
       env: {} as NodeJS.ProcessEnv,
-      fetcher: async () => {
+      fetcher: async (input, init) => {
+        if (isSchemaGetRequest(input, init)) {
+          return createSchemaListResponse(BLOG_POST_CONFIG, "staging");
+        }
         throw new Error("fetch should not be called");
       },
       loadConfig: async () => ({
-        config: {
-          serverUrl: "http://localhost:4000",
-          project: "marketing-site",
-          environment: "staging",
-          types: [
-            {
-              name: "BlogPost",
-              directory: "content/blog",
-              localized: true,
-            },
-          ],
-        },
+        config: BLOG_POST_CONFIG,
         configPath: join(cwd, "mdcms.config.ts"),
       }),
       stdout: { write: () => undefined },
@@ -697,7 +751,10 @@ test("push reports stale document as failed and continues pushing remaining docu
     const exitCode = await runMdcmsCli(["push", "--force"], {
       cwd,
       env: {} as NodeJS.ProcessEnv,
-      fetcher: async (input) => {
+      fetcher: async (input, init) => {
+        if (isSchemaGetRequest(input, init)) {
+          return createSchemaListResponse(BLOG_POST_CONFIG, "staging");
+        }
         requestCount += 1;
         const url = String(input);
 
@@ -723,18 +780,7 @@ test("push reports stale document as failed and continues pushing remaining docu
         });
       },
       loadConfig: async () => ({
-        config: {
-          serverUrl: "http://localhost:4000",
-          project: "marketing-site",
-          environment: "staging",
-          types: [
-            {
-              name: "BlogPost",
-              directory: "content/blog",
-              localized: true,
-            },
-          ],
-        },
+        config: BLOG_POST_CONFIG,
         configPath: join(cwd, "mdcms.config.ts"),
       }),
       stdout: {
@@ -829,7 +875,10 @@ test("push reports schema-mismatch document as failed and continues pushing rema
     const exitCode = await runMdcmsCli(["push", "--force"], {
       cwd,
       env: {} as NodeJS.ProcessEnv,
-      fetcher: async (input) => {
+      fetcher: async (input, init) => {
+        if (isSchemaGetRequest(input, init)) {
+          return createSchemaListResponse(BLOG_POST_CONFIG, "staging");
+        }
         requestCount += 1;
         const url = String(input);
 
@@ -855,18 +904,7 @@ test("push reports schema-mismatch document as failed and continues pushing rema
         });
       },
       loadConfig: async () => ({
-        config: {
-          serverUrl: "http://localhost:4000",
-          project: "marketing-site",
-          environment: "staging",
-          types: [
-            {
-              name: "BlogPost",
-              directory: "content/blog",
-              localized: true,
-            },
-          ],
-        },
+        config: BLOG_POST_CONFIG,
         configPath: join(cwd, "mdcms.config.ts"),
       }),
       stdout: {
@@ -894,8 +932,10 @@ test("push reports schema-mismatch document as failed and continues pushing rema
     assert.ok(output.includes("[UPDATED]"));
     assert.ok(output.includes("doc-ok"));
 
-    // Actionable summary printed
-    assert.ok(output.includes("cms schema sync"));
+    // Actionable summary printed — race-condition message (preflight passed but a concurrent sync changed server hash)
+    assert.ok(output.includes("schema changed during push"));
+    assert.ok(output.includes("Re-run: cms push"));
+    assert.ok(!output.includes("'cms schema sync'"));
 
     // Manifest updated for ok doc, mismatch doc unchanged
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
@@ -963,7 +1003,10 @@ test("push --validate blocks push on validation errors", async () => {
     const exitCode = await runMdcmsCli(["push", "--validate", "--force"], {
       cwd,
       env: {} as NodeJS.ProcessEnv,
-      fetcher: async () => {
+      fetcher: async (input, init) => {
+        if (isSchemaGetRequest(input, init)) {
+          return createSchemaListResponse(config, "staging");
+        }
         requestCount += 1;
         throw new Error("fetch should not be called");
       },
@@ -1008,6 +1051,9 @@ test("push --force auto-selects all new files and creates them via POST", async 
       cwd,
       env: {} as NodeJS.ProcessEnv,
       fetcher: async (input, init) => {
+        if (isSchemaGetRequest(input, init)) {
+          return createSchemaListResponse(BLOG_POST_CONFIG, "staging");
+        }
         const url = String(input);
         assert.ok(url.endsWith("/api/v1/content"));
         assert.equal(init?.method, "POST");
@@ -1038,19 +1084,7 @@ test("push --force auto-selects all new files and creates them via POST", async 
         });
       },
       loadConfig: async () => ({
-        config: {
-          serverUrl: "http://localhost:4000",
-          project: "marketing-site",
-          environment: "staging",
-          contentDirectories: ["content"],
-          types: [
-            {
-              name: "BlogPost",
-              directory: "content/blog",
-              localized: true,
-            },
-          ],
-        },
+        config: BLOG_POST_CONFIG,
         configPath: join(cwd, "mdcms.config.ts"),
       }),
       stdout: { write: () => undefined },
@@ -1109,6 +1143,9 @@ test("push --force deletes locally-missing files via DELETE and removes from man
       cwd,
       env: {} as NodeJS.ProcessEnv,
       fetcher: async (input, init) => {
+        if (isSchemaGetRequest(input, init)) {
+          return createSchemaListResponse(BLOG_POST_CONFIG, "staging");
+        }
         const url = String(input);
         assert.ok(url.endsWith("/api/v1/content/doc-to-delete"));
         assert.equal(init?.method, "DELETE");
@@ -1125,19 +1162,7 @@ test("push --force deletes locally-missing files via DELETE and removes from man
         });
       },
       loadConfig: async () => ({
-        config: {
-          serverUrl: "http://localhost:4000",
-          project: "marketing-site",
-          environment: "staging",
-          contentDirectories: ["content"],
-          types: [
-            {
-              name: "BlogPost",
-              directory: "content/blog",
-              localized: true,
-            },
-          ],
-        },
+        config: BLOG_POST_CONFIG,
         configPath: join(cwd, "mdcms.config.ts"),
       }),
       stdout: { write: () => undefined },
@@ -1221,6 +1246,9 @@ test("push --force handles mixed changed + new + deleted documents in one run", 
       cwd,
       env: {} as NodeJS.ProcessEnv,
       fetcher: async (input, init) => {
+        if (isSchemaGetRequest(input, init)) {
+          return createSchemaListResponse(BLOG_POST_CONFIG, "staging");
+        }
         const url = String(input);
         const method = init?.method;
 
@@ -1269,19 +1297,7 @@ test("push --force handles mixed changed + new + deleted documents in one run", 
         throw new Error(`Unexpected request: ${method} ${url}`);
       },
       loadConfig: async () => ({
-        config: {
-          serverUrl: "http://localhost:4000",
-          project: "marketing-site",
-          environment: "staging",
-          contentDirectories: ["content"],
-          types: [
-            {
-              name: "BlogPost",
-              directory: "content/blog",
-              localized: true,
-            },
-          ],
-        },
+        config: BLOG_POST_CONFIG,
         configPath: join(cwd, "mdcms.config.ts"),
       }),
       stdout: {
@@ -1312,5 +1328,577 @@ test("push --force handles mixed changed + new + deleted documents in one run", 
       "content/blog/brand-new.en.md",
     );
     assert.equal(manifest["doc-to-delete"], undefined);
+  });
+});
+
+test("parsePushOptions accepts --sync-schema", () => {
+  const options = parsePushOptions(["--sync-schema"]);
+  assert.equal(options.syncSchema, true);
+});
+
+test("parsePushOptions defaults syncSchema to false", () => {
+  const options = parsePushOptions([]);
+  assert.equal(options.syncSchema, false);
+});
+
+test("parsePushOptions accepts --sync-schema with other flags", () => {
+  const options = parsePushOptions(["--force", "--sync-schema"]);
+  assert.equal(options.syncSchema, true);
+  assert.equal(options.force, true);
+});
+
+test("renderPushHelp documents --sync-schema and preflight behavior", () => {
+  const help = renderPushHelp();
+  assert.ok(help.includes("--sync-schema"));
+  assert.ok(help.includes("non-interactive"));
+  assert.ok(help.includes("preflight"));
+});
+
+// -----------------------------------------------------------------------------
+// Preflight tests (Tasks 9-12)
+// -----------------------------------------------------------------------------
+
+// Divergent config used to synthesize a drift response.
+const DRIFT_CONFIG = parseMdcmsConfig(
+  defineConfig({
+    serverUrl: "http://localhost:4000",
+    project: "marketing-site",
+    environment: "staging",
+    contentDirectories: ["content"],
+    locales: {
+      default: "en",
+      supported: ["en"],
+    },
+    types: [
+      defineType("BlogPost", {
+        directory: "content/blog",
+        localized: true,
+        fields: {
+          // Add an extra required field so the server schema differs from local.
+          title: z.string(),
+          subtitle: z.string(),
+        },
+      }),
+    ],
+    environments: { staging: {} },
+  }),
+);
+
+async function seedPushableWorkspace(cwd: string): Promise<void> {
+  const manifestPath = join(
+    cwd,
+    ".mdcms",
+    "manifests",
+    "marketing-site.staging.json",
+  );
+  await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+  await writeSchemaStateFile(cwd, "marketing-site", "staging");
+  await writeFile(
+    manifestPath,
+    JSON.stringify(
+      {
+        "doc-1": {
+          path: "content/blog/hello-world.en.md",
+          format: "md",
+          draftRevision: 1,
+          publishedVersion: 1,
+          hash: "old-hash",
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+  await mkdir(join(cwd, "content", "blog"), { recursive: true });
+  await writeFile(
+    join(cwd, "content/blog/hello-world.en.md"),
+    '---\ntitle: "Hello World"\n---\n\nUpdated draft body\n',
+    "utf8",
+  );
+}
+
+test("preflight: no drift continues to content writes", async () => {
+  await withTempDir(async (cwd) => {
+    await seedPushableWorkspace(cwd);
+    const restoreTTY = setTTY(false);
+    try {
+      let putContentCalls = 0;
+      const exitCode = await runMdcmsCli(["push", "--force"], {
+        cwd,
+        env: {} as NodeJS.ProcessEnv,
+        fetcher: async (input, init) => {
+          if (isSchemaGetRequest(input, init)) {
+            return createSchemaListResponse(BLOG_POST_CONFIG, "staging");
+          }
+          putContentCalls += 1;
+          return createSuccessResponse({
+            documentId: "doc-1",
+            type: "BlogPost",
+            locale: "en",
+            path: "content/blog/hello-world",
+            format: "md",
+            draftRevision: 2,
+            publishedVersion: 1,
+          });
+        },
+        loadConfig: async () => ({
+          config: BLOG_POST_CONFIG,
+          configPath: join(cwd, "mdcms.config.ts"),
+        }),
+        stdout: { write: () => undefined },
+        stderr: { write: () => undefined },
+        confirm: async () => true,
+      });
+
+      assert.equal(exitCode, 0);
+      assert.equal(putContentCalls, 1);
+    } finally {
+      restoreTTY();
+    }
+  });
+});
+
+test("preflight: drift + TTY + accept syncs and continues", async () => {
+  await withTempDir(async (cwd) => {
+    await seedPushableWorkspace(cwd);
+    const restoreTTY = setTTY(true);
+    try {
+      let schemaPutCalls = 0;
+      let contentPutCalls = 0;
+      let confirmCount = 0;
+      let schemaSyncedHash: string | undefined;
+      let contentHashHeader: string | undefined;
+
+      const exitCode = await runMdcmsCli(["push", "--force"], {
+        cwd,
+        env: {} as NodeJS.ProcessEnv,
+        fetcher: async (input, init) => {
+          const url = String(input);
+          if (isSchemaGetRequest(input, init)) {
+            // Return server schema that differs from local.
+            return createSchemaListResponse(DRIFT_CONFIG, "staging");
+          }
+          if (url.endsWith("/api/v1/schema") && init?.method === "PUT") {
+            schemaPutCalls += 1;
+            const body = JSON.parse(String(init?.body)) as {
+              schemaHash: string;
+            };
+            schemaSyncedHash = body.schemaHash;
+            return new Response(
+              JSON.stringify({
+                data: {
+                  schemaHash: body.schemaHash,
+                  syncedAt: "2026-04-14T00:00:00.000Z",
+                  affectedTypes: ["BlogPost"],
+                },
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            );
+          }
+          contentPutCalls += 1;
+          const headers = new Headers(init?.headers as Record<string, string>);
+          contentHashHeader = headers.get("x-mdcms-schema-hash") ?? undefined;
+          return createSuccessResponse({
+            documentId: "doc-1",
+            type: "BlogPost",
+            locale: "en",
+            path: "content/blog/hello-world",
+            format: "md",
+            draftRevision: 2,
+            publishedVersion: 1,
+          });
+        },
+        loadConfig: async () => ({
+          config: BLOG_POST_CONFIG,
+          configPath: join(cwd, "mdcms.config.ts"),
+        }),
+        stdout: { write: () => undefined },
+        stderr: { write: () => undefined },
+        confirm: async () => {
+          confirmCount += 1;
+          return true;
+        },
+      });
+
+      assert.equal(exitCode, 0);
+      assert.equal(schemaPutCalls, 1);
+      assert.equal(contentPutCalls, 1);
+      assert.ok(confirmCount >= 1);
+      // E2E contract: content write carries the freshly-synced hash, not the stale state.
+      assert.ok(schemaSyncedHash, "sync should have produced a schemaHash");
+      assert.equal(contentHashHeader, schemaSyncedHash);
+      // Local schema state file was updated to the fresh hash.
+      const statePath = join(
+        cwd,
+        ".mdcms",
+        "schema",
+        "marketing-site.staging.json",
+      );
+      const persisted = JSON.parse(await readFile(statePath, "utf8")) as {
+        schemaHash: string;
+      };
+      assert.equal(persisted.schemaHash, schemaSyncedHash);
+    } finally {
+      restoreTTY();
+    }
+  });
+});
+
+test("preflight: drift + TTY + decline aborts with no writes", async () => {
+  await withTempDir(async (cwd) => {
+    await seedPushableWorkspace(cwd);
+    const restoreTTY = setTTY(true);
+    try {
+      let schemaPutCalls = 0;
+      let contentCalls = 0;
+
+      const exitCode = await runMdcmsCli(["push", "--force"], {
+        cwd,
+        env: {} as NodeJS.ProcessEnv,
+        fetcher: async (input, init) => {
+          const url = String(input);
+          if (isSchemaGetRequest(input, init)) {
+            return createSchemaListResponse(DRIFT_CONFIG, "staging");
+          }
+          if (url.endsWith("/api/v1/schema") && init?.method === "PUT") {
+            schemaPutCalls += 1;
+            return new Response("{}", { status: 200 });
+          }
+          contentCalls += 1;
+          return new Response("{}", { status: 200 });
+        },
+        loadConfig: async () => ({
+          config: BLOG_POST_CONFIG,
+          configPath: join(cwd, "mdcms.config.ts"),
+        }),
+        stdout: { write: () => undefined },
+        stderr: { write: () => undefined },
+        confirm: async () => false,
+      });
+
+      assert.equal(exitCode, 1);
+      assert.equal(schemaPutCalls, 0);
+      assert.equal(contentCalls, 0);
+    } finally {
+      restoreTTY();
+    }
+  });
+});
+
+test("preflight: drift + non-interactive + no flag fails closed with hint", async () => {
+  await withTempDir(async (cwd) => {
+    await seedPushableWorkspace(cwd);
+    const restoreTTY = setTTY(false);
+    try {
+      let schemaPutCalls = 0;
+      let contentCalls = 0;
+      let stderr = "";
+
+      const exitCode = await runMdcmsCli(["push", "--force"], {
+        cwd,
+        env: {} as NodeJS.ProcessEnv,
+        fetcher: async (input, init) => {
+          const url = String(input);
+          if (isSchemaGetRequest(input, init)) {
+            return createSchemaListResponse(DRIFT_CONFIG, "staging");
+          }
+          if (url.endsWith("/api/v1/schema") && init?.method === "PUT") {
+            schemaPutCalls += 1;
+            return new Response("{}", { status: 200 });
+          }
+          contentCalls += 1;
+          return new Response("{}", { status: 200 });
+        },
+        loadConfig: async () => ({
+          config: BLOG_POST_CONFIG,
+          configPath: join(cwd, "mdcms.config.ts"),
+        }),
+        stdout: { write: () => undefined },
+        stderr: {
+          write: (chunk: string) => {
+            stderr += chunk;
+          },
+        },
+        confirm: async () => true,
+      });
+
+      assert.equal(exitCode, 1);
+      assert.equal(schemaPutCalls, 0);
+      assert.equal(contentCalls, 0);
+      assert.ok(stderr.includes("SCHEMA_DRIFT"));
+      assert.ok(stderr.includes("--sync-schema"));
+    } finally {
+      restoreTTY();
+    }
+  });
+});
+
+test("preflight: drift + non-interactive + --sync-schema syncs and continues", async () => {
+  await withTempDir(async (cwd) => {
+    await seedPushableWorkspace(cwd);
+    const restoreTTY = setTTY(false);
+    try {
+      let schemaPutCalls = 0;
+      let contentPutCalls = 0;
+
+      const exitCode = await runMdcmsCli(["push", "--force", "--sync-schema"], {
+        cwd,
+        env: {} as NodeJS.ProcessEnv,
+        fetcher: async (input, init) => {
+          const url = String(input);
+          if (isSchemaGetRequest(input, init)) {
+            return createSchemaListResponse(DRIFT_CONFIG, "staging");
+          }
+          if (url.endsWith("/api/v1/schema") && init?.method === "PUT") {
+            schemaPutCalls += 1;
+            const body = JSON.parse(String(init?.body)) as {
+              schemaHash: string;
+            };
+            return new Response(
+              JSON.stringify({
+                data: {
+                  schemaHash: body.schemaHash,
+                  syncedAt: "2026-04-14T00:00:00.000Z",
+                  affectedTypes: ["BlogPost"],
+                },
+              }),
+              {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              },
+            );
+          }
+          contentPutCalls += 1;
+          return createSuccessResponse({
+            documentId: "doc-1",
+            type: "BlogPost",
+            locale: "en",
+            path: "content/blog/hello-world",
+            format: "md",
+            draftRevision: 2,
+            publishedVersion: 1,
+          });
+        },
+        loadConfig: async () => ({
+          config: BLOG_POST_CONFIG,
+          configPath: join(cwd, "mdcms.config.ts"),
+        }),
+        stdout: { write: () => undefined },
+        stderr: { write: () => undefined },
+        confirm: async () => true,
+      });
+
+      assert.equal(exitCode, 0);
+      assert.equal(schemaPutCalls, 1);
+      assert.equal(contentPutCalls, 1);
+    } finally {
+      restoreTTY();
+    }
+  });
+});
+
+test("preflight: drift + --sync-schema + sync fails aborts before content writes", async () => {
+  await withTempDir(async (cwd) => {
+    await seedPushableWorkspace(cwd);
+    const restoreTTY = setTTY(false);
+    try {
+      let schemaPutCalls = 0;
+      let contentCalls = 0;
+
+      const exitCode = await runMdcmsCli(["push", "--force", "--sync-schema"], {
+        cwd,
+        env: {} as NodeJS.ProcessEnv,
+        fetcher: async (input, init) => {
+          const url = String(input);
+          if (isSchemaGetRequest(input, init)) {
+            return createSchemaListResponse(DRIFT_CONFIG, "staging");
+          }
+          if (url.endsWith("/api/v1/schema") && init?.method === "PUT") {
+            schemaPutCalls += 1;
+            return new Response(
+              JSON.stringify({
+                code: "SCHEMA_SYNC_FAILED",
+                message: "Bad schema.",
+              }),
+              {
+                status: 400,
+                headers: { "content-type": "application/json" },
+              },
+            );
+          }
+          contentCalls += 1;
+          return new Response("{}", { status: 200 });
+        },
+        loadConfig: async () => ({
+          config: BLOG_POST_CONFIG,
+          configPath: join(cwd, "mdcms.config.ts"),
+        }),
+        stdout: { write: () => undefined },
+        stderr: { write: () => undefined },
+        confirm: async () => true,
+      });
+
+      assert.equal(exitCode, 1);
+      assert.equal(schemaPutCalls, 1);
+      assert.equal(contentCalls, 0);
+    } finally {
+      restoreTTY();
+    }
+  });
+});
+
+test("preflight: GET /api/v1/schema fails returns SCHEMA_PREFLIGHT_FAILED", async () => {
+  await withTempDir(async (cwd) => {
+    await seedPushableWorkspace(cwd);
+    const restoreTTY = setTTY(false);
+    try {
+      let contentCalls = 0;
+      let stderr = "";
+      const exitCode = await runMdcmsCli(["push", "--force"], {
+        cwd,
+        env: {} as NodeJS.ProcessEnv,
+        fetcher: async (input, init) => {
+          if (isSchemaGetRequest(input, init)) {
+            return new Response("oops", { status: 500 });
+          }
+          contentCalls += 1;
+          return new Response("{}", { status: 200 });
+        },
+        loadConfig: async () => ({
+          config: BLOG_POST_CONFIG,
+          configPath: join(cwd, "mdcms.config.ts"),
+        }),
+        stdout: { write: () => undefined },
+        stderr: {
+          write: (chunk: string) => {
+            stderr += chunk;
+          },
+        },
+        confirm: async () => true,
+      });
+
+      assert.equal(exitCode, 1);
+      assert.equal(contentCalls, 0);
+      assert.ok(stderr.includes("SCHEMA_PREFLIGHT_FAILED"));
+    } finally {
+      restoreTTY();
+    }
+  });
+});
+
+test("preflight: server schemaHash null treated as drift", async () => {
+  await withTempDir(async (cwd) => {
+    await seedPushableWorkspace(cwd);
+    const restoreTTY = setTTY(false);
+    try {
+      let contentCalls = 0;
+      let stderr = "";
+      const exitCode = await runMdcmsCli(["push", "--force"], {
+        cwd,
+        env: {} as NodeJS.ProcessEnv,
+        fetcher: async (input, init) => {
+          if (isSchemaGetRequest(input, init)) {
+            return createSchemaListResponseWithHash({
+              types: [],
+              schemaHash: null,
+            });
+          }
+          contentCalls += 1;
+          return new Response("{}", { status: 200 });
+        },
+        loadConfig: async () => ({
+          config: BLOG_POST_CONFIG,
+          configPath: join(cwd, "mdcms.config.ts"),
+        }),
+        stdout: { write: () => undefined },
+        stderr: {
+          write: (chunk: string) => {
+            stderr += chunk;
+          },
+        },
+        confirm: async () => true,
+      });
+
+      assert.equal(exitCode, 1);
+      assert.equal(contentCalls, 0);
+      assert.ok(stderr.includes("SCHEMA_DRIFT"));
+    } finally {
+      restoreTTY();
+    }
+  });
+});
+
+test("preflight: --sync-schema in TTY mode is silently ignored, prompt shown", async () => {
+  await withTempDir(async (cwd) => {
+    await seedPushableWorkspace(cwd);
+    const restoreTTY = setTTY(true);
+    try {
+      let schemaPutCalls = 0;
+      let contentPutCalls = 0;
+      let confirmCount = 0;
+      let promptSeen = false;
+
+      const exitCode = await runMdcmsCli(["push", "--force", "--sync-schema"], {
+        cwd,
+        env: {} as NodeJS.ProcessEnv,
+        fetcher: async (input, init) => {
+          const url = String(input);
+          if (isSchemaGetRequest(input, init)) {
+            return createSchemaListResponse(DRIFT_CONFIG, "staging");
+          }
+          if (url.endsWith("/api/v1/schema") && init?.method === "PUT") {
+            schemaPutCalls += 1;
+            const body = JSON.parse(String(init?.body)) as {
+              schemaHash: string;
+            };
+            return new Response(
+              JSON.stringify({
+                data: {
+                  schemaHash: body.schemaHash,
+                  syncedAt: "2026-04-14T00:00:00.000Z",
+                  affectedTypes: ["BlogPost"],
+                },
+              }),
+              {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              },
+            );
+          }
+          contentPutCalls += 1;
+          return createSuccessResponse({
+            documentId: "doc-1",
+            type: "BlogPost",
+            locale: "en",
+            path: "content/blog/hello-world",
+            format: "md",
+            draftRevision: 2,
+            publishedVersion: 1,
+          });
+        },
+        loadConfig: async () => ({
+          config: BLOG_POST_CONFIG,
+          configPath: join(cwd, "mdcms.config.ts"),
+        }),
+        stdout: { write: () => undefined },
+        stderr: { write: () => undefined },
+        confirm: async (message: string) => {
+          confirmCount += 1;
+          if (message.toLowerCase().includes("sync schema")) {
+            promptSeen = true;
+          }
+          return true;
+        },
+      });
+
+      assert.equal(exitCode, 0);
+      assert.ok(promptSeen, "interactive prompt should have been shown");
+      assert.equal(schemaPutCalls, 1);
+      assert.equal(contentPutCalls, 1);
+      assert.ok(confirmCount >= 1);
+    } finally {
+      restoreTTY();
+    }
   });
 });

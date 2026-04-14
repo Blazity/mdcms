@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
@@ -9,7 +9,7 @@ import { z } from "zod";
 import { defineConfig, defineType, parseMdcmsConfig } from "@mdcms/shared";
 
 import { runMdcmsCli } from "./framework.js";
-import { createSchemaSyncCommand } from "./schema-sync.js";
+import { createSchemaSyncCommand, performSchemaSync } from "./schema-sync.js";
 import { resolveSchemaStatePath } from "./schema-state.js";
 
 async function withTempDir(run: (cwd: string) => Promise<void>): Promise<void> {
@@ -241,5 +241,112 @@ test("schema sync sends authorization header when apiKey is present", async () =
 
     assert.equal(exitCode, 0);
     assert.equal(capturedHeaders.authorization, "Bearer test-token");
+  });
+});
+
+test("performSchemaSync uploads schema and writes local state", async () => {
+  await withTempDir(async (cwd) => {
+    let capturedUrl = "";
+    let capturedInit: RequestInit | undefined;
+
+    const fetcher: typeof fetch = async (input, init) => {
+      capturedUrl = String(input);
+      capturedInit = init;
+      const body = JSON.parse(String(init?.body)) as { schemaHash: string };
+      return createSyncSuccessResponse({ schemaHash: body.schemaHash });
+    };
+
+    const result = await performSchemaSync({
+      config: STUB_CONFIG,
+      serverUrl: "http://server",
+      project: "p1",
+      environment: "staging",
+      apiKey: "k",
+      cwd,
+      fetcher,
+    });
+
+    assert.equal(result.outcome, "success");
+    if (result.outcome !== "success") return;
+    assert.match(result.schemaHash, /^[a-f0-9]{64}$/);
+    assert.equal(result.syncedAt, "2026-03-31T12:00:00.000Z");
+    assert.deepEqual(result.affectedTypes, ["Post"]);
+
+    assert.equal(capturedUrl, "http://server/api/v1/schema");
+    assert.equal(capturedInit?.method, "PUT");
+    const headers = capturedInit?.headers as Record<string, string>;
+    assert.equal(headers["x-mdcms-project"], "p1");
+    assert.equal(headers["x-mdcms-environment"], "staging");
+    assert.equal(headers.authorization, "Bearer k");
+
+    const statePath = resolveSchemaStatePath({
+      cwd,
+      project: "p1",
+      environment: "staging",
+    });
+    const state = JSON.parse(await readFile(statePath, "utf8"));
+    assert.equal(state.schemaHash, result.schemaHash);
+    assert.equal(state.syncedAt, "2026-03-31T12:00:00.000Z");
+    assert.equal(state.serverUrl, "http://server");
+  });
+});
+
+test("performSchemaSync returns failure on server 4xx", async () => {
+  await withTempDir(async (cwd) => {
+    const fetcher: typeof fetch = async () =>
+      new Response(
+        JSON.stringify({
+          code: "INVALID_SCHEMA",
+          message: "Schema failed validation",
+          details: { field: "types" },
+        }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+
+    const result = await performSchemaSync({
+      config: STUB_CONFIG,
+      serverUrl: "http://server",
+      project: "p1",
+      environment: "staging",
+      apiKey: "k",
+      cwd,
+      fetcher,
+    });
+
+    assert.equal(result.outcome, "failure");
+    if (result.outcome !== "failure") return;
+    assert.equal(result.errorCode, "INVALID_SCHEMA");
+    assert.ok(result.message);
+    assert.deepEqual(result.details, { field: "types" });
+  });
+});
+
+test("performSchemaSync does not write local state on failure", async () => {
+  await withTempDir(async (cwd) => {
+    const fetcher: typeof fetch = async () =>
+      new Response(
+        JSON.stringify({
+          code: "INVALID_SCHEMA",
+          message: "Schema failed validation",
+        }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+
+    await performSchemaSync({
+      config: STUB_CONFIG,
+      serverUrl: "http://server",
+      project: "p1",
+      environment: "staging",
+      apiKey: "k",
+      cwd,
+      fetcher,
+    });
+
+    const statePath = resolveSchemaStatePath({
+      cwd,
+      project: "p1",
+      environment: "staging",
+    });
+    await assert.rejects(() => access(statePath));
   });
 });

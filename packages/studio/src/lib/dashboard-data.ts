@@ -39,7 +39,7 @@ export async function loadDashboardData(
   overviewApi: StudioContentOverviewApi,
 ): Promise<DashboardLoadResult> {
   try {
-    const [schemaTypes, recentResult] = await Promise.all([
+    const [schemaListResult, recentResult] = await Promise.all([
       schemaApi.list(),
       contentApi.list({
         draft: true,
@@ -49,7 +49,7 @@ export async function loadDashboardData(
       }),
     ]);
 
-    const typesToShow = schemaTypes.slice(0, 5);
+    const typesToShow = schemaListResult.types.slice(0, 5);
     const overviewCounts =
       typesToShow.length > 0
         ? await overviewApi.get({
@@ -88,7 +88,7 @@ export async function loadDashboardData(
         publishedDocuments,
         draftDocuments,
         contentTypes: typeStats,
-        totalContentTypes: schemaTypes.length,
+        totalContentTypes: schemaListResult.types.length,
         recentDocuments: recentResult.data.map((doc) => ({
           documentId: doc.documentId,
           path: doc.path,

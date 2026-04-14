@@ -72,21 +72,25 @@ test("list fetches schema entries with scoped headers", async () => {
 
       return new Response(
         JSON.stringify({
-          data: [
-            {
-              type: "BlogPost",
-              directory: "content/blog",
-              localized: true,
-              schemaHash: "schema-hash-123",
-              syncedAt: "2026-03-31T12:00:00.000Z",
-              resolvedSchema: {
+          data: {
+            types: [
+              {
                 type: "BlogPost",
                 directory: "content/blog",
                 localized: true,
-                fields: {},
+                schemaHash: "schema-hash-123",
+                syncedAt: "2026-03-31T12:00:00.000Z",
+                resolvedSchema: {
+                  type: "BlogPost",
+                  directory: "content/blog",
+                  localized: true,
+                  fields: {},
+                },
               },
-            },
-          ],
+            ],
+            schemaHash: "schema-hash-123",
+            syncedAt: "2026-03-31T12:00:00.000Z",
+          },
         }),
         {
           status: 200,
@@ -106,8 +110,90 @@ test("list fetches schema entries with scoped headers", async () => {
   assert.equal(readHeader(calls[0]?.init, "x-mdcms-environment"), "staging");
   assert.equal(readHeader(calls[0]?.init, "authorization"), null);
   assert.equal(calls[0]?.init?.credentials, undefined);
-  assert.equal(result.length, 1);
-  assert.equal(result[0]?.type, "BlogPost");
+  assert.equal(result.types.length, 1);
+  assert.equal(result.types[0]?.type, "BlogPost");
+  assert.equal(result.schemaHash, "schema-hash-123");
+  assert.equal(result.syncedAt, "2026-03-31T12:00:00.000Z");
+});
+
+test("list() parses new response shape with types/schemaHash/syncedAt", async () => {
+  const hash = "a".repeat(64);
+  const syncedAt = "2026-04-14T00:00:00.000Z";
+  const api = createSchemaRouteApi({
+    fetcher: async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            types: [],
+            schemaHash: hash,
+            syncedAt,
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+  });
+
+  const result = await api.list();
+
+  assert.deepEqual(result.types, []);
+  assert.equal(result.schemaHash, hash);
+  assert.equal(result.syncedAt, syncedAt);
+});
+
+test("list() accepts null schemaHash and syncedAt", async () => {
+  const api = createSchemaRouteApi({
+    fetcher: async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            types: [],
+            schemaHash: null,
+            syncedAt: null,
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+  });
+
+  const result = await api.list();
+
+  assert.deepEqual(result.types, []);
+  assert.equal(result.schemaHash, null);
+  assert.equal(result.syncedAt, null);
+});
+
+test("list() rejects legacy array response shape", async () => {
+  const api = createSchemaRouteApi({
+    fetcher: async () =>
+      new Response(
+        JSON.stringify({
+          data: [],
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+  });
+
+  await assert.rejects(
+    () => api.list(),
+    (error: unknown) =>
+      error instanceof RuntimeError &&
+      error.code === "SCHEMA_ROUTE_RESPONSE_INVALID",
+  );
 });
 
 test("cookie-authenticated sync bootstraps csrf from auth/session", async () => {

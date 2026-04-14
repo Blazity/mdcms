@@ -43,6 +43,41 @@ export type SchemaRegistryEntry = {
   resolvedSchema: SchemaRegistryTypeSnapshot;
 };
 
+export type SchemaRegistryListResponse = {
+  types: SchemaRegistryEntry[];
+  schemaHash: string | null;
+  syncedAt: string | null;
+};
+
+export function validateSchemaRegistryListResponse(
+  context: string,
+  payload: unknown,
+): SchemaRegistryListResponse {
+  if (!isRecord(payload)) {
+    invalidInput(context, "must be an object.", { payload });
+  }
+  const types = payload.types;
+  if (!Array.isArray(types)) {
+    invalidInput(`${context}.types`, "must be an array.", { types });
+  }
+  const schemaHash = payload.schemaHash;
+  if (schemaHash !== null && typeof schemaHash !== "string") {
+    invalidInput(`${context}.schemaHash`, "must be string or null.", {
+      schemaHash,
+    });
+  }
+  const syncedAt = payload.syncedAt;
+  if (syncedAt !== null && typeof syncedAt !== "string") {
+    invalidInput(`${context}.syncedAt`, "must be string or null.", {
+      syncedAt,
+    });
+  }
+  types.forEach((entry, index) => {
+    assertSchemaRegistryEntry(entry, `${context}.types[${index}]`);
+  });
+  return payload as SchemaRegistryListResponse;
+}
+
 export type SchemaRegistrySyncPayload = {
   rawConfigSnapshot: JsonObject;
   resolvedSchema: Record<string, SchemaRegistryTypeSnapshot>;
