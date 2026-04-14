@@ -1,0 +1,180 @@
+---
+title: "References"
+description: "Cross-type references, resolution, and error handling"
+---
+
+References let you create relationships between content types. A `BlogPost` can reference an `Author`, a `Page` can reference related `BlogPost` entries, and so on. MDCMS handles storage, validation, and resolution of these relationships.
+
+## Defining references
+
+Use the `reference()` helper to create a reference field. It accepts the target type name as a string:
+
+```typescript mdcms.config.ts
+import { defineType, reference } from "@mdcms/cli";
+import { z } from "zod";
+
+const BlogPost = defineType("BlogPost", {
+  directory: "content/blog",
+  fields: {
+    title: z.string().min(1),
+    author: reference("Author"),
+    reviewer: reference("Author").optional(),
+    relatedPosts: z.array(reference("BlogPost")).optional(),
+  },
+});
+```
+
+Under the hood, `reference()` returns a `z.string()` schema with metadata that marks it as a reference to the target type. This means reference fields support the same modifiers as strings: `.optional()`, `.nullable()`, and `.default()`.
+
+## What gets stored
+
+Reference fields store a **documentId** (UUID) in frontmatter, not a file path or slug. When you create or update a document through Studio or the API, MDCMS validates that the referenced documentId exists, belongs to the correct type, and has not been deleted.
+
+```yaml
+# What the frontmatter looks like on disk
+---
+title: "Getting Started with MDCMS"
+author: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+---
+```
+
+<Note>
+  The server validates reference identity on every write. If you supply a documentId that doesn't exist, belongs to a different type, or references a deleted document, the write will fail with an `INVALID_INPUT` error.
+</Note>
+
+## Resolving references
+
+By default, the API returns the raw documentId string for reference fields. To expand references into full document objects, use the `resolve` query parameter.
+
+<CodeGroup>
+```bash cURL
+# Resolve the author field
+curl "http://localhost:4000/api/content/blog/my-post?type=BlogPost&resolve=author"
+```
+
+```typescript SDK
+const post = await client.content.get("blog/my-post", {
+  type: "BlogPost",
+  resolve: ["author"],
+});
+// post.frontmatter.author is now the full Author document object
+```
+</CodeGroup>
+
+### Resolved response structure
+
+When a reference is resolved successfully, the raw UUID is replaced with the full document response object:
+
+```json
+{
+  "documentId": "...",
+  "path": "blog/my-post",
+  "type": "BlogPost",
+  "frontmatter": {
+    "title": "Getting Started with MDCMS",
+    "author": {
+      "documentId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "path": "authors/jane-doe",
+      "type": "Author",
+      "frontmatter": {
+        "name": "Jane Doe"
+      }
+    }
+  }
+}
+```
+
+### Nested field paths
+
+You can resolve references inside nested objects using dot notation:
+
+```bash
+# Resolve a reference inside a nested object field
+curl "http://localhost:4000/api/content/posts/my-post?type=Post&resolve=metadata.reviewer"
+```
+
+The resolve path must point to a field that is registered as a reference in the schema. If the path targets a non-reference field, the server returns an `INVALID_QUERY_PARAM` error.
+
+## Shallow resolution
+
+Reference resolution is **one level deep only**. If a resolved document itself contains reference fields, those nested references are returned as raw documentId strings, not expanded.
+
+For example, if `Author` had a `team: reference("Team")` field, resolving `author` on a BlogPost would return the Author document with `team` as a UUID string. To get the Team document, you would need a separate API call.
+
+## Resolve errors
+
+If a reference cannot be resolved, the field value is set to `null` and an entry is added to the `resolveErrors` map in the response. This map is keyed by the full frontmatter path (e.g., `frontmatter.author`).
+
+```json
+{
+  "documentId": "...",
+  "path": "blog/my-post",
+  "type": "BlogPost",
+  "frontmatter": {
+    "title": "Getting Started with MDCMS",
+    "author": null
+  },
+  "resolveErrors": {
+    "frontmatter.author": {
+      "code": "REFERENCE_NOT_FOUND",
+      "message": "Referenced document could not be resolved in the target project/environment.",
+      "ref": {
+        "documentId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "type": "Author"
+      }
+    }
+  }
+}
+```
+
+### Error codes
+
+| Code | Description |
+|---|---|
+| `REFERENCE_NOT_FOUND` | The referenced document does not exist in the target project/environment. |
+| `REFERENCE_DELETED` | The referenced document has been soft-deleted. |
+| `REFERENCE_TYPE_MISMATCH` | The referenced document exists but belongs to a different type than the reference field expects. |
+| `REFERENCE_FORBIDDEN` | The referenced document exists but is not readable with the current API key scope. |
+
+<Tip>
+  Check for the `resolveErrors` key in API responses when using `resolve`. A missing key means all references resolved successfully.
+</Tip>
+
+## Studio behavior
+
+In Studio, reference fields render as a **document picker** filtered by the target type. When editing a BlogPost with an `author: reference("Author")` field, the picker shows only Author documents.
+
+<Steps>
+  <Step title="Click the reference field">
+    The document picker opens, showing documents of the target type.
+  </Step>
+  <Step title="Search or browse">
+    Filter by title or browse the list. Only documents matching the target type are shown.
+  </Step>
+  <Step title="Select a document">
+    The selected document's ID is stored in frontmatter. Studio displays the document title as a preview.
+  </Step>
+</Steps>
+
+## Multiple references
+
+Use `z.array(reference("TypeName"))` for one-to-many relationships:
+
+```typescript
+fields: {
+  authors: z.array(reference("Author")),
+  relatedPosts: z.array(reference("BlogPost")).optional(),
+}
+```
+
+Array reference fields render as a repeatable document picker in Studio. Each entry in the array is validated independently.
+
+When resolving, pass the field name as usual — the entire array is resolved:
+
+```bash
+curl "http://localhost:4000/api/content/posts/my-post?type=Post&resolve=authors"
+```
+
+<Warning>
+  Deleting a referenced document does not cascade. Documents that reference the deleted document will get `REFERENCE_DELETED` or `REFERENCE_NOT_FOUND` resolve errors until the reference is updated or removed.
+</Warning>

@@ -1,0 +1,149 @@
+---
+title: "Settings"
+description: "API keys, users, webhooks, and Studio configuration"
+---
+
+<Warning>
+  Settings access requires the **admin** or **owner** role. Users without these roles see an "Access denied" message.
+</Warning>
+
+## API Keys
+
+API keys provide programmatic access to the MDCMS API for external integrations, CI/CD pipelines, and scripts. Manage them at **Settings > API Keys**.
+
+### Creating a key
+
+Click **Create API Key** and configure:
+
+| Field | Description |
+| --- | --- |
+| **Label** | A human-readable name for the key (e.g., "CI Pipeline", "Preview Deploy") |
+| **Scopes** | Which operations the key can perform (see table below) |
+| **Context allowlist** | Restrict the key to specific project/environment pairs |
+| **Expiration** | Optional expiry date; keys without expiration remain active until revoked |
+
+After creation, the full key is displayed **once**. Copy it immediately -- it cannot be retrieved again. All keys use the `mdcms_key_` prefix.
+
+### Available scopes
+
+| Scope | Description |
+| --- | --- |
+| `content:read` | Read published content |
+| `content:read:draft` | Read draft content |
+| `content:write` | Create and update content |
+| `content:write:draft` | Write draft content |
+| `content:publish` | Publish and unpublish documents |
+| `content:delete` | Delete documents |
+| `schema:read` | Read schema definitions |
+| `schema:write` | Sync schema to the server |
+| `media:upload` | Upload media files |
+| `media:delete` | Delete media files |
+| `webhooks:read` | Read webhook configurations |
+| `webhooks:write` | Create and update webhooks |
+| `environments:clone` | Clone environment content |
+| `environments:promote` | Promote content between environments |
+| `migrations:run` | Run database migrations |
+| `projects:read` | Read project metadata |
+| `projects:write` | Update project settings |
+
+### Managing keys
+
+The API Keys table shows all keys with their label, key prefix, assigned scopes, context restrictions, creation date, expiration, and status (Active, Expired, or Revoked).
+
+To disable a key, click **Revoke**. Revoked keys cannot be reactivated -- create a new one instead.
+
+## Users & Roles
+
+Manage team access at **Users** in the sidebar. This page lets you list users, send invitations, update roles, and remove team members.
+
+### Inviting users
+
+<Steps>
+  <Step title="Click Invite User">
+    Opens a dialog with email, role, and optional folder prefix fields.
+  </Step>
+  <Step title="Enter the email address">
+    The invitee receives an email with a link to accept the invitation.
+  </Step>
+  <Step title="Select a role">
+    Choose Admin, Editor, or Viewer. The Owner role cannot be assigned via invitation.
+  </Step>
+  <Step title="Set a folder prefix (optional)">
+    For Editor and Viewer roles, you can restrict access to content under a specific path (e.g., `content/blog`). Leave empty for full project access.
+  </Step>
+  <Step title="Send">
+    The invitation appears in the Pending Invitations section until accepted or revoked.
+  </Step>
+</Steps>
+
+### Role capabilities
+
+| Capability | Viewer | Editor | Admin | Owner |
+| --- | --- | --- | --- | --- |
+| Read published content | Yes | Yes | Yes | Yes |
+| Read draft content | Yes | Yes | Yes | Yes |
+| Create documents | No | Yes | Yes | Yes |
+| Edit documents | No | Yes | Yes | Yes |
+| Publish / Unpublish | No | Yes | Yes | Yes |
+| Delete documents | No | Yes | Yes | Yes |
+| Manage users | No | No | Yes | Yes |
+| Manage settings | No | No | Yes | Yes |
+| Manage environments | No | No | Yes | Yes |
+| Read schema | No | No | Yes | Yes |
+| Transfer ownership | No | No | No | Yes |
+
+<Accordion title="What about folder-scoped permissions?">
+  Editors and Viewers can be scoped to a folder prefix. When a folder prefix is set (e.g., `content/blog`), the user can only access documents whose paths start with that prefix. This is useful for teams where different people own different content sections.
+
+  Admins always have global scope and cannot be restricted to folders.
+</Accordion>
+
+### Managing existing users
+
+From the user table, you can:
+
+- **Edit role** -- Change a user's role and folder prefix via the row action menu
+- **Revoke sessions** -- Immediately invalidate all active sessions for a user
+- **Remove user** -- Permanently remove the user from the project (with confirmation)
+
+Owners cannot be removed. Ownership must be transferred first.
+
+## Schema Browser
+
+The Schema Browser at `/admin/schema` provides a read-only view of all content types synced to the current project and environment. It shows:
+
+- **Type name** and **directory** path
+- **Localization mode** (Localized or Single locale)
+- **Sync timestamp** and **schema hash**
+- **Field table** for each type with:
+  - Field name
+  - Kind (string, number, boolean, enum, date, array, reference, object)
+  - Required / Nullable status
+  - Constraints (defaults, reference targets, enum options, validation checks)
+
+The schema browser is useful for verifying that `mdcms schema sync` applied your latest type definitions correctly.
+
+<Note>
+  The schema is read-only in Studio. To change content type definitions, update your `mdcms.config.ts` file and run `mdcms schema sync` from the CLI.
+</Note>
+
+## Webhooks (post-MVP)
+
+<Accordion title="Webhook configuration (planned)">
+  Webhook support will allow you to configure HTTP endpoints that receive notifications when content events occur.
+
+  Planned configuration per webhook:
+
+  | Field | Description |
+  | --- | --- |
+  | **URL** | The endpoint to receive POST requests |
+  | **Events** | Filter which events trigger the webhook (e.g., `content.published`, `content.updated`, `content.deleted`) |
+  | **Secret** | A shared secret for HMAC signature verification of webhook payloads |
+  | **Active** | Toggle to enable or disable the webhook without deleting it |
+</Accordion>
+
+## Media Library (post-MVP)
+
+<Accordion title="Media management (planned)">
+  The Media page at `/admin/media` will provide a library for managing uploaded files (images, documents, etc.) used in your content. This feature is under development.
+</Accordion>

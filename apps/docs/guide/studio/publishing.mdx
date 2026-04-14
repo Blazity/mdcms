@@ -1,0 +1,121 @@
+---
+title: "Publishing & Version History"
+description: "Draft/publish workflow, version management, and document restoration"
+---
+
+## Publishing a document
+
+Publishing creates an immutable version snapshot that represents the "live" state of your content. The draft/publish workflow is explicit -- auto-saves update the working draft, but content is only published when you choose.
+
+<Steps>
+  <Step title="Edit until ready">
+    Make your changes in the document editor. The draft auto-saves as you work.
+  </Step>
+  <Step title="Click Publish">
+    From the document editor or the content list row actions menu, click **Publish**.
+  </Step>
+  <Step title="Add a change summary (optional)">
+    Enter a short description of what changed. This appears in the version history.
+  </Step>
+  <Step title="Confirm">
+    The publish request is sent to the server, and a new immutable version is created.
+  </Step>
+</Steps>
+
+<Tip>
+  Change summaries are optional but recommended. They make version history useful for teams by providing context about what changed and why, rather than requiring reviewers to read diffs.
+</Tip>
+
+## What happens on publish
+
+When you publish a document, the server:
+
+1. Creates a new row in the `documentVersions` table containing:
+   - **Version number** -- Incremented sequentially (v1, v2, v3...)
+   - **Snapshot** -- Complete immutable copy of the document's path, frontmatter, and body at publish time
+   - **Timestamp** -- When the version was created
+   - **Publisher** -- The user who triggered the publish
+   - **Change summary** -- Optional description provided during publish
+2. Updates the `publishedVersion` pointer on the document head to reference the new version
+
+The publish request is `POST /api/v1/content/:documentId/publish` and accepts an optional `changeSummary` and `actorId`.
+
+After publishing, the document status changes from **Draft** or **Changed** to **Published**. If you make further edits after publishing, the status becomes **Changed**, indicating the draft has diverged from the last published version.
+
+## Unpublishing
+
+Unpublishing removes the published version reference from the document head. The document reverts to **Draft** status.
+
+- The version history is fully preserved -- unpublishing does not delete any version snapshots
+- The document is no longer available via published content queries
+- You can republish at any time, which creates a new version
+
+Unpublish is available from the content list row actions or the document editor, and requires the `content:publish` capability.
+
+## Version history
+
+The version history is accessible from the right sidebar in the document editor. Each version entry shows:
+
+- **Version number** (e.g., v1, v2, v3)
+- **Timestamp** of when the version was published
+- **Publisher** who created the version
+- **Change summary** if one was provided
+
+### Comparing versions
+
+Studio includes a diff viewer for comparing any two versions side-by-side. The diff covers three dimensions:
+
+- **Path** -- Whether the document's filesystem path changed between versions
+- **Frontmatter** -- Field-by-field comparison showing before/after values for each changed property
+- **Body** -- Line-by-line diff of the Markdown/MDX content using LCS-based comparison, with lines marked as unchanged, added, removed, or changed
+
+<Note>
+  Version history only tracks published snapshots, not auto-saves. Each auto-save increments the `draftRevision` counter, but these intermediate states are not preserved. Publish whenever you want to create a recoverable checkpoint.
+</Note>
+
+## Restoring a version
+
+You can restore any previous version to make it the current working draft:
+
+<Steps>
+  <Step title="Open version history">
+    Navigate to the document editor and open the version history in the sidebar.
+  </Step>
+  <Step title="Select a version">
+    Find the version you want to restore.
+  </Step>
+  <Step title="Restore">
+    Click **Restore**. The version's snapshot (path, frontmatter, body) becomes the new draft content.
+  </Step>
+</Steps>
+
+The original version remains intact in the history -- restoring does not modify or delete existing versions. It creates a new draft state from the selected version's snapshot.
+
+## Restoring deleted documents
+
+Documents are soft-deleted, not permanently removed. Deleted documents are recoverable from the **Trash** page at `/admin/trash`.
+
+The trash page provides:
+
+- **Search** -- Filter deleted documents by title or path
+- **Type filter** -- Narrow results to a specific content type
+- **Sort options** -- Newest first, Created, Path A-Z, Path Z-A
+- **Pagination** -- For large numbers of deleted documents
+- **Restore action** -- Per-row action to recover a document
+
+When you restore a deleted document, it returns as a draft. If a document already exists at the same path and locale, the restore will fail with a `CONTENT_PATH_CONFLICT` error -- you need to rename or delete the conflicting document first.
+
+<Warning>
+  Restoring a deleted document requires the `content:write` capability. The trash page itself requires read access to deleted content.
+</Warning>
+
+## Duplicating a document
+
+You can duplicate any document from the content list row actions. Duplication:
+
+- Creates a new document with a fresh `documentId`
+- Generates an auto-suffixed path to avoid conflicts (e.g., `my-post.mdx` becomes `my-post-copy.mdx`)
+- Copies the current draft frontmatter and body
+- Does not copy version history -- the duplicate starts fresh with no published versions
+
+After duplication, you are redirected to the new document's editor.

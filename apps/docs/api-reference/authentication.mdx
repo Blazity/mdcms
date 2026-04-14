@@ -1,0 +1,401 @@
+---
+title: "Authentication"
+description: "API key, session, and CLI authentication endpoints"
+---
+
+MDCMS supports three authentication methods: API keys for server-to-server access, session cookies for browser-based Studio usage, and a CLI device flow for command-line tools.
+
+## API Key Authentication
+
+API keys are the recommended method for server-to-server integrations, CI/CD pipelines, and SDK usage. Pass the key in the `Authorization` header:
+
+```
+Authorization: Bearer mdcms_key_live_abc123def456
+```
+
+API keys are scoped to specific capabilities and can be restricted to particular project/environment pairs. See [Key Concepts -- API Keys](/guide/concepts#api-keys) for details on scopes and configuration.
+
+## Session Authentication
+
+Session-based auth is used by the Studio and browser clients. It requires a CSRF token for all mutation requests.
+
+---
+
+### Login
+
+<ParamField method="POST" path="/api/v1/auth/login">
+  Authenticate with email and password. Returns a session and sets an HTTP-only session cookie.
+</ParamField>
+
+<ParamField body="email" type="string" required>
+  User's email address.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  User's password.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl -X POST "https://cms.example.com/api/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -d '{
+    "email": "editor@example.com",
+    "password": "s3cureP@ssw0rd"
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "session": {
+      "id": "sess_abc123def456",
+      "userId": "550e8400-e29b-41d4-a716-446655440000",
+      "email": "editor@example.com",
+      "issuedAt": "2026-01-15T09:00:00.000Z",
+      "expiresAt": "2026-01-16T09:00:00.000Z"
+    }
+  }
+}
+```
+
+The response also sets an `mdcms_session` HTTP-only cookie and a `mdcms_csrf` cookie containing the CSRF token. Include the CSRF token in the `X-MDCMS-CSRF-Token` header for all subsequent mutation requests.
+
+---
+
+### Logout
+
+<ParamField method="POST" path="/api/v1/auth/logout">
+  End the current session. Requires session cookie and CSRF token.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl -X POST "https://cms.example.com/api/v1/auth/logout" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "X-MDCMS-CSRF-Token: csrf_token_value" \
+  -b "mdcms_session=sess_abc123def456"
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "success": true
+  }
+}
+```
+
+---
+
+## SSO Authentication
+
+### Initiate OIDC
+
+<ParamField method="POST" path="/api/v1/auth/sso/{provider}">
+  Initiate an OpenID Connect authentication flow with an external identity provider.
+</ParamField>
+
+<ParamField path="provider" type="string" required>
+  The identity provider slug (e.g., `google`, `github`, `okta`).
+</ParamField>
+
+**Example request:**
+
+```bash
+curl -X POST "https://cms.example.com/api/v1/auth/sso/google" \
+  -H "Content-Type: application/json" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production"
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "redirectUrl": "https://accounts.google.com/o/oauth2/v2/auth?client_id=...&redirect_uri=...&scope=openid+email+profile&state=..."
+  }
+}
+```
+
+Redirect the user to the `redirectUrl`. After successful authentication, the provider redirects back to the MDCMS callback URL, which establishes a session.
+
+---
+
+### SAML Assertion Consumer
+
+<ParamField method="POST" path="/api/v1/auth/saml/acs">
+  SAML assertion consumer service endpoint. Receives and processes SAML assertions from the identity provider after authentication.
+</ParamField>
+
+This endpoint is called by the SAML identity provider, not by client applications directly. On successful assertion validation, a session is established and the user is redirected to the Studio.
+
+**Response:** HTTP 302 redirect to the Studio dashboard with session cookies set.
+
+---
+
+### SAML Metadata
+
+<ParamField method="GET" path="/api/v1/auth/saml/metadata">
+  Returns the SAML service provider metadata XML document. Use this URL when configuring MDCMS as a service provider in your identity provider's admin console.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl "https://cms.example.com/api/v1/auth/saml/metadata" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production"
+```
+
+**Response:** XML document with `Content-Type: application/xml`.
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"
+  entityID="https://cms.example.com/api/v1/auth/saml/metadata">
+  <SPSSODescriptor
+    AuthnRequestsSigned="true"
+    WantAssertionsSigned="true"
+    protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <AssertionConsumerService
+      Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
+      Location="https://cms.example.com/api/v1/auth/saml/acs"
+      index="1" />
+  </SPSSODescriptor>
+</EntityDescriptor>
+```
+
+---
+
+## CLI Device Flow
+
+The CLI uses a device authorization flow to authenticate without exposing credentials on the command line. This flow is initiated by `mdcms login`.
+
+### Start Challenge
+
+<ParamField method="POST" path="/api/v1/auth/cli/start">
+  Begin a CLI device authorization flow. Returns a challenge ID and a URL for the user to authorize in their browser.
+</ParamField>
+
+<ParamField body="project" type="string" required>
+  Project slug to authorize against.
+</ParamField>
+
+<ParamField body="environment" type="string" required>
+  Environment to authorize against.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl -X POST "https://cms.example.com/api/v1/auth/cli/start" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project": "marketing-site",
+    "environment": "production"
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "challengeId": "ch_abc123def456",
+    "authorizeUrl": "https://cms.example.com/auth/cli/authorize?challenge=ch_abc123def456",
+    "expiresAt": "2026-01-15T09:10:00.000Z"
+  }
+}
+```
+
+<Warning>
+  The challenge expires after 10 minutes. If the user does not authorize within that window, the CLI must restart the flow.
+</Warning>
+
+### Authorize Challenge
+
+<ParamField method="POST" path="/api/v1/auth/cli/authorize">
+  Authorize a pending CLI device challenge. Called from the browser after the user logs in and approves the CLI session.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl -X POST "https://cms.example.com/api/v1/auth/cli/authorize" \
+  -H "Content-Type: application/json" \
+  -H "X-MDCMS-CSRF-Token: csrf_token_value" \
+  -b "mdcms_session=sess_abc123def456" \
+  -d '{
+    "challengeId": "ch_abc123def456"
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "success": true,
+    "code": "authz_code_xyz789"
+  }
+}
+```
+
+### Exchange Code
+
+<ParamField method="POST" path="/api/v1/auth/cli/exchange">
+  Exchange the authorization code for an API key. Called by the CLI after the user authorizes the challenge.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl -X POST "https://cms.example.com/api/v1/auth/cli/exchange" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "challengeId": "ch_abc123def456",
+    "code": "authz_code_xyz789"
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "apiKey": "mdcms_key_cli_abc123def456ghi789",
+    "expiresAt": "2026-02-15T09:00:00.000Z"
+  }
+}
+```
+
+The CLI stores this API key locally and uses it for subsequent requests.
+
+---
+
+## Current Principal
+
+### Get Current User
+
+<ParamField method="GET" path="/api/v1/me">
+  Returns the current authenticated principal's identity and capabilities within the active project and environment.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl "https://cms.example.com/api/v1/me" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "principalType": "apiKey",
+    "principalId": "key_550e8400-e29b-41d4-a716-446655440000",
+    "label": "Production Read-Only",
+    "capabilities": {
+      "schema": {
+        "read": true,
+        "write": false
+      },
+      "content": {
+        "read": true,
+        "readDraft": false,
+        "write": false,
+        "publish": false,
+        "delete": false
+      },
+      "users": {
+        "manage": false
+      },
+      "settings": {
+        "manage": false
+      }
+    }
+  }
+}
+```
+
+For session-based authentication, the response includes the user's email and role instead of a key label:
+
+```json
+{
+  "data": {
+    "principalType": "user",
+    "principalId": "550e8400-e29b-41d4-a716-446655440000",
+    "email": "admin@example.com",
+    "role": "admin",
+    "capabilities": {
+      "schema": { "read": true, "write": true },
+      "content": { "read": true, "readDraft": true, "write": true, "publish": true, "delete": true },
+      "users": { "manage": true },
+      "settings": { "manage": true }
+    }
+  }
+}
+```
+
+---
+
+## Environments
+
+### List Environments
+
+<ParamField method="GET" path="/api/v1/environments">
+  Returns all environments configured for the current project.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl "https://cms.example.com/api/v1/environments" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+**Response:**
+
+```json
+{
+  "data": [
+    {
+      "name": "production",
+      "extends": null,
+      "isDefault": true,
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "staging",
+      "extends": "production",
+      "isDefault": false,
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "development",
+      "extends": "staging",
+      "isDefault": false,
+      "createdAt": "2026-01-05T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+<Note>
+  The `X-MDCMS-Environment` header is still required for this endpoint, even though it returns all environments. The header is used for authentication context.
+</Note>

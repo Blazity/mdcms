@@ -1,0 +1,163 @@
+---
+title: "Migrations"
+description: "Schema evolution and content migration strategies"
+---
+
+As your content model evolves, some changes require explicit migration steps. This page explains when migrations are needed, how the database schema is managed, and how content migrations transform existing documents.
+
+## When Migrations Are Needed
+
+Not every schema change requires a migration. MDCMS distinguishes between non-breaking changes (handled automatically) and breaking changes (requiring explicit migration).
+
+| Change Type | Migration Required? | Reason |
+| --- | --- | --- |
+| Adding a new optional field | No | Existing documents remain valid -- the field defaults to `undefined`. |
+| Adding a new content type | No | No existing documents are affected. `mdcms schema sync` registers the new type. |
+| Adding a new environment | No | The environment starts empty. |
+| Renaming a content type | **Yes** | Existing documents reference the old type name. |
+| Removing a content type that has documents | **Yes** | Documents of that type must be migrated or deleted. |
+| Changing a field's type (e.g., string to number) | **Yes** | Existing frontmatter values are incompatible with the new type. |
+| Renaming a field | **Yes** | Existing frontmatter uses the old field name. |
+| Making an optional field required | **Yes** | Existing documents may have `undefined` for that field. |
+| Removing a field | **Yes** | The field should be cleaned from existing frontmatter for consistency. |
+
+## Non-Breaking Changes
+
+For non-breaking changes, the standard schema sync workflow handles everything automatically:
+
+<Steps>
+  <Step title="Update the schema">
+    Modify your `mdcms.config.ts` to add the new field, type, or environment.
+  </Step>
+  <Step title="Sync to the server">
+    Run `mdcms schema sync`. The server computes the new schema hash and updates the `schemaRegistryEntries` and `schemaSyncs` tables.
+  </Step>
+  <Step title="Continue editing">
+    Existing documents remain valid. New documents will include the updated field definitions in the Studio editor.
+  </Step>
+</Steps>
+
+<Tip>
+Schema sync is idempotent. Running it multiple times with the same configuration produces the same result. It is safe to include in CI/CD pipelines.
+</Tip>
+
+## Database Migrations
+
+Database schema changes (adding tables, columns, or indexes to the PostgreSQL schema) are managed through Drizzle ORM's migration toolkit.
+
+<Steps>
+  <Step title="Modify the schema definition">
+    Edit `apps/server/src/lib/db/schema.ts` to add, modify, or remove table definitions.
+  </Step>
+  <Step title="Generate the migration SQL">
+    Run the Drizzle migration generator:
+    ```bash
+    cd apps/server
+    bun run db:generate
+    ```
+    This produces a timestamped SQL migration file in the migrations directory.
+  </Step>
+  <Step title="Review the generated SQL">
+    Always review the generated migration before applying it. Drizzle generates SQL based on the diff between the current schema definition and the last known state. Verify that destructive operations (column drops, type changes) are intentional.
+  </Step>
+  <Step title="Apply the migration">
+    Run the migration against the target database:
+    ```bash
+    cd apps/server
+    bun run db:migrate
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+Always back up the database before applying migrations in production. Drizzle migrations are forward-only -- there is no automatic rollback mechanism.
+</Warning>
+
+## Content Migrations
+
+Content migrations transform existing documents when the schema changes in a way that is incompatible with stored data. The `mdcms migrate` CLI command handles this process.
+
+### Preview Mode
+
+By default, `mdcms migrate` generates a migration plan without applying it:
+
+```bash
+mdcms migrate
+```
+
+This analyzes the current schema against stored documents and reports:
+
+- Which documents are affected
+- What transformations will be applied
+- Whether any documents cannot be automatically migrated
+
+### Apply Mode
+
+To execute the migration, add the `--apply` flag:
+
+```bash
+mdcms migrate --apply
+```
+
+When applied, the migration:
+
+1. Transforms each affected document's frontmatter according to the migration rules
+2. Updates the draft state (`body`, `frontmatter`, `updatedAt`, `draftRevision`)
+3. Auto-publishes updated documents that were previously in a published state
+4. Records the migration in the `migrations` table (name, schema type, documents affected, who applied it, when)
+
+<Warning>
+Always back up the database before running content migrations in production. Content migrations modify document frontmatter in place and auto-publish affected documents. While the operation is logged in the `migrations` table, there is no built-in undo mechanism.
+</Warning>
+
+## Breaking Change Scenarios
+
+The following scenarios require explicit content migrations.
+
+### Type Rename
+
+When renaming a content type (e.g., `Post` to `BlogPost`):
+
+1. Add the new type to `mdcms.config.ts`
+2. Run `mdcms schema sync` to register the new type
+3. Run `mdcms migrate --apply` to update all documents from the old type to the new type
+4. Remove the old type from the config
+5. Run `mdcms schema sync` again to deregister the old type
+
+### Field Type Change
+
+When changing a field's type (e.g., `tags: z.string()` to `tags: z.array(z.string())`):
+
+1. Update the field definition in `mdcms.config.ts`
+2. Run `mdcms schema sync`
+3. Run `mdcms migrate` to preview the transformation (e.g., wrapping string values in arrays)
+4. Run `mdcms migrate --apply` to execute
+
+### Field Removal
+
+When removing a field from a content type:
+
+1. Remove the field from `mdcms.config.ts`
+2. Run `mdcms schema sync`
+3. Run `mdcms migrate --apply` to clean the removed field from existing document frontmatter
+
+<Note>
+Field removal migrations are optional but recommended. Documents with extra frontmatter fields will not cause errors, but removing stale data keeps the content store clean and reduces confusion in API responses.
+</Note>
+
+## Migration Records
+
+Every applied migration is recorded in the `migrations` table:
+
+| Column | Description |
+| --- | --- |
+| `id` | UUID primary key |
+| `name` | Human-readable migration name |
+| `projectId` | Target project |
+| `environmentId` | Target environment |
+| `schemaType` | Content type affected |
+| `appliedAt` | Timestamp of execution |
+| `appliedBy` | User who ran the migration |
+| `documentsAffected` | Number of documents transformed |
+
+This table provides an audit trail for all content transformations and can be queried to verify migration history.

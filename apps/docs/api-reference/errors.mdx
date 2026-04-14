@@ -1,0 +1,159 @@
+---
+title: "Error Handling"
+description: "Error response format, codes, and resolve errors"
+---
+
+When a request fails, the MDCMS API returns a structured error response with enough detail to diagnose and resolve the issue programmatically.
+
+## Error Response Format
+
+All errors follow a consistent envelope:
+
+```json
+{
+  "error": {
+    "status": "error",
+    "code": "SCHEMA_HASH_MISMATCH",
+    "message": "The provided schema hash does not match the current server schema. Run `mdcms schema sync` to update.",
+    "statusCode": 409,
+    "details": {
+      "expectedHash": "sha256_abc123",
+      "providedHash": "sha256_def456"
+    },
+    "requestId": "req_7f3a2b1c4d5e6f",
+    "timestamp": "2026-01-15T09:30:00.000Z"
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | string | Always `"error"`. |
+| `code` | string | Machine-readable error code. Use this for programmatic error handling. |
+| `message` | string | Human-readable description of what went wrong. |
+| `statusCode` | integer | HTTP status code (duplicated from the response status for convenience). |
+| `details` | object | Additional context specific to the error type. May be empty `{}`. |
+| `requestId` | string | Unique identifier for this request. Include this when reporting issues. |
+| `timestamp` | string | ISO 8601 timestamp of when the error occurred. |
+
+<Note>
+  Every error response includes a `requestId`. When contacting support or filing bug reports, include the `requestId` to help trace the request through server logs.
+</Note>
+
+## Error Codes
+
+| Code | HTTP Status | Description | Common Cause |
+|------|-------------|-------------|--------------|
+| `UNAUTHORIZED` | 401 | Missing or invalid authentication credentials. | Expired API key, missing `Authorization` header, invalid session cookie. |
+| `FORBIDDEN` | 403 | Authenticated but insufficient permissions. | API key lacks the required scope, or user role does not include the needed capability. |
+| `NOT_FOUND` | 404 | The requested resource does not exist. | Invalid document ID, deleted document, or wrong project/environment. |
+| `INVALID_INPUT` | 400 | Request body failed validation. | Missing required fields, wrong data types, or values that violate schema constraints. |
+| `INVALID_QUERY_PARAM` | 400 | A query parameter has an invalid value. | Non-numeric `limit`, unsupported `sort` field, or unknown filter parameter. |
+| `INVALID_CONTENT_SCOPE` | 400 | The content scope in the request is invalid. | Requesting a type that does not exist, or a locale that is not configured for the project. |
+| `SCHEMA_NOT_FOUND` | 404 | The requested schema type does not exist in the registry. | Querying for a type name that has not been synced. |
+| `SCHEMA_HASH_REQUIRED` | 400 | Content write operation attempted without schema hash header. | Missing `X-MDCMS-Schema-Hash` header on a create or update request. |
+| `SCHEMA_HASH_MISMATCH` | 409 | The schema hash provided does not match the server's current schema. | Local schema is out of date. Run `mdcms schema sync` to update. |
+| `SCHEMA_NOT_SYNCED` | 409 | No schema has been synced to the server yet. | The project has no schema registry entries. Run `mdcms schema sync` first. |
+| `CONTENT_PATH_CONFLICT` | 409 | A document already exists at the given path and locale. | Attempting to create a document with a `path` that is already taken. |
+| `CONFLICT` | 409 | Optimistic concurrency conflict on document update. | The `draftRevision` in the request body is stale. Re-fetch the document, merge changes, and retry with the current revision. |
+| `RATE_LIMITED` | 429 | Too many requests. | Exceeding the rate limit for the API key or session. Back off and retry after the `Retry-After` header value. |
+| `INTERNAL_ERROR` | 500 | An unexpected server error occurred. | Server bug or infrastructure issue. Report with the `requestId`. |
+
+### Handling Specific Errors
+
+**Schema hash mismatch (409):**
+
+```typescript
+try {
+  await createDocument(payload);
+} catch (error) {
+  if (error.code === "SCHEMA_HASH_MISMATCH") {
+    // Re-sync schema and retry
+    await syncSchema();
+    await createDocument(payload);
+  }
+}
+```
+
+**Optimistic concurrency conflict (409):**
+
+```typescript
+try {
+  await updateDocument(documentId, {
+    frontmatter: updatedData,
+    draftRevision: localRevision,
+  });
+} catch (error) {
+  if (error.code === "CONFLICT") {
+    // Fetch latest version and merge
+    const latest = await getDocument(documentId);
+    const merged = mergeChanges(localChanges, latest);
+    await updateDocument(documentId, {
+      frontmatter: merged,
+      draftRevision: latest.draftRevision,
+    });
+  }
+}
+```
+
+**Rate limiting (429):**
+
+```typescript
+try {
+  await listDocuments(params);
+} catch (error) {
+  if (error.code === "RATE_LIMITED") {
+    const retryAfter = parseInt(error.details.retryAfter, 10);
+    await sleep(retryAfter * 1000);
+    await listDocuments(params);
+  }
+}
+```
+
+## Resolve Errors
+
+When you use the `resolve` parameter to expand [references](/guide/concepts#references) in a content response, some references may fail to resolve. Instead of failing the entire request, the API returns the document with `null` values for unresolvable references and includes error details in the `resolveErrors` field.
+
+### Resolve Error Format
+
+```json
+{
+  "data": {
+    "documentId": "550e8400-e29b-41d4-a716-446655440000",
+    "type": "BlogPost",
+    "frontmatter": {
+      "title": "Hello World",
+      "author": null,
+      "relatedPosts": [
+        { "documentId": "...", "type": "BlogPost", "frontmatter": { "title": "Other Post" } },
+        null
+      ]
+    },
+    "resolveErrors": {
+      "frontmatter.author": {
+        "code": "REFERENCE_DELETED",
+        "referenceId": "660e8400-e29b-41d4-a716-446655440001",
+        "message": "The referenced Author document has been deleted."
+      },
+      "frontmatter.relatedPosts[1]": {
+        "code": "REFERENCE_NOT_FOUND",
+        "referenceId": "770e8400-e29b-41d4-a716-446655440002",
+        "message": "The referenced BlogPost document was not found."
+      }
+    }
+  }
+}
+```
+
+### Resolve Error Codes
+
+| Code | Description |
+|------|-------------|
+| `REFERENCE_NOT_FOUND` | The referenced document does not exist in the target project and environment. It may have been deleted permanently or never existed. |
+| `REFERENCE_DELETED` | The referenced document exists but has been soft-deleted. It can be restored via the [restore endpoint](/api-reference/content#restore-deleted). |
+| `REFERENCE_TYPE_MISMATCH` | The referenced document exists but its type does not match the expected target type declared in the schema. This typically indicates a data integrity issue. |
+| `REFERENCE_FORBIDDEN` | The current API key or user does not have `content:read` permission for the referenced document. The reference exists but cannot be resolved with the current credentials. |
+
+<Warning>
+  Resolve errors are informational and do not cause the request to fail. Always check the `resolveErrors` field when using resolved references, especially in production applications where referenced content may change independently.
+</Warning>
