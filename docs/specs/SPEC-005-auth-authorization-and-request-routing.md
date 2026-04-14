@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-04-10
+last_updated: 2026-04-14
 ---
 
 # SPEC-005 Auth, Authorization, and Request Routing
@@ -452,7 +452,7 @@ Machine-to-machine access (SDK, CI/CD) uses API keys:
 
 **CLI auth defaults and precedence:**
 
-- Login-generated API keys request scopes: `projects:read`, `projects:write`, `schema:read`, `schema:write`, `content:read`, `content:read:draft`, `content:write`. The server validates that the session's effective role permits all requested scopes. **MVP limitation:** CLI requires Admin or Owner role (see SPEC-008).
+- Login-generated API keys request scopes: `projects:read`, `projects:write`, `schema:read`, `schema:write`, `content:read`, `content:read:draft`, `content:write`, `content:delete`. The server validates that the session's effective role permits all requested scopes. **MVP limitation:** CLI requires Admin or Owner role (see SPEC-008).
 - CLI auth precedence is: `--api-key` > `MDCMS_API_KEY` > stored profile.
 
 **Deterministic failure semantics:**
