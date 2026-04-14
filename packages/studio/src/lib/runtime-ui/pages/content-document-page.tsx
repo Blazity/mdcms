@@ -1760,7 +1760,7 @@ function ContentDocumentPageStatusView(props: {
           {renderStatusContent(props.state)}
         </p>
         {props.state.status !== "loading" ? (
-          <Button variant="outline" onClick={() => props.onGoBack?.()}>
+          <Button variant="ghost" onClick={() => props.onGoBack?.()}>
             Go back
           </Button>
         ) : null}
@@ -1822,7 +1822,7 @@ function renderSchemaRecoveryBanner(input: {
         {schemaState.canSync ? (
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             onClick={() => input.onSchemaSync?.()}
           >
             Sync Schema
@@ -2589,7 +2589,7 @@ export function ContentDocumentPageView({
                     ) : null}
                     <div className="flex items-center justify-center gap-3">
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         disabled={state.variantCreation.status === "creating"}
                         onClick={() => onCreateVariant?.(false)}
                       >
@@ -2651,7 +2651,7 @@ export function ContentDocumentPageView({
                           : null}
                       </p>
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
                         className="text-xs"
                         onClick={() => onBackToDraft?.()}

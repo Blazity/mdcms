@@ -232,7 +232,7 @@ function renderRetryButton(onRetry?: () => void) {
   }
 
   return (
-    <Button variant="outline" onClick={onRetry}>
+    <Button variant="ghost" onClick={onRetry}>
       Retry
     </Button>
   );
@@ -317,7 +317,7 @@ export function EnvironmentManagementPageView({
                   </div>
                   <DialogFooter>
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       onClick={() => onCreateDialogChange?.(false)}
                     >
                       Cancel
@@ -366,7 +366,7 @@ export function EnvironmentManagementPageView({
             data-mdcms-environments-page-state="forbidden"
             className="space-y-3 rounded-lg border border-dashed p-6"
           >
-            <Badge variant="secondary">Forbidden</Badge>
+            <Badge variant="default">Forbidden</Badge>
             <p className="text-sm text-muted-foreground">{state.message}</p>
             <p className="text-xs text-muted-foreground">{state.project}</p>
           </section>
@@ -427,7 +427,7 @@ export function EnvironmentManagementPageView({
                       <CardTitle className="flex flex-wrap items-center gap-2">
                         <span className="truncate">{environment.name}</span>
                         {environment.isDefault ? (
-                          <Badge variant="secondary">Default</Badge>
+                          <Badge variant="default">Default</Badge>
                         ) : null}
                         {activeEnvironment === environment.name ? (
                           <Badge variant="outline">Active</Badge>
@@ -479,7 +479,7 @@ export function EnvironmentManagementPageView({
                   </div>
                   {activeEnvironment !== environment.name ? (
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
                       className="w-full"
                       onClick={() => onSwitchEnvironment?.(environment.name)}
@@ -514,7 +514,7 @@ export function EnvironmentManagementPageView({
             ) : null}
             <DialogFooter>
               <Button
-                variant="outline"
+                variant="ghost"
                 onClick={() => onDeleteDialogChange?.(false)}
               >
                 Cancel

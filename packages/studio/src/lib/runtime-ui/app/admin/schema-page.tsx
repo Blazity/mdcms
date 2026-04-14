@@ -234,7 +234,7 @@ export function SchemaPageView({ state }: { state: StudioSchemaState }) {
         <Card>
           <CardContent className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
             <div className="flex flex-wrap items-start gap-3">
-              <Badge variant="secondary">Read-only</Badge>
+              <Badge variant="default">Read-only</Badge>
               <p className="max-w-3xl text-sm text-muted-foreground">
                 {SCHEMA_READ_ONLY_COPY}
               </p>
@@ -281,7 +281,7 @@ export function SchemaPageView({ state }: { state: StudioSchemaState }) {
             data-mdcms-schema-page-state="forbidden"
             className="space-y-3 rounded-lg border border-dashed p-6"
           >
-            <Badge variant="secondary">Forbidden</Badge>
+            <Badge variant="default">Forbidden</Badge>
             <p className="text-sm text-muted-foreground">{state.message}</p>
             <p className="text-xs text-muted-foreground">
               {state.project} / {state.environment}
@@ -326,7 +326,7 @@ export function SchemaPageView({ state }: { state: StudioSchemaState }) {
                         {entry.type}
                       </CardTitle>
                       <Badge
-                        variant={entry.localized ? "secondary" : "outline"}
+                        variant={entry.localized ? "default" : "outline"}
                       >
                         {entry.localized ? "Localized" : "Single locale"}
                       </Badge>

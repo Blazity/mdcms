@@ -231,7 +231,7 @@ export function ContentPageView({
             data-mdcms-content-page-state="forbidden"
             className="space-y-3 rounded-lg border border-dashed p-6"
           >
-            <Badge variant="secondary">Forbidden</Badge>
+            <Badge variant="default">Forbidden</Badge>
             <p className="text-sm text-muted-foreground">{state.message}</p>
             <p className="text-xs text-muted-foreground">
               {state.project} / {state.environment}

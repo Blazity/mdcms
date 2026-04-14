@@ -612,7 +612,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
                 <Button
                   key={item.id}
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   disabled={item.availability !== "enabled" || isEditorReadOnly}
                   onClick={() => {

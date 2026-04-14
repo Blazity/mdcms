@@ -435,7 +435,7 @@ export default function UsersPage() {
             <AlertCircle className="mb-4 h-8 w-8 text-destructive" />
             <h3 className="mb-2 text-lg font-semibold">Failed to load users</h3>
             <p className="mb-4 text-sm text-foreground-muted">{errorMessage}</p>
-            <Button variant="outline" onClick={refresh}>
+            <Button variant="ghost" onClick={refresh}>
               Try again
             </Button>
           </div>

@@ -263,7 +263,7 @@ export function ApiKeyCreateDialog({
             <DialogFooter>
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 onClick={handleDismiss}
                 disabled={isSubmitting}
               >
@@ -298,7 +298,7 @@ export function ApiKeyCreateDialog({
                   </code>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="icon"
                     onClick={handleCopy}
                   >

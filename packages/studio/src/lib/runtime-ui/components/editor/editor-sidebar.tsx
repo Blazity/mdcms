@@ -145,7 +145,7 @@ export function EditorSidebar({ document, mdxPropsPanel }: EditorSidebarProps) {
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         className="w-full justify-start text-left font-normal"
                       >
                         {publishDate
@@ -204,7 +204,7 @@ export function EditorSidebar({ document, mdxPropsPanel }: EditorSidebarProps) {
                     {formData.tags.map((tag) => (
                       <Badge
                         key={tag}
-                        variant="secondary"
+                        variant="default"
                         className="cursor-pointer hover:bg-destructive/10"
                         onClick={() =>
                           setFormData({

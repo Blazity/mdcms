@@ -153,7 +153,7 @@ export default function LoginPage() {
                 <Button
                   key={provider.id}
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   className="w-full"
                   onClick={() => handleSsoClick(provider.id)}
                 >

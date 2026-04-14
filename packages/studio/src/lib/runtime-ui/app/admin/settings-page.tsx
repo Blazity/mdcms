@@ -190,14 +190,14 @@ export default function SettingsPage({
                               {key.scopes.slice(0, 2).map((scope) => (
                                 <Badge
                                   key={scope}
-                                  variant="secondary"
+                                  variant="default"
                                   className="text-xs"
                                 >
                                   {scope}
                                 </Badge>
                               ))}
                               {key.scopes.length > 2 && (
-                                <Badge variant="secondary" className="text-xs">
+                                <Badge variant="default" className="text-xs">
                                   +{key.scopes.length - 2}
                                 </Badge>
                               )}
@@ -256,7 +256,7 @@ export default function SettingsPage({
                           </TableCell>
                           <TableCell>
                             <Button
-                              variant="outline"
+                              variant="ghost"
                               size="sm"
                               className="text-destructive hover:text-destructive"
                               onClick={() => {
