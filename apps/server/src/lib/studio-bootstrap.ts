@@ -120,6 +120,14 @@ function resolveContentType(assetPath: string): string {
     return "text/html; charset=utf-8";
   }
 
+  if (extension === ".woff2") {
+    return "font/woff2";
+  }
+
+  if (extension === ".woff") {
+    return "font/woff";
+  }
+
   return "application/octet-stream";
 }
 

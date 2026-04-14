@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import tailwindcss from "@tailwindcss/postcss";
@@ -207,9 +207,15 @@ async function bundleRuntimeEntry(input: {
   return await entryOutput.text();
 }
 
+type StylesheetCompileResult = {
+  css: string;
+  /** Absolute source path → output filename for each font asset. */
+  fontAssets: Map<string, string>;
+};
+
 async function compileRuntimeStylesheet(input: {
   projectRoot: string;
-}): Promise<string> {
+}): Promise<StylesheetCompileResult> {
   const stylesheetSourcePath = join(
     input.projectRoot,
     "src/lib/runtime-ui/styles.css",
@@ -219,7 +225,30 @@ async function compileRuntimeStylesheet(input: {
     from: stylesheetSourcePath,
   });
 
-  return result.css;
+  const cssDir = dirname(stylesheetSourcePath);
+  const fontAssets = new Map<string, string>();
+  const seen = new Map<string, string>();
+
+  const rewritten = result.css.replace(
+    /url\(([^)]+\.woff2[^)]*)\)/g,
+    (_match, rawUrl: string) => {
+      const cleanUrl = rawUrl.replace(/['"]/g, "").split("?")[0]!.trim();
+      const absPath = isAbsolute(cleanUrl)
+        ? cleanUrl
+        : resolve(cssDir, cleanUrl);
+
+      if (seen.has(absPath)) {
+        return `url(${seen.get(absPath)})`;
+      }
+
+      const outputName = basename(absPath);
+      fontAssets.set(absPath, outputName);
+      seen.set(absPath, outputName);
+      return `url(${outputName})`;
+    },
+  );
+
+  return { css: rewritten, fontAssets };
 }
 
 export async function buildStudioRuntimeArtifacts(
@@ -256,11 +285,16 @@ export async function buildStudioRuntimeArtifacts(
   await writeFile(entryPath, bundledEntry, "utf8");
 
   const cssFile = createRuntimeStylesheetFileName(buildId);
-  const cssPath = join(outDir, STUDIO_RUNTIME_ASSETS_DIRNAME, buildId, cssFile);
-  const compiledStylesheet = await compileRuntimeStylesheet({
+  const buildAssetDir = join(outDir, STUDIO_RUNTIME_ASSETS_DIRNAME, buildId);
+  const cssPath = join(buildAssetDir, cssFile);
+  const stylesheetResult = await compileRuntimeStylesheet({
     projectRoot,
   });
-  await writeFile(cssPath, compiledStylesheet, "utf8");
+  await writeFile(cssPath, stylesheetResult.css, "utf8");
+
+  for (const [srcPath, outputName] of stylesheetResult.fontAssets) {
+    await copyFile(srcPath, join(buildAssetDir, outputName));
+  }
 
   const entryUrl = createStudioRuntimeEntryUrl({
     assetsBasePath,
