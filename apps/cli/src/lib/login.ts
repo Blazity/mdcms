@@ -7,7 +7,7 @@ import { RuntimeError } from "@mdcms/shared";
 import { createCredentialStore, type CredentialStore } from "./credentials.js";
 import type { CliCommand, CliCommandContext } from "./framework.js";
 
-const DEFAULT_CLI_LOGIN_SCOPES = [
+export const DEFAULT_CLI_LOGIN_SCOPES = [
   "projects:read",
   "projects:write",
   "schema:read",
@@ -281,14 +281,105 @@ function throwRemoteError(
   });
 }
 
-export function createLoginCommand(options: LoginOptions = {}): CliCommand {
-  const openUrl = options.openBrowserUrl ?? openBrowserUrl;
+export type OAuthFlowParams = {
+  serverUrl: string;
+  project: string;
+  environment: string;
+  fetcher: typeof fetch;
+  onBrowserOpened?: () => void;
+  onBrowserFailed?: (authorizeUrl: string) => void;
+  openUrl?: (url: string) => Promise<boolean>;
+  createState?: () => string;
+  createListener?: () => Promise<LoopbackCallbackListener>;
+};
+
+export async function performCliOAuthFlow(
+  params: OAuthFlowParams,
+): Promise<LoginExchangeResponse> {
+  const openUrl = params.openUrl ?? openBrowserUrl;
   const createState =
-    options.createState ??
+    params.createState ??
     (() => `state_${randomBytes(18).toString("base64url")}_${Date.now()}`);
   const createListener =
-    options.createCallbackListener ?? createLoopbackCallbackListener;
+    params.createListener ?? createLoopbackCallbackListener;
 
+  const listener = await createListener();
+  const state = createState();
+
+  try {
+    const startResponse = await params.fetcher(
+      `${params.serverUrl}/api/v1/auth/cli/login/start`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          redirectUri: listener.redirectUri,
+          state,
+          project: params.project,
+          environment: params.environment,
+          scopes: [...DEFAULT_CLI_LOGIN_SCOPES],
+        }),
+      },
+    );
+    const startBody = await startResponse.json().catch(() => undefined);
+
+    if (!startResponse.ok) {
+      throwRemoteError(
+        startResponse.status,
+        startBody,
+        "REMOTE_ERROR",
+        "Failed to start CLI login flow.",
+      );
+    }
+
+    const start = parseStartResponse(startBody);
+    const browserOpened = await openUrl(start.authorizeUrl);
+
+    if (browserOpened) {
+      params.onBrowserOpened?.();
+    } else {
+      params.onBrowserFailed?.(start.authorizeUrl);
+    }
+
+    const callback = await listener.waitForCallback();
+    if (callback.state !== state) {
+      throw new RuntimeError({
+        code: "INVALID_LOGIN_EXCHANGE",
+        message: "Browser callback state does not match login request state.",
+        statusCode: 400,
+      });
+    }
+
+    const exchangeResponse = await params.fetcher(
+      `${params.serverUrl}/api/v1/auth/cli/login/exchange`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          challengeId: start.challengeId,
+          state,
+          code: callback.code,
+        }),
+      },
+    );
+    const exchangeBody = await exchangeResponse.json().catch(() => undefined);
+
+    if (!exchangeResponse.ok) {
+      throwRemoteError(
+        exchangeResponse.status,
+        exchangeBody,
+        "REMOTE_ERROR",
+        "Failed to exchange CLI login code.",
+      );
+    }
+
+    return parseExchangeResponse(exchangeBody);
+  } finally {
+    await listener.close();
+  }
+}
+
+export function createLoginCommand(options: LoginOptions = {}): CliCommand {
   return {
     name: "login",
     description: "Authenticate via browser flow and store scoped credentials",
@@ -306,154 +397,85 @@ export function createLoginCommand(options: LoginOptions = {}): CliCommand {
         return 0;
       }
 
-      const listener = await createListener();
-      const state = createState();
-
-      try {
-        const startResponse = await context.fetcher(
-          `${context.serverUrl}/api/v1/auth/cli/login/start`,
-          {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-            },
-            body: JSON.stringify({
-              redirectUri: listener.redirectUri,
-              state,
-              project: context.project,
-              environment: context.environment,
-              scopes: DEFAULT_CLI_LOGIN_SCOPES,
-            }),
-          },
-        );
-        const startBody = await startResponse.json().catch(() => undefined);
-
-        if (!startResponse.ok) {
-          throwRemoteError(
-            startResponse.status,
-            startBody,
-            "REMOTE_ERROR",
-            "Failed to start CLI login flow.",
-          );
-        }
-
-        const start = parseStartResponse(startBody);
-        const browserOpened = await openUrl(start.authorizeUrl);
-
-        if (!browserOpened) {
-          context.stdout.write(
-            `Could not open browser automatically. Open this URL manually:\n${start.authorizeUrl}\n`,
-          );
-        } else {
+      const exchanged = await performCliOAuthFlow({
+        serverUrl: context.serverUrl,
+        project: context.project,
+        environment: context.environment,
+        fetcher: context.fetcher,
+        openUrl: options.openBrowserUrl,
+        createState: options.createState,
+        createListener: options.createCallbackListener,
+        onBrowserOpened: () => {
           context.stdout.write(
             "Browser login started. Complete authentication in your browser...\n",
           );
-        }
-
-        const callback = await listener.waitForCallback();
-        if (callback.state !== state) {
-          throw new RuntimeError({
-            code: "INVALID_LOGIN_EXCHANGE",
-            message:
-              "Browser callback state does not match login request state.",
-            statusCode: 400,
-          });
-        }
-
-        const exchangeResponse = await context.fetcher(
-          `${context.serverUrl}/api/v1/auth/cli/login/exchange`,
-          {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-            },
-            body: JSON.stringify({
-              challengeId: start.challengeId,
-              state,
-              code: callback.code,
-            }),
-          },
-        );
-        const exchangeBody = await exchangeResponse
-          .json()
-          .catch(() => undefined);
-
-        if (!exchangeResponse.ok) {
-          throwRemoteError(
-            exchangeResponse.status,
-            exchangeBody,
-            "REMOTE_ERROR",
-            "Failed to exchange CLI login code.",
+        },
+        onBrowserFailed: (url) => {
+          context.stdout.write(
+            `Could not open browser automatically. Open this URL manually:\n${url}\n`,
           );
-        }
+        },
+      });
 
-        const exchanged = parseExchangeResponse(exchangeBody);
-
-        const projectsResponse = await context.fetcher(
-          `${context.serverUrl}/api/v1/projects`,
-          {
-            headers: {
-              "content-type": "application/json",
-              authorization: `Bearer ${exchanged.key}`,
-              "x-mdcms-project": context.project,
-              "x-mdcms-environment": context.environment,
-            },
+      const projectsResponse = await context.fetcher(
+        `${context.serverUrl}/api/v1/projects`,
+        {
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${exchanged.key}`,
+            "x-mdcms-project": context.project,
+            "x-mdcms-environment": context.environment,
           },
+        },
+      );
+      if (projectsResponse.ok) {
+        const projectsBody = (await projectsResponse.json()) as {
+          data: Array<{ slug: string }>;
+        };
+        const exists = projectsBody.data.some(
+          (p) => p.slug === context.project,
         );
-        if (projectsResponse.ok) {
-          const projectsBody = (await projectsResponse.json()) as {
-            data: Array<{ slug: string }>;
-          };
-          const exists = projectsBody.data.some(
-            (p) => p.slug === context.project,
+        if (!exists) {
+          await context
+            .fetcher(`${context.serverUrl}/api/v1/auth/api-keys/self/revoke`, {
+              method: "POST",
+              headers: {
+                authorization: `Bearer ${exchanged.key}`,
+              },
+            })
+            .catch(() => undefined);
+          context.stderr.write(
+            `Project "${context.project}" does not exist on ${context.serverUrl}. Run "cms init" to create it.\n`,
           );
-          if (!exists) {
-            await context
-              .fetcher(
-                `${context.serverUrl}/api/v1/auth/api-keys/self/revoke`,
-                {
-                  method: "POST",
-                  headers: {
-                    authorization: `Bearer ${exchanged.key}`,
-                  },
-                },
-              )
-              .catch(() => undefined);
-            context.stderr.write(
-              `Project "${context.project}" does not exist on ${context.serverUrl}. Run "cms init" to create it.\n`,
-            );
-            return 1;
-          }
+          return 1;
         }
-
-        const nowIso = new Date().toISOString();
-
-        await store.setProfile(
-          {
-            serverUrl: context.serverUrl,
-            project: context.project,
-            environment: context.environment,
-          },
-          {
-            authMode: "api_key",
-            apiKey: exchanged.key,
-            apiKeyId: exchanged.id,
-            createdAt: nowIso,
-            updatedAt: nowIso,
-          },
-        );
-
-        context.stdout.write(
-          `Login successful for ${context.project}/${context.environment}. Credentials stored.\n`,
-        );
-        context.stdout.write(
-          `MDCMS_DEMO_API_KEY="${exchanged.key}" (use this value for demo app requests if needed).\n`,
-        );
-
-        return 0;
-      } finally {
-        await listener.close();
       }
+
+      const nowIso = new Date().toISOString();
+
+      await store.setProfile(
+        {
+          serverUrl: context.serverUrl,
+          project: context.project,
+          environment: context.environment,
+        },
+        {
+          authMode: "api_key",
+          apiKey: exchanged.key,
+          apiKeyId: exchanged.id,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        },
+      );
+
+      context.stdout.write(
+        `Login successful for ${context.project}/${context.environment}. Credentials stored.\n`,
+      );
+      context.stdout.write(
+        `MDCMS_DEMO_API_KEY="${exchanged.key}" (use this value for demo app requests if needed).\n`,
+      );
+
+      return 0;
     },
   };
 }

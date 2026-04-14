@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
@@ -12,9 +11,9 @@ import {
 } from "@mdcms/shared";
 import { buildSchemaSyncPayload } from "@mdcms/shared/server";
 
-import type { CredentialStore } from "./credentials.js";
+import { createCredentialStore, type CredentialStore } from "./credentials.js";
 import type { CliCommand, CliCommandContext } from "./framework.js";
-import { createLoopbackCallbackListener, openBrowserUrl } from "./login.js";
+import { performCliOAuthFlow } from "./login.js";
 import {
   resolveScopedManifestPath,
   writeScopedManifestAtomic,
@@ -239,78 +238,26 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
       if (options?.skipAuth) {
         apiKey = "skip-auth-key";
       } else {
-        const listener = await createLoopbackCallbackListener();
-        const oauthState = `state_${randomBytes(18).toString("base64url")}_${Date.now()}`;
+        const s = prompter.spinner();
+        s.start("Opening browser for login...");
         try {
-          const s = prompter.spinner();
-          s.start("Opening browser for login...");
-          const startResponse = await fetcher(
-            `${serverUrl}/api/v1/auth/cli/login/start`,
-            {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                redirectUri: listener.redirectUri,
-                state: oauthState,
-                project: projectName,
-                environment: envName,
-                scopes: [
-                  "projects:write",
-                  "schema:write",
-                  "content:read",
-                  "content:read:draft",
-                  "content:write",
-                ],
-              }),
+          const exchanged = await performCliOAuthFlow({
+            serverUrl,
+            project: projectName,
+            environment: envName,
+            fetcher,
+            onBrowserFailed: (url) => {
+              s.stop("Could not open browser");
+              stdout.write(`Open this URL in your browser:\n${url}\n`);
             },
-          );
-
-          if (!startResponse.ok) {
-            const errBody = await startResponse.text().catch(() => "");
-            s.stop(
-              `Failed to start authentication flow: ${startResponse.status} ${errBody}`,
-            );
-            return 1;
-          }
-
-          const startBody = (await startResponse.json()) as {
-            data: { authorizeUrl: string; challengeId: string };
-          };
-          const opened = await openBrowserUrl(startBody.data.authorizeUrl);
-          if (!opened) {
-            s.stop("Could not open browser");
-            stdout.write(
-              `Open this URL in your browser:\n${startBody.data.authorizeUrl}\n`,
-            );
-          }
-
-          const callback = await listener.waitForCallback();
-
-          const exchangeResponse = await fetcher(
-            `${serverUrl}/api/v1/auth/cli/login/exchange`,
-            {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                challengeId: startBody.data.challengeId,
-                state: oauthState,
-                code: callback.code,
-              }),
-            },
-          );
-
-          if (!exchangeResponse.ok) {
-            s.stop("Failed to exchange authentication code");
-            return 1;
-          }
-
-          const exchangeBody = (await exchangeResponse.json()) as {
-            data: { id: string; key: string };
-          };
-          apiKey = exchangeBody.data.key;
+          });
+          apiKey = exchanged.key;
           s.stop("Logged in");
-        } finally {
-          await listener.close();
+        } catch (error) {
+          s.stop(
+            error instanceof Error ? error.message : "Authentication failed",
+          );
+          return 1;
         }
       }
 
@@ -377,10 +324,14 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
       }
       const environment = envName;
 
-      // Store credentials after project/env selection
-      if (options?.credentialStore && apiKey !== "skip-auth-key") {
+      // Store credentials after project/env selection so subsequent commands
+      // can resolve the API key from the credential store (per SPEC-008 §101).
+      if (apiKey !== "skip-auth-key") {
+        const credentialStore =
+          options?.credentialStore ??
+          createCredentialStore({ env: context.env });
         const nowIso = new Date().toISOString();
-        await options.credentialStore.setProfile(
+        await credentialStore.setProfile(
           { serverUrl, project, environment },
           {
             authMode: "api_key",
