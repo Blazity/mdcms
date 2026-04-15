@@ -1,6 +1,14 @@
 "use client";
 
 import {
+  autoUpdate,
+  flip,
+  offset,
+  shift,
+  size,
+  useFloating,
+} from "@floating-ui/react-dom";
+import {
   forwardRef,
   useEffect,
   useEffectEvent,
@@ -9,6 +17,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 
 import type { StudioMountContext } from "@mdcms/shared";
 import {
@@ -57,6 +66,7 @@ import {
   updateSelectedMdxComponentProps,
 } from "./mdx-component-selection.js";
 import {
+  createSlashPickerVirtualReference,
   getMdxComponentSlashTrigger,
   getSlashTriggerCoords,
   replaceSlashTriggerWithMdxComponent,
@@ -193,6 +203,49 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
     const editorWrapperRef = useRef<HTMLDivElement | null>(null);
     const pickerSourceRef = useRef(pickerSource);
     pickerSourceRef.current = pickerSource;
+    const slashPickerOpen =
+      pickerSource === "slash" &&
+      slashTrigger !== null &&
+      slashPickerCoords !== null;
+    const {
+      refs: floatingRefs,
+      floatingStyles,
+      update: updateFloating,
+    } = useFloating({
+      open: slashPickerOpen,
+      placement: "bottom-start",
+      strategy: "fixed",
+      whileElementsMounted: autoUpdate,
+      middleware: [
+        offset(8),
+        flip({
+          padding: 12,
+          boundary:
+            editorWrapperRef.current?.closest(
+              '[data-mdcms-editor-pane="canvas"]',
+            ) ?? undefined,
+        }),
+        shift({
+          padding: 12,
+          boundary:
+            editorWrapperRef.current?.closest(
+              '[data-mdcms-editor-pane="canvas"]',
+            ) ?? undefined,
+        }),
+        size({
+          padding: 12,
+          boundary:
+            editorWrapperRef.current?.closest(
+              '[data-mdcms-editor-pane="canvas"]',
+            ) ?? undefined,
+          apply({ availableHeight, elements }) {
+            Object.assign(elements.floating.style, {
+              maxHeight: `${Math.max(availableHeight, 0)}px`,
+            });
+          },
+        }),
+      ],
+    });
     const lastPublishedSelectionRef =
       useRef<PublishedMdxComponentSelectionSnapshot | null>(null);
     const lastEmittedMarkdownRef = useRef<string | null>(null);
@@ -413,6 +466,42 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       syncSlashTrigger(editor);
     }, [catalogComponents, editor, forbidden, isEditorReadOnly, readOnly]);
 
+    useEffect(() => {
+      if (!slashPickerOpen || !slashPickerCoords || !editor || !slashTrigger) {
+        floatingRefs.setReference(null);
+        return;
+      }
+
+      const editorWrapper = editorWrapperRef.current;
+
+      if (!editorWrapper) {
+        floatingRefs.setReference(null);
+        return;
+      }
+
+      const contextElement = editorWrapper;
+
+      floatingRefs.setReference(
+        createSlashPickerVirtualReference({
+          getAnchor: () =>
+            resolveSlashPickerCoordsForEditor({
+              editor,
+              trigger: slashTrigger,
+              container: editorWrapper,
+            }) ?? slashPickerCoords,
+          contextElement,
+        }) as never,
+      );
+      updateFloating();
+    }, [
+      editor,
+      floatingRefs,
+      slashPickerCoords,
+      slashPickerOpen,
+      slashTrigger,
+      updateFloating,
+    ]);
+
     const isActive = (name: string, attributes?: Record<string, unknown>) =>
       editor?.isActive(name, attributes) ?? false;
 
@@ -609,6 +698,26 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       syncSlashTrigger(editor);
     };
 
+    const slashPicker = slashPickerOpen ? (
+      <div
+        ref={floatingRefs.setFloating}
+        data-mdcms-mdx-picker-source="slash"
+        style={{
+          ...floatingStyles,
+          width: "min(28rem, calc(100vw - 24px))",
+          maxHeight: "calc(100vh - 24px)",
+        }}
+        className="z-50 overflow-y-auto"
+      >
+        <MdxComponentPicker
+          components={catalogComponents}
+          query={slashTrigger.query}
+          forbidden={isEditorReadOnly}
+          onSelect={insertSelectedComponent}
+        />
+      </div>
+    ) : null;
+
     return (
       <div ref={editorWrapperRef} className="relative">
         <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-background">
@@ -713,24 +822,9 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           </div>
         </div>
 
-        {pickerSource === "slash" && slashTrigger && slashPickerCoords ? (
-          <div
-            data-mdcms-mdx-picker-source="slash"
-            style={{
-              position: "absolute",
-              top: slashPickerCoords.top,
-              left: slashPickerCoords.left,
-            }}
-            className="z-50 w-72 max-h-80 overflow-y-auto rounded-lg border border-border bg-background shadow-lg"
-          >
-            <MdxComponentPicker
-              components={catalogComponents}
-              query={slashTrigger.query}
-              forbidden={isEditorReadOnly}
-              onSelect={insertSelectedComponent}
-            />
-          </div>
-        ) : null}
+        {slashPicker && typeof document !== "undefined"
+          ? createPortal(slashPicker, document.body)
+          : null}
       </div>
     );
   },

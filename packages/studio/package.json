@@ -76,6 +76,7 @@
   },
   "dependencies": {
     "@elysiajs/eden": "^1.4.8",
+    "@floating-ui/react-dom": "^2.1.8",
     "@fontsource-variable/geist-mono": "^5.2.7",
     "@fontsource-variable/inter": "^5.2.8",
     "@fontsource-variable/space-grotesk": "^5.2.10",

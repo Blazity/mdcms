@@ -69,18 +69,65 @@ export function replaceSlashTriggerWithMdxComponent(
 export type SlashTriggerCoords = {
   top: number;
   left: number;
+  cursorTop: number;
+  cursorBottom: number;
+};
+
+export type SlashPickerVirtualReference = {
+  contextElement?: Element;
+  getBoundingClientRect: () => DOMRect;
 };
 
 export function getSlashTriggerCoords(
-  view: { coordsAtPos: (pos: number) => { top: number; left: number; bottom: number } },
+  view: {
+    coordsAtPos: (pos: number) => { top: number; left: number; bottom: number };
+  },
   trigger: MdxComponentSlashTrigger,
-  container: { getBoundingClientRect: () => { top: number; left: number } },
+  _container?: { getBoundingClientRect: () => { top: number; left: number } },
 ): SlashTriggerCoords {
-  const cursorCoords = view.coordsAtPos(trigger.from);
-  const containerRect = container.getBoundingClientRect();
+  const cursorCoords = view.coordsAtPos(trigger.to);
 
   return {
-    top: cursorCoords.bottom - containerRect.top,
-    left: cursorCoords.left - containerRect.left,
+    top: cursorCoords.bottom,
+    left: cursorCoords.left,
+    cursorTop: cursorCoords.top,
+    cursorBottom: cursorCoords.bottom,
+  };
+}
+
+export function createSlashPickerVirtualReference(input: {
+  getAnchor: () => SlashTriggerCoords;
+  contextElement?: Element | null;
+}): SlashPickerVirtualReference {
+  return {
+    contextElement: input.contextElement ?? undefined,
+    getBoundingClientRect: () => {
+      const anchor = input.getAnchor();
+      const height = Math.max(anchor.cursorBottom - anchor.cursorTop, 0);
+      const left = anchor.left;
+      const top = anchor.cursorTop;
+      const bottom = top + height;
+
+      return {
+        x: left,
+        y: top,
+        top,
+        right: left,
+        bottom,
+        left,
+        width: 0,
+        height,
+        toJSON: () => ({
+          x: left,
+          y: top,
+          top,
+          right: left,
+          bottom,
+          left,
+          width: 0,
+          height,
+        }),
+      } satisfies DOMRect;
+    },
   };
 }

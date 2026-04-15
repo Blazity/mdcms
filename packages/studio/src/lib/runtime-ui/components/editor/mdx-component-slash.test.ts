@@ -6,6 +6,7 @@ import type { StudioMountContext } from "@mdcms/shared";
 import { extractMarkdownFromEditor } from "../../../markdown-pipeline.js";
 import { createDocumentEditor } from "../../../document-editor.js";
 import {
+  createSlashPickerVirtualReference,
   getMdxComponentSlashTrigger,
   getSlashTriggerCoords,
   replaceSlashTriggerWithMdxComponent,
@@ -98,18 +99,80 @@ test("replaceSlashTriggerWithMdxComponent removes the slash token and inserts th
   }
 });
 
-test("getSlashTriggerCoords returns container-relative coordinates", () => {
+test("getSlashTriggerCoords anchors the picker to the current caret position", () => {
   const trigger: MdxComponentSlashTrigger = { query: "Cal", from: 5, to: 9 };
+  let positionRequested = -1;
   const coords = getSlashTriggerCoords(
     {
-      coordsAtPos: (_pos: number) => ({ top: 200, left: 100, bottom: 220 }),
+      coordsAtPos: (pos: number) => {
+        positionRequested = pos;
+
+        return pos === trigger.to
+          ? { top: 200, left: 112, bottom: 220 }
+          : { top: 200, left: 100, bottom: 220 };
+      },
     },
     trigger,
     { getBoundingClientRect: () => ({ top: 50, left: 30 }) },
   );
 
+  assert.equal(positionRequested, trigger.to);
   assert.deepEqual(coords, {
-    top: 170,
-    left: 70,
+    top: 220,
+    left: 112,
+    cursorTop: 200,
+    cursorBottom: 220,
   });
+});
+
+test("createSlashPickerVirtualReference exposes a caret rect and keeps the context element", () => {
+  const contextElement = {} as Element;
+  const reference = createSlashPickerVirtualReference({
+    getAnchor: () => ({
+      top: 220,
+      left: 100,
+      cursorTop: 200,
+      cursorBottom: 220,
+    }),
+    contextElement,
+  });
+  const rect = reference.getBoundingClientRect();
+
+  assert.equal(reference.contextElement, contextElement);
+  assert.deepEqual(rect, {
+    x: 100,
+    y: 200,
+    top: 200,
+    right: 100,
+    bottom: 220,
+    left: 100,
+    width: 0,
+    height: 20,
+    toJSON: rect.toJSON,
+  });
+});
+
+test("createSlashPickerVirtualReference reads the latest anchor on each measurement", () => {
+  let anchor = {
+    top: 220,
+    left: 100,
+    cursorTop: 200,
+    cursorBottom: 220,
+  };
+  const reference = createSlashPickerVirtualReference({
+    getAnchor: () => anchor,
+  });
+
+  assert.deepEqual(reference.getBoundingClientRect().left, 100);
+
+  anchor = {
+    top: 300,
+    left: 148,
+    cursorTop: 280,
+    cursorBottom: 300,
+  };
+
+  assert.deepEqual(reference.getBoundingClientRect().left, 148);
+  assert.deepEqual(reference.getBoundingClientRect().top, 280);
+  assert.deepEqual(reference.getBoundingClientRect().bottom, 300);
 });
