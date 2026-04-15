@@ -449,8 +449,13 @@ export async function runMdcmsCli(
   const fetcher = options.fetcher ?? fetch;
   const confirm = options.confirm ?? defaultConfirmPrompt;
   const multiSelect = options.multiSelect ?? defaultMultiSelectPrompt;
+  const registry = createCommandRegistry(commands);
+  const invocation = parseCliInvocation(argv);
   const runtimeWithModules =
-    options.runtimeWithModules ?? createCliRuntimeContextWithModules(env);
+    options.runtimeWithModules ??
+    createCliRuntimeContextWithModules(env, {
+      verbose: invocation.global.verbose,
+    });
   const credentialStore =
     options.credentialStore ??
     createCredentialStore({
@@ -462,8 +467,6 @@ export async function runMdcmsCli(
       const profile = await credentialStore.getProfile(input);
       return profile?.apiKey;
     });
-  const registry = createCommandRegistry(commands);
-  const invocation = parseCliInvocation(argv);
 
   if (invocation.global.help) {
     stdout.write(renderHelp(commands));
