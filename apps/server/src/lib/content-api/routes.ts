@@ -143,6 +143,14 @@ export function mountContentApiRoutes(
       });
       const groupBy = parseContentListGroupBy(typedQuery.groupBy);
       const resolvedType = typedQuery.type?.trim();
+      await options.authorize(request, {
+        requiredScope,
+        project: scope.project,
+        environment: scope.environment,
+        documentPath:
+          requestedPath && requestedPath.length > 0 ? requestedPath : undefined,
+      });
+
       if (groupBy === "translationGroup") {
         if (!resolvedType) {
           throw new RuntimeError({
@@ -166,13 +174,6 @@ export function mountContentApiRoutes(
           });
         }
       }
-      await options.authorize(request, {
-        requiredScope,
-        project: scope.project,
-        environment: scope.environment,
-        documentPath:
-          requestedPath && requestedPath.length > 0 ? requestedPath : undefined,
-      });
 
       const result = await options.store.list(scope, typedQuery);
       const schemaCache = new Map<

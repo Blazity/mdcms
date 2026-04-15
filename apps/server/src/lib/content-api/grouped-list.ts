@@ -115,12 +115,12 @@ export function groupDocumentsByTranslationGroup(
   const rowsWithSortKeys = [
     ...new Set(input.matchedRows.map((row) => row.translationGroupId)),
   ].map((translationGroupId) => {
+    const matchedGroupRows = input.matchedRows.filter(
+      (row) => row.translationGroupId === translationGroupId,
+    );
     const groupRows =
-      availableGroupRows.get(translationGroupId) ??
-      input.matchedRows.filter(
-        (row) => row.translationGroupId === translationGroupId,
-      );
-    const representative = pickRepresentativeDocument(groupRows, {
+      availableGroupRows.get(translationGroupId) ?? matchedGroupRows;
+    const representative = pickRepresentativeDocument(matchedGroupRows, {
       defaultLocale: input.defaultLocale,
       supportedLocales: input.supportedLocales,
     });

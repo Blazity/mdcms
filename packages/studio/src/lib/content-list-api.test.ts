@@ -193,7 +193,7 @@ test("list passes translation-group grouping as a query param", async () => {
     type: "BlogPost",
     limit: 5,
     groupBy: "translationGroup",
-  } as never);
+  });
 
   const url = new URL(String(calls[0]?.input));
   assert.equal(url.searchParams.get("groupBy"), "translationGroup");

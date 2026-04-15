@@ -448,9 +448,7 @@ export default function ContentTypePage() {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">{typeName}</h1>
           {capabilities.canCreateContent && schemaEntry && (
-            <Button
-              onClick={create.open}
-            >
+            <Button onClick={create.open}>
               <Plus className="mr-2 h-4 w-4" />
               New Document
             </Button>
@@ -580,9 +578,7 @@ export default function ContentTypePage() {
               Create your first {typeName} document to get started.
             </p>
             {capabilities.canCreateContent && schemaEntry && (
-              <Button
-                onClick={create.open}
-              >
+              <Button onClick={create.open}>
                 <Plus className="mr-2 h-4 w-4" />
                 New Document
               </Button>
@@ -654,7 +650,7 @@ export default function ContentTypePage() {
                             <Avatar className="h-6 w-6">
                               <AvatarFallback className="text-xs">
                                 {deriveAuthorInitials(
-                                  list.users[doc.createdBy]?.email,
+                                  list.users[doc.updatedBy]?.email,
                                 )}
                               </AvatarFallback>
                             </Avatar>

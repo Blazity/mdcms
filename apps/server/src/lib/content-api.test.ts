@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "bun:test";
+import { RuntimeError } from "@mdcms/shared";
 
 import {
   createInMemoryContentStore,
@@ -307,6 +308,70 @@ test("content API rejects translation group grouping for non-localized types", a
   assert.equal(body.code, "INVALID_QUERY_PARAM");
   assert.equal(body.details?.field, "groupBy");
   assert.equal(body.details?.value, "translationGroup");
+});
+
+test("content API authorizes list reads before validating translation grouping", async () => {
+  let schemaReads = 0;
+  const store = createInMemoryContentStore({
+    schemaScopes: [
+      {
+        project: scopeHeaders["x-mdcms-project"],
+        environment: scopeHeaders["x-mdcms-environment"],
+        schemas: {
+          SettingsPage: {
+            type: "SettingsPage",
+            directory: "content/settings",
+            localized: false,
+            fields: {},
+          },
+        },
+      },
+    ],
+  });
+  const rawHandler = createServerRequestHandler({
+    env: baseEnv,
+    configureApp: (app) => {
+      mountContentApiRoutes(app, {
+        store: {
+          ...store,
+          async getSchema(scope, type) {
+            schemaReads += 1;
+            return store.getSchema(scope, type);
+          },
+        },
+        authorize: async () => {
+          throw new RuntimeError({
+            code: "FORBIDDEN",
+            message: "Forbidden",
+            statusCode: 403,
+          });
+        },
+        requireCsrf: async () => undefined,
+        getWriteSchemaSyncState: async () => ({
+          schemaHash: inMemorySchemaHash,
+        }),
+      });
+    },
+    now: () => new Date("2026-03-02T10:00:00.000Z"),
+  });
+  const handler = wrapHandlerWithAutoSchemaHash(
+    rawHandler,
+    () => inMemorySchemaHash,
+  );
+
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/content?draft=true&type=SettingsPage&groupBy=translationGroup",
+      {
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const body = (await response.json()) as { code: string };
+
+  assert.equal(response.status, 403);
+  assert.equal(body.code, "FORBIDDEN");
+  assert.equal(schemaReads, 0);
 });
 
 test("content API overview returns metadata-only counts per type using content:read scope", async () => {
