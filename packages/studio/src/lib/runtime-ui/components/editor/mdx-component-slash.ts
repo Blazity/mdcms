@@ -96,39 +96,38 @@ export function getSlashTriggerCoords(
 }
 
 export function createSlashPickerVirtualReference(input: {
-  anchor: SlashTriggerCoords;
+  getAnchor: () => SlashTriggerCoords;
   contextElement?: Element | null;
 }): SlashPickerVirtualReference {
-  const height = Math.max(
-    input.anchor.cursorBottom - input.anchor.cursorTop,
-    0,
-  );
-  const left = input.anchor.left;
-  const top = input.anchor.cursorTop;
-  const bottom = top + height;
-  const rect = {
-    x: left,
-    y: top,
-    top,
-    right: left,
-    bottom,
-    left,
-    width: 0,
-    height,
-    toJSON: () => ({
-      x: left,
-      y: top,
-      top,
-      right: left,
-      bottom,
-      left,
-      width: 0,
-      height,
-    }),
-  } satisfies DOMRect;
-
   return {
     contextElement: input.contextElement ?? undefined,
-    getBoundingClientRect: () => rect,
+    getBoundingClientRect: () => {
+      const anchor = input.getAnchor();
+      const height = Math.max(anchor.cursorBottom - anchor.cursorTop, 0);
+      const left = anchor.left;
+      const top = anchor.cursorTop;
+      const bottom = top + height;
+
+      return {
+        x: left,
+        y: top,
+        top,
+        right: left,
+        bottom,
+        left,
+        width: 0,
+        height,
+        toJSON: () => ({
+          x: left,
+          y: top,
+          top,
+          right: left,
+          bottom,
+          left,
+          width: 0,
+          height,
+        }),
+      } satisfies DOMRect;
+    },
   };
 }

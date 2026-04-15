@@ -128,12 +128,12 @@ test("getSlashTriggerCoords anchors the picker to the current caret position", (
 test("createSlashPickerVirtualReference exposes a caret rect and keeps the context element", () => {
   const contextElement = {} as Element;
   const reference = createSlashPickerVirtualReference({
-    anchor: {
+    getAnchor: () => ({
       top: 220,
       left: 100,
       cursorTop: 200,
       cursorBottom: 220,
-    },
+    }),
     contextElement,
   });
   const rect = reference.getBoundingClientRect();
@@ -150,4 +150,29 @@ test("createSlashPickerVirtualReference exposes a caret rect and keeps the conte
     height: 20,
     toJSON: rect.toJSON,
   });
+});
+
+test("createSlashPickerVirtualReference reads the latest anchor on each measurement", () => {
+  let anchor = {
+    top: 220,
+    left: 100,
+    cursorTop: 200,
+    cursorBottom: 220,
+  };
+  const reference = createSlashPickerVirtualReference({
+    getAnchor: () => anchor,
+  });
+
+  assert.deepEqual(reference.getBoundingClientRect().left, 100);
+
+  anchor = {
+    top: 300,
+    left: 148,
+    cursorTop: 280,
+    cursorBottom: 300,
+  };
+
+  assert.deepEqual(reference.getBoundingClientRect().left, 148);
+  assert.deepEqual(reference.getBoundingClientRect().top, 280);
+  assert.deepEqual(reference.getBoundingClientRect().bottom, 300);
 });

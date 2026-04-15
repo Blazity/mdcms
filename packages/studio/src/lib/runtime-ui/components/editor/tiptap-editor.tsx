@@ -451,19 +451,42 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
     }, [catalogComponents, editor, forbidden, isEditorReadOnly, readOnly]);
 
     useEffect(() => {
-      if (!slashPickerOpen || !slashPickerCoords) {
+      if (!slashPickerOpen || !slashPickerCoords || !editor || !slashTrigger) {
         floatingRefs.setReference(null);
         return;
       }
 
+      const editorWrapper = editorWrapperRef.current;
+
+      if (!editorWrapper) {
+        floatingRefs.setReference(null);
+        return;
+      }
+
+      const contextElement =
+        editorWrapper.closest('[data-mdcms-editor-pane="canvas"]') ??
+        editorWrapper;
+
       floatingRefs.setReference(
         createSlashPickerVirtualReference({
-          anchor: slashPickerCoords,
-          contextElement: editorWrapperRef.current,
+          getAnchor: () =>
+            resolveSlashPickerCoordsForEditor({
+              editor,
+              trigger: slashTrigger,
+              container: editorWrapper,
+            }) ?? slashPickerCoords,
+          contextElement,
         }) as never,
       );
       updateFloating();
-    }, [floatingRefs, slashPickerCoords, slashPickerOpen, updateFloating]);
+    }, [
+      editor,
+      floatingRefs,
+      slashPickerCoords,
+      slashPickerOpen,
+      slashTrigger,
+      updateFloating,
+    ]);
 
     const isActive = (name: string, attributes?: Record<string, unknown>) =>
       editor?.isActive(name, attributes) ?? false;
