@@ -5,6 +5,7 @@ import {
   useEffect,
   useEffectEvent,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -58,9 +59,11 @@ import {
 } from "./mdx-component-selection.js";
 import {
   getMdxComponentSlashTrigger,
+  getSlashPickerLayout,
   getSlashTriggerCoords,
   replaceSlashTriggerWithMdxComponent,
   type MdxComponentSlashTrigger,
+  type SlashPickerLayout,
   type SlashTriggerCoords,
 } from "./mdx-component-slash.js";
 import { Button } from "../ui/button.js";
@@ -190,7 +193,10 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       useState<MdxComponentSlashTrigger | null>(null);
     const [slashPickerCoords, setSlashPickerCoords] =
       useState<SlashTriggerCoords | null>(null);
+    const [slashPickerLayout, setSlashPickerLayout] =
+      useState<SlashPickerLayout | null>(null);
     const editorWrapperRef = useRef<HTMLDivElement | null>(null);
+    const slashPickerRef = useRef<HTMLDivElement | null>(null);
     const pickerSourceRef = useRef(pickerSource);
     pickerSourceRef.current = pickerSource;
     const lastPublishedSelectionRef =
@@ -235,6 +241,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           );
         } else {
           setSlashPickerCoords(null);
+          setSlashPickerLayout(null);
         }
       },
     );
@@ -412,6 +419,37 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       publishSelectedMdxComponent(editor);
       syncSlashTrigger(editor);
     }, [catalogComponents, editor, forbidden, isEditorReadOnly, readOnly]);
+
+    useLayoutEffect(() => {
+      if (
+        pickerSource !== "slash" ||
+        !slashTrigger ||
+        !slashPickerCoords ||
+        !editorWrapperRef.current ||
+        !slashPickerRef.current
+      ) {
+        setSlashPickerLayout(null);
+        return;
+      }
+
+      const pickerRect = slashPickerRef.current.getBoundingClientRect();
+      const wrapperRect = editorWrapperRef.current.getBoundingClientRect();
+
+      setSlashPickerLayout(
+        getSlashPickerLayout({
+          anchor: slashPickerCoords,
+          pickerSize: {
+            width: pickerRect.width,
+            height: pickerRect.height,
+          },
+          containerRect: wrapperRect,
+          viewportSize: {
+            width: window.innerWidth,
+            height: window.innerHeight,
+          },
+        }),
+      );
+    }, [pickerSource, slashPickerCoords, slashTrigger]);
 
     const isActive = (name: string, attributes?: Record<string, unknown>) =>
       editor?.isActive(name, attributes) ?? false;
@@ -715,13 +753,19 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
 
         {pickerSource === "slash" && slashTrigger && slashPickerCoords ? (
           <div
+            ref={slashPickerRef}
             data-mdcms-mdx-picker-source="slash"
             style={{
               position: "absolute",
-              top: slashPickerCoords.top,
-              left: slashPickerCoords.left,
+              top: (slashPickerLayout ?? slashPickerCoords).top,
+              left: (slashPickerLayout ?? slashPickerCoords).left,
+              width: "min(28rem, calc(100vw - 24px))",
+              maxHeight:
+                slashPickerLayout !== null
+                  ? `${slashPickerLayout.maxHeight}px`
+                  : "calc(100vh - 24px)",
             }}
-            className="z-50 w-72 max-h-80 overflow-y-auto rounded-lg border border-border bg-background shadow-lg"
+            className="z-50 overflow-y-auto"
           >
             <MdxComponentPicker
               components={catalogComponents}

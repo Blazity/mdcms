@@ -7,6 +7,7 @@ import { extractMarkdownFromEditor } from "../../../markdown-pipeline.js";
 import { createDocumentEditor } from "../../../document-editor.js";
 import {
   getMdxComponentSlashTrigger,
+  getSlashPickerLayout,
   getSlashTriggerCoords,
   replaceSlashTriggerWithMdxComponent,
 } from "./mdx-component-slash.js";
@@ -111,5 +112,69 @@ test("getSlashTriggerCoords returns container-relative coordinates", () => {
   assert.deepEqual(coords, {
     top: 170,
     left: 70,
+    cursorTop: 150,
+    cursorBottom: 170,
+  });
+});
+
+test("getSlashPickerLayout clamps horizontal overflow and flips above the trigger when needed", () => {
+  const layout = getSlashPickerLayout({
+    anchor: {
+      top: 300,
+      left: 260,
+      cursorTop: 280,
+      cursorBottom: 300,
+    },
+    pickerSize: {
+      width: 240,
+      height: 180,
+    },
+    containerRect: {
+      top: 100,
+      left: 40,
+      width: 320,
+      height: 500,
+    },
+    viewportSize: {
+      width: 360,
+      height: 420,
+    },
+  });
+
+  assert.deepEqual(layout, {
+    top: 92,
+    left: 68,
+    maxHeight: 360,
+  });
+});
+
+test("getSlashPickerLayout keeps the picker below the trigger and caps height when neither side fits fully", () => {
+  const layout = getSlashPickerLayout({
+    anchor: {
+      top: 80,
+      left: 40,
+      cursorTop: 60,
+      cursorBottom: 80,
+    },
+    pickerSize: {
+      width: 220,
+      height: 200,
+    },
+    containerRect: {
+      top: 20,
+      left: 20,
+      width: 320,
+      height: 500,
+    },
+    viewportSize: {
+      width: 360,
+      height: 260,
+    },
+  });
+
+  assert.deepEqual(layout, {
+    top: 88,
+    left: 40,
+    maxHeight: 140,
   });
 });

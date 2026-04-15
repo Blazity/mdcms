@@ -69,10 +69,23 @@ export function replaceSlashTriggerWithMdxComponent(
 export type SlashTriggerCoords = {
   top: number;
   left: number;
+  cursorTop: number;
+  cursorBottom: number;
 };
 
+export type SlashPickerLayout = {
+  top: number;
+  left: number;
+  maxHeight: number;
+};
+
+const SLASH_PICKER_VIEWPORT_GUTTER = 12;
+const SLASH_PICKER_TRIGGER_GAP = 8;
+
 export function getSlashTriggerCoords(
-  view: { coordsAtPos: (pos: number) => { top: number; left: number; bottom: number } },
+  view: {
+    coordsAtPos: (pos: number) => { top: number; left: number; bottom: number };
+  },
   trigger: MdxComponentSlashTrigger,
   container: { getBoundingClientRect: () => { top: number; left: number } },
 ): SlashTriggerCoords {
@@ -82,5 +95,74 @@ export function getSlashTriggerCoords(
   return {
     top: cursorCoords.bottom - containerRect.top,
     left: cursorCoords.left - containerRect.left,
+    cursorTop: cursorCoords.top - containerRect.top,
+    cursorBottom: cursorCoords.bottom - containerRect.top,
   };
+}
+
+export function getSlashPickerLayout(input: {
+  anchor: SlashTriggerCoords;
+  pickerSize: { width: number; height: number };
+  containerRect: { top: number; left: number; width: number; height: number };
+  viewportSize: { width: number; height: number };
+  gutter?: number;
+  gap?: number;
+}): SlashPickerLayout {
+  const gutter = input.gutter ?? SLASH_PICKER_VIEWPORT_GUTTER;
+  const gap = input.gap ?? SLASH_PICKER_TRIGGER_GAP;
+  const availableBelow = Math.max(
+    input.viewportSize.height -
+      gutter -
+      (input.containerRect.top + input.anchor.cursorBottom + gap),
+    0,
+  );
+  const availableAbove = Math.max(
+    input.containerRect.top + input.anchor.cursorTop - gap - gutter,
+    0,
+  );
+  const minLeft = gutter - input.containerRect.left;
+  const maxLeft =
+    input.viewportSize.width -
+    gutter -
+    input.containerRect.left -
+    input.pickerSize.width;
+  const left =
+    maxLeft >= minLeft ? clamp(input.anchor.left, minLeft, maxLeft) : minLeft;
+
+  if (input.pickerSize.height <= availableBelow) {
+    return {
+      top: input.anchor.cursorBottom + gap,
+      left,
+      maxHeight: availableBelow,
+    };
+  }
+
+  if (input.pickerSize.height <= availableAbove) {
+    return {
+      top: input.anchor.cursorTop - gap - input.pickerSize.height,
+      left,
+      maxHeight: availableAbove,
+    };
+  }
+
+  if (availableBelow >= availableAbove) {
+    return {
+      top: input.anchor.cursorBottom + gap,
+      left,
+      maxHeight: availableBelow,
+    };
+  }
+
+  return {
+    top: Math.max(
+      gutter - input.containerRect.top,
+      input.anchor.cursorTop - gap - availableAbove,
+    ),
+    left,
+    maxHeight: availableAbove,
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }
