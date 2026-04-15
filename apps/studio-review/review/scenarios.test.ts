@@ -25,3 +25,12 @@ test("review owner scenario exposes staging-only editor fields in the schema fix
     "title",
   ]);
 });
+
+test("review scenarios keep Callout markdown aligned with the prepared MDX prop contract", () => {
+  const owner = getReviewScenario("owner");
+
+  assert.match(owner.document.body, /<Callout tone="info">/);
+  assert.doesNotMatch(owner.document.body, /<Callout type="info">/);
+  assert.match(owner.versions[1]!.body, /<Callout tone="info">/);
+  assert.doesNotMatch(owner.versions[1]!.body, /<Callout type="info">/);
+});

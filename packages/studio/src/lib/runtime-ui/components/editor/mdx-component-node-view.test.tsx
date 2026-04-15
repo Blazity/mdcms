@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   createMdxComponentPreviewProps,
+  formatMdxComponentPropsSummary,
   MdxComponentNodeFrame,
 } from "./mdx-component-node-view.js";
 
@@ -30,6 +31,7 @@ test("MdxComponentNodeFrame renders wrapper component chrome with nested slot", 
   assert.match(markup, />Callout</);
   assert.match(markup, /type=&quot;warning&quot;/);
   assert.match(markup, /data-test-slot="children"/);
+  assert.doesNotMatch(markup, />Wrapper</);
 });
 
 test("MdxComponentNodeFrame renders void component chrome without child slot", () => {
@@ -48,6 +50,12 @@ test("MdxComponentNodeFrame renders void component chrome without child slot", (
   assert.match(markup, /Local preview unavailable/);
   assert.match(markup, /Self-closing component/);
   assert.doesNotMatch(markup, /data-test-slot="children"/);
+  assert.doesNotMatch(markup, />Void</);
+});
+
+test("formatMdxComponentPropsSummary distinguishes empty props from non-editable components", () => {
+  assert.equal(formatMdxComponentPropsSummary({}), "No props set yet");
+  assert.equal(formatMdxComponentPropsSummary(undefined), "No props set yet");
 });
 
 test("createMdxComponentPreviewProps injects wrapper children into preview props", () => {
@@ -67,7 +75,7 @@ test("createMdxComponentPreviewProps injects wrapper children into preview props
   assert.match(markup, /<strong>Body<\/strong>/);
 });
 
-test("MdxComponentNodeFrame renders 'Content' label for wrapper components", () => {
+test("MdxComponentNodeFrame renders 'Inner content' guidance for wrapper components", () => {
   const markup = renderToStaticMarkup(
     createElement(
       MdxComponentNodeFrame,
@@ -82,7 +90,8 @@ test("MdxComponentNodeFrame renders 'Content' label for wrapper components", () 
   );
 
   assert.match(markup, /data-mdcms-mdx-content-label="Callout"/);
-  assert.match(markup, />Content</);
+  assert.match(markup, />Inner content</);
+  assert.match(markup, /Edit nested markdown directly in this block/);
 });
 
 test("MdxComponentNodeFrame does not render content label for void components", () => {

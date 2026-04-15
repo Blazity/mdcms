@@ -7,7 +7,6 @@ import {
   type PropsEditorChangeHandler,
   type PropsEditorValue,
 } from "../../../mdx-props-editor-host.js";
-import { Badge } from "../ui/badge.js";
 import { getMdxComponentKind } from "./mdx-component-catalog.js";
 
 type MdxCatalogComponent = NonNullable<
@@ -67,21 +66,11 @@ export function MdxPropsPanel({
 
   return (
     <section data-mdcms-mdx-props-panel={component.name} className="space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <p className="text-sm font-medium text-foreground">
-            MDX component props
-          </p>
-          <p className="text-xs text-foreground-muted">Selected component</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-[10px]">
-            {kind === "wrapper" ? "Wrapper" : "Void"}
-          </Badge>
-          <Badge variant="outline" className="text-[10px]">
-            {component.propsEditor ? "Custom" : "Auto"}
-          </Badge>
-        </div>
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-foreground">
+          MDX component props
+        </p>
+        <p className="text-xs text-foreground-muted">Selected component</p>
       </div>
 
       <div className="space-y-1">
@@ -89,6 +78,16 @@ export function MdxPropsPanel({
         {component.description ? (
           <p className="text-xs text-foreground-muted">
             {component.description}
+          </p>
+        ) : null}
+        {kind === "wrapper" ? (
+          <p
+            data-mdcms-mdx-wrapper-guidance={component.name}
+            className="text-xs text-foreground-muted"
+          >
+            Wrapper content lives in the editor canvas. Use the inner content
+            area in the component block to edit nested markdown; this panel only
+            covers top-level props.
           </p>
         ) : null}
       </div>

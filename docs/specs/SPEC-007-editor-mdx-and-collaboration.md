@@ -447,9 +447,13 @@ The custom props editor host supports these states:
   shows a non-interactive loading state.
 - `ready`: resolution succeeds with an executable editor component; the runtime
   mounts it and passes `value`, `onChange`, and `readOnly`.
+- `content-only`: no top-level prop controls are available, but the component
+  exposes nested rich-text `children`; the props panel points the author to the
+  wrapper block's inline content area instead of implying the component is not
+  editable.
 - `empty`: resolution returns `null` and no fallback auto-generated controls
-  are available; the props panel shows that the component has no editable
-  props.
+  are available, and the component has no nested rich-text editing surface; the
+  props panel shows that the component has no editable props.
 - `error`: resolution rejects, or the resolved editor fails during initial
   render; the props panel shows an error state and does not silently switch to
   a different editor mode.
@@ -462,12 +466,16 @@ The custom props editor host supports these states:
 Components that accept `children` (content between opening and closing tags) are treated specially:
 
 ```mdx
-<Callout type="warning">
+<Callout tone="warning">
   This is **important** markdown content inside the component.
 </Callout>
 ```
 
 In the editor, the children area is a **nested TipTap rich text editor** within the component's node view. This means content editors can use full markdown formatting (bold, links, lists, etc.) inside component blocks, and it participates in the Yjs collaboration session.
+
+Wrapper component chrome and the props panel must make this distinction clear:
+top-level props remain in the side panel, while nested markdown content is
+edited directly inside the component block in the canvas.
 
 ### Editor Integration (Node Views)
 
@@ -495,7 +503,7 @@ All registered MDX components share this single node type, differentiated by the
 **Insertion:**
 
 1. User opens the component insertion panel (toolbar button or `/` slash command).
-2. Panel lists all registered components from the local catalog with names and descriptions.
+2. Panel lists all registered components from the local catalog with names and descriptions. When opened from `/`, the picker is positioned inline near the active cursor location instead of docking at the top of the editor.
 3. User selects a component.
 4. The component is inserted into the document as a node view block.
 5. Props form appears (auto-generated or custom editor) for initial configuration.

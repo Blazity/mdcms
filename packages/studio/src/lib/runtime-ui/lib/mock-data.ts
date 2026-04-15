@@ -115,7 +115,7 @@ function createMockDocumentBody(title: string): string {
     "",
     '<HeroBanner title="Launch" />',
     "",
-    '<Callout type="warning">',
+    '<Callout tone="warning">',
     "Review this section before publishing.",
     "</Callout>",
   ].join("\n");

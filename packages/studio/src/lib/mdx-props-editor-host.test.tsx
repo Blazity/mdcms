@@ -9,6 +9,7 @@ import {
   createInitialMdxPropsEditorHostState,
   createMdxPropsEditorBindings,
   MdxPropsEditorHost,
+  renderReadyMdxPropsEditor,
   resolveMdxPropsEditorHostState,
   type PropsEditorComponentProps,
 } from "./mdx-props-editor-host.js";
@@ -154,6 +155,23 @@ test("resolveMdxPropsEditorHostState returns empty when no editor or auto-form c
   });
 });
 
+test("resolveMdxPropsEditorHostState returns content-only for wrapper components whose editable surface is nested children", async () => {
+  const state = await resolveMdxPropsEditorHostState({
+    component: createComponent({
+      name: "Callout",
+      extractedProps: {
+        children: { type: "rich-text", required: false },
+      },
+    }),
+    context: createContext(async () => null),
+    readOnly: false,
+  });
+
+  assert.deepEqual(state, {
+    status: "content-only",
+  });
+});
+
 test("resolveMdxPropsEditorHostState returns error when the custom editor resolver rejects", async () => {
   const state = await resolveMdxPropsEditorHostState({
     component: createComponent({
@@ -251,4 +269,66 @@ test("MdxPropsEditorHost renders interactive auto-form controls for fallback pro
   assert.match(markup, /type="checkbox"/);
   assert.match(markup, /data-mdcms-mdx-auto-control="Chart:variant:select"/);
   assert.match(markup, /<select/);
+});
+
+test("MdxPropsEditorHost renders compact type hints for generated auto-form fields", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MdxPropsEditorHost, {
+      component: createComponent({
+        propHints: {
+          color: { widget: "color-picker" },
+        },
+        extractedProps: {
+          data: { type: "array", required: true, items: "number" },
+          type: {
+            type: "enum",
+            required: true,
+            values: ["bar", "line", "pie"],
+          },
+          title: { type: "string", required: false },
+          color: { type: "string", required: false },
+        },
+      }),
+      context: createContext(async () => null),
+      value: {},
+      onChange: () => {},
+    }),
+  );
+
+  assert.match(markup, /data-mdcms-mdx-auto-field-hint="Chart:data"/);
+  assert.match(markup, />number\[\]</);
+  assert.match(markup, /data-mdcms-mdx-auto-field-hint="Chart:type"/);
+  assert.match(markup, />bar \| line \| pie</);
+  assert.match(markup, /data-mdcms-mdx-auto-field-hint="Chart:title"/);
+  assert.match(markup, />string</);
+  assert.match(markup, /data-mdcms-mdx-auto-field-hint="Chart:color"/);
+  assert.match(markup, />color</);
+});
+
+test("renderReadyMdxPropsEditor keeps diagnostics out of the visible custom editor surface", () => {
+  const markup = renderToStaticMarkup(
+    createElement(
+      "section",
+      null,
+      renderReadyMdxPropsEditor({
+        componentName: "PricingTable",
+        editor: (_props: PropsEditorComponentProps) =>
+          createElement(
+            "div",
+            { "data-test-editor": "PricingTable" },
+            "Editor",
+          ),
+        bindings: {
+          value: {},
+          readOnly: false,
+          onChange: () => {},
+        },
+      }),
+    ),
+  );
+
+  assert.match(markup, /data-mdcms-mdx-props-editor-surface="PricingTable"/);
+  assert.match(markup, /data-test-editor="PricingTable"/);
+  assert.doesNotMatch(markup, /Custom editor ready/);
+  assert.doesNotMatch(markup, />Custom editor</);
 });

@@ -88,7 +88,7 @@ const defaultContent = `
 
 This is a sample markdown document created in MDCMS Studio.
 
-<Callout type="warning">
+<Callout tone="warning">
 This is **important** nested markdown content inside an MDX wrapper component.
 
 - First point
@@ -147,6 +147,24 @@ export function createTipTapEditorDependencies(input: {
   // excluded from the recreation key, but node views must still refresh when
   // the host bridge or editor access mode changes.
   return [input.placeholder, input.hostBridge, input.readOnly, input.forbidden];
+}
+
+export function resolveSlashPickerCoordsForEditor(input: {
+  editor: {
+    view: Parameters<typeof getSlashTriggerCoords>[0];
+  };
+  trigger: MdxComponentSlashTrigger;
+  container: Parameters<typeof getSlashTriggerCoords>[2];
+}): SlashTriggerCoords | null {
+  try {
+    return getSlashTriggerCoords(
+      input.editor.view,
+      input.trigger,
+      input.container,
+    );
+  } catch {
+    return null;
+  }
 }
 
 export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
@@ -209,11 +227,11 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
 
         if (nextTrigger && editorWrapperRef.current) {
           setSlashPickerCoords(
-            getSlashTriggerCoords(
-              nextEditor.view,
-              nextTrigger,
-              editorWrapperRef.current,
-            ),
+            resolveSlashPickerCoordsForEditor({
+              editor: nextEditor,
+              trigger: nextTrigger,
+              container: editorWrapperRef.current,
+            }),
           );
         } else {
           setSlashPickerCoords(null);
@@ -309,10 +327,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             "data-placeholder": placeholder,
           },
           handleKeyDown: (_view, event) => {
-            if (
-              event.key === "Escape" &&
-              pickerSourceRef.current === "slash"
-            ) {
+            if (event.key === "Escape" && pickerSourceRef.current === "slash") {
               setPickerSource(null);
               setSlashTrigger(null);
               setSlashPickerCoords(null);
@@ -652,9 +667,14 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
                     type="button"
                     variant="ghost"
                     size="sm"
-                    disabled={item.availability !== "enabled" || isEditorReadOnly}
+                    disabled={
+                      item.availability !== "enabled" || isEditorReadOnly
+                    }
                     onClick={() => {
-                      if (item.availability === "enabled" && !isEditorReadOnly) {
+                      if (
+                        item.availability === "enabled" &&
+                        !isEditorReadOnly
+                      ) {
                         triggerToolbarItem(item.id);
                       }
                     }}

@@ -382,18 +382,23 @@ Normative behavior:
   to that mutable head snapshot.
 - The primary canvas edits the document `body` through the editor engine owned
   by SPEC-007.
-- The right sidebar exposes three tabs in this order:
+- The right sidebar exposes these tabs in order:
   - `Info` for document system metadata
   - `Properties` for schema-driven frontmatter editing
+  - `Component` for the currently selected MDX component props
   - `History` for publish history and version comparison
+- `Component` appears only while an MDX component node is selected in the
+  editor canvas. Selecting a component switches the sidebar to that tab.
 - `Properties` is dedicated to schema-derived frontmatter fields for the
   current type in the active environment.
 - `Properties` does not render document system metadata such as `status`,
   `publishedVersion`, `locale`, `updatedAt`, or `path`.
+- `Properties` does not render MDX component prop editors.
 - `Info` shows the existing read-only document metadata (`status`,
   `publishedVersion`, `locale`, `updatedAt`, `path`).
 - The default selected sidebar tab is `Properties` even though `Info` appears
-  first in the tab strip.
+  first in the tab strip unless an MDX component is actively selected, in which
+  case `Component` becomes the selected tab.
 - Frontmatter controls are derived from the live resolved schema. Studio must
   not ship hard-coded per-type property forms for routed document editing.
 - Every property row shows an always-visible compact type label derived from

@@ -36,6 +36,7 @@ export type MdxPropsEditorHostState =
   | { status: "loading" }
   | { status: "ready"; editor: PropsEditorComponent }
   | { status: "auto-form"; fields: MdxAutoFormField[] }
+  | { status: "content-only" }
   | { status: "empty" }
   | { status: "error"; message: string }
   | { status: "forbidden" };
@@ -247,20 +248,11 @@ export function MdxPropsEditorHost({
 
       return (
         <PropsEditorRenderBoundary componentName={component.name}>
-          <>
-            <span data-mdcms-mdx-props-editor-state={`${component.name}:ready`}>
-              Custom editor ready.
-            </span>
-            <span data-mdcms-mdx-props-editor={component.name}>
-              Custom editor
-            </span>
-            <div data-mdcms-mdx-props-editor-surface={component.name}>
-              {createElement(
-                state.editor as PropsEditorComponent<PropsEditorValue>,
-                bindings,
-              )}
-            </div>
-          </>
+          {renderReadyMdxPropsEditor({
+            componentName: component.name,
+            editor: state.editor as PropsEditorComponent<PropsEditorValue>,
+            bindings,
+          })}
         </PropsEditorRenderBoundary>
       );
     }
@@ -276,6 +268,15 @@ export function MdxPropsEditorHost({
       return (
         <span data-mdcms-mdx-props-editor-state={`${component.name}:empty`}>
           No editable props.
+        </span>
+      );
+    case "content-only":
+      return (
+        <span
+          data-mdcms-mdx-props-editor-state={`${component.name}:content-only`}
+        >
+          This wrapper component is edited through its nested content block in
+          the editor canvas.
         </span>
       );
     case "error":
@@ -307,7 +308,34 @@ function createFallbackState(
 
   return fields.length > 0
     ? { status: "auto-form", fields }
-    : { status: "empty" };
+    : hasNestedRichTextChildren(component)
+      ? { status: "content-only" }
+      : { status: "empty" };
+}
+
+export function renderReadyMdxPropsEditor(input: {
+  componentName: string;
+  editor: PropsEditorComponent<PropsEditorValue>;
+  bindings: PropsEditorComponentProps<PropsEditorValue>;
+}): ReactNode {
+  return (
+    <>
+      <span
+        hidden
+        data-mdcms-mdx-props-editor-state={`${input.componentName}:ready`}
+      />
+      <span hidden data-mdcms-mdx-props-editor={input.componentName} />
+      <div data-mdcms-mdx-props-editor-surface={input.componentName}>
+        {createElement(input.editor, input.bindings)}
+      </div>
+    </>
+  );
+}
+
+function hasNestedRichTextChildren(component: MdxCatalogComponent): boolean {
+  return (
+    component.extractedProps?.[MDX_CHILDREN_PROP_NAME]?.type === "rich-text"
+  );
 }
 
 function renderAutoFormFields(
@@ -326,12 +354,20 @@ function renderAutoFormFields(
         >
           <label
             htmlFor={getAutoFormFieldId(componentName, field.name)}
-            className="block text-xs font-medium text-foreground"
+            className="flex items-baseline gap-1.5 text-xs font-medium text-foreground"
           >
-            {field.name}
-            {field.required ? (
-              <span className="ml-1 text-destructive">*</span>
-            ) : null}
+            <span>
+              {field.name}
+              {field.required ? (
+                <span className="ml-1 text-destructive">*</span>
+              ) : null}
+            </span>
+            <span
+              data-mdcms-mdx-auto-field-hint={`${componentName}:${field.name}`}
+              className="font-mono text-[10px] text-foreground-muted"
+            >
+              {formatAutoFormFieldTypeHint(field)}
+            </span>
           </label>
           {renderAutoFormFieldControl({
             componentName,
@@ -601,6 +637,48 @@ function renderAutoFormFieldControl(input: {
 
 function getAutoFormFieldId(componentName: string, fieldName: string): string {
   return `${componentName}-${fieldName}`.replace(/[^A-Za-z0-9_-]/g, "-");
+}
+
+function formatAutoFormFieldTypeHint(field: MdxAutoFormField): string {
+  switch (field.control) {
+    case "text":
+    case "textarea":
+      return "string";
+    case "url":
+      return "url";
+    case "color-picker":
+      return "color";
+    case "number":
+    case "slider":
+      return "number";
+    case "boolean":
+      return "boolean";
+    case "image":
+      return "image";
+    case "string-list":
+      return "string[]";
+    case "number-list":
+      return "number[]";
+    case "date":
+      return "date";
+    case "json":
+      return "JSON";
+    case "rich-text":
+      return "rich text";
+    case "select":
+      return formatAutoFormSelectTypeHint(field.options);
+  }
+}
+
+function formatAutoFormSelectTypeHint(
+  options: Extract<MdxAutoFormField, { control: "select" }>["options"],
+): string {
+  const labels = options.map((option) => getAutoFormSelectOptionLabel(option));
+  const compactLabel = labels.join(" | ");
+
+  return labels.length > 0 && labels.length <= 4 && compactLabel.length <= 32
+    ? compactLabel
+    : "enum";
 }
 
 function getAutoFormInputType(

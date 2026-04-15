@@ -13,9 +13,8 @@ import type { ReactNodeViewProps } from "@tiptap/react";
 import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
 
 import { isMdxExpressionValue } from "../../../mdx-component-extension.js";
-import { Badge } from "../ui/badge.js";
 
-function formatPropsSummary(
+export function formatMdxComponentPropsSummary(
   props: Record<string, unknown> | undefined,
 ): string {
   const entries = Object.entries(props ?? {}).filter(
@@ -23,7 +22,7 @@ function formatPropsSummary(
   );
 
   if (entries.length === 0) {
-    return "No props";
+    return "No props set yet";
   }
 
   return entries
@@ -57,7 +56,7 @@ export function MdxComponentNodeFrame(props: {
       data-mdcms-mdx-component-kind={props.isVoid ? "void" : "wrapper"}
       className="my-4 rounded-lg border border-dashed border-border bg-background-subtle"
     >
-      <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
+      <div className="border-b border-border px-3 py-2">
         <div className="space-y-1">
           <div className="text-sm font-medium text-foreground">
             {props.componentName}
@@ -66,9 +65,6 @@ export function MdxComponentNodeFrame(props: {
             {props.propsSummary}
           </div>
         </div>
-        <Badge variant="outline" className="text-[10px]">
-          {props.isVoid ? "Void" : "Wrapper"}
-        </Badge>
       </div>
 
       <div className="space-y-3 px-3 py-3">
@@ -99,7 +95,10 @@ export function MdxComponentNodeFrame(props: {
               data-mdcms-mdx-content-label={props.componentName}
               className="text-xs font-medium text-foreground-muted"
             >
-              Content
+              Inner content
+            </p>
+            <p className="text-xs text-foreground-muted">
+              Edit nested markdown directly in this block.
             </p>
             {props.children}
           </div>
@@ -177,7 +176,7 @@ export function MdxComponentNodeView(
     (props.node.attrs.props as Record<string, unknown> | undefined) ?? {};
   const serializedPreviewProps = JSON.stringify(mdxProps);
   const serializedChildren = JSON.stringify(props.node.content.toJSON());
-  const propsSummary = formatPropsSummary(mdxProps);
+  const propsSummary = formatMdxComponentPropsSummary(mdxProps);
 
   useEffect(() => {
     const container = previewContainerRef.current;
