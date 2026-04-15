@@ -51,7 +51,9 @@ test("error entries get Error: prefix with meta", () => {
   const lines: string[] = [];
   const sink = createCliConsoleSink((line) => lines.push(line));
 
-  sink(makeEntry("error", "connection failed", { host: "localhost", port: 5432 }));
+  sink(
+    makeEntry("error", "connection failed", { host: "localhost", port: 5432 }),
+  );
 
   assert.equal(lines.length, 1);
   assert.equal(lines[0], "Error: connection failed host=localhost port=5432");
@@ -81,10 +83,19 @@ test("multiple meta keys are space-separated", () => {
   const lines: string[] = [];
   const sink = createCliConsoleSink((line) => lines.push(line));
 
-  sink(makeEntry("debug", "action dispatched", { action: "publish", status: "ok", retries: 3 }));
+  sink(
+    makeEntry("debug", "action dispatched", {
+      action: "publish",
+      status: "ok",
+      retries: 3,
+    }),
+  );
 
   assert.equal(lines.length, 1);
-  assert.equal(lines[0], "[debug] action dispatched action=publish status=ok retries=3");
+  assert.equal(
+    lines[0],
+    "[debug] action dispatched action=publish status=ok retries=3",
+  );
 });
 
 test("trace entries get [trace] prefix", () => {
@@ -131,7 +142,11 @@ test("array values in meta are joined with commas", () => {
   const lines: string[] = [];
   const sink = createCliConsoleSink((line) => lines.push(line));
 
-  sink(makeEntry("info", "modules loaded", { moduleIds: ["core.system", "domain.content"] }));
+  sink(
+    makeEntry("info", "modules loaded", {
+      moduleIds: ["core.system", "domain.content"],
+    }),
+  );
 
   assert.equal(lines.length, 1);
   assert.equal(lines[0], "modules loaded moduleIds=core.system,domain.content");

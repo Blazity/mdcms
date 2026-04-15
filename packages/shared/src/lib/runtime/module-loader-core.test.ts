@@ -358,15 +358,12 @@ test("buildRuntimeModulePlan logs plan_ready at debug level", () => {
     },
   });
 
-  const plan = buildRuntimeModulePlan(
-    [createModule("alpha", { cli: true })],
-    {
-      coreVersion: "1.0.0",
-      surface: "cli",
-      runtime: "cli",
-      logger: capturingLogger,
-    },
-  );
+  const plan = buildRuntimeModulePlan([createModule("alpha", { cli: true })], {
+    coreVersion: "1.0.0",
+    surface: "cli",
+    runtime: "cli",
+    logger: capturingLogger,
+  });
 
   assert.equal(plan.ok, true);
 
