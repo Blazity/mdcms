@@ -61,7 +61,7 @@
         "groups": [
           {
             "group": "Introduction",
-            "pages": ["index", "guide/quickstart", "guide/concepts", "agent-instructions"]
+            "pages": ["index", "guide/quickstart", "guide/self-hosting", "guide/concepts", "agent-instructions"]
           },
           {
             "group": "Studio",
