@@ -626,15 +626,42 @@ test("StudioShellFrame renders loading startup message", () => {
     }),
   );
 
-  assert.match(markup, /Preparing Studio runtime/);
+  assert.match(markup, /Loading Studio/);
   assert.match(
     markup,
-    /Fetching the configured Studio bundle and validating it before launch\./,
+    /Fetching the signed Studio runtime and preparing the workspace shell\./,
   );
+  assert.match(markup, /Startup sequence/);
+  assert.match(markup, /Resolve bootstrap manifest/);
   assert.match(markup, /mdcms-studio-shell__/);
   assert.match(markup, /<style>/);
   assert.match(markup, /overflow-y:\s*auto/);
   assert.match(markup, /overflow-x:\s*hidden/);
+});
+
+test("StudioShellFrame renders slow-start copy without changing startup messaging contract", () => {
+  const markup = renderToStaticMarkup(
+    StudioShellFrame({
+      config: {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+      },
+      basePath: "/admin",
+      startupState: "loading",
+      loadingState: "slow",
+    }),
+  );
+
+  assert.match(markup, /Studio is taking a little longer to start/);
+  assert.match(
+    markup,
+    /Studio will open automatically as soon as the runtime finishes validation\./,
+  );
+  assert.match(
+    markup,
+    /This screen is visual feedback only and does not change bootstrap behavior\./,
+  );
 });
 
 test("describeStudioStartupError keeps generic cross-origin load failures neutral", () => {
@@ -792,8 +819,7 @@ test("StudioShellFrame renders categorized startup errors with technical details
     /The shell could not retrieve the Studio runtime from the configured backend\./,
   );
   assert.match(markup, /Technical details/);
-  assert.doesNotMatch(markup, /mdcms-studio-shell__content--error/);
-  assert.doesNotMatch(markup, /<aside class="mdcms-studio-shell__aside"/);
+  assert.match(markup, /Recovery/);
   assert.match(
     markup,
     /Failed to load Studio bootstrap fetch[\s\S]*Failure metadata[\s\S]*Host origin/,
