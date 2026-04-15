@@ -11,11 +11,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/Blazity/mdcms.git",
+    "url": "https://github.com/mdcms-ai/mdcms.git",
     "directory": "apps/cli"
   },
-  "homepage": "https://github.com/Blazity/mdcms#readme",
-  "bugs": "https://github.com/Blazity/mdcms/issues",
+  "homepage": "https://github.com/mdcms-ai/mdcms#readme",
+  "bugs": "https://github.com/mdcms-ai/mdcms/issues",
   "bin": {
     "mdcms": "./dist/bin/mdcms.js"
   },
