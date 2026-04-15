@@ -34,12 +34,17 @@ type AdminLayoutSessionLoadInput = {
   auth: StudioMountContext["auth"];
 };
 
+type AdminLayoutTokenErrorState = Extract<
+  StudioSessionState,
+  { status: "token-error" }
+>;
+
 export function createAdminLayoutCapabilitiesLoadInput(
   context: StudioMountContext,
 ): AdminLayoutCapabilitiesLoadInput | null {
   const route = context.documentRoute;
 
-  if (!route) {
+  if (!route || (context.auth.mode === "token" && !context.auth.token)) {
     return null;
   }
 
@@ -74,7 +79,7 @@ export function createAdminLayoutTokenSessionState(
       status: "token-error",
       reason: "missing",
       message:
-        "No bearer token was provided. The host application must supply a token when using auth.mode = \"token\".",
+        'No bearer token was provided. The host application must supply a token when using auth.mode = "token".',
     };
   }
 
@@ -89,6 +94,91 @@ export function createAdminLayoutTokenSessionState(
     },
     csrfToken: "",
   };
+}
+
+export function createAdminLayoutTokenErrorState(
+  statusCode: number | null,
+): AdminLayoutTokenErrorState | null {
+  if (statusCode === 401) {
+    return {
+      status: "token-error",
+      reason: "invalid",
+      message: "The bearer token is invalid, expired, or has been revoked.",
+    };
+  }
+
+  if (statusCode === 403) {
+    return {
+      status: "token-error",
+      reason: "forbidden",
+      message:
+        "The bearer token is not allowed for the requested project or environment.",
+    };
+  }
+
+  return null;
+}
+
+export function AdminTokenErrorStateView({
+  state,
+  context,
+  activeEnvironment,
+}: {
+  state: AdminLayoutTokenErrorState;
+  context: StudioMountContext;
+  activeEnvironment: string | null;
+}) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <div className="max-w-md w-full rounded-xl border border-border bg-card p-8 shadow-sm space-y-4">
+        <div className="space-y-1 text-center">
+          <p className="text-sm font-medium text-foreground">
+            Token authentication failed
+          </p>
+          <p className="text-sm text-foreground-muted">
+            Studio is configured for token-based authentication (
+            <code className="text-xs bg-muted px-1 py-0.5 rounded">
+              auth.mode = &quot;token&quot;
+            </code>
+            ) but the supplied token could not be used.
+          </p>
+        </div>
+
+        <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {state.message}
+        </div>
+
+        <div className="rounded-md bg-muted px-3 py-2 text-xs text-foreground-muted space-y-1">
+          <p>
+            <span className="font-medium">Reason:</span> {state.reason}
+          </p>
+          <p>
+            <span className="font-medium">Auth mode:</span> token
+          </p>
+          {context.documentRoute?.project && (
+            <p>
+              <span className="font-medium">Project:</span>{" "}
+              {context.documentRoute.project}
+            </p>
+          )}
+          {activeEnvironment && (
+            <p>
+              <span className="font-medium">Environment:</span>{" "}
+              {activeEnvironment}
+            </p>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+        >
+          Retry
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function AdminLayout({
@@ -142,16 +232,15 @@ export default function AdminLayout({
 
   // Fetch capabilities
   useEffect(() => {
-    const project = context.documentRoute?.project;
+    const baseLoadInput = createAdminLayoutCapabilitiesLoadInput(context);
     const loadInput =
-      project && activeEnvironment
+      baseLoadInput && activeEnvironment
         ? {
+            ...baseLoadInput,
             config: {
-              project,
+              ...baseLoadInput.config,
               environment: activeEnvironment,
-              serverUrl: context.apiBaseUrl,
             },
-            auth: context.auth,
           }
         : null;
 
@@ -208,20 +297,11 @@ export default function AdminLayout({
                 ? error.statusCode
                 : null;
 
-            if (statusCode === 401) {
-              setSessionState({
-                status: "token-error",
-                reason: "invalid",
-                message:
-                  "The bearer token is invalid, expired, or has been revoked.",
-              });
-            } else if (statusCode === 403) {
-              setSessionState({
-                status: "token-error",
-                reason: "forbidden",
-                message:
-                  "The bearer token is not allowed for the requested project or environment.",
-              });
+            const nextTokenErrorState =
+              createAdminLayoutTokenErrorState(statusCode);
+
+            if (nextTokenErrorState) {
+              setSessionState(nextTokenErrorState);
             }
           }
         }
@@ -365,56 +445,11 @@ export default function AdminLayout({
 
   if (sessionState.status === "token-error") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background p-4">
-        <div className="max-w-md w-full rounded-xl border border-border bg-card p-8 shadow-sm space-y-4">
-          <div className="space-y-1 text-center">
-            <p className="text-sm font-medium text-foreground">
-              Token authentication failed
-            </p>
-            <p className="text-sm text-foreground-muted">
-              Studio is configured for token-based authentication (
-              <code className="text-xs bg-muted px-1 py-0.5 rounded">
-                auth.mode = &quot;token&quot;
-              </code>
-              ) but the supplied token could not be used.
-            </p>
-          </div>
-
-          <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {sessionState.message}
-          </div>
-
-          <div className="rounded-md bg-muted px-3 py-2 text-xs text-foreground-muted space-y-1">
-            <p>
-              <span className="font-medium">Reason:</span>{" "}
-              {sessionState.reason}
-            </p>
-            <p>
-              <span className="font-medium">Auth mode:</span> token
-            </p>
-            {context.documentRoute?.project && (
-              <p>
-                <span className="font-medium">Project:</span>{" "}
-                {context.documentRoute.project}
-              </p>
-            )}
-            {activeEnvironment && (
-              <p>
-                <span className="font-medium">Environment:</span>{" "}
-                {activeEnvironment}
-              </p>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
+      <AdminTokenErrorStateView
+        state={sessionState}
+        context={context}
+        activeEnvironment={activeEnvironment}
+      />
     );
   }
 
