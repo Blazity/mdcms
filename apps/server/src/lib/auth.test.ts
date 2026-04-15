@@ -4289,12 +4289,20 @@ testWithDatabase(
           }),
         ),
       );
-      const firstAuthorizeBody = (await firstAuthorizeResponse.json()) as {
-        code: string;
-      };
+      const firstAuthorizeHtml = await firstAuthorizeResponse.text();
 
       assert.equal(firstAuthorizeResponse.status, 401);
-      assert.equal(firstAuthorizeBody.code, "AUTH_INVALID_CREDENTIALS");
+      assert.equal(
+        firstAuthorizeResponse.headers
+          .get("content-type")
+          ?.includes("text/html"),
+        true,
+      );
+      assert.equal(
+        firstAuthorizeHtml.includes("Invalid email or password"),
+        true,
+      );
+      assert.equal(firstAuthorizeHtml.includes("<form"), true);
 
       const lockedAuthorizeResponse = await withMockedNow(start, () =>
         handler(
@@ -4310,12 +4318,20 @@ testWithDatabase(
           }),
         ),
       );
-      const lockedAuthorizeBody = (await lockedAuthorizeResponse.json()) as {
-        code: string;
-      };
+      const lockedAuthorizeHtml = await lockedAuthorizeResponse.text();
 
       assert.equal(lockedAuthorizeResponse.status, 429);
-      assert.equal(lockedAuthorizeBody.code, "AUTH_BACKOFF_ACTIVE");
+      assert.equal(
+        lockedAuthorizeResponse.headers
+          .get("content-type")
+          ?.includes("text/html"),
+        true,
+      );
+      assert.equal(
+        lockedAuthorizeHtml.includes("Too many attempts"),
+        true,
+      );
+      assert.equal(lockedAuthorizeHtml.includes("<form"), true);
       assert.equal(lockedAuthorizeResponse.headers.get("retry-after"), "1");
 
       const [challengeRow] = await dbConnection.db
@@ -4695,6 +4711,163 @@ testWithDatabase(
       assert.equal(revokeResponse.status, 200);
       assert.equal(revokeBody.data.id, ownKey.id);
       assert.ok(revokeBody.data.revokedAt);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "CLI login authorize GET with expired challenge returns styled HTML error page",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const state = `state-${Date.now()}-abcdefghijklmnop`;
+
+    try {
+      const startResponse = await handler(
+        new Request("http://localhost/api/v1/auth/cli/login/start", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            project: "marketing-site",
+            environment: "staging",
+            redirectUri: "http://127.0.0.1:45123/callback",
+            state,
+          }),
+        }),
+      );
+      const startBody = (await startResponse.json()) as {
+        data: { challengeId: string; authorizeUrl: string };
+      };
+
+      await dbConnection.db
+        .update(cliLoginChallenges)
+        .set({ expiresAt: new Date(Date.now() - 1_000) })
+        .where(eq(cliLoginChallenges.id, startBody.data.challengeId));
+
+      const authorizeResponse = await handler(
+        new Request(startBody.data.authorizeUrl, { method: "GET" }),
+      );
+      const html = await authorizeResponse.text();
+
+      assert.equal(authorizeResponse.status, 410);
+      assert.equal(
+        authorizeResponse.headers.get("content-type")?.includes("text/html"),
+        true,
+      );
+      assert.equal(html.includes("Login link expired"), true);
+      assert.equal(html.includes("mdcms login"), true);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "CLI login authorize GET with invalid challenge ID returns styled HTML error page",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+
+    try {
+      const authorizeResponse = await handler(
+        new Request(
+          "http://localhost/api/v1/auth/cli/login/authorize?challenge=00000000-0000-0000-0000-000000000000&state=state-fake-abcdefghijklmnop",
+          { method: "GET" },
+        ),
+      );
+      const html = await authorizeResponse.text();
+
+      assert.equal(authorizeResponse.status, 404);
+      assert.equal(
+        authorizeResponse.headers.get("content-type")?.includes("text/html"),
+        true,
+      );
+      assert.equal(html.includes("Invalid login link"), true);
+    } finally {
+      await dbConnection.close();
+    }
+  },
+);
+
+testWithDatabase(
+  "CLI login authorize POST with invalid credentials returns HTML with error message",
+  async () => {
+    const { handler, dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+    });
+    const email = uniqueEmail();
+    const password = "Admin12345!";
+    const state = `state-${Date.now()}-abcdefghijklmnop`;
+    const redirectUri = "http://127.0.0.1:45123/callback";
+
+    try {
+      await signUp(handler, { email, password });
+      const ownerLogin = await login(handler, { email, password });
+      await dbConnection.db
+        .insert(rbacGrants)
+        .values({
+          userId: ownerLogin.session.userId,
+          role: "owner",
+          scopeKind: "global",
+          source: "test:cli-login-invalid-creds",
+          createdByUserId: ownerLogin.session.userId,
+        })
+        .onConflictDoNothing();
+
+      const startResponse = await handler(
+        new Request("http://localhost/api/v1/auth/cli/login/start", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            project: "marketing-site",
+            environment: "staging",
+            redirectUri,
+            state,
+            scopes: ["content:read", "content:read:draft", "content:write"],
+          }),
+        }),
+      );
+      const startBody = (await startResponse.json()) as {
+        data: { challengeId: string; authorizeUrl: string };
+      };
+
+      assert.equal(startResponse.status, 200);
+      assert.ok(startBody.data.challengeId);
+
+      const authorizeUrl = new URL(startBody.data.authorizeUrl);
+
+      const authorizePostResponse = await handler(
+        new Request(authorizeUrl.toString(), {
+          method: "POST",
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams({
+            email,
+            password: "WrongPassword123!",
+          }).toString(),
+        }),
+      );
+      const html = await authorizePostResponse.text();
+
+      assert.equal(authorizePostResponse.status, 401);
+      assert.equal(
+        authorizePostResponse.headers
+          .get("content-type")
+          ?.includes("text/html"),
+        true,
+      );
+      assert.equal(html.includes("Invalid email or password"), true);
+      assert.equal(html.includes("<form"), true);
     } finally {
       await dbConnection.close();
     }
