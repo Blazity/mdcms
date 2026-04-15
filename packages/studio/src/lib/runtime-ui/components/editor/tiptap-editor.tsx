@@ -10,6 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 
 import type { StudioMountContext } from "@mdcms/shared";
 import {
@@ -420,6 +421,24 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       syncSlashTrigger(editor);
     }, [catalogComponents, editor, forbidden, isEditorReadOnly, readOnly]);
 
+    useEffect(() => {
+      if (pickerSource !== "slash" || !editor) {
+        return;
+      }
+
+      const syncPosition = () => {
+        syncSlashTrigger(editor);
+      };
+
+      window.addEventListener("resize", syncPosition);
+      document.addEventListener("scroll", syncPosition, true);
+
+      return () => {
+        window.removeEventListener("resize", syncPosition);
+        document.removeEventListener("scroll", syncPosition, true);
+      };
+    }, [editor, pickerSource, syncSlashTrigger]);
+
     useLayoutEffect(() => {
       if (
         pickerSource !== "slash" ||
@@ -433,7 +452,6 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       }
 
       const pickerRect = slashPickerRef.current.getBoundingClientRect();
-      const wrapperRect = editorWrapperRef.current.getBoundingClientRect();
 
       setSlashPickerLayout(
         getSlashPickerLayout({
@@ -442,7 +460,6 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             width: pickerRect.width,
             height: pickerRect.height,
           },
-          containerRect: wrapperRect,
           viewportSize: {
             width: window.innerWidth,
             height: window.innerHeight,
@@ -647,6 +664,32 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       syncSlashTrigger(editor);
     };
 
+    const slashPicker =
+      pickerSource === "slash" && slashTrigger && slashPickerCoords ? (
+        <div
+          ref={slashPickerRef}
+          data-mdcms-mdx-picker-source="slash"
+          style={{
+            position: "fixed",
+            top: (slashPickerLayout ?? slashPickerCoords).top,
+            left: (slashPickerLayout ?? slashPickerCoords).left,
+            width: "min(28rem, calc(100vw - 24px))",
+            maxHeight:
+              slashPickerLayout !== null
+                ? `${slashPickerLayout.maxHeight}px`
+                : "calc(100vh - 24px)",
+          }}
+          className="z-50 overflow-y-auto"
+        >
+          <MdxComponentPicker
+            components={catalogComponents}
+            query={slashTrigger.query}
+            forbidden={isEditorReadOnly}
+            onSelect={insertSelectedComponent}
+          />
+        </div>
+      ) : null;
+
     return (
       <div ref={editorWrapperRef} className="relative">
         <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-background">
@@ -751,30 +794,9 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           </div>
         </div>
 
-        {pickerSource === "slash" && slashTrigger && slashPickerCoords ? (
-          <div
-            ref={slashPickerRef}
-            data-mdcms-mdx-picker-source="slash"
-            style={{
-              position: "absolute",
-              top: (slashPickerLayout ?? slashPickerCoords).top,
-              left: (slashPickerLayout ?? slashPickerCoords).left,
-              width: "min(28rem, calc(100vw - 24px))",
-              maxHeight:
-                slashPickerLayout !== null
-                  ? `${slashPickerLayout.maxHeight}px`
-                  : "calc(100vh - 24px)",
-            }}
-            className="z-50 overflow-y-auto"
-          >
-            <MdxComponentPicker
-              components={catalogComponents}
-              query={slashTrigger.query}
-              forbidden={isEditorReadOnly}
-              onSelect={insertSelectedComponent}
-            />
-          </div>
-        ) : null}
+        {slashPicker && typeof document !== "undefined"
+          ? createPortal(slashPicker, document.body)
+          : null}
       </div>
     );
   },

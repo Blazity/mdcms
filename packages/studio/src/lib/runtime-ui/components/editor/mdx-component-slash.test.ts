@@ -99,7 +99,7 @@ test("replaceSlashTriggerWithMdxComponent removes the slash token and inserts th
   }
 });
 
-test("getSlashTriggerCoords returns container-relative coordinates", () => {
+test("getSlashTriggerCoords returns viewport-relative coordinates", () => {
   const trigger: MdxComponentSlashTrigger = { query: "Cal", from: 5, to: 9 };
   const coords = getSlashTriggerCoords(
     {
@@ -110,30 +110,24 @@ test("getSlashTriggerCoords returns container-relative coordinates", () => {
   );
 
   assert.deepEqual(coords, {
-    top: 170,
-    left: 70,
-    cursorTop: 150,
-    cursorBottom: 170,
+    top: 220,
+    left: 100,
+    cursorTop: 200,
+    cursorBottom: 220,
   });
 });
 
 test("getSlashPickerLayout clamps horizontal overflow and flips above the trigger when needed", () => {
   const layout = getSlashPickerLayout({
     anchor: {
-      top: 300,
-      left: 260,
-      cursorTop: 280,
-      cursorBottom: 300,
+      top: 320,
+      left: 320,
+      cursorTop: 300,
+      cursorBottom: 320,
     },
     pickerSize: {
       width: 240,
       height: 180,
-    },
-    containerRect: {
-      top: 100,
-      left: 40,
-      width: 320,
-      height: 500,
     },
     viewportSize: {
       width: 360,
@@ -142,9 +136,9 @@ test("getSlashPickerLayout clamps horizontal overflow and flips above the trigge
   });
 
   assert.deepEqual(layout, {
-    top: 92,
-    left: 68,
-    maxHeight: 360,
+    top: 112,
+    left: 108,
+    maxHeight: 280,
   });
 });
 
@@ -160,12 +154,6 @@ test("getSlashPickerLayout keeps the picker below the trigger and caps height wh
       width: 220,
       height: 200,
     },
-    containerRect: {
-      top: 20,
-      left: 20,
-      width: 320,
-      height: 500,
-    },
     viewportSize: {
       width: 360,
       height: 260,
@@ -175,6 +163,6 @@ test("getSlashPickerLayout keeps the picker below the trigger and caps height wh
   assert.deepEqual(layout, {
     top: 88,
     left: 40,
-    maxHeight: 140,
+    maxHeight: 160,
   });
 });

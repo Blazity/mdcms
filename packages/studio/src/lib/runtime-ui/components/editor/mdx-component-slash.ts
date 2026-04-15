@@ -87,23 +87,21 @@ export function getSlashTriggerCoords(
     coordsAtPos: (pos: number) => { top: number; left: number; bottom: number };
   },
   trigger: MdxComponentSlashTrigger,
-  container: { getBoundingClientRect: () => { top: number; left: number } },
+  _container?: { getBoundingClientRect: () => { top: number; left: number } },
 ): SlashTriggerCoords {
   const cursorCoords = view.coordsAtPos(trigger.from);
-  const containerRect = container.getBoundingClientRect();
 
   return {
-    top: cursorCoords.bottom - containerRect.top,
-    left: cursorCoords.left - containerRect.left,
-    cursorTop: cursorCoords.top - containerRect.top,
-    cursorBottom: cursorCoords.bottom - containerRect.top,
+    top: cursorCoords.bottom,
+    left: cursorCoords.left,
+    cursorTop: cursorCoords.top,
+    cursorBottom: cursorCoords.bottom,
   };
 }
 
 export function getSlashPickerLayout(input: {
   anchor: SlashTriggerCoords;
   pickerSize: { width: number; height: number };
-  containerRect: { top: number; left: number; width: number; height: number };
   viewportSize: { width: number; height: number };
   gutter?: number;
   gap?: number;
@@ -111,21 +109,12 @@ export function getSlashPickerLayout(input: {
   const gutter = input.gutter ?? SLASH_PICKER_VIEWPORT_GUTTER;
   const gap = input.gap ?? SLASH_PICKER_TRIGGER_GAP;
   const availableBelow = Math.max(
-    input.viewportSize.height -
-      gutter -
-      (input.containerRect.top + input.anchor.cursorBottom + gap),
+    input.viewportSize.height - gutter - (input.anchor.cursorBottom + gap),
     0,
   );
-  const availableAbove = Math.max(
-    input.containerRect.top + input.anchor.cursorTop - gap - gutter,
-    0,
-  );
-  const minLeft = gutter - input.containerRect.left;
-  const maxLeft =
-    input.viewportSize.width -
-    gutter -
-    input.containerRect.left -
-    input.pickerSize.width;
+  const availableAbove = Math.max(input.anchor.cursorTop - gap - gutter, 0);
+  const minLeft = gutter;
+  const maxLeft = input.viewportSize.width - gutter - input.pickerSize.width;
   const left =
     maxLeft >= minLeft ? clamp(input.anchor.left, minLeft, maxLeft) : minLeft;
 
@@ -154,10 +143,7 @@ export function getSlashPickerLayout(input: {
   }
 
   return {
-    top: Math.max(
-      gutter - input.containerRect.top,
-      input.anchor.cursorTop - gap - availableAbove,
-    ),
+    top: Math.max(gutter, input.anchor.cursorTop - gap - availableAbove),
     left,
     maxHeight: availableAbove,
   };
