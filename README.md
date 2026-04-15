@@ -31,69 +31,100 @@ Developers define schemas in code and sync via CLI. Editors get a visual Studio 
 
 ## Quick Start
 
-### 1. Start the infrastructure
+### 1. Install packages
 
 ```bash
-git clone https://github.com/Blazity/mdcms.git
-cd mdcms
-bun install
-docker compose up -d --build
+npm install @mdcms/cli @mdcms/sdk
 ```
 
-### 2. Start the dev server
+### 2. Define your content schema
+
+Create a `mdcms.config.ts` in your project root:
+
+```ts
+import { defineConfig, defineType } from "@mdcms/cli";
+import { z } from "zod";
+
+export default defineConfig({
+  project: "my-site",
+  environment: "production",
+  serverUrl: "https://your-mdcms-server.example.com",
+  contentDirectories: ["content"],
+  types: [
+    defineType("BlogPost", {
+      directory: "content/blog",
+      fields: {
+        title: z.string().min(1),
+        summary: z.string().optional(),
+      },
+    }),
+  ],
+});
+```
+
+### 3. Pull and push content
 
 ```bash
-bun run dev
+# Authenticate with your MDCMS server
+npx mdcms login
+
+# Pull content to local Markdown files
+npx mdcms pull
+
+# Edit your .md or .mdx files, then push changes back
+npx mdcms push
 ```
 
-This starts the backend API server, Studio UI build watcher, and the example Next.js host app.
+### 4. Fetch content in your app
 
-### 3. Open Studio
+```ts
+import { createClient } from "@mdcms/sdk";
 
-Visit [http://127.0.0.1:4173/admin](http://127.0.0.1:4173/admin) to open the Studio UI.
+const cms = createClient({
+  serverUrl: "https://your-mdcms-server.example.com",
+  apiKey: process.env.MDCMS_API_KEY!,
+  project: "my-site",
+  environment: "production",
+});
 
-Default demo credentials:
-- Email: `demo@mdcms.local`
-- Password: `Demo12345!`
+const posts = await cms.list("BlogPost", { locale: "en", published: true });
+```
 
-### 4. Pull and push content with the CLI
+### Embed the Studio UI (optional)
+
+Add a visual editing interface to your app:
 
 ```bash
-# Authenticate
-bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts login --config apps/studio-example/mdcms.config.ts
-
-# Pull content to local files
-bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts pull --force
-
-# Edit a .md or .mdx file, then push changes back
-bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts push --force
+npm install @mdcms/studio
 ```
+
+See the [`@mdcms/studio` README](packages/studio) for embedding instructions.
 
 ## Features
 
-| Feature | Description |
-| --- | --- |
-| **Markdown/MDX content** | Author content in Markdown or MDX with custom component support |
-| **Code-first schema** | Define content types, fields, and references in TypeScript with Zod validation |
-| **Studio UI** | Embeddable React admin interface with a rich document editor, schema browser, and environment management |
-| **CLI workflows** | Pull content to local files, edit with any tool, push changes back |
-| **Client SDK** | Type-safe read API for fetching content in your app |
-| **Versioning and publishing** | Full draft/publish lifecycle with immutable version history |
-| **Auth and RBAC** | Session auth, OIDC/SAML SSO, API keys, and role-based access control |
-| **Environments** | Manage multiple environments (production, staging, preview) with schema overlays |
-| **i18n** | Locale-aware content with translation groups |
-| **Extensible modules** | First-party module system for extending server and CLI behavior |
+| Feature                       | Description                                                                                              |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Markdown/MDX content**      | Author content in Markdown or MDX with custom component support                                          |
+| **Code-first schema**         | Define content types, fields, and references in TypeScript with Zod validation                           |
+| **Studio UI**                 | Embeddable React admin interface with a rich document editor, schema browser, and environment management |
+| **CLI workflows**             | Pull content to local files, edit with any tool, push changes back                                       |
+| **Client SDK**                | Type-safe read API for fetching content in your app                                                      |
+| **Versioning and publishing** | Full draft/publish lifecycle with immutable version history                                              |
+| **Auth and RBAC**             | Session auth, OIDC/SAML SSO, API keys, and role-based access control                                     |
+| **Environments**              | Manage multiple environments (production, staging, preview) with schema overlays                         |
+| **i18n**                      | Locale-aware content with translation groups                                                             |
+| **Extensible modules**        | First-party module system for extending server and CLI behavior                                          |
 
 ## Packages
 
-| Package | npm | Description |
-| --- | --- | --- |
-| [`@mdcms/cli`](apps/cli) | `npm install @mdcms/cli` | CLI for content workflows (pull, push, login, schema sync) |
-| [`@mdcms/studio`](packages/studio) | `npm install @mdcms/studio` | Embeddable Studio UI component for host apps |
-| [`@mdcms/sdk`](packages/sdk) | `npm install @mdcms/sdk` | Read-focused client SDK for content APIs |
-| [`@mdcms/shared`](packages/shared) | `npm install @mdcms/shared` | Shared contracts, types, and validators |
-| [`@mdcms/server`](apps/server) | Private | Backend API server (Elysia + PostgreSQL) |
-| [`@mdcms/modules`](packages/modules) | Private | First-party module registry |
+| Package                              | npm                         | Description                                                |
+| ------------------------------------ | --------------------------- | ---------------------------------------------------------- |
+| [`@mdcms/cli`](apps/cli)             | `npm install @mdcms/cli`    | CLI for content workflows (pull, push, login, schema sync) |
+| [`@mdcms/studio`](packages/studio)   | `npm install @mdcms/studio` | Embeddable Studio UI component for host apps               |
+| [`@mdcms/sdk`](packages/sdk)         | `npm install @mdcms/sdk`    | Read-focused client SDK for content APIs                   |
+| [`@mdcms/shared`](packages/shared)   | `npm install @mdcms/shared` | Shared contracts, types, and validators                    |
+| [`@mdcms/server`](apps/server)       | Private                     | Backend API server (Elysia + PostgreSQL)                   |
+| [`@mdcms/modules`](packages/modules) | Private                     | First-party module registry                                |
 
 ## Coming Soon
 
@@ -113,6 +144,27 @@ bun --conditions @mdcms/source apps/cli/src/bin/mdcms.ts push --force
 Full documentation is available at [docs.mdcms.ai](https://docs.mdcms.ai/).
 
 For architecture decisions and specs, see the [`docs/`](docs) directory.
+
+## Development
+
+To work on MDCMS itself, clone the repo and use [Bun](https://bun.sh/) as the runtime:
+
+```bash
+git clone https://github.com/Blazity/mdcms.git
+cd mdcms
+bun install
+docker compose up -d --build   # Start Postgres, Redis, MinIO, Mailhog
+bun run dev                     # Start backend, Studio watcher, and example app
+```
+
+Visit [http://127.0.0.1:4173/admin](http://127.0.0.1:4173/admin) to open the Studio UI in the example host app.
+
+Default demo credentials:
+
+- Email: `demo@mdcms.local`
+- Password: `Demo12345!`
+
+See the [contributing guide](https://docs.mdcms.ai/development/contributing) for conventions, branch workflow, and how to run the test suite.
 
 ## Contributing
 

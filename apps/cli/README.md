@@ -4,8 +4,17 @@ CLI for MDCMS content workflows — pull content to local Markdown files, edit w
 
 ## Install
 
+Install globally to use the `mdcms` command anywhere:
+
+```bash
+npm install -g @mdcms/cli
+```
+
+Or add it as a project dependency and run via `npx`:
+
 ```bash
 npm install @mdcms/cli
+npx mdcms pull
 ```
 
 ## Configuration
@@ -46,12 +55,12 @@ export default defineConfig({
 
 ## Commands
 
-| Command | Description |
-| --- | --- |
-| `mdcms login` | Authenticate via browser-based OAuth flow |
-| `mdcms logout` | Revoke credentials and clear local profile |
-| `mdcms pull` | Pull content from the server to local Markdown files |
-| `mdcms push` | Push local content changes back to the server |
+| Command             | Description                                              |
+| ------------------- | -------------------------------------------------------- |
+| `mdcms login`       | Authenticate via browser-based OAuth flow                |
+| `mdcms logout`      | Revoke credentials and clear local profile               |
+| `mdcms pull`        | Pull content from the server to local Markdown files     |
+| `mdcms push`        | Push local content changes back to the server            |
 | `mdcms schema sync` | Sync your local schema definition to the server registry |
 
 ### Pull
@@ -73,13 +82,13 @@ mdcms push --dry-run    # Preview changes without uploading
 
 ### Global Flags
 
-| Flag | Env Variable | Description |
-| --- | --- | --- |
-| `--project` | `MDCMS_PROJECT` | Target project name |
-| `--environment` | `MDCMS_ENVIRONMENT` | Target environment name |
-| `--server-url` | `MDCMS_SERVER_URL` | Server URL |
-| `--api-key` | `MDCMS_API_KEY` | API key (for headless/CI use) |
-| `--config` | | Path to config file (default: `mdcms.config.ts`) |
+| Flag            | Env Variable        | Description                                      |
+| --------------- | ------------------- | ------------------------------------------------ |
+| `--project`     | `MDCMS_PROJECT`     | Target project name                              |
+| `--environment` | `MDCMS_ENVIRONMENT` | Target environment name                          |
+| `--server-url`  | `MDCMS_SERVER_URL`  | Server URL                                       |
+| `--api-key`     | `MDCMS_API_KEY`     | API key (for headless/CI use)                    |
+| `--config`      |                     | Path to config file (default: `mdcms.config.ts`) |
 
 ## Documentation
 

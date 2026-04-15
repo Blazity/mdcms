@@ -2,7 +2,11 @@
 
 Backend API server for MDCMS, built with [Elysia](https://elysiajs.com/) and PostgreSQL via [Drizzle ORM](https://orm.drizzle.team/).
 
-## Getting Started
+## Getting Started (Development)
+
+> **End users / self-hosted operators:** See the [deployment guide](https://docs.mdcms.ai/deployment) for production setup instructions.
+
+The steps below are for contributors working inside the monorepo.
 
 ### With Docker Compose (recommended)
 
@@ -22,29 +26,29 @@ The server starts on `http://localhost:4000`. Verify with `GET /healthz`.
 
 ## API Endpoints
 
-| Group | Path | Description |
-| --- | --- | --- |
-| Health | `GET /healthz` | Process health check |
-| Content | `/api/v1/content` | CRUD, publish/unpublish, version history, restore |
-| Schema | `/api/v1/schema` | Schema registry sync and read |
-| Environments | `/api/v1/environments` | List, create, delete environments |
-| Auth | `/api/v1/auth` | Session login/logout, OIDC, SAML, API key management |
-| Studio | `/api/v1/studio/bootstrap` | Studio runtime publication and asset delivery |
-| Actions | `/api/v1/actions` | Action catalog (typed endpoint metadata) |
-| Collaboration | `/api/v1/collaboration` | Collaboration handshake authorization |
+| Group         | Path                       | Description                                          |
+| ------------- | -------------------------- | ---------------------------------------------------- |
+| Health        | `GET /healthz`             | Process health check                                 |
+| Content       | `/api/v1/content`          | CRUD, publish/unpublish, version history, restore    |
+| Schema        | `/api/v1/schema`           | Schema registry sync and read                        |
+| Environments  | `/api/v1/environments`     | List, create, delete environments                    |
+| Auth          | `/api/v1/auth`             | Session login/logout, OIDC, SAML, API key management |
+| Studio        | `/api/v1/studio/bootstrap` | Studio runtime publication and asset delivery        |
+| Actions       | `/api/v1/actions`          | Action catalog (typed endpoint metadata)             |
+| Collaboration | `/api/v1/collaboration`    | Collaboration handshake authorization                |
 
 ## Environment Variables
 
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `DATABASE_URL` | Yes | | PostgreSQL connection string |
-| `PORT` | No | `4000` | Server listen port |
-| `MDCMS_STUDIO_ALLOWED_ORIGINS` | No | | Comma-separated origins for cross-origin Studio embedding |
-| `MDCMS_AUTH_OIDC_PROVIDERS` | No | | JSON array of OIDC provider configurations |
-| `MDCMS_AUTH_SAML_PROVIDERS` | No | | JSON array of SAML provider configurations |
-| `MDCMS_AUTH_ADMIN_USER_IDS` | No | | Comma-separated admin user IDs |
-| `MDCMS_AUTH_ADMIN_EMAILS` | No | | Comma-separated admin emails |
-| `MDCMS_AUTH_INSECURE_COOKIES` | No | `false` | Set `true` for local dev without HTTPS |
+| Variable                       | Required | Default | Description                                               |
+| ------------------------------ | -------- | ------- | --------------------------------------------------------- |
+| `DATABASE_URL`                 | Yes      |         | PostgreSQL connection string                              |
+| `PORT`                         | No       | `4000`  | Server listen port                                        |
+| `MDCMS_STUDIO_ALLOWED_ORIGINS` | No       |         | Comma-separated origins for cross-origin Studio embedding |
+| `MDCMS_AUTH_OIDC_PROVIDERS`    | No       |         | JSON array of OIDC provider configurations                |
+| `MDCMS_AUTH_SAML_PROVIDERS`    | No       |         | JSON array of SAML provider configurations                |
+| `MDCMS_AUTH_ADMIN_USER_IDS`    | No       |         | Comma-separated admin user IDs                            |
+| `MDCMS_AUTH_ADMIN_EMAILS`      | No       |         | Comma-separated admin emails                              |
+| `MDCMS_AUTH_INSECURE_COOKIES`  | No       | `false` | Set `true` for local dev without HTTPS                    |
 
 ## Database Migrations
 
