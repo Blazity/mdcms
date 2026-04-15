@@ -80,7 +80,7 @@ export type MdcmsTypeDefinition<
 
 export type MdcmsLocaleConfig = {
   default: string;
-  supported: string[];
+  supported: readonly string[];
   aliases?: Record<string, string>;
 };
 
