@@ -4,7 +4,7 @@ Backend API server for MDCMS, built with [Elysia](https://elysiajs.com/) and Pos
 
 ## Getting Started (Development)
 
-> **End users / self-hosted operators:** See the [deployment guide](https://docs.mdcms.ai/deployment) for production setup instructions.
+> **End users / self-hosted operators:** See the [self-hosting guide](https://docs.mdcms.ai/guide/self-hosting) for production setup instructions.
 
 The steps below are for contributors working inside the monorepo.
 
