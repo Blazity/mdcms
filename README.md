@@ -31,19 +31,13 @@ Developers define schemas in code and sync via CLI. Editors get a visual Studio 
 
 ## Quick Start
 
-### 1. Install the CLI
+### 1. Install packages
 
 ```bash
-npm install -g @mdcms/cli
+npm install @mdcms/cli @mdcms/sdk
 ```
 
-### 2. Add the SDK to your app
-
-```bash
-npm install @mdcms/sdk
-```
-
-### 3. Define your content schema
+### 2. Define your content schema
 
 Create a `mdcms.config.ts` in your project root:
 
@@ -68,7 +62,7 @@ export default defineConfig({
 });
 ```
 
-### 4. Pull and push content
+### 3. Pull and push content
 
 ```bash
 # Authenticate with your MDCMS server
@@ -81,7 +75,7 @@ npx mdcms pull
 npx mdcms push
 ```
 
-### 5. Fetch content in your app
+### 4. Fetch content in your app
 
 ```ts
 import { createClient } from "@mdcms/sdk";
