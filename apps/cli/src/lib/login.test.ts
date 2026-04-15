@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { createInMemoryCredentialStore } from "./credentials.js";
 import { runMdcmsCli } from "./framework.js";
-import { createLoginCommand } from "./login.js";
+import { createLoginCommand, createLoopbackCallbackListener } from "./login.js";
 
 test("login command stores exchanged API key in scoped credential profile", async () => {
   const credentialStore = createInMemoryCredentialStore();
@@ -210,4 +210,26 @@ test("login command prints manual URL when browser cannot be opened", async () =
 
   assert.equal(exitCode, 0);
   assert.equal(stdout.includes("Open this URL manually"), true);
+});
+
+test("loopback callback returns styled HTML success page", async () => {
+  const listener = await createLoopbackCallbackListener();
+
+  try {
+    const response = await fetch(
+      `${listener.redirectUri}?code=test_code&state=test_state`,
+    );
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.equal(
+      response.headers.get("content-type")?.includes("text/html"),
+      true,
+    );
+    assert.equal(html.includes("You're all set"), true);
+    assert.equal(html.includes("close this tab"), true);
+    assert.equal(html.includes("MDCMS"), true);
+  } finally {
+    await listener.close();
+  }
 });

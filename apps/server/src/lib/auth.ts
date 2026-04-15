@@ -7,6 +7,7 @@ import {
   RuntimeError,
   assertRequestTargetRouting,
   createEmptyCurrentPrincipalCapabilities,
+  isRuntimeErrorLike,
   serializeError,
   type CurrentPrincipalCapabilities,
   type CurrentPrincipalCapabilitiesResponse,
@@ -913,30 +914,223 @@ function appendQueryParams(
   return parsed.toString();
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderCliHtmlPage(options: { title: string; body: string }): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>${escapeHtml(options.title)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{
+  font-family:'Inter',ui-sans-serif,system-ui,-apple-system,sans-serif;
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:1rem;
+  background:#FCF9F8;
+  background-image:
+    radial-gradient(ellipse at top left,rgba(47,73,229,0.08) 0%,transparent 60%),
+    linear-gradient(to bottom,#FCF9F8,#F6F3F2);
+}
+.card{
+  width:100%;
+  max-width:400px;
+  background:#FFFFFF;
+  border:1px solid #C5C5D8;
+  border-radius:0.5rem;
+  padding:2rem;
+  box-shadow:0 1px 3px rgba(0,0,0,0.04),0 1px 2px rgba(0,0,0,0.06);
+}
+.logo{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:0.5rem;
+  margin-bottom:1.5rem;
+}
+.logo svg{width:28px;height:28px;flex-shrink:0;}
+.logo span{
+  font-family:'Space Grotesk',sans-serif;
+  font-weight:700;
+  font-size:1.125rem;
+  letter-spacing:-0.01em;
+  color:#1C1B1B;
+}
+h1{
+  font-family:'Space Grotesk',sans-serif;
+  font-weight:700;
+  font-size:1.25rem;
+  text-align:center;
+  color:#1C1B1B;
+  margin-bottom:0.25rem;
+}
+.subtitle{
+  font-size:0.875rem;
+  color:#444655;
+  text-align:center;
+  margin-bottom:1.5rem;
+}
+label{
+  display:block;
+  font-size:0.875rem;
+  font-weight:500;
+  color:#1C1B1B;
+  margin-bottom:0.25rem;
+}
+input[type="email"],input[type="password"],input[type="text"]{
+  width:100%;
+  padding:0.5rem 0.75rem;
+  font-size:0.875rem;
+  font-family:inherit;
+  border:1px solid #C5C5D8;
+  border-radius:0.375rem;
+  outline:none;
+  transition:border-color 0.15s;
+  margin-bottom:0.75rem;
+}
+input:focus{border-color:#2F49E5;box-shadow:0 0 0 2px rgba(47,73,229,0.15);}
+button[type="submit"]{
+  width:100%;
+  padding:0.625rem 1rem;
+  font-size:0.875rem;
+  font-weight:500;
+  font-family:inherit;
+  color:#FFFFFF;
+  background:#2F49E5;
+  border:none;
+  border-radius:0.375rem;
+  cursor:pointer;
+  transition:background 0.15s;
+  margin-top:0.25rem;
+}
+button[type="submit"]:hover{background:#2740cc;}
+.error-banner{
+  background:rgba(239,68,68,0.1);
+  color:#ef4444;
+  font-size:0.875rem;
+  padding:0.625rem 0.75rem;
+  border-radius:0.375rem;
+  margin-bottom:1rem;
+  text-align:center;
+}
+.message{
+  font-size:0.875rem;
+  color:#444655;
+  text-align:center;
+  line-height:1.5;
+}
+.message code{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  font-size:0.8125rem;
+  background:rgba(0,0,0,0.06);
+  padding:0.125rem 0.375rem;
+  border-radius:0.25rem;
+}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <svg viewBox="0 4 35 35" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M17.4954 19.8468C16.8523 19.7988 16.5695 19.8252 16.0137 20.1448C13.9577 21.3269 11.8896 22.4902 9.84301 23.6884C8.71035 24.3515 8.86327 25.4939 8.86856 26.6135L8.87323 29.049L8.86754 31.4129C8.86208 33.6365 8.87086 33.7353 10.8305 34.8569L12.7272 35.9412C13.5772 36.4271 16.0648 37.9743 16.7961 38.1227C17.4032 38.1839 17.7316 38.1169 18.2555 37.8171C20.2878 36.6538 22.3256 35.499 24.3513 34.3245C25.5248 33.644 25.3944 32.6758 25.3941 31.522L25.3915 28.8691L25.396 26.5205C25.4007 24.3233 25.3797 24.2285 23.4707 23.1348L21.5627 22.0412L19.3001 20.7437C18.7928 20.4531 18.047 19.9646 17.4954 19.8468Z" fill="#1C1B1B"/>
+      <path d="M26.4326 4.08956C25.8135 4.03531 25.4981 4.07102 24.9624 4.38156C23.0193 5.50784 21.084 6.64735 19.1433 7.77787C18.6139 8.08624 18.1508 8.4779 18.0124 9.10786C17.8664 9.77215 17.9212 10.5397 17.9239 11.2234L17.9247 13.6338L17.921 15.6797C17.9197 16.4984 17.8187 17.4363 18.3987 18.0931C18.766 18.509 19.2648 18.7439 19.7366 19.0229C20.2456 19.3238 20.7602 19.6176 21.2709 19.9157L23.6489 21.307C24.1935 21.6256 25.092 22.2074 25.6525 22.359C26.5274 22.4342 26.7078 22.3363 27.436 21.9116L31.5337 19.5176C31.9048 19.301 33.2517 18.5452 33.5247 18.301C33.809 18.0485 34.0095 17.7153 34.0996 17.3458C34.2306 16.8302 34.1905 15.8811 34.1881 15.3182L34.1869 12.9892L34.1909 10.8318C34.1941 8.63869 34.2067 8.49732 32.3014 7.38407L30.5377 6.35429L28.3471 5.07312C27.8022 4.75331 27.0227 4.23424 26.4326 4.08956Z" fill="#CAF240"/>
+      <path d="M8.58217 4.09055C7.9301 4.03424 7.61858 4.07788 7.05481 4.40779C5.09063 5.5562 3.12254 6.6993 1.1626 7.85475C0.628794 8.16937 0.310829 8.51792 0.146414 9.13369C0.101146 9.30918 0.0754332 9.48911 0.0692766 9.67022C0.0174895 10.8607 0.0739828 12.4295 0.0721723 13.6712L0.0681892 15.7221C0.062757 17.8453 0.0895542 17.9803 1.90428 19.0366L3.63425 20.0439L5.9733 21.413C6.50528 21.7242 7.23024 22.2109 7.80661 22.3603C8.5945 22.4512 8.87405 22.3186 9.52562 21.9424L13.5603 19.5843C14.0662 19.2898 14.6172 18.9422 15.1248 18.67C16.5527 17.9041 16.3376 16.7588 16.3309 15.3383L16.3291 13.0458L16.3337 10.8074C16.3349 10.0947 16.4178 9.24654 16.0423 8.6199C15.9028 8.38554 15.7166 8.18226 15.4955 8.02259C15.2008 7.8081 14.7526 7.56378 14.4259 7.37299L12.6291 6.32531C11.4588 5.64323 10.2823 4.93464 9.099 4.27731C8.93579 4.18663 8.763 4.13495 8.58217 4.09055Z" fill="#2F49E5"/>
+    </svg>
+    <span>MDCMS</span>
+  </div>
+  ${options.body}
+</div>
+</body>
+</html>`;
+}
+
 function renderCliAuthorizeLoginForm(input: {
   challengeId: string;
   state: string;
+  errorMessage?: string;
 }): string {
-  return [
-    "<!doctype html>",
-    "<html>",
-    "<head>",
-    '<meta charset="utf-8" />',
-    '<meta name="viewport" content="width=device-width,initial-scale=1" />',
-    "<title>MDCMS CLI Login</title>",
-    "<style>body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;max-width:420px;margin:48px auto;padding:0 16px;}label{display:block;font-size:14px;margin-top:12px;}input{width:100%;padding:8px;margin-top:4px;box-sizing:border-box;}button{margin-top:16px;padding:10px 14px;cursor:pointer;}</style>",
-    "</head>",
-    "<body>",
-    "<h1>MDCMS CLI Login</h1>",
-    "<p>Zaloguj się, aby autoryzować CLI.</p>",
-    `<form method="post" action="/api/v1/auth/cli/login/authorize?challenge=${encodeURIComponent(input.challengeId)}&state=${encodeURIComponent(input.state)}">`,
-    '<label>Email<input name="email" type="email" autocomplete="email" required /></label>',
-    '<label>Password<input name="password" type="password" autocomplete="current-password" required /></label>',
-    '<button type="submit">Authorize CLI</button>',
-    "</form>",
-    "</body>",
-    "</html>",
-  ].join("");
+  const errorBanner = input.errorMessage
+    ? `<div class="error-banner">${escapeHtml(input.errorMessage)}</div>`
+    : "";
+
+  return renderCliHtmlPage({
+    title: "MDCMS — Authorize CLI",
+    body: `
+<p class="subtitle">Sign in to authorize CLI</p>
+<form method="post" action="/api/v1/auth/cli/login/authorize?challenge=${encodeURIComponent(input.challengeId)}&state=${encodeURIComponent(input.state)}">
+  ${errorBanner}
+  <label>Email<input name="email" type="email" autocomplete="email" placeholder="you@company.com" required /></label>
+  <label>Password<input name="password" type="password" autocomplete="current-password" placeholder="••••••••" required /></label>
+  <button type="submit">Authorize</button>
+</form>`,
+  });
+}
+
+function renderCliErrorPage(options: {
+  title: string;
+  heading: string;
+  message: string;
+}): string {
+  return renderCliHtmlPage({
+    title: `MDCMS — ${options.title}`,
+    body: `<h1>${escapeHtml(options.heading)}</h1><p class="message" style="margin-top:0.75rem;">${options.message}</p>`,
+  });
+}
+
+function renderCliChallengeError(error: unknown): Response | null {
+  if (!isRuntimeErrorLike(error)) return null;
+
+  if (error.code === "LOGIN_CHALLENGE_EXPIRED") {
+    return new Response(
+      renderCliErrorPage({
+        title: "Login Link Expired",
+        heading: "Login link expired",
+        message:
+          "This authorization link has expired. Please run <code>mdcms login</code> again to start a new session.",
+      }),
+      { status: 410, headers: { "content-type": "text/html; charset=utf-8" } },
+    );
+  }
+
+  if (error.code === "LOGIN_CHALLENGE_USED") {
+    return new Response(
+      renderCliErrorPage({
+        title: "Link Already Used",
+        heading: "Link already used",
+        message:
+          "This authorization link has already been used. Please run <code>mdcms login</code> again if you need a new session.",
+      }),
+      { status: 409, headers: { "content-type": "text/html; charset=utf-8" } },
+    );
+  }
+
+  if (error.code === "NOT_FOUND") {
+    return new Response(
+      renderCliErrorPage({
+        title: "Invalid Login Link",
+        heading: "Invalid login link",
+        message:
+          "This authorization link is not valid. Please run <code>mdcms login</code> to start a new session.",
+      }),
+      { status: 404, headers: { "content-type": "text/html; charset=utf-8" } },
+    );
+  }
+
+  return null;
 }
 
 function ensureValidApiKeyToken(token: string): void {
@@ -5064,11 +5258,19 @@ export function mountAuthRoutes(
   authApp.get?.("/api/v1/auth/cli/login/authorize", ({ request }: any) =>
     executeWithRuntimeErrorsHandled(request, async () => {
       const query = parseCliLoginAuthorizeQuery(request);
-      const result = await options.authService.authorizeCliLogin({
-        challengeId: query.challengeId,
-        state: query.state,
-        request,
-      });
+
+      let result;
+      try {
+        result = await options.authService.authorizeCliLogin({
+          challengeId: query.challengeId,
+          state: query.state,
+          request,
+        });
+      } catch (error) {
+        const htmlError = renderCliChallengeError(error);
+        if (htmlError) return htmlError;
+        throw error;
+      }
 
       if (result.outcome === "throttled") {
         return createAuthBackoffResponse(request, result.retryAfterSeconds);
@@ -5144,16 +5346,54 @@ export function mountAuthRoutes(
         }
       }
 
-      const result = await options.authService.authorizeCliLogin({
-        challengeId: query.challengeId,
-        state: query.state,
-        email,
-        password,
-        request,
-      });
+      let result;
+      try {
+        result = await options.authService.authorizeCliLogin({
+          challengeId: query.challengeId,
+          state: query.state,
+          email,
+          password,
+          request,
+        });
+      } catch (error) {
+        const htmlError = renderCliChallengeError(error);
+        if (htmlError) return htmlError;
+        if (
+          isRuntimeErrorLike(error) &&
+          error.code === "AUTH_INVALID_CREDENTIALS"
+        ) {
+          return new Response(
+            renderCliAuthorizeLoginForm({
+              challengeId: query.challengeId,
+              state: query.state,
+              errorMessage: "Invalid email or password.",
+            }),
+            {
+              status: 401,
+              headers: {
+                "content-type": "text/html; charset=utf-8",
+              },
+            },
+          );
+        }
+        throw error;
+      }
 
       if (result.outcome === "throttled") {
-        return createAuthBackoffResponse(request, result.retryAfterSeconds);
+        return new Response(
+          renderCliAuthorizeLoginForm({
+            challengeId: query.challengeId,
+            state: query.state,
+            errorMessage: `Too many attempts. Try again in ${result.retryAfterSeconds}s.`,
+          }),
+          {
+            status: 429,
+            headers: {
+              "content-type": "text/html; charset=utf-8",
+              "retry-after": String(result.retryAfterSeconds),
+            },
+          },
+        );
       }
 
       if (result.outcome === "login_required") {
