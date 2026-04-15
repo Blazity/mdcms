@@ -626,10 +626,10 @@ test("StudioShellFrame renders loading startup message", () => {
     }),
   );
 
-  assert.match(markup, /Preparing Studio runtime/);
+  assert.match(markup, /Loading Studio/);
   assert.match(
     markup,
-    /Fetching the configured Studio bundle and validating it before launch\./,
+    /Fetching and validating the runtime bundle\./,
   );
   assert.match(markup, /mdcms-studio-shell__/);
   assert.match(markup, /<style>/);

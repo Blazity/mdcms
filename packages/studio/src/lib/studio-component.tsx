@@ -49,9 +49,9 @@ export type StudioStartupErrorDescription = {
   metadata: StudioStartupErrorMetadataRow[];
 };
 
-const LOADING_TITLE = "Preparing Studio runtime";
+const LOADING_TITLE = "Loading Studio";
 const LOADING_SUMMARY =
-  "Fetching the configured Studio bundle and validating it before launch.";
+  "Fetching and validating the runtime bundle.";
 const READY_CONTAINER_STYLE = {
   minHeight: "20rem",
 } as const;
@@ -60,6 +60,8 @@ const STUDIO_SHELL_STYLES = `
 .mdcms-studio-shell,
 .mdcms-studio-shell * {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 .mdcms-studio-shell {
@@ -69,17 +71,18 @@ const STUDIO_SHELL_STYLES = `
   isolation: isolate;
   overflow-x: hidden;
   overflow-y: auto;
-  background: linear-gradient(180deg, #0d1320 0%, #090d16 48%, #06070b 100%);
-  color: #f8fafc;
-  font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  background: #1C1B1B;
+  color: #FCF9F8;
+  font-family: "Inter Variable", "Inter", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .mdcms-studio-shell__backdrop {
   position: absolute;
   inset: 0;
-  background:
-    linear-gradient(180deg, rgba(148, 163, 184, 0.06), transparent 10rem),
-    radial-gradient(circle at top left, rgba(56, 189, 248, 0.08), transparent 24%);
+  pointer-events: none;
+  background: radial-gradient(ellipse 60% 50% at 50% 0%, rgba(107, 127, 255, 0.05), transparent);
 }
 
 .mdcms-studio-shell__frame {
@@ -88,7 +91,7 @@ const STUDIO_SHELL_STYLES = `
   min-height: 100%;
   align-items: stretch;
   width: 100%;
-  max-width: 70rem;
+  max-width: 64rem;
   margin: 0 auto;
   padding: 1.25rem;
 }
@@ -97,213 +100,237 @@ const STUDIO_SHELL_STYLES = `
   width: 100%;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 1.125rem;
-  background: rgba(8, 12, 20, 0.86);
-  padding: 1.25rem;
-  box-shadow: 0 20px 60px rgba(2, 6, 23, 0.32);
+  border: 1px solid rgba(197, 197, 216, 0.12);
+  border-radius: 0.75rem;
+  background: #242322;
+  padding: 1.5rem;
 }
 
 .mdcms-studio-shell__header {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid rgba(197, 197, 216, 0.12);
 }
 
 .mdcms-studio-shell__brand-group {
   display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.mdcms-studio-shell__brand-badge,
-.mdcms-studio-shell__path-chip,
-.mdcms-studio-shell__category-badge {
-  display: inline-flex;
   align-items: center;
-  width: fit-content;
-  border-radius: 999px;
-  padding: 0.28rem 0.7rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  gap: 0.625rem;
 }
 
-.mdcms-studio-shell__brand-badge {
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(148, 163, 184, 0.08);
-  color: #cbd5e1;
+.mdcms-studio-shell__brand-logo {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-shrink: 0;
+}
+
+.mdcms-studio-shell__brand-name {
+  font-family: "Space Grotesk Variable", "Space Grotesk", system-ui, sans-serif;
+  font-size: 1.125rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #FCF9F8;
 }
 
 .mdcms-studio-shell__path-chip {
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(15, 23, 42, 0.55);
-  color: #cbd5e1;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  letter-spacing: 0.04em;
-  text-transform: none;
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border-radius: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-family: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+  font-weight: 400;
+  color: #9a9caa;
+  background: rgba(197, 197, 216, 0.06);
+  border: 1px solid rgba(197, 197, 216, 0.1);
 }
 
-.mdcms-studio-shell__display,
 .mdcms-studio-shell__title {
-  margin: 0;
-  font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  font-family: "Space Grotesk Variable", "Space Grotesk", system-ui, sans-serif;
   font-weight: 600;
-  letter-spacing: -0.03em;
-  color: #fff;
-}
-
-.mdcms-studio-shell__display {
-  font-size: clamp(1.875rem, 3vw, 2.4rem);
-}
-
-.mdcms-studio-shell__title {
-  font-size: clamp(1.6rem, 2.6vw, 2.25rem);
+  font-size: 1.5rem;
+  letter-spacing: -0.02em;
+  color: #FCF9F8;
+  margin-bottom: 0.375rem;
 }
 
 .mdcms-studio-shell__content {
-  margin-top: 1rem;
+  margin-top: 1.5rem;
   display: grid;
-  gap: 1rem;
+  gap: 1.25rem;
 }
 
 .mdcms-studio-shell__eyebrow,
 .mdcms-studio-shell__section-label,
 .mdcms-studio-shell__meta-label,
 .mdcms-studio-shell__details-hint {
-  margin: 0;
-  color: #94a3b8;
-  font-size: 0.72rem;
-  letter-spacing: 0.16em;
+  font-family: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+  color: #9a9caa;
 }
 
-.mdcms-studio-shell__copy,
-.mdcms-studio-shell__summary,
-.mdcms-studio-shell__note,
-.mdcms-studio-shell__check-text,
-.mdcms-studio-shell__meta-value,
-.mdcms-studio-shell__details-summary {
-  margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.7;
+.mdcms-studio-shell__eyebrow {
+  margin-bottom: 0.5rem;
 }
 
 .mdcms-studio-shell__copy,
 .mdcms-studio-shell__summary {
-  max-width: 42rem;
-  color: #cbd5e1;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: #9a9caa;
+  max-width: 36rem;
+  margin-bottom: 1.25rem;
 }
 
 .mdcms-studio-shell__note {
-  max-width: 42rem;
-  color: rgba(254, 243, 199, 0.92);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: #fbbf24;
+  max-width: 36rem;
+  margin-bottom: 1rem;
+}
+
+.mdcms-studio-shell__check-text,
+.mdcms-studio-shell__details-summary {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.mdcms-studio-shell__meta-value {
+  font-family: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #FCF9F8;
+  word-break: break-word;
 }
 
 .mdcms-studio-shell__surface,
 .mdcms-studio-shell__aside,
 .mdcms-studio-shell__details {
-  border-radius: 0.95rem;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 0.5rem;
+  border: 1px solid rgba(197, 197, 216, 0.1);
 }
 
 .mdcms-studio-shell__surface,
 .mdcms-studio-shell__details {
-  background: rgba(2, 6, 23, 0.46);
+  background: rgba(28, 27, 27, 0.6);
   padding: 1rem;
 }
 
 .mdcms-studio-shell__aside {
-  background: rgba(15, 23, 42, 0.42);
+  background: rgba(28, 27, 27, 0.4);
   padding: 1rem;
 }
 
 .mdcms-studio-shell__skeleton-stack {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.625rem;
 }
 
 .mdcms-studio-shell__skeleton-line,
 .mdcms-studio-shell__skeleton-bar,
-.mdcms-studio-shell__skeleton-card,
-.mdcms-studio-shell__check-dot {
-  animation: mdcms-studio-shell-pulse 1.8s ease-in-out infinite;
+.mdcms-studio-shell__skeleton-card {
+  animation: mdcms-shell-pulse 2s ease-in-out infinite;
 }
 
 .mdcms-studio-shell__skeleton-line {
-  height: 0.75rem;
-  width: 7rem;
-  border-radius: 999px;
-  background: rgba(71, 85, 105, 0.82);
+  height: 0.625rem;
+  width: 6rem;
+  border-radius: 0.25rem;
+  background: rgba(197, 197, 216, 0.12);
 }
 
 .mdcms-studio-shell__skeleton-bar {
-  height: 2.25rem;
+  height: 2rem;
   width: 100%;
-  border-radius: 1rem;
-  background: rgba(30, 41, 59, 0.75);
+  border-radius: 0.375rem;
+  background: rgba(197, 197, 216, 0.08);
 }
 
 .mdcms-studio-shell__skeleton-grid {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.625rem;
 }
 
 .mdcms-studio-shell__skeleton-card {
-  height: 6rem;
-  border-radius: 1rem;
-  background: rgba(15, 23, 42, 0.72);
+  height: 5rem;
+  border-radius: 0.375rem;
+  background: rgba(197, 197, 216, 0.06);
 }
 
 .mdcms-studio-shell__skeleton-card:nth-child(2) {
-  background: rgba(15, 23, 42, 0.6);
+  animation-delay: 0.15s;
 }
 
 .mdcms-studio-shell__skeleton-card:nth-child(3) {
-  background: rgba(15, 23, 42, 0.48);
+  animation-delay: 0.3s;
 }
 
 .mdcms-studio-shell__check-list {
-  margin-top: 1rem;
   display: grid;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .mdcms-studio-shell__check-item {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.8rem 0.9rem;
-  border-radius: 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  background: rgba(0, 0, 0, 0.1);
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.375rem;
+  background: rgba(197, 197, 216, 0.04);
 }
 
 .mdcms-studio-shell__check-dot {
-  width: 0.55rem;
-  height: 0.55rem;
+  width: 0.5rem;
+  height: 0.5rem;
   border-radius: 50%;
-  background: #cbd5e1;
+  background: #6B7FFF;
+  animation: mdcms-shell-pulse 2s ease-in-out infinite;
+}
+
+.mdcms-studio-shell__check-item:nth-child(2) .mdcms-studio-shell__check-dot {
+  animation-delay: 0.3s;
+}
+
+.mdcms-studio-shell__check-item:nth-child(3) .mdcms-studio-shell__check-dot {
+  animation-delay: 0.6s;
+}
+
+.mdcms-studio-shell__check-text {
+  color: #9a9caa;
 }
 
 .mdcms-studio-shell__category-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border-radius: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  font-family: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   margin-bottom: 0.75rem;
-  border: 1px solid rgba(248, 113, 113, 0.18);
-  background: rgba(127, 29, 29, 0.22);
-  color: #fecaca;
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  background: rgba(248, 113, 113, 0.1);
+  color: #f87171;
 }
 
 .mdcms-studio-shell__details {
-  margin-top: 1rem;
+  margin-top: 1.25rem;
 }
 
 .mdcms-studio-shell__details-summary {
   cursor: pointer;
   list-style: none;
-  color: #f8fafc;
+  color: #FCF9F8;
   font-weight: 500;
 }
 
@@ -314,30 +341,30 @@ const STUDIO_SHELL_STYLES = `
 .mdcms-studio-shell__details-summary-inner {
   display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .mdcms-studio-shell__details[open] .mdcms-studio-shell__details-hint {
-  color: #cbd5e1;
+  color: #6B7FFF;
 }
 
 .mdcms-studio-shell__details-pre {
-  margin: 1rem 0 0;
-  padding: 1rem;
-  border-radius: 0.8rem;
-  border: 1px solid rgba(148, 163, 184, 0.1);
-  background: #02040a;
-  color: #cbd5e1;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 0.78rem;
-  line-height: 1.7;
+  margin: 0.75rem 0 0;
+  padding: 0.875rem;
+  border-radius: 0.375rem;
+  border: 1px solid rgba(197, 197, 216, 0.08);
+  background: #1C1B1B;
+  color: #9a9caa;
+  font-family: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
   overflow-x: auto;
 }
 
 .mdcms-studio-shell__meta-list {
-  margin: 1rem 0 0;
+  margin: 0.75rem 0 0;
   display: grid;
 }
 
@@ -347,9 +374,9 @@ const STUDIO_SHELL_STYLES = `
 
 .mdcms-studio-shell__meta-row {
   display: grid;
-  gap: 0.3rem;
-  padding: 0.75rem 0;
-  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  gap: 0.25rem;
+  padding: 0.625rem 0;
+  border-top: 1px solid rgba(197, 197, 216, 0.1);
 }
 
 .mdcms-studio-shell__meta-row:first-child {
@@ -357,15 +384,9 @@ const STUDIO_SHELL_STYLES = `
   border-top: 0;
 }
 
-.mdcms-studio-shell__meta-value {
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  color: #f8fafc;
-  word-break: break-word;
-}
-
-@keyframes mdcms-studio-shell-pulse {
+@keyframes mdcms-shell-pulse {
   0%, 100% {
-    opacity: 0.55;
+    opacity: 0.4;
   }
 
   50% {
@@ -379,33 +400,32 @@ const STUDIO_SHELL_STYLES = `
   }
 
   .mdcms-studio-shell__panel {
-    padding: 1.5rem;
+    padding: 2rem;
   }
 
   .mdcms-studio-shell__header {
     flex-direction: row;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
   }
 
   .mdcms-studio-shell__skeleton-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 
 @media (min-width: 1024px) {
   .mdcms-studio-shell__frame {
-    padding: 2rem;
+    padding: 2.5rem;
   }
 
   .mdcms-studio-shell__panel {
-    padding: 1.75rem;
+    padding: 2.5rem;
   }
 
   .mdcms-studio-shell__content {
-    grid-template-columns: minmax(0, 1.3fr) minmax(18rem, 0.75fr);
+    grid-template-columns: 1.3fr 0.7fr;
   }
-
 }
 `;
 
@@ -589,8 +609,45 @@ export function StudioShellFrame({
             <div className="mdcms-studio-shell__panel">
               <header className="mdcms-studio-shell__header">
                 <div className="mdcms-studio-shell__brand-group">
-                  <div className="mdcms-studio-shell__brand-badge">MDCMS</div>
-                  <h1 className="mdcms-studio-shell__display">Studio</h1>
+                  <svg
+                    className="mdcms-studio-shell__brand-logo"
+                    viewBox="0 4 35 35"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                    aria-hidden="true"
+                  >
+                    <mask
+                      id="mdcms-shell-logo-m"
+                      style={{ maskType: "luminance" }}
+                      maskUnits="userSpaceOnUse"
+                      x="0"
+                      y="4"
+                      width="35"
+                      height="35"
+                    >
+                      <path
+                        d="M0 4.01196H34.3316V38.1987H0V4.01196Z"
+                        fill="white"
+                      />
+                    </mask>
+                    <g mask="url(#mdcms-shell-logo-m)">
+                      <path
+                        d="M17.4954 19.8468C16.8523 19.7988 16.5695 19.8252 16.0137 20.1448C13.9577 21.3269 11.8896 22.4902 9.84301 23.6884C8.71035 24.3515 8.86327 25.4939 8.86856 26.6135L8.87323 29.049L8.86754 31.4129C8.86208 33.6365 8.87086 33.7353 10.8305 34.8569L12.7272 35.9412C13.5772 36.4271 16.0648 37.9743 16.7961 38.1227C17.4032 38.1839 17.7316 38.1169 18.2555 37.8171C20.2878 36.6538 22.3256 35.499 24.3513 34.3245C25.5248 33.644 25.3944 32.6758 25.3941 31.522L25.3915 28.8691L25.396 26.5205C25.4007 24.3233 25.3797 24.2285 23.4707 23.1348L21.5627 22.0412L19.3001 20.7437C18.7928 20.4531 18.047 19.9646 17.4954 19.8468Z"
+                        fill="currentColor"
+                      />
+                      <path
+                        d="M26.4326 4.08956C25.8135 4.03531 25.4981 4.07102 24.9624 4.38156C23.0193 5.50784 21.084 6.64735 19.1433 7.77787C18.6139 8.08624 18.1508 8.4779 18.0124 9.10786C17.8664 9.77215 17.9212 10.5397 17.9239 11.2234L17.9247 13.6338L17.921 15.6797C17.9197 16.4984 17.8187 17.4363 18.3987 18.0931C18.766 18.509 19.2648 18.7439 19.7366 19.0229C20.2456 19.3238 20.7602 19.6176 21.2709 19.9157L23.6489 21.307C24.1935 21.6256 25.092 22.2074 25.6525 22.359C26.5274 22.4342 26.7078 22.3363 27.436 21.9116L31.5337 19.5176C31.9048 19.301 33.2517 18.5452 33.5247 18.301C33.809 18.0485 34.0095 17.7153 34.0996 17.3458C34.2306 16.8302 34.1905 15.8811 34.1881 15.3182L34.1869 12.9892L34.1909 10.8318C34.1941 8.63869 34.2067 8.49732 32.3014 7.38407L30.5377 6.35429L28.3471 5.07312C27.8022 4.75331 27.0227 4.23424 26.4326 4.08956Z"
+                        fill="#CAF240"
+                      />
+                      <path
+                        d="M8.58217 4.09055C7.9301 4.03424 7.61858 4.07788 7.05481 4.40779C5.09063 5.5562 3.12254 6.6993 1.1626 7.85475C0.628794 8.16937 0.310829 8.51792 0.146414 9.13369C0.101146 9.30918 0.0754332 9.48911 0.0692766 9.67022C0.0174895 10.8607 0.0739828 12.4295 0.0721723 13.6712L0.0681892 15.7221C0.062757 17.8453 0.0895542 17.9803 1.90428 19.0366L3.63425 20.0439L5.9733 21.413C6.50528 21.7242 7.23024 22.2109 7.80661 22.3603C8.5945 22.4512 8.87405 22.3186 9.52562 21.9424L13.5603 19.5843C14.0662 19.2898 14.6172 18.9422 15.1248 18.67C16.5527 17.9041 16.3376 16.7588 16.3309 15.3383L16.3291 13.0458L16.3337 10.8074C16.3349 10.0947 16.4178 9.24654 16.0423 8.6199C15.9028 8.38554 15.7166 8.18226 15.4955 8.02259C15.2008 7.8081 14.7526 7.56378 14.4259 7.37299L12.6291 6.32531C11.4588 5.64323 10.2823 4.93464 9.099 4.27731C8.93579 4.18663 8.763 4.13495 8.58217 4.09055Z"
+                        fill="#2F49E5"
+                      />
+                    </g>
+                  </svg>
+                  <h1 className="mdcms-studio-shell__brand-name">
+                    MDCMS Studio
+                  </h1>
                 </div>
                 <span className="mdcms-studio-shell__path-chip">
                   {basePath}
@@ -629,9 +686,9 @@ export function StudioShellFrame({
                     </p>
                     <div className="mdcms-studio-shell__check-list">
                       {[
-                        "Fetching bootstrap manifest",
-                        "Verifying runtime integrity",
-                        "Preparing host bridge handoff",
+                        "Resolving runtime bundle",
+                        "Verifying bundle integrity",
+                        "Initializing runtime",
                       ].map((step) => (
                         <div
                           key={step}
