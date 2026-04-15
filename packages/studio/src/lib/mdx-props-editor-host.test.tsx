@@ -271,6 +271,40 @@ test("MdxPropsEditorHost renders interactive auto-form controls for fallback pro
   assert.match(markup, /<select/);
 });
 
+test("MdxPropsEditorHost renders compact type hints for generated auto-form fields", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MdxPropsEditorHost, {
+      component: createComponent({
+        propHints: {
+          color: { widget: "color-picker" },
+        },
+        extractedProps: {
+          data: { type: "array", required: true, items: "number" },
+          type: {
+            type: "enum",
+            required: true,
+            values: ["bar", "line", "pie"],
+          },
+          title: { type: "string", required: false },
+          color: { type: "string", required: false },
+        },
+      }),
+      context: createContext(async () => null),
+      value: {},
+      onChange: () => {},
+    }),
+  );
+
+  assert.match(markup, /data-mdcms-mdx-auto-field-hint="Chart:data"/);
+  assert.match(markup, />number\[\]</);
+  assert.match(markup, /data-mdcms-mdx-auto-field-hint="Chart:type"/);
+  assert.match(markup, />bar \| line \| pie</);
+  assert.match(markup, /data-mdcms-mdx-auto-field-hint="Chart:title"/);
+  assert.match(markup, />string</);
+  assert.match(markup, /data-mdcms-mdx-auto-field-hint="Chart:color"/);
+  assert.match(markup, />color</);
+});
+
 test("renderReadyMdxPropsEditor keeps diagnostics out of the visible custom editor surface", () => {
   const markup = renderToStaticMarkup(
     createElement(

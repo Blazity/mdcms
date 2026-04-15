@@ -354,12 +354,20 @@ function renderAutoFormFields(
         >
           <label
             htmlFor={getAutoFormFieldId(componentName, field.name)}
-            className="block text-xs font-medium text-foreground"
+            className="flex items-baseline gap-1.5 text-xs font-medium text-foreground"
           >
-            {field.name}
-            {field.required ? (
-              <span className="ml-1 text-destructive">*</span>
-            ) : null}
+            <span>
+              {field.name}
+              {field.required ? (
+                <span className="ml-1 text-destructive">*</span>
+              ) : null}
+            </span>
+            <span
+              data-mdcms-mdx-auto-field-hint={`${componentName}:${field.name}`}
+              className="font-mono text-[10px] text-foreground-muted"
+            >
+              {formatAutoFormFieldTypeHint(field)}
+            </span>
           </label>
           {renderAutoFormFieldControl({
             componentName,
@@ -629,6 +637,48 @@ function renderAutoFormFieldControl(input: {
 
 function getAutoFormFieldId(componentName: string, fieldName: string): string {
   return `${componentName}-${fieldName}`.replace(/[^A-Za-z0-9_-]/g, "-");
+}
+
+function formatAutoFormFieldTypeHint(field: MdxAutoFormField): string {
+  switch (field.control) {
+    case "text":
+    case "textarea":
+      return "string";
+    case "url":
+      return "url";
+    case "color-picker":
+      return "color";
+    case "number":
+    case "slider":
+      return "number";
+    case "boolean":
+      return "boolean";
+    case "image":
+      return "image";
+    case "string-list":
+      return "string[]";
+    case "number-list":
+      return "number[]";
+    case "date":
+      return "date";
+    case "json":
+      return "JSON";
+    case "rich-text":
+      return "rich text";
+    case "select":
+      return formatAutoFormSelectTypeHint(field.options);
+  }
+}
+
+function formatAutoFormSelectTypeHint(
+  options: Extract<MdxAutoFormField, { control: "select" }>["options"],
+): string {
+  const labels = options.map((option) => getAutoFormSelectOptionLabel(option));
+  const compactLabel = labels.join(" | ");
+
+  return labels.length > 0 && labels.length <= 4 && compactLabel.length <= 32
+    ? compactLabel
+    : "enum";
 }
 
 function getAutoFormInputType(

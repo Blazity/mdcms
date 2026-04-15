@@ -78,6 +78,10 @@ test("MdxPropsPanel renders the selected component instead of an arbitrary catal
   assert.match(markup, /data-mdcms-mdx-props-panel="HeroBanner"/);
   assert.match(markup, /Selected component/);
   assert.match(markup, /data-mdcms-mdx-auto-form="HeroBanner"/);
+  assert.doesNotMatch(markup, />Void</);
+  assert.doesNotMatch(markup, />Auto</);
+  assert.doesNotMatch(markup, />Custom</);
+  assert.doesNotMatch(markup, />Wrapper</);
 });
 
 test("MdxPropsPanel renders an unresolved state when the selected component is missing from the local catalog", () => {
