@@ -151,3 +151,28 @@ test("array values in meta are joined with commas", () => {
   assert.equal(lines.length, 1);
   assert.equal(lines[0], "modules loaded moduleIds=core.system,domain.content");
 });
+
+test("object values in meta are JSON-serialized", () => {
+  const lines: string[] = [];
+  const sink = createCliConsoleSink((line) => lines.push(line));
+
+  sink(
+    makeEntry("error", "plan failed", {
+      violations: [{ code: "DUPLICATE_MODULE_ID", moduleId: "dup" }],
+    }),
+  );
+
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /^Error: plan failed violations=\[/);
+  assert.match(lines[0], /"code":"DUPLICATE_MODULE_ID"/);
+  assert.match(lines[0], /"moduleId":"dup"/);
+});
+
+test("single object value in meta is JSON-serialized", () => {
+  const lines: string[] = [];
+  const sink = createCliConsoleSink((line) => lines.push(line));
+
+  sink(makeEntry("warn", "drift detected", { details: { hash: "abc123" } }));
+
+  assert.equal(lines[0], 'Warning: drift detected details={"hash":"abc123"}');
+});

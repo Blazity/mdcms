@@ -78,8 +78,18 @@ function formatMeta(meta?: LogContext): string {
 
   const pairs = Object.entries(meta)
     .map(([key, value]) => {
-      const formatted = Array.isArray(value) ? value.join(",") : String(value);
-      return `${key}=${formatted}`;
+      if (Array.isArray(value)) {
+        const hasObjects = value.some(
+          (item) => typeof item === "object" && item !== null,
+        );
+        return `${key}=${hasObjects ? JSON.stringify(value) : value.join(",")}`;
+      }
+
+      if (typeof value === "object" && value !== null) {
+        return `${key}=${JSON.stringify(value)}`;
+      }
+
+      return `${key}=${String(value)}`;
     })
     .join(" ");
 
