@@ -9,6 +9,7 @@ import {
   extractDocumentTitle,
   mapFiltersToQuery,
   getContentTypeListQueryKey,
+  getContentTypeListGroupingMode,
   getTranslationCoverageStatus,
   PAGE_SIZE,
   shouldEnableTranslationCoverage,
@@ -75,6 +76,18 @@ test("mapContentDocument transforms API response to view model", () => {
   assert.equal(mapped.status, "published");
   assert.equal(mapped.updatedAt, "2026-03-20T00:00:00.000Z");
   assert.equal(mapped.createdBy, "user-1");
+  assert.equal(mapped.updatedBy, "user-1");
+});
+
+test("mapContentDocument keeps creator and updater distinct", () => {
+  const mapped = mapContentDocument({
+    ...baseDoc,
+    createdBy: "creator-1",
+    updatedBy: "editor-2",
+  });
+
+  assert.equal(mapped.createdBy, "creator-1");
+  assert.equal(mapped.updatedBy, "editor-2");
 });
 
 test("mapFiltersToQuery maps status filter to API params", () => {
@@ -121,6 +134,11 @@ test("getContentTypeListQueryKey returns the canonical type-scoped query prefix"
     getContentTypeListQueryKey("marketing-site", "production", "BlogPost"),
     ["content-list", "marketing-site", "production", "BlogPost"],
   );
+});
+
+test("getContentTypeListGroupingMode returns a stable grouping discriminator", () => {
+  assert.equal(getContentTypeListGroupingMode(true), "translationGroup");
+  assert.equal(getContentTypeListGroupingMode(false), "document");
 });
 
 test("shouldEnableTranslationCoverage requires both a localized type and supported locales", () => {

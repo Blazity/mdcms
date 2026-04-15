@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "bun:test";
+import { RuntimeError } from "@mdcms/shared";
 
 import {
   createInMemoryContentStore,
@@ -249,6 +250,128 @@ test("content API supports create/list filters/sort/pagination", async () => {
   assert.equal(body.data.length, 1);
   assert.equal(body.data[0]?.path, "blog/beta");
   assert.equal(body.data[0]?.type, "BlogPost");
+});
+
+test("content API rejects translation group grouping for non-localized types", async () => {
+  const store = createInMemoryContentStore({
+    schemaScopes: [
+      {
+        project: scopeHeaders["x-mdcms-project"],
+        environment: scopeHeaders["x-mdcms-environment"],
+        schemas: {
+          SettingsPage: {
+            type: "SettingsPage",
+            directory: "content/settings",
+            localized: false,
+            fields: {},
+          },
+        },
+      },
+    ],
+  });
+  const rawHandler = createServerRequestHandler({
+    env: baseEnv,
+    configureApp: (app) => {
+      mountContentApiRoutes(app, {
+        store,
+        authorize: async () => undefined,
+        requireCsrf: async () => undefined,
+        getWriteSchemaSyncState: async () => ({
+          schemaHash: inMemorySchemaHash,
+        }),
+      });
+    },
+    now: () => new Date("2026-03-02T10:00:00.000Z"),
+  });
+  const handler = wrapHandlerWithAutoSchemaHash(
+    rawHandler,
+    () => inMemorySchemaHash,
+  );
+
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/content?draft=true&type=SettingsPage&groupBy=translationGroup",
+      {
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const body = (await response.json()) as {
+    code: string;
+    details?: {
+      field?: string;
+      value?: string;
+    };
+  };
+
+  assert.equal(response.status, 400);
+  assert.equal(body.code, "INVALID_QUERY_PARAM");
+  assert.equal(body.details?.field, "groupBy");
+  assert.equal(body.details?.value, "translationGroup");
+});
+
+test("content API authorizes list reads before validating translation grouping", async () => {
+  let schemaReads = 0;
+  const store = createInMemoryContentStore({
+    schemaScopes: [
+      {
+        project: scopeHeaders["x-mdcms-project"],
+        environment: scopeHeaders["x-mdcms-environment"],
+        schemas: {
+          SettingsPage: {
+            type: "SettingsPage",
+            directory: "content/settings",
+            localized: false,
+            fields: {},
+          },
+        },
+      },
+    ],
+  });
+  const rawHandler = createServerRequestHandler({
+    env: baseEnv,
+    configureApp: (app) => {
+      mountContentApiRoutes(app, {
+        store: {
+          ...store,
+          async getSchema(scope, type) {
+            schemaReads += 1;
+            return store.getSchema(scope, type);
+          },
+        },
+        authorize: async () => {
+          throw new RuntimeError({
+            code: "FORBIDDEN",
+            message: "Forbidden",
+            statusCode: 403,
+          });
+        },
+        requireCsrf: async () => undefined,
+        getWriteSchemaSyncState: async () => ({
+          schemaHash: inMemorySchemaHash,
+        }),
+      });
+    },
+    now: () => new Date("2026-03-02T10:00:00.000Z"),
+  });
+  const handler = wrapHandlerWithAutoSchemaHash(
+    rawHandler,
+    () => inMemorySchemaHash,
+  );
+
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/content?draft=true&type=SettingsPage&groupBy=translationGroup",
+      {
+        headers: scopeHeaders,
+      },
+    ),
+  );
+  const body = (await response.json()) as { code: string };
+
+  assert.equal(response.status, 403);
+  assert.equal(body.code, "FORBIDDEN");
+  assert.equal(schemaReads, 0);
 });
 
 test("content API overview returns metadata-only counts per type using content:read scope", async () => {

@@ -31,6 +31,7 @@ export type MappedContentDocument = {
   status: DocumentStatus;
   updatedAt: string;
   createdBy: string;
+  updatedBy: string;
 };
 
 export type ContentTypeTranslationCoverageStatus =
@@ -94,6 +95,7 @@ export function mapContentDocument(
     ),
     updatedAt: doc.updatedAt,
     createdBy: doc.createdBy,
+    updatedBy: doc.updatedBy,
   };
 }
 
@@ -159,6 +161,12 @@ export function getContentTypeListQueryKey(
   return ["content-list", project, environment, typeId] as const;
 }
 
+export function getContentTypeListGroupingMode(
+  enableTranslationCoverage: boolean,
+): "document" | "translationGroup" {
+  return enableTranslationCoverage ? "translationGroup" : "document";
+}
+
 export function shouldEnableTranslationCoverage(input: {
   enableTranslationCoverage: boolean;
   supportedLocaleCount: number;
@@ -211,6 +219,9 @@ export function useContentTypeList(
   ]);
 
   const queryParams = useMemo(() => mapFiltersToQuery(filters), [filters]);
+  const groupingMode = getContentTypeListGroupingMode(
+    enableTranslationCoverage,
+  );
 
   const query = useQuery({
     queryKey: [
@@ -219,12 +230,16 @@ export function useContentTypeList(
         mountInfo.environment,
         typeId,
       ),
+      groupingMode,
       queryParams,
       offset,
     ],
     queryFn: async () => {
       const result = await api!.list({
         type: typeId,
+        ...(groupingMode === "translationGroup"
+          ? { groupBy: "translationGroup" as const }
+          : {}),
         ...queryParams,
         draft: true,
         isDeleted: false,

@@ -178,6 +178,27 @@ test("list passes sort and order query params", async () => {
   assert.equal(url.searchParams.get("limit"), "5");
 });
 
+test("list passes translation-group grouping as a query param", async () => {
+  const calls: Array<{ input: string | URL | Request }> = [];
+  const api = createApi({
+    fetcher: async (input) => {
+      calls.push({ input });
+      return new Response(JSON.stringify(validPaginatedResponse), {
+        status: 200,
+      });
+    },
+  });
+
+  await api.list({
+    type: "BlogPost",
+    limit: 5,
+    groupBy: "translationGroup",
+  });
+
+  const url = new URL(String(calls[0]?.input));
+  assert.equal(url.searchParams.get("groupBy"), "translationGroup");
+});
+
 test("list returns empty result for malformed response", async () => {
   const api = createApi({
     fetcher: async () =>

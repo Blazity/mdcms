@@ -36,6 +36,12 @@ export function toDocumentResponse(
     draftRevision: document.draftRevision,
     frontmatter: document.frontmatter,
     body: document.body,
+    ...(document.localesPresent
+      ? { localesPresent: document.localesPresent }
+      : {}),
+    ...(document.publishedLocales
+      ? { publishedLocales: document.publishedLocales }
+      : {}),
     createdBy: document.createdBy,
     createdAt: document.createdAt,
     updatedBy: document.updatedBy,
@@ -138,6 +144,42 @@ export function readSupportedLocales(
   }
 
   return new Set(supportedLocales);
+}
+
+export function readOrderedSupportedLocales(
+  rawConfigSnapshot: unknown,
+): string[] | undefined {
+  if (!isRecord(rawConfigSnapshot)) {
+    return undefined;
+  }
+
+  const locales = rawConfigSnapshot.locales;
+  if (!isRecord(locales) || !Array.isArray(locales.supported)) {
+    return undefined;
+  }
+
+  const supportedLocales = locales.supported.filter(
+    (locale): locale is string =>
+      typeof locale === "string" && locale.trim().length > 0,
+  );
+
+  return supportedLocales.length > 0 ? supportedLocales : undefined;
+}
+
+export function readDefaultLocale(
+  rawConfigSnapshot: unknown,
+): string | undefined {
+  if (!isRecord(rawConfigSnapshot)) {
+    return undefined;
+  }
+
+  const locales = rawConfigSnapshot.locales;
+  if (!isRecord(locales) || typeof locales.default !== "string") {
+    return undefined;
+  }
+
+  const normalized = locales.default.trim();
+  return normalized.length > 0 ? normalized : undefined;
 }
 
 export function toContentDocument(

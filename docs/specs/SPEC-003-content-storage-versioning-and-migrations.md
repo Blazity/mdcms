@@ -262,24 +262,25 @@ Reference fields persist plain env-local `document_id` UUID strings in
 
 ## Query Parameters (Content Listing)
 
-| Parameter               | Type     | Description                                                                                                                                                                                                                                                      |
-| ----------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type`                  | string   | Filter by schema type (e.g., `BlogPost`)                                                                                                                                                                                                                         |
-| `path`                  | string   | Filter by path prefix (e.g., `blog/`)                                                                                                                                                                                                                            |
-| `locale`                | string   | Filter by locale (configured BCP 47 tag such as `en`/`fr`, or `__mdcms_default__` in implicit single-locale mode)                                                                                                                                                |
-| `slug`                  | string   | Filter by slug (when multiple documents share the same type)                                                                                                                                                                                                     |
-| `published`             | boolean  | Filter by whether `published_version` exists                                                                                                                                                                                                                     |
-| `isDeleted`             | boolean  | Filter by soft-deleted state (`is_deleted`)                                                                                                                                                                                                                      |
-| `hasUnpublishedChanges` | boolean  | Filter by unpublished divergence from latest publish                                                                                                                                                                                                             |
-| `draft`                 | boolean  | Return mutable head content (published API default is latest published only; requires draft permission)                                                                                                                                                          |
-| `resolve`               | string[] | Resolve listed references inline at read time (shallow only). See the Reference Resolution Contract above for `resolveErrors`, `null` fallback values, and `INVALID_QUERY_PARAM` treatment of invalid paths. When used on the list endpoint, `type` is required. |
-| `project`               | string   | Target project (required if header not set)                                                                                                                                                                                                                      |
-| `environment`           | string   | Target environment (required if header not set)                                                                                                                                                                                                                  |
-| `limit`                 | integer  | Page size (default: 20, max: 100)                                                                                                                                                                                                                                |
-| `offset`                | integer  | Pagination offset                                                                                                                                                                                                                                                |
-| `sort`                  | string   | Sort field (e.g., `createdAt`, `updatedAt`, `path`)                                                                                                                                                                                                              |
-| `order`                 | string   | Sort direction (`asc` or `desc`)                                                                                                                                                                                                                                 |
-| `q`                     | string   | Free-text search (server-side, matches against document path and frontmatter title)                                                                                                                                                                              |
+| Parameter               | Type     | Description                                                                                                                                                                                                                                                                     |
+| ----------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`                  | string   | Filter by schema type (e.g., `BlogPost`)                                                                                                                                                                                                                                        |
+| `path`                  | string   | Filter by path prefix (e.g., `blog/`)                                                                                                                                                                                                                                           |
+| `locale`                | string   | Filter by locale (configured BCP 47 tag such as `en`/`fr`, or `__mdcms_default__` in implicit single-locale mode)                                                                                                                                                               |
+| `slug`                  | string   | Filter by slug (when multiple documents share the same type)                                                                                                                                                                                                                    |
+| `published`             | boolean  | Filter by whether `published_version` exists                                                                                                                                                                                                                                    |
+| `isDeleted`             | boolean  | Filter by soft-deleted state (`is_deleted`)                                                                                                                                                                                                                                     |
+| `hasUnpublishedChanges` | boolean  | Filter by unpublished divergence from latest publish                                                                                                                                                                                                                            |
+| `draft`                 | boolean  | Return mutable head content (published API default is latest published only; requires draft permission)                                                                                                                                                                         |
+| `resolve`               | string[] | Resolve listed references inline at read time (shallow only). See the Reference Resolution Contract above for `resolveErrors`, `null` fallback values, and `INVALID_QUERY_PARAM` treatment of invalid paths. When used on the list endpoint, `type` is required.                |
+| `project`               | string   | Target project (required if header not set)                                                                                                                                                                                                                                     |
+| `environment`           | string   | Target environment (required if header not set)                                                                                                                                                                                                                                 |
+| `limit`                 | integer  | Page size (default: 20, max: 100)                                                                                                                                                                                                                                               |
+| `offset`                | integer  | Pagination offset                                                                                                                                                                                                                                                               |
+| `sort`                  | string   | Sort field (e.g., `createdAt`, `updatedAt`, `path`)                                                                                                                                                                                                                             |
+| `order`                 | string   | Sort direction (`asc` or `desc`)                                                                                                                                                                                                                                                |
+| `q`                     | string   | Free-text search (server-side, matches against document path and frontmatter title)                                                                                                                                                                                             |
+| `groupBy`               | string   | Optional list shaping mode. `translationGroup` is valid only when `type` resolves to a localized schema type and returns one row per `translation_group_id`. Search/filter matching still considers locale variants, but sort, pagination, and `total` operate on grouped rows. |
 
 ### User Summary Sidecar
 
@@ -296,6 +297,46 @@ Reference fields persist plain env-local `document_id` UUID strings in
   separate per-user lookups.
 - The `users` map is informational only and does not affect authorization or
   document data integrity.
+
+### Grouped Translation List Mode
+
+`GET /api/v1/content` supports `groupBy=translationGroup` for Studio-style
+localized document lists.
+
+- `groupBy=translationGroup` requires `type`.
+- The resolved schema type for `type` must be localized; otherwise the request
+  fails with `INVALID_QUERY_PARAM` (`400`).
+- The server applies the normal list filters (`type`, `path`, `locale`, `slug`,
+  `published`, `isDeleted`, `hasUnpublishedChanges`, `draft`, `q`) to locale
+  variants first, then collapses the matching variants by
+  `translation_group_id`.
+- The grouped response returns one row per matching `translation_group_id`, not
+  one row per locale variant.
+- Search continues to match any locale variant in the group. A matching group is
+  returned once even when multiple locale variants match the same query.
+- Sort, pagination, and `pagination.total` are computed on grouped rows after
+  grouping, not on raw locale variants.
+- Each grouped row includes:
+  - representative variant metadata:
+    `documentId`, `project`, `environment`, `path`, `type`, `locale`,
+    `format`, `frontmatter`, `createdBy`, `createdAt`, `updatedBy`,
+    `updatedAt`
+  - group-level metadata:
+    `translationGroupId`, `publishedVersion`, `hasUnpublishedChanges`,
+    `localesPresent`, `publishedLocales`
+- The representative variant is chosen by locale preference in this order:
+  1. project default locale
+  2. first available supported locale in configured order
+  3. lexical locale order
+- `publishedVersion` and `hasUnpublishedChanges` on grouped rows are
+  group-level values:
+  - `publishedVersion` is `null` only when no locale variant in the group has a
+    published version
+  - `hasUnpublishedChanges` is `true` when at least one locale variant in the
+    group is unpublished or has unpublished changes
+- `localesPresent` and `publishedLocales` describe the full non-deleted
+  translation group in the active routed scope, not just the representative
+  variant.
 
 ## Document Duplication
 

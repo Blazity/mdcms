@@ -14,6 +14,7 @@ export const SortFieldSchema = z.enum(["createdAt", "updatedAt", "path"]);
 export const SortOrderSchema = z.enum(["asc", "desc"]);
 export const ContentFormatSchema = z.enum(["md", "mdx"]);
 export const RestoreTargetStatusSchema = z.enum(["draft", "published"]);
+export const ContentListGroupBySchema = z.enum(["translationGroup"]);
 
 export const JsonObjectSchema = z
   .record(z.string(), z.unknown())
@@ -27,6 +28,7 @@ export type SortField = z.infer<typeof SortFieldSchema>;
 export type SortOrder = z.infer<typeof SortOrderSchema>;
 export type ContentFormat = z.infer<typeof ContentFormatSchema>;
 export type RestoreTargetStatus = z.infer<typeof RestoreTargetStatusSchema>;
+export type ContentListGroupBy = z.infer<typeof ContentListGroupBySchema>;
 
 export type ContentScope = {
   project: string;
@@ -81,6 +83,7 @@ export type ContentListQuery = {
   sort?: string;
   order?: string;
   q?: string;
+  groupBy?: string;
 };
 
 export type ContentVariantSummary = TranslationVariantSummary;
@@ -229,6 +232,10 @@ export type InMemoryContentSchemaScope = {
   project: string;
   environment: string;
   schemas: Record<string, SchemaRegistryTypeSnapshot>;
+  locales?: {
+    default?: string;
+    supported?: string[];
+  };
 };
 
 export type CreateInMemoryContentStoreOptions = {

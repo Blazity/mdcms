@@ -19,7 +19,7 @@ export type ContentTranslationCoverageMap = Record<
 
 type TranslationCoverageDocument = Pick<
   ContentDocumentResponse,
-  "translationGroupId" | "locale"
+  "translationGroupId" | "locale" | "localesPresent"
 >;
 
 export function getContentTranslationCoverageQueryKey(
@@ -48,7 +48,16 @@ export function buildContentTranslationCoverageMap(
   for (const document of documents) {
     const locales =
       localesByGroup.get(document.translationGroupId) ?? new Set();
-    locales.add(document.locale);
+    if (
+      Array.isArray(document.localesPresent) &&
+      document.localesPresent.length > 0
+    ) {
+      for (const locale of document.localesPresent) {
+        locales.add(locale);
+      }
+    } else {
+      locales.add(document.locale);
+    }
     localesByGroup.set(document.translationGroupId, locales);
   }
 
@@ -92,6 +101,7 @@ export async function loadContentTranslationCoverageMap(
   while (pageCount < maxPages) {
     const response = await api.list({
       type: input.type,
+      groupBy: "translationGroup",
       draft: true,
       isDeleted: false,
       limit: CONTENT_TRANSLATION_COVERAGE_PAGE_SIZE,
@@ -103,6 +113,7 @@ export async function loadContentTranslationCoverageMap(
       ...response.data.map((document) => ({
         translationGroupId: document.translationGroupId,
         locale: document.locale,
+        localesPresent: document.localesPresent,
       })),
     );
 

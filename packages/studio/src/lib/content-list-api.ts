@@ -24,6 +24,7 @@ export type StudioContentListApiOptions = {
 
 export type StudioContentListQuery = {
   type?: string;
+  groupBy?: "translationGroup";
   q?: string;
   draft?: boolean;
   published?: boolean;
@@ -75,6 +76,7 @@ export function createStudioContentListApi(
       const url = resolveStudioRelativeUrl("/api/v1/content", config.serverUrl);
 
       if (query.type) url.searchParams.set("type", query.type);
+      if (query.groupBy) url.searchParams.set("groupBy", query.groupBy);
       const trimmedQ = query.q?.trim();
       if (trimmedQ) url.searchParams.set("q", trimmedQ);
       if (query.draft !== undefined)

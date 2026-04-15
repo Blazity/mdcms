@@ -2,11 +2,13 @@ import { RuntimeError, resolveRequestTargetRouting } from "@mdcms/shared";
 import { z } from "zod";
 
 import {
+  ContentListGroupBySchema,
   ContentFormatSchema,
   JsonObjectSchema,
   RestoreTargetStatusSchema,
   SortFieldSchema,
   SortOrderSchema,
+  type ContentListGroupBy,
   type ContentFormat,
   type ContentScope,
   type RestoreTargetStatus,
@@ -166,6 +168,20 @@ export function parseSortOrder(value: string | undefined): SortOrder {
     z.string().trim().toLowerCase().pipe(SortOrderSchema),
     value,
     "order",
+  );
+}
+
+export function parseContentListGroupBy(
+  value: string | undefined,
+): ContentListGroupBy | undefined {
+  if (value === undefined || value.trim().length === 0) {
+    return undefined;
+  }
+
+  return parseQueryParam(
+    z.string().trim().pipe(ContentListGroupBySchema),
+    value,
+    "groupBy",
   );
 }
 

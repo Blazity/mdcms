@@ -30,6 +30,7 @@ import {
   assertJsonObject,
   assertRequiredString,
   parseBoolean,
+  parseContentListGroupBy,
   parseContentFormat,
   parseOptionalString,
   parsePositiveInt,
@@ -41,11 +42,14 @@ import {
   buildContentPathConflict,
   getUniqueConstraintName,
   isUniqueViolation,
+  readDefaultLocale,
+  readOrderedSupportedLocales,
   readSupportedLocales,
   toContentDocument,
   toContentVersionDocument,
   toIsoString,
 } from "./responses.js";
+import { groupDocumentsByTranslationGroup } from "./grouped-list.js";
 import { validateReferenceFieldIdentities } from "./reference-validation.js";
 import { matchesDeletedListVisibility } from "./visibility.js";
 
@@ -194,6 +198,8 @@ export function createDatabaseContentStore(
   ): Promise<
     | {
         localized: boolean;
+        defaultLocale?: string;
+        orderedSupportedLocales?: string[];
         supportedLocales?: Set<string>;
       }
     | undefined
@@ -220,6 +226,10 @@ export function createDatabaseContentStore(
 
     return {
       localized: schemaEntry.localized,
+      defaultLocale: readDefaultLocale(schemaSync?.rawConfigSnapshot),
+      orderedSupportedLocales: readOrderedSupportedLocales(
+        schemaSync?.rawConfigSnapshot,
+      ),
       supportedLocales: readSupportedLocales(schemaSync?.rawConfigSnapshot),
     };
   }
@@ -782,6 +792,7 @@ export function createDatabaseContentStore(
       const normalizedLocale = query.locale?.trim();
       const normalizedSlug = query.slug?.trim();
       const normalizedQ = query.q?.trim().toLowerCase();
+      const groupBy = parseContentListGroupBy(query.groupBy);
       const scopeIds = await resolveScopeIds(scope, false);
 
       if (!scopeIds) {
@@ -836,7 +847,25 @@ export function createDatabaseContentStore(
         }),
       );
 
-      const sortedRows = sortDocuments(filteredRows, sort, order);
+      const localePolicy =
+        groupBy === "translationGroup" && normalizedType
+          ? await resolveVariantLocalePolicy(scopeIds, normalizedType)
+          : undefined;
+      const sortedRows =
+        groupBy === "translationGroup" && normalizedType
+          ? groupDocumentsByTranslationGroup({
+              matchedRows: filteredRows,
+              allRows: resolvedRows.filter(
+                (document) =>
+                  document.type === normalizedType &&
+                  document.isDeleted === false,
+              ),
+              sort,
+              order,
+              defaultLocale: localePolicy?.defaultLocale,
+              supportedLocales: localePolicy?.orderedSupportedLocales,
+            })
+          : sortDocuments(filteredRows, sort, order);
 
       return {
         rows: sortedRows.slice(offset, offset + limit),
