@@ -105,27 +105,34 @@ volumes:
   miniodata:
 ```
 
-### Getting Started (Developer Experience)
+### Getting Started (End-User Project)
+
+Set up MDCMS in your own application. This assumes an MDCMS server is already running (self-hosted or managed).
 
 ```bash
-# 1. Clone the repo and start the backend
+# 1. Install the packages
+npm install @mdcms/cli @mdcms/studio @mdcms/sdk
+
+# 2. Initialize MDCMS in the project
+npx mdcms init
+
+# 3. Embed the Studio in the app (e.g., Next.js)
+# Create app/admin/[[...path]]/page.tsx with <Studio />
+
+# 4. Start developing
+npm run dev
+# Visit /admin to access the CMS
+```
+
+### Getting Started (Contributor / Monorepo Development)
+
+To work on MDCMS itself, clone the repository and use Bun as the runtime:
+
+```bash
 git clone <repo>
 cd mdcms
 bun install
 docker compose up -d
-
-# 2. In the user's project, install the packages
-npm install @mdcms/cli @mdcms/studio @mdcms/sdk
-
-# 3. Initialize MDCMS in the project
-npx cms init
-
-# 4. Embed the Studio in the app (e.g., Next.js)
-# Create app/admin/[[...path]]/page.tsx with <Studio />
-
-# 5. Start developing
-npm run dev
-# Visit /admin to access the CMS
 ```
 
 Repository-local Git hooks are installed during `bun install` when the repo is
