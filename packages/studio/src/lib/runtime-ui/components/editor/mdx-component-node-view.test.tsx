@@ -66,3 +66,34 @@ test("createMdxComponentPreviewProps injects wrapper children into preview props
 
   assert.match(markup, /<strong>Body<\/strong>/);
 });
+
+test("MdxComponentNodeFrame renders 'Content' label for wrapper components", () => {
+  const markup = renderToStaticMarkup(
+    createElement(
+      MdxComponentNodeFrame,
+      {
+        componentName: "Callout",
+        isVoid: false,
+        propsSummary: 'type="warning"',
+        previewState: "empty",
+      },
+      createElement("div", { "data-test-slot": "children" }, "Child content"),
+    ),
+  );
+
+  assert.match(markup, /data-mdcms-mdx-content-label="Callout"/);
+  assert.match(markup, />Content</);
+});
+
+test("MdxComponentNodeFrame does not render content label for void components", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MdxComponentNodeFrame, {
+      componentName: "HeroBanner",
+      isVoid: true,
+      propsSummary: 'title="Launch"',
+      previewState: "empty",
+    }),
+  );
+
+  assert.doesNotMatch(markup, /data-mdcms-mdx-content-label/);
+});

@@ -7,8 +7,10 @@ import { extractMarkdownFromEditor } from "../../../markdown-pipeline.js";
 import { createDocumentEditor } from "../../../document-editor.js";
 import {
   getMdxComponentSlashTrigger,
+  getSlashTriggerCoords,
   replaceSlashTriggerWithMdxComponent,
 } from "./mdx-component-slash.js";
+import type { MdxComponentSlashTrigger } from "./mdx-component-slash.js";
 
 type MdxCatalogComponent = NonNullable<
   StudioMountContext["mdx"]
@@ -94,4 +96,20 @@ test("replaceSlashTriggerWithMdxComponent removes the slash token and inserts th
   } finally {
     editor.destroy();
   }
+});
+
+test("getSlashTriggerCoords returns container-relative coordinates", () => {
+  const trigger: MdxComponentSlashTrigger = { query: "Cal", from: 5, to: 9 };
+  const coords = getSlashTriggerCoords(
+    {
+      coordsAtPos: (_pos: number) => ({ top: 200, left: 100, bottom: 220 }),
+    },
+    trigger,
+    { getBoundingClientRect: () => ({ top: 50, left: 30 }) },
+  );
+
+  assert.deepEqual(coords, {
+    top: 170,
+    left: 70,
+  });
 });

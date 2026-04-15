@@ -65,3 +65,22 @@ export function replaceSlashTriggerWithMdxComponent(
     createMdxComponentInsertContent(component, props),
   );
 }
+
+export type SlashTriggerCoords = {
+  top: number;
+  left: number;
+};
+
+export function getSlashTriggerCoords(
+  view: { coordsAtPos: (pos: number) => { top: number; left: number; bottom: number } },
+  trigger: MdxComponentSlashTrigger,
+  container: { getBoundingClientRect: () => { top: number; left: number } },
+): SlashTriggerCoords {
+  const cursorCoords = view.coordsAtPos(trigger.from);
+  const containerRect = container.getBoundingClientRect();
+
+  return {
+    top: cursorCoords.bottom - containerRect.top,
+    left: cursorCoords.left - containerRect.left,
+  };
+}
