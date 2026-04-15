@@ -1,0 +1,102 @@
+---
+title: "Localization"
+description: "Managing multilingual content in the Studio"
+---
+
+## When it applies
+
+Localization features only appear for content types defined with `localized: true` in your schema:
+
+```typescript
+const BlogPost = defineType("BlogPost", {
+  directory: "content/blog",
+  localized: true,
+  fields: {
+    title: z.string().min(1),
+    slug: z.string(),
+  },
+});
+```
+
+Non-localized types use an internal `__mdcms_default__` locale behind the scenes. The locale switcher does not appear in the editor for these types.
+
+## Locale configuration
+
+Locale support is configured in `mdcms.config.ts` under the `locales` key:
+
+```typescript
+export default defineConfig({
+  project: "marketing-site",
+  serverUrl: "http://localhost:4000",
+  contentDirectories: ["content"],
+  locales: {
+    default: "en",
+    supported: ["en", "fr", "de", "ja"],
+    aliases: { "en-US": "en" },
+  },
+  types: [BlogPost],
+});
+```
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `default` | `string` | The default locale used when no locale is specified |
+| `supported` | `string[]` | All locales your project supports |
+| `aliases` | `Record<string, string>` | Maps variant codes to canonical locales (e.g., `"en-US"` resolves to `"en"`) |
+
+<Note>
+  Non-localized types ignore the locale configuration entirely. The locale switcher does not appear in their editor, and they are stored under the internal `__mdcms_default__` locale.
+</Note>
+
+## Locale switcher
+
+When editing a localized document, a locale dropdown appears in the document editor. The switcher shows:
+
+- **Existing variants** -- Locales that already have a translation for this document, displayed as links that navigate directly to that variant
+- **Untranslated locales** -- Supported locales that don't have a variant yet, with a **Create** option to start a new translation
+
+The variant list is fetched from `GET /api/v1/content/:documentId/variants`, which returns all locale variants within the same translation group.
+
+## Creating translations
+
+<Steps>
+  <Step title="Open an existing document">
+    Navigate to a localized document in any locale.
+  </Step>
+  <Step title="Open the locale switcher">
+    Click the locale dropdown in the editor.
+  </Step>
+  <Step title="Select an untranslated locale">
+    Choose a locale that shows a "Create" option.
+  </Step>
+  <Step title="Create the variant">
+    A new document is created in the target locale. You can optionally prefill it from the default locale to use as a starting point for translation.
+  </Step>
+</Steps>
+
+New translations are created via the document create endpoint with the target `locale` parameter and an optional `sourceDocumentId` to copy content from an existing variant.
+
+## Independence of variants
+
+Each locale variant is a fully independent document:
+
+- **Own path** -- Each variant has its own filesystem path (e.g., `content/blog/en/my-post.mdx`, `content/blog/fr/my-post.mdx`)
+- **Own body** -- The MDX content is independently editable
+- **Own frontmatter** -- Field values are independent across locales
+- **Own version history** -- Publishing, version snapshots, and draft revisions are tracked separately per variant
+- **Own status** -- One locale can be published while another remains in draft
+
+Changes to one locale variant do not affect any other variant. There is no automatic content synchronization between locales.
+
+<Tip>
+  Locale variants are linked together through a shared `translationGroupId`. This is visible in the document Info tab and is used internally to group variants for the locale switcher and translation coverage reporting.
+</Tip>
+
+## Translation status in content lists
+
+The content list for localized types includes a **Translations** column that shows coverage status per document. For example:
+
+- **2/4 locales** -- Two of four supported locales have variants
+- **4/4 locales** -- All locales have variants
+
+This summary is fetched alongside the content list and helps identify documents that need translation work. The translations column only appears when the content type is localized and the project has more than one supported locale.

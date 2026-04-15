@@ -1,0 +1,167 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "maple",
+  "name": "MDCMS",
+  "description": "Open-source headless CMS for Markdown and MDX content",
+  "colors": {
+    "primary": "#2F49E5",
+    "light": "#4D65FF",
+    "dark": "#1C1B1B"
+  },
+  "background": {
+    "color": {
+      "light": "#FCF9F8",
+      "dark": "#1C1B1B"
+    }
+  },
+  "fonts": {
+    "heading": {
+      "family": "Space Grotesk",
+      "weight": 700
+    },
+    "body": {
+      "family": "Inter",
+      "weight": 400
+    }
+  },
+  "appearance": {
+    "default": "system"
+  },
+  "icons": {
+    "library": "lucide"
+  },
+  "favicon": "/favicon.ico",
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg",
+    "href": "https://github.com/Blazity/mdcms"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Agent Setup",
+        "href": "/agent-instructions"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Get Started",
+      "href": "/guide/quickstart"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/Blazity/mdcms"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Guide",
+        "groups": [
+          {
+            "group": "Introduction",
+            "pages": ["index", "guide/quickstart", "guide/concepts", "agent-instructions"]
+          },
+          {
+            "group": "Studio",
+            "pages": [
+              "guide/studio/dashboard",
+              "guide/studio/content-editor",
+              "guide/studio/publishing",
+              "guide/studio/localization",
+              "guide/studio/settings"
+            ]
+          },
+          {
+            "group": "CLI",
+            "pages": [
+              "guide/cli/installation",
+              "guide/cli/commands",
+              "guide/cli/configuration",
+              "guide/cli/ci-cd"
+            ]
+          },
+          {
+            "group": "Schema",
+            "pages": [
+              "guide/schema/defining-types",
+              "guide/schema/references",
+              "guide/schema/mdx-components"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Architecture",
+        "groups": [
+          {
+            "group": "System Design",
+            "pages": [
+              "architecture/overview",
+              "architecture/module-system",
+              "architecture/data-model",
+              "architecture/request-flow",
+              "architecture/migrations"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "api-reference/overview",
+              "api-reference/authentication",
+              "api-reference/errors"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api-reference/content",
+              "api-reference/schema",
+              "api-reference/media-and-webhooks"
+            ]
+          },
+          {
+            "group": "SDK",
+            "pages": [
+              "api-reference/sdk"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Development",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "development/setup",
+              "development/packages"
+            ]
+          },
+          {
+            "group": "Contributing",
+            "pages": [
+              "development/contributing",
+              "development/testing"
+            ]
+          }
+        ]
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "GitHub",
+          "href": "https://github.com/Blazity/mdcms",
+          "icon": "github"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,111 @@
+---
+title: "Installation"
+description: "Installing and setting up the MDCMS CLI"
+---
+
+<Prompt
+  description="**Set up MDCMS automatically** — paste this into Claude Code, Codex, or any AI coding agent"
+  icon="terminal"
+  actions={["copy", "cursor"]}
+>
+Install and configure the MDCMS CLI in this project. Run `npm install --save-dev @mdcms/cli`. Then run `npx mdcms init` to interactively set up the project — it will prompt for server URL (default http://localhost:4000), project name, and environment. After init completes, run `npx mdcms schema sync` to push the generated schema to the server. Verify with `npx mdcms status` (exit code 0 means success).
+</Prompt>
+
+The MDCMS CLI lets you sync content and schema between your local filesystem and the MDCMS server. It handles authentication, push/pull workflows, and CI/CD integration.
+
+## Install
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @mdcms/cli
+```
+
+```bash bun
+bun add -D @mdcms/cli
+```
+</CodeGroup>
+
+Or install globally to use the `mdcms` command directly:
+
+```bash
+npm install -g @mdcms/cli
+```
+
+The binary name is `mdcms`. If installed as a project dependency, use your package manager's runner:
+
+```bash
+npx mdcms --help
+# or
+bunx mdcms --help
+```
+
+### Prerequisites
+
+- **Node.js** 20+ or **Bun** 1.3.11+
+- A running MDCMS server instance
+
+## First-time setup
+
+The `mdcms init` command walks you through an interactive wizard that configures everything needed to start managing content.
+
+<Steps>
+  <Step title="Run the init wizard">
+    ```bash
+    mdcms init
+    ```
+  </Step>
+
+  <Step title="Enter server URL">
+    Provide the URL of your MDCMS server (e.g. `https://cms.example.com`). The CLI validates the connection with a health check before proceeding.
+  </Step>
+
+  <Step title="Choose project and environment">
+    Select an existing project or create a new one, then choose the target environment (e.g. `development`, `staging`, `production`).
+  </Step>
+
+  <Step title="Authenticate via browser">
+    The CLI opens your default browser for OAuth authentication using a device flow. Complete the login in your browser and the CLI receives credentials automatically.
+  </Step>
+
+  <Step title="Auto-detect content directories and locales">
+    The wizard scans your repository for Markdown and MDX files, groups them by directory, and detects locale patterns from file names (e.g. `post.en.mdx`, `post.fr.mdx`).
+  </Step>
+
+  <Step title="Generate mdcms.config.ts">
+    A configuration file is generated at the project root with your project settings, content type definitions inferred from existing files, and locale configuration.
+  </Step>
+
+  <Step title="Initial schema sync and content push">
+    The inferred schema is synced to the server, and all discovered content files are pushed as initial draft documents.
+  </Step>
+
+  <Step title=".gitignore update">
+    The wizard appends managed files (manifest, schema state) to your `.gitignore` and untracks them from git with `git rm -r --cached` if they were previously committed.
+  </Step>
+</Steps>
+
+## Global options
+
+Every command accepts these flags:
+
+| Flag | Description |
+| --- | --- |
+| `--project <slug>` | Override the target project slug |
+| `--environment <name>` | Override the target environment name |
+| `--api-key <token>` | Provide an API key directly (useful for CI) |
+| `--server-url <url>` | Override the server URL from config |
+| `--config <path>` | Path to config file (default: `mdcms.config.ts`) |
+| `-h`, `--help` | Show help text |
+
+## Resolution order
+
+When the CLI needs a value for project, environment, server URL, or API key, it resolves from the highest-priority source first:
+
+1. **CLI flags** — `--project`, `--environment`, `--api-key`, `--server-url`
+2. **Environment variables** — `MDCMS_PROJECT`, `MDCMS_ENVIRONMENT`, `MDCMS_API_KEY`, `MDCMS_SERVER_URL`
+3. **Config file** — values from `mdcms.config.ts`
+4. **Stored credentials** — API key from the local credential store (set by `mdcms login`)
+
+<Note>
+  CLI flags always win. This makes it straightforward to override config values in CI pipelines or when working across multiple environments.
+</Note>

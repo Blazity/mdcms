@@ -1,0 +1,168 @@
+---
+title: "Contributing"
+description: "Development workflow, branch naming, commit conventions, and code standards"
+---
+
+This page covers everything you need to know about contributing to MDCMS, from branch naming to code conventions and the PR process.
+
+## Development Workflow
+
+<Steps>
+  <Step title="Create a feature branch">
+    Always branch off `main` before making changes:
+
+    ```bash
+    git checkout -b feat/my-feature
+    ```
+  </Step>
+  <Step title="Develop with tests">
+    Write failing tests first, then implement until they pass. Run unit tests during development for fast feedback:
+
+    ```bash
+    bun run unit
+    ```
+  </Step>
+  <Step title="Verify everything passes">
+    Before committing, run the full CI gate:
+
+    ```bash
+    bun run ci:required
+    ```
+
+    This runs format check, typecheck, unit tests, and integration tests sequentially.
+  </Step>
+  <Step title="Commit with conventional commits">
+    ```bash
+    git commit -m "feat(studio): add locale switcher to toolbar"
+    ```
+  </Step>
+</Steps>
+
+## Branch Naming
+
+All branches follow a `type/kebab-case-description` pattern:
+
+| Prefix | Use for |
+|--------|---------|
+| `feat/` | New features |
+| `fix/` | Bug fixes |
+| `chore/` | Maintenance, dependency updates, config changes |
+| `refactor/` | Code restructuring without behavior changes |
+
+Examples: `feat/media-upload-drag-drop`, `fix/reference-resolution-null`, `chore/bump-elysia`.
+
+## Commit Conventions
+
+Commits follow the conventional commits format:
+
+```
+type(scope): brief message
+```
+
+| Type | Use for |
+|------|---------|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `chore` | Maintenance task |
+| `refactor` | Code restructuring |
+| `docs` | Documentation changes |
+| `test` | Test additions or modifications |
+
+The **scope** is the package name or area of the codebase (e.g., `server`, `studio`, `cli`, `shared`, `sdk`, `modules`).
+
+Rules:
+- First line only -- no body, no footer
+- Keep the message concise and descriptive
+- Use imperative mood ("add feature" not "added feature")
+
+<CodeGroup>
+```bash Good
+git commit -m "feat(server): add webhook retry with exponential backoff"
+git commit -m "fix(sdk): handle timeout on large content responses"
+git commit -m "chore(deps): bump drizzle-orm to 0.38"
+```
+
+```bash Bad
+git commit -m "fixed stuff"
+git commit -m "feat: update"
+git commit -m "WIP"
+```
+</CodeGroup>
+
+## Code Conventions
+
+### TypeScript
+
+- Strict mode is enabled across all packages
+- Prefer type inference when types are obvious from context
+- Use explicit types for function parameters and return values at module boundaries
+
+### Formatting
+
+Prettier handles all formatting. Run it before committing:
+
+```bash
+bun run format
+```
+
+### Naming
+
+| Entity | Convention | Example |
+|--------|-----------|---------|
+| Files | kebab-case | `content-api.ts` |
+| Types / Interfaces | PascalCase | `ContentDocument` |
+| Functions / Variables | camelCase | `getDocument` |
+| Constants | SCREAMING_SNAKE_CASE | `MAX_LIMIT` |
+
+- No abbreviations except widely known ones (`id`, `url`, `ctx`)
+- Self-documenting names -- comments explain "why", not "what"
+
+### General Principles
+
+- **DRY** -- Extract repeated values to constants, repeated logic to functions
+- **No unrelated changes** -- Keep PRs focused on a single concern
+- **No debug artifacts** -- Never commit `console.log`, debugger statements, or test artifacts
+
+## PR Process
+
+<Steps>
+  <Step title="Create a pull request">
+    Push your branch and open a PR against `main`:
+
+    ```bash
+    git push -u origin feat/my-feature
+    ```
+  </Step>
+  <Step title="CI runs automatically">
+    GitHub Actions runs the full CI pipeline on every PR. All required checks must pass before merge.
+  </Step>
+  <Step title="Address review feedback">
+    Make changes in new commits (do not force-push during review). Keep the conversation going until the reviewer approves.
+  </Step>
+  <Step title="Merge">
+    Once approved and CI passes, the PR is merged into `main`.
+  </Step>
+</Steps>
+
+## Pre-push Gate
+
+A git pre-push hook is installed automatically when you run `bun install`. It executes:
+
+```bash
+bun run ci:required
+```
+
+This runs the following checks sequentially:
+
+1. **Format check** -- Verifies code matches Prettier formatting
+2. **Typecheck** -- Runs TypeScript compiler across all packages
+3. **Unit tests** -- Runs all unit tests
+4. **Integration tests** -- Runs integration tests (requires Docker services running)
+
+<Warning>
+The pre-push hook blocks the push if any check fails. Fix all failures before pushing. Do not skip the hook with `--no-verify` unless you have a specific reason.
+</Warning>
+
+<Tip>
+Run `bun run quality` (format + typecheck) as a quick sanity check during development. Save the full `bun run ci:required` for when you are ready to push.
+</Tip>

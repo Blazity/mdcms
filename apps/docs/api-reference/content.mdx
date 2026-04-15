@@ -1,0 +1,988 @@
+---
+title: "Content API"
+description: "Document CRUD, publishing, versioning, and restoration endpoints"
+---
+
+The Content API provides full lifecycle management for documents: creation, querying, editing, publishing, versioning, deletion, and restoration.
+
+All content endpoints require the standard [authentication headers](/api-reference/overview#required-headers).
+
+## List Documents
+
+<ParamField method="GET" path="/api/v1/content">
+  Retrieve a paginated list of documents, filtered by type and optional criteria.
+</ParamField>
+
+**Scope required:** `content:read`. Add `content:read:draft` to include draft documents (when `draft=true`).
+
+### Query Parameters
+
+<ParamField query="type" type="string" required>
+  Content type to filter by (e.g., `BlogPost`).
+</ParamField>
+
+<ParamField query="locale" type="string">
+  BCP 47 locale tag. Filters results to a specific locale.
+</ParamField>
+
+<ParamField query="path" type="string">
+  Exact path match (e.g., `content/blog/hello-world`).
+</ParamField>
+
+<ParamField query="slug" type="string">
+  Filter by the `slug` frontmatter field. Requires the type to have a `slug` field.
+</ParamField>
+
+<ParamField query="published" type="boolean">
+  When `true`, only return documents with at least one published version. When `false`, only return never-published documents.
+</ParamField>
+
+<ParamField query="isDeleted" type="boolean">
+  When `true`, include soft-deleted documents. Defaults to `false`.
+</ParamField>
+
+<ParamField query="hasUnpublishedChanges" type="boolean">
+  When `true`, only return documents with draft changes ahead of the published version.
+</ParamField>
+
+<ParamField query="draft" type="boolean">
+  When `true`, return draft content instead of the published version. Requires `content:read:draft` scope.
+</ParamField>
+
+<ParamField query="resolve" type="string">
+  Reference field name to resolve. Can be repeated for multiple fields (e.g., `resolve=author&resolve=category`). Resolution is one level deep.
+</ParamField>
+
+<ParamField query="limit" type="integer">
+  Number of results per page. Default `20`, maximum `100`.
+</ParamField>
+
+<ParamField query="offset" type="integer">
+  Number of results to skip. Default `0`.
+</ParamField>
+
+<ParamField query="sort" type="string">
+  Sort field. Accepted values: `createdAt`, `updatedAt`, `path`. Default `createdAt`.
+</ParamField>
+
+<ParamField query="order" type="string">
+  Sort direction: `asc` or `desc`. Default `desc`.
+</ParamField>
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl "https://cms.example.com/api/v1/content?type=BlogPost&locale=en&published=true&sort=updatedAt&order=desc&limit=10" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+```typescript SDK
+import { createClient } from "@mdcms/sdk";
+
+const client = createClient({
+  serverUrl: "https://cms.example.com",
+  apiKey: process.env.MDCMS_API_KEY!,
+  project: "marketing-site",
+  environment: "production",
+});
+
+const posts = await client.list("BlogPost", {
+  locale: "en",
+  published: true,
+  sort: "updatedAt",
+  order: "desc",
+  limit: 10,
+});
+
+// posts.data — ContentDocumentResponse[]
+// posts.pagination — { total, limit, offset, hasMore }
+```
+
+</CodeGroup>
+
+**Response:**
+
+```json
+{
+  "data": [
+    {
+      "documentId": "550e8400-e29b-41d4-a716-446655440000",
+      "translationGroupId": "660e8400-e29b-41d4-a716-446655440000",
+      "project": "marketing-site",
+      "environment": "production",
+      "path": "content/blog/hello-world",
+      "type": "BlogPost",
+      "locale": "en",
+      "format": "mdx",
+      "isDeleted": false,
+      "hasUnpublishedChanges": false,
+      "version": 3,
+      "publishedVersion": 3,
+      "draftRevision": 7,
+      "frontmatter": {
+        "title": "Hello World",
+        "slug": "hello-world",
+        "author": "770e8400-e29b-41d4-a716-446655440001",
+        "publishedAt": "2026-01-15T00:00:00.000Z",
+        "tags": ["announcements"]
+      },
+      "body": "Welcome to our blog. This is the first post.",
+      "resolveErrors": {},
+      "createdBy": "880e8400-e29b-41d4-a716-446655440002",
+      "createdAt": "2026-01-10T12:00:00.000Z",
+      "updatedBy": "880e8400-e29b-41d4-a716-446655440002",
+      "updatedAt": "2026-01-15T09:30:00.000Z"
+    }
+  ],
+  "pagination": {
+    "total": 42,
+    "limit": 10,
+    "offset": 0,
+    "hasMore": true
+  }
+}
+```
+
+---
+
+## Get Document
+
+<ParamField method="GET" path="/api/v1/content/{documentId}">
+  Retrieve a single document by its ID.
+</ParamField>
+
+**Scope required:** `content:read`. Add `content:read:draft` when using `draft=true`.
+
+### Path Parameters
+
+<ParamField path="documentId" type="string" required>
+  The document's UUID.
+</ParamField>
+
+### Query Parameters
+
+<ParamField query="locale" type="string">
+  Locale override. If the document is localized, returns the variant for this locale.
+</ParamField>
+
+<ParamField query="resolve" type="string">
+  Reference field name to resolve. Can be repeated.
+</ParamField>
+
+<ParamField query="draft" type="boolean">
+  When `true`, return the draft version instead of the published version.
+</ParamField>
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-446655440000?resolve=author&draft=false" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+```typescript SDK
+const post = await client.get("BlogPost", {
+  id: "550e8400-e29b-41d4-a716-446655440000",
+  resolve: ["author"],
+  draft: false,
+});
+```
+
+</CodeGroup>
+
+**Response:**
+
+```json
+{
+  "data": {
+    "documentId": "550e8400-e29b-41d4-a716-446655440000",
+    "translationGroupId": "660e8400-e29b-41d4-a716-446655440000",
+    "project": "marketing-site",
+    "environment": "production",
+    "path": "content/blog/hello-world",
+    "type": "BlogPost",
+    "locale": "en",
+    "format": "mdx",
+    "isDeleted": false,
+    "hasUnpublishedChanges": false,
+    "version": 3,
+    "publishedVersion": 3,
+    "draftRevision": 7,
+    "frontmatter": {
+      "title": "Hello World",
+      "slug": "hello-world",
+      "author": {
+        "documentId": "770e8400-e29b-41d4-a716-446655440001",
+        "type": "Author",
+        "path": "content/authors/jane-doe",
+        "frontmatter": {
+          "name": "Jane Doe",
+          "bio": "Tech writer and editor.",
+          "website": "https://janedoe.com"
+        }
+      },
+      "publishedAt": "2026-01-15T00:00:00.000Z",
+      "tags": ["announcements"]
+    },
+    "body": "Welcome to our blog. This is the first post.",
+    "resolveErrors": {},
+    "createdBy": "880e8400-e29b-41d4-a716-446655440002",
+    "createdAt": "2026-01-10T12:00:00.000Z",
+    "updatedBy": "880e8400-e29b-41d4-a716-446655440002",
+    "updatedAt": "2026-01-15T09:30:00.000Z"
+  }
+}
+```
+
+---
+
+## Create Document
+
+<ParamField method="POST" path="/api/v1/content">
+  Create a new document of the specified content type.
+</ParamField>
+
+**Scope required:** `content:write`
+
+**Required headers:** `X-MDCMS-Schema-Hash`, `X-MDCMS-CSRF-Token` (session auth)
+
+### Request Body
+
+<ParamField body="type" type="string" required>
+  Content type name (e.g., `BlogPost`).
+</ParamField>
+
+<ParamField body="path" type="string" required>
+  Filesystem path for the document (e.g., `content/blog/my-new-post`).
+</ParamField>
+
+<ParamField body="locale" type="string">
+  BCP 47 locale tag. Required for localized types. Defaults to `__mdcms_default__` for non-localized types.
+</ParamField>
+
+<ParamField body="format" type="string">
+  Document format: `md` or `mdx`. Defaults to `md`.
+</ParamField>
+
+<ParamField body="frontmatter" type="object" required>
+  Structured data matching the content type schema.
+</ParamField>
+
+<ParamField body="body" type="string">
+  Markdown or MDX content body. Defaults to empty string.
+</ParamField>
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST "https://cms.example.com/api/v1/content" \
+  -H "Content-Type: application/json" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "X-MDCMS-Schema-Hash: sha256_abc123" \
+  -H "Authorization: Bearer mdcms_key_live_abc123" \
+  -d '{
+    "type": "BlogPost",
+    "path": "content/blog/my-new-post",
+    "locale": "en",
+    "format": "mdx",
+    "frontmatter": {
+      "title": "My New Post",
+      "slug": "my-new-post",
+      "author": "770e8400-e29b-41d4-a716-446655440001",
+      "publishedAt": "2026-01-20T00:00:00.000Z",
+      "tags": ["tutorial"]
+    },
+    "body": "This is the content of my new post."
+  }'
+```
+
+```typescript SDK
+// The SDK does not currently expose write operations.
+// Use the REST API directly for content creation.
+```
+
+</CodeGroup>
+
+**Response:**
+
+```json
+{
+  "data": {
+    "documentId": "990e8400-e29b-41d4-a716-446655440003",
+    "translationGroupId": "aa0e8400-e29b-41d4-a716-446655440004",
+    "project": "marketing-site",
+    "environment": "production",
+    "path": "content/blog/my-new-post",
+    "type": "BlogPost",
+    "locale": "en",
+    "format": "mdx",
+    "isDeleted": false,
+    "hasUnpublishedChanges": true,
+    "version": 0,
+    "publishedVersion": null,
+    "draftRevision": 1,
+    "frontmatter": {
+      "title": "My New Post",
+      "slug": "my-new-post",
+      "author": "770e8400-e29b-41d4-a716-446655440001",
+      "publishedAt": "2026-01-20T00:00:00.000Z",
+      "tags": ["tutorial"]
+    },
+    "body": "This is the content of my new post.",
+    "resolveErrors": {},
+    "createdBy": "880e8400-e29b-41d4-a716-446655440002",
+    "createdAt": "2026-01-20T10:00:00.000Z",
+    "updatedBy": "880e8400-e29b-41d4-a716-446655440002",
+    "updatedAt": "2026-01-20T10:00:00.000Z"
+  }
+}
+```
+
+**Error cases:**
+
+| Error Code | Cause |
+|------------|-------|
+| `SCHEMA_HASH_MISMATCH` | The `X-MDCMS-Schema-Hash` does not match the server. Run `mdcms schema sync`. |
+| `CONTENT_PATH_CONFLICT` | A document already exists at the given path and locale. |
+| `INVALID_INPUT` | Frontmatter does not pass schema validation. Check `details` for field-level errors. |
+
+---
+
+## Update Document
+
+<ParamField method="PUT" path="/api/v1/content/{documentId}">
+  Update an existing document's frontmatter and/or body.
+</ParamField>
+
+**Scope required:** `content:write`
+
+**Required headers:** `X-MDCMS-Schema-Hash`, `X-MDCMS-CSRF-Token` (session auth)
+
+### Path Parameters
+
+<ParamField path="documentId" type="string" required>
+  The document's UUID.
+</ParamField>
+
+### Request Body
+
+<ParamField body="frontmatter" type="object">
+  Updated frontmatter. Partial updates are not supported -- provide the complete frontmatter object.
+</ParamField>
+
+<ParamField body="body" type="string">
+  Updated Markdown or MDX body.
+</ParamField>
+
+<ParamField body="draftRevision" type="integer" required>
+  The `draftRevision` value from the last fetch. Used for optimistic concurrency control. If the server's current revision is higher, the update is rejected with a `CONFLICT` error.
+</ParamField>
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl -X PUT "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-446655440000" \
+  -H "Content-Type: application/json" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "X-MDCMS-Schema-Hash: sha256_abc123" \
+  -H "Authorization: Bearer mdcms_key_live_abc123" \
+  -d '{
+    "frontmatter": {
+      "title": "Hello World (Updated)",
+      "slug": "hello-world",
+      "author": "770e8400-e29b-41d4-a716-446655440001",
+      "publishedAt": "2026-01-15T00:00:00.000Z",
+      "tags": ["announcements", "updated"]
+    },
+    "body": "Welcome to our blog. This post has been updated.",
+    "draftRevision": 7
+  }'
+```
+
+```typescript SDK
+// The SDK does not currently expose write operations.
+// Use the REST API directly for content updates.
+```
+
+</CodeGroup>
+
+**Response:**
+
+```json
+{
+  "data": {
+    "documentId": "550e8400-e29b-41d4-a716-446655440000",
+    "translationGroupId": "660e8400-e29b-41d4-a716-446655440000",
+    "project": "marketing-site",
+    "environment": "production",
+    "path": "content/blog/hello-world",
+    "type": "BlogPost",
+    "locale": "en",
+    "format": "mdx",
+    "isDeleted": false,
+    "hasUnpublishedChanges": true,
+    "version": 3,
+    "publishedVersion": 3,
+    "draftRevision": 8,
+    "frontmatter": {
+      "title": "Hello World (Updated)",
+      "slug": "hello-world",
+      "author": "770e8400-e29b-41d4-a716-446655440001",
+      "publishedAt": "2026-01-15T00:00:00.000Z",
+      "tags": ["announcements", "updated"]
+    },
+    "body": "Welcome to our blog. This post has been updated.",
+    "resolveErrors": {},
+    "createdBy": "880e8400-e29b-41d4-a716-446655440002",
+    "createdAt": "2026-01-10T12:00:00.000Z",
+    "updatedBy": "880e8400-e29b-41d4-a716-446655440002",
+    "updatedAt": "2026-01-20T11:00:00.000Z"
+  }
+}
+```
+
+**Error cases:**
+
+| Error Code | Cause |
+|------------|-------|
+| `CONFLICT` | The `draftRevision` is stale. Another edit was saved after your last fetch. Re-fetch, merge, and retry. |
+| `SCHEMA_HASH_MISMATCH` | Schema is out of date. Run `mdcms schema sync`. |
+| `INVALID_INPUT` | Frontmatter does not pass schema validation. |
+
+---
+
+## Publish Document
+
+<ParamField method="POST" path="/api/v1/content/{documentId}/publish">
+  Publish the current draft, creating an immutable version snapshot.
+</ParamField>
+
+**Scope required:** `content:publish`
+
+### Path Parameters
+
+<ParamField path="documentId" type="string" required>
+  The document's UUID.
+</ParamField>
+
+### Request Body
+
+<ParamField body="changeSummary" type="string">
+  Optional summary of changes in this version (e.g., "Fixed typos and updated pricing section").
+</ParamField>
+
+### Example
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-446655440000/publish" \
+  -H "Content-Type: application/json" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "X-MDCMS-CSRF-Token: csrf_token_value" \
+  -H "Authorization: Bearer mdcms_key_live_abc123" \
+  -d '{
+    "changeSummary": "Updated introduction and fixed typos"
+  }'
+```
+
+```typescript SDK
+// The SDK does not currently expose write operations.
+// Use the REST API directly for publishing.
+```
+
+</CodeGroup>
+
+**Response:**
+
+```json
+{
+  "data": {
+    "documentId": "550e8400-e29b-41d4-a716-446655440000",
+    "version": 4,
+    "publishedVersion": 4,
+    "hasUnpublishedChanges": false,
+    "publishedAt": "2026-01-20T12:00:00.000Z",
+    "publishedBy": "880e8400-e29b-41d4-a716-446655440002",
+    "changeSummary": "Updated introduction and fixed typos"
+  }
+}
+```
+
+---
+
+## Unpublish Document
+
+<ParamField method="POST" path="/api/v1/content/{documentId}/unpublish">
+  Remove the published version, reverting the document to draft-only state. The version history is preserved.
+</ParamField>
+
+**Scope required:** `content:publish`
+
+### Path Parameters
+
+<ParamField path="documentId" type="string" required>
+  The document's UUID.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl -X POST "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-446655440000/unpublish" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "X-MDCMS-CSRF-Token: csrf_token_value" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "documentId": "550e8400-e29b-41d4-a716-446655440000",
+    "version": 4,
+    "publishedVersion": null,
+    "hasUnpublishedChanges": true
+  }
+}
+```
+
+---
+
+## List Versions
+
+<ParamField method="GET" path="/api/v1/content/{documentId}/versions">
+  Retrieve the version history of a document. Each entry represents a published snapshot.
+</ParamField>
+
+**Scope required:** `content:read`
+
+### Path Parameters
+
+<ParamField path="documentId" type="string" required>
+  The document's UUID.
+</ParamField>
+
+### Query Parameters
+
+<ParamField query="limit" type="integer">
+  Number of versions per page. Default `20`, maximum `100`.
+</ParamField>
+
+<ParamField query="offset" type="integer">
+  Number of versions to skip. Default `0`.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-446655440000/versions?limit=5" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+**Response:**
+
+```json
+{
+  "data": [
+    {
+      "version": 4,
+      "publishedAt": "2026-01-20T12:00:00.000Z",
+      "publishedBy": "880e8400-e29b-41d4-a716-446655440002",
+      "changeSummary": "Updated introduction and fixed typos"
+    },
+    {
+      "version": 3,
+      "publishedAt": "2026-01-18T15:00:00.000Z",
+      "publishedBy": "880e8400-e29b-41d4-a716-446655440002",
+      "changeSummary": "Added tags section"
+    },
+    {
+      "version": 2,
+      "publishedAt": "2026-01-16T09:00:00.000Z",
+      "publishedBy": "880e8400-e29b-41d4-a716-446655440002",
+      "changeSummary": null
+    },
+    {
+      "version": 1,
+      "publishedAt": "2026-01-15T10:00:00.000Z",
+      "publishedBy": "880e8400-e29b-41d4-a716-446655440002",
+      "changeSummary": "Initial publication"
+    }
+  ],
+  "pagination": {
+    "total": 4,
+    "limit": 5,
+    "offset": 0,
+    "hasMore": false
+  }
+}
+```
+
+---
+
+## Get Version
+
+<ParamField method="GET" path="/api/v1/content/{documentId}/versions/{version}">
+  Retrieve the full content snapshot of a specific published version.
+</ParamField>
+
+**Scope required:** `content:read`
+
+### Path Parameters
+
+<ParamField path="documentId" type="string" required>
+  The document's UUID.
+</ParamField>
+
+<ParamField path="version" type="integer" required>
+  The version number to retrieve.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-446655440000/versions/2" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "documentId": "550e8400-e29b-41d4-a716-446655440000",
+    "version": 2,
+    "publishedAt": "2026-01-16T09:00:00.000Z",
+    "publishedBy": "880e8400-e29b-41d4-a716-446655440002",
+    "changeSummary": null,
+    "frontmatter": {
+      "title": "Hello World",
+      "slug": "hello-world",
+      "author": "770e8400-e29b-41d4-a716-446655440001",
+      "publishedAt": "2026-01-15T00:00:00.000Z",
+      "tags": ["announcements"]
+    },
+    "body": "Welcome to our blog. This is the first post."
+  }
+}
+```
+
+---
+
+## Restore Version
+
+<ParamField method="POST" path="/api/v1/content/{documentId}/versions/{version}/restore">
+  Restore the document's draft to the state captured in a specific version. This does not delete any version history -- it creates a new draft revision with the content from the specified version.
+</ParamField>
+
+**Scope required:** `content:write`
+
+### Path Parameters
+
+<ParamField path="documentId" type="string" required>
+  The document's UUID.
+</ParamField>
+
+<ParamField path="version" type="integer" required>
+  The version number to restore from.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl -X POST "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-446655440000/versions/2/restore" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "X-MDCMS-CSRF-Token: csrf_token_value" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "documentId": "550e8400-e29b-41d4-a716-446655440000",
+    "version": 4,
+    "publishedVersion": 4,
+    "draftRevision": 9,
+    "hasUnpublishedChanges": true,
+    "restoredFromVersion": 2
+  }
+}
+```
+
+---
+
+## Delete Document
+
+<ParamField method="DELETE" path="/api/v1/content/{documentId}">
+  Soft-delete a document. The document remains in the database but is excluded from normal queries. It can be restored later.
+</ParamField>
+
+**Scope required:** `content:delete`
+
+### Path Parameters
+
+<ParamField path="documentId" type="string" required>
+  The document's UUID.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl -X DELETE "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-446655440000" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "X-MDCMS-CSRF-Token: csrf_token_value" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "documentId": "550e8400-e29b-41d4-a716-446655440000",
+    "isDeleted": true,
+    "deletedAt": "2026-01-21T10:00:00.000Z",
+    "deletedBy": "880e8400-e29b-41d4-a716-446655440002"
+  }
+}
+```
+
+---
+
+## Restore Deleted Document
+
+<ParamField method="POST" path="/api/v1/content/{documentId}/restore">
+  Restore a soft-deleted document, making it visible in normal queries again.
+</ParamField>
+
+**Scope required:** `content:write`
+
+### Path Parameters
+
+<ParamField path="documentId" type="string" required>
+  The document's UUID.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl -X POST "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-446655440000/restore" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "X-MDCMS-CSRF-Token: csrf_token_value" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "documentId": "550e8400-e29b-41d4-a716-446655440000",
+    "isDeleted": false,
+    "restoredAt": "2026-01-22T08:00:00.000Z",
+    "restoredBy": "880e8400-e29b-41d4-a716-446655440002"
+  }
+}
+```
+
+---
+
+## Duplicate Document
+
+<ParamField method="POST" path="/api/v1/content/{documentId}/duplicate">
+  Create a copy of a document with a new ID and path. The duplicate starts as a draft with no published version, regardless of the source document's state.
+</ParamField>
+
+**Scope required:** `content:write`
+
+### Path Parameters
+
+<ParamField path="documentId" type="string" required>
+  The source document's UUID.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl -X POST "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-446655440000/duplicate" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "X-MDCMS-CSRF-Token: csrf_token_value" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "documentId": "bb0e8400-e29b-41d4-a716-446655440005",
+    "translationGroupId": "cc0e8400-e29b-41d4-a716-446655440006",
+    "project": "marketing-site",
+    "environment": "production",
+    "path": "content/blog/hello-world-copy",
+    "type": "BlogPost",
+    "locale": "en",
+    "format": "mdx",
+    "isDeleted": false,
+    "hasUnpublishedChanges": true,
+    "version": 0,
+    "publishedVersion": null,
+    "draftRevision": 1,
+    "frontmatter": {
+      "title": "Hello World (Copy)",
+      "slug": "hello-world-copy",
+      "author": "770e8400-e29b-41d4-a716-446655440001",
+      "publishedAt": "2026-01-15T00:00:00.000Z",
+      "tags": ["announcements"]
+    },
+    "body": "Welcome to our blog. This is the first post.",
+    "resolveErrors": {},
+    "createdBy": "880e8400-e29b-41d4-a716-446655440002",
+    "createdAt": "2026-01-22T09:00:00.000Z",
+    "updatedBy": "880e8400-e29b-41d4-a716-446655440002",
+    "updatedAt": "2026-01-22T09:00:00.000Z"
+  }
+}
+```
+
+---
+
+## Overview Stats
+
+<ParamField method="GET" path="/api/v1/content/overview">
+  Get aggregate counts of documents per content type. Useful for building editorial dashboards.
+</ParamField>
+
+**Scope required:** `content:read`
+
+### Query Parameters
+
+<ParamField query="type" type="string">
+  Filter to specific types. Can be repeated (e.g., `type=BlogPost&type=Author`). When omitted, returns counts for all types.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl "https://cms.example.com/api/v1/content/overview?type=BlogPost&type=Author" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "counts": [
+      {
+        "type": "BlogPost",
+        "total": 42,
+        "published": 38,
+        "draft": 4,
+        "deleted": 2
+      },
+      {
+        "type": "Author",
+        "total": 8,
+        "published": 8,
+        "draft": 0,
+        "deleted": 0
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Get Variants
+
+<ParamField method="GET" path="/api/v1/content/{documentId}/variants">
+  Returns all locale variants for a document, identified by their shared translation group.
+</ParamField>
+
+**Scope required:** `content:read`
+
+### Path Parameters
+
+<ParamField path="documentId" type="string" required>
+  The document's UUID. Any locale variant can be used -- the server looks up the translation group automatically.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-446655440000/variants" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+**Response:**
+
+```json
+{
+  "data": [
+    {
+      "documentId": "550e8400-e29b-41d4-a716-446655440000",
+      "locale": "en",
+      "path": "content/blog/hello-world",
+      "version": 4,
+      "publishedVersion": 4,
+      "hasUnpublishedChanges": false,
+      "updatedAt": "2026-01-20T12:00:00.000Z"
+    },
+    {
+      "documentId": "dd0e8400-e29b-41d4-a716-446655440007",
+      "locale": "fr",
+      "path": "content/blog/bonjour-le-monde",
+      "version": 2,
+      "publishedVersion": 2,
+      "hasUnpublishedChanges": false,
+      "updatedAt": "2026-01-19T14:00:00.000Z"
+    },
+    {
+      "documentId": "ee0e8400-e29b-41d4-a716-446655440008",
+      "locale": "ja",
+      "path": "content/blog/konnichiwa-sekai",
+      "version": 1,
+      "publishedVersion": null,
+      "hasUnpublishedChanges": true,
+      "updatedAt": "2026-01-21T08:00:00.000Z"
+    }
+  ]
+}
+```
+
+<Tip>
+  Non-localized types return a single-element array with the `__mdcms_default__` locale.
+</Tip>

@@ -1,0 +1,247 @@
+---
+title: "Request Flow"
+description: "HTTP middleware chain, authentication, authorization, and permission model"
+---
+
+Every HTTP request to the MDCMS server passes through a layered middleware chain before reaching a route handler. This page documents the full request flow, authentication mechanisms, RBAC model, API key scopes, and response envelope format.
+
+## Middleware Chain
+
+The server processes each request through the following stages, in order.
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant CORS
+    participant Logging
+    participant CSRF
+    participant Auth
+    participant Target
+    participant Authz
+    participant Handler
+    participant Envelope
+
+    Client->>CORS: Request
+    CORS->>CORS: Validate origin, handle preflight
+    CORS->>Logging: Pass through
+    Logging->>Logging: Record request metadata
+    Logging->>CSRF: Pass through
+    CSRF->>CSRF: Verify CSRF token (mutations)
+    CSRF->>Auth: Pass through
+    Auth->>Auth: Identify principal (API key or session)
+    Auth->>Target: Pass through
+    Target->>Target: Validate project + environment headers
+    Target->>Authz: Pass through
+    Authz->>Authz: Check permissions against RBAC grants
+    Authz->>Handler: Pass through
+    Handler->>Handler: Execute business logic
+    Handler->>Envelope: Return result
+    Envelope->>Client: Standard JSON response
+```
+
+| Stage | Responsibility |
+| --- | --- |
+| **1. CORS** | Validates the `Origin` header against `MDCMS_STUDIO_ALLOWED_ORIGINS`. Handles `OPTIONS` preflight requests for Studio browser routes. Rejects disallowed origins with `403 FORBIDDEN_ORIGIN`. |
+| **2. Request Logging** | Captures request metadata (method, URL, timing) for observability. |
+| **3. CSRF** | For cookie-authenticated mutations, verifies the `X-MDCMS-CSRF-Token` header matches the `mdcms_csrf` cookie. API key requests bypass CSRF since they use `Authorization` headers. |
+| **4. Authentication** | Identifies the calling principal -- either an API key (via `Authorization: Bearer mdcms_key_...`) or a session (via cookie). |
+| **5. Target Routing** | Validates that scoped routes include the required `X-MDCMS-Project` and/or `X-MDCMS-Environment` headers. Returns `400` if headers are missing. |
+| **6. Authorization** | Checks the authenticated principal's permissions against the requirements of the target route (scope, role, resource path). |
+| **7. Route Handler** | Executes the business logic (content CRUD, schema sync, media upload, etc.). |
+| **8. Response Envelope** | Wraps the result in a standard JSON response format with appropriate status codes and CORS headers. |
+
+## Authentication Flows
+
+MDCMS supports three authentication mechanisms, each designed for a different client context.
+
+### API Key Authentication
+
+API keys are intended for server-to-server communication, CI/CD pipelines, and SDK usage.
+
+```
+Authorization: Bearer mdcms_key_abc123def456...
+```
+
+- Keys use a `mdcms_key_` prefix for easy identification in logs.
+- The key value is hashed (SHA-256) before storage -- the raw key is only shown once at creation time.
+- Each key carries an array of **operation scopes** (e.g., `content:read`, `schema:write`) and a **context allowlist** restricting which project/environment pairs it can access.
+- Keys support optional expiration via `expiresAt` and soft revocation via `revokedAt`.
+
+### Session Authentication
+
+Sessions are used by the Studio UI and browser-based interactions.
+
+- Created via better-auth after successful password, OIDC, or SAML authentication.
+- Stored in the `sessions` table with a session token cookie.
+- **Inactivity timeout:** 2 hours of no activity expires the session.
+- **Absolute max age:** 12 hours regardless of activity.
+- **CSRF protection:** Mutations require a `X-MDCMS-CSRF-Token` header matching the `mdcms_csrf` cookie (24-byte random token).
+- Supported identity providers: password (credential), OIDC (Okta, Azure AD, Google Workspace, Auth0), SAML.
+
+### CLI Device Flow
+
+The CLI authenticates via a device-authorization-like flow:
+
+<Steps>
+  <Step title="Challenge creation">
+    The CLI creates a login challenge with a 10-minute TTL, specifying the target project, environment, redirect URI, and requested scopes.
+  </Step>
+  <Step title="Browser authorization">
+    The user opens a browser URL, authenticates via session (password/OIDC/SAML), and authorizes the CLI challenge. The challenge status transitions from `pending` to `authorized`.
+  </Step>
+  <Step title="Code exchange">
+    The CLI polls for the authorization code, exchanges it for a scoped API key, and stores the credentials locally. The challenge status transitions from `authorized` to `exchanged`.
+  </Step>
+</Steps>
+
+Default CLI login scopes: `content:read`, `content:read:draft`, `content:write`, `content:delete`, `schema:read`, `schema:write`.
+
+## RBAC Model
+
+MDCMS implements role-based access control with hierarchical scoping.
+
+### Roles
+
+Roles form an ordered hierarchy. Higher roles inherit all capabilities of lower roles.
+
+| Role | Level | Scope Restriction |
+| --- | --- | --- |
+| `viewer` | 0 | Global, project, or folder prefix |
+| `editor` | 1 | Global, project, or folder prefix |
+| `admin` | 2 | Global only |
+| `owner` | 3 | Global only |
+
+<Note>
+`admin` and `owner` roles are restricted to global scope by a database check constraint. They cannot be scoped to a specific project or folder prefix.
+</Note>
+
+### Scopes
+
+Each RBAC grant is bound to a scope that determines where the role applies:
+
+| Scope Kind | Fields Required | Meaning |
+| --- | --- | --- |
+| `global` | None | Applies to all projects and environments. |
+| `project` | `project` | Applies to all environments within a specific project. |
+| `folder_prefix` | `project`, `environment`, `pathPrefix` | Applies only to documents whose path starts with the given prefix within a specific project and environment. |
+
+### Role Capability Matrix
+
+| Capability | `viewer` | `editor` | `admin` | `owner` |
+| --- | --- | --- | --- | --- |
+| `content:read` | Yes | Yes | Yes | Yes |
+| `content:read:draft` | -- | Yes | Yes | Yes |
+| `content:write` | -- | Yes | Yes | Yes |
+| `content:publish` | -- | Yes | Yes | Yes |
+| `content:unpublish` | -- | Yes | Yes | Yes |
+| `content:delete` | -- | Yes | Yes | Yes |
+| `schema:read` | Yes | Yes | Yes | Yes |
+| `schema:write` | -- | -- | Yes | Yes |
+| `projects:read` | Yes | Yes | Yes | Yes |
+| `projects:write` | -- | -- | Yes | Yes |
+| `user:manage` | -- | -- | Yes | Yes |
+| `settings:manage` | -- | -- | Yes | Yes |
+
+## API Key Scopes
+
+API keys use a fine-grained scope model independent of RBAC roles. Each key declares which operations it is permitted to perform.
+
+| Scope | Description |
+| --- | --- |
+| `content:read` | Read published content documents. |
+| `content:read:draft` | Read draft (unpublished) content documents. |
+| `content:write` | Create and update content documents. |
+| `content:write:draft` | Legacy scope for draft writes (aliases `content:write`). |
+| `content:publish` | Publish documents (create immutable version snapshots). |
+| `content:delete` | Soft-delete and restore content documents. |
+| `schema:read` | Read schema registry entries and sync state. |
+| `schema:write` | Sync schema changes to the server. |
+| `media:upload` | Upload media files to S3 storage. |
+| `media:delete` | Delete media files. |
+| `webhooks:read` | List and inspect webhook configurations. |
+| `webhooks:write` | Create, update, and delete webhook configurations. |
+| `environments:clone` | Clone content between environments. |
+| `environments:promote` | Promote content from one environment to another. |
+| `migrations:run` | Execute content migrations. |
+| `projects:read` | Read project metadata. |
+| `projects:write` | Update project settings. |
+
+<Warning>
+API keys are scoped to specific project/environment pairs via the `contextAllowlist`. A key with `content:read` scope but an allowlist of `[{project: "docs", environment: "production"}]` cannot read content from any other project or environment.
+</Warning>
+
+## Response Envelopes
+
+All API responses use one of three standard envelope formats.
+
+### Single Resource
+
+```json
+{
+  "data": {
+    "documentId": "550e8400-e29b-41d4-a716-446655440000",
+    "path": "content/blog/hello-world",
+    "type": "BlogPost",
+    "locale": "en-US",
+    "format": "mdx",
+    "body": "# Hello World\n\nWelcome to MDCMS.",
+    "frontmatter": {
+      "title": "Hello World",
+      "slug": "hello-world"
+    },
+    "hasUnpublishedChanges": false,
+    "publishedVersion": 3,
+    "draftRevision": 7
+  }
+}
+```
+
+### Paginated Collection
+
+```json
+{
+  "data": [
+    { "documentId": "...", "path": "..." },
+    { "documentId": "...", "path": "..." }
+  ],
+  "pagination": {
+    "total": 142,
+    "limit": 25,
+    "offset": 0,
+    "hasMore": true
+  }
+}
+```
+
+### Error
+
+```json
+{
+  "status": "error",
+  "code": "UNAUTHORIZED",
+  "message": "Authentication required.",
+  "details": {
+    "path": "/api/v1/content"
+  },
+  "requestId": "req_abc123",
+  "timestamp": "2026-04-13T10:30:00.000Z"
+}
+```
+
+Error responses always include a machine-readable `code`, a human-readable `message`, and an ISO-8601 `timestamp`. The optional `details` object provides context-specific debugging information. The `requestId` is echoed from the `X-Request-Id` header when present.
+
+## CORS Configuration
+
+Studio browser routes (content, schema, media, auth, search, webhooks, actions, environments, collaboration, and Studio bootstrap) are protected by origin validation.
+
+Configure allowed origins via the `MDCMS_STUDIO_ALLOWED_ORIGINS` environment variable:
+
+```bash
+MDCMS_STUDIO_ALLOWED_ORIGINS=http://localhost:4173,https://admin.example.com
+```
+
+The server validates that the `Origin` header matches either the request's own origin (same-origin) or one of the configured allowed origins. Requests from disallowed origins receive a `403 FORBIDDEN_ORIGIN` response. Preflight `OPTIONS` requests are handled automatically with the appropriate `access-control-allow-*` headers.
+
+<Tip>
+In local development, the default docker-compose configuration sets `MDCMS_STUDIO_ALLOWED_ORIGINS` to the studio-example dev server origin. Add additional origins when embedding Studio in a separate application.
+</Tip>

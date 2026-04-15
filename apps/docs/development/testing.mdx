@@ -1,0 +1,159 @@
+---
+title: "Testing"
+description: "Unit tests, integration tests, CI gates, and database migrations"
+---
+
+MDCMS uses Bun's built-in test runner for both unit and integration tests. This page covers how to run tests, write new ones, and manage database migrations.
+
+## Unit Tests
+
+Unit tests live alongside source files with the `*.test.ts` suffix.
+
+| | |
+|---|---|
+| **Pattern** | `*.test.ts` next to the source file |
+| **Runner** | Bun test (`bun test`) |
+| **Command** | `bun run unit` |
+| **Per-package** | `bun nx test <package>` |
+
+Unit tests cover config parsing, validation logic, contracts, SDK methods, and utility functions. They do not require any external services.
+
+```bash
+# Run all unit tests
+bun run unit
+
+# Run tests for a specific package
+bun nx test shared
+bun nx test sdk
+```
+
+## Integration Tests
+
+Integration tests exercise the full stack -- API endpoints, authentication flows, database operations, and the content lifecycle.
+
+| | |
+|---|---|
+| **Requires** | Docker Compose services (PostgreSQL, Redis, MinIO) |
+| **Command** | `bun run integration` |
+
+<Warning>
+Integration tests require Docker services to be running. Start them before running:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d
+```
+</Warning>
+
+```bash
+# Run all integration tests
+bun run integration
+```
+
+## CI Gates
+
+The CI pipeline runs three sequential stages. All must pass before a PR can be merged.
+
+<Steps>
+  <Step title="Quality">
+    Format check + TypeScript typecheck across all packages.
+
+    ```bash
+    bun run quality
+    ```
+  </Step>
+  <Step title="Unit tests">
+    All unit tests across every package.
+
+    ```bash
+    bun run unit
+    ```
+  </Step>
+  <Step title="Integration tests">
+    Full integration test suite. Requires Docker services.
+
+    ```bash
+    bun run integration
+    ```
+  </Step>
+</Steps>
+
+The combined command that runs all three stages:
+
+```bash
+bun run ci:required
+```
+
+The pre-push git hook runs `ci:required` automatically before every push.
+
+## Writing Tests
+
+Follow these principles when adding tests:
+
+1. **Write the failing test first.** Verify it actually fails before writing any implementation.
+2. **Implement until the test passes.** Do not modify the test to make it pass -- fix the implementation.
+3. **Test behavior, not implementation details.** Assert on observable outcomes (return values, side effects, API responses), not internal state.
+4. **Keep tests focused.** Each test should verify one behavior. Use descriptive test names that explain the expected behavior.
+
+```typescript
+import { describe, expect, test } from "bun:test";
+import { parseConfig } from "./parse-config";
+
+describe("parseConfig", () => {
+  test("returns parsed config when input is valid", () => {
+    const result = parseConfig({ project: "my-site", serverUrl: "http://localhost:4000" });
+    expect(result.project).toBe("my-site");
+  });
+
+  test("throws on missing project field", () => {
+    expect(() => parseConfig({ serverUrl: "http://localhost:4000" })).toThrow();
+  });
+});
+```
+
+<Tip>
+Run `bun run unit` during development for fast feedback. Save `bun run integration` for before pushing.
+</Tip>
+
+## Database Migrations
+
+MDCMS uses Drizzle ORM for database schema management. Migrations are generated from the schema definition and applied via Drizzle Kit.
+
+<Steps>
+  <Step title="Modify the schema">
+    Edit the Drizzle schema file:
+
+    ```
+    apps/server/src/lib/db/schema.ts
+    ```
+  </Step>
+  <Step title="Generate migration">
+    ```bash
+    bunx drizzle-kit generate
+    ```
+
+    This creates a new SQL migration file in the `drizzle/` directory.
+  </Step>
+  <Step title="Review the generated SQL">
+    Open the generated file in `drizzle/` and verify the SQL matches your intent. Pay attention to destructive operations like column drops or type changes.
+  </Step>
+  <Step title="Apply locally">
+    ```bash
+    bunx drizzle-kit push
+    ```
+  </Step>
+  <Step title="Test with existing data">
+    Verify the migration works correctly against a database that already has data. Check that existing records are preserved and new constraints do not cause failures.
+  </Step>
+  <Step title="Commit together">
+    Commit the schema change and the generated migration file in the same commit:
+
+    ```bash
+    git add apps/server/src/lib/db/schema.ts drizzle/
+    git commit -m "feat(server): add webhook retry columns"
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+Always test migrations against a database with realistic data before deploying to production. A migration that works on an empty database may fail or corrupt data on a populated one.
+</Warning>

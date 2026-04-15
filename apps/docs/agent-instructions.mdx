@@ -1,0 +1,395 @@
+---
+title: "Agent Instructions"
+description: "Copy-pasteable prompts for AI coding agents to set up and configure MDCMS"
+---
+
+Copy any of these prompts into [Claude Code](https://claude.ai/claude-code), [Codex](https://openai.com/index/codex/), or your preferred AI coding agent to automate MDCMS setup tasks hands-free.
+
+## Full Project Setup
+
+Set up MDCMS from scratch — install dependencies, start services, initialize the project, and embed Studio.
+
+<Prompt
+  description="**Complete MDCMS setup** — Docker, dependencies, project init, Studio embed, and first schema sync"
+  icon="rocket"
+  actions={["copy", "cursor"]}
+>
+Set up MDCMS in this project. Follow these steps exactly:
+
+1. **Install the MDCMS packages:**
+   ```bash
+   bun add @mdcms/sdk @mdcms/studio
+   bun add -D @mdcms/cli
+   ```
+
+2. **Start the MDCMS server** (requires Docker):
+   ```bash
+   git clone git@github.com:Blazity/mdcms.git /tmp/mdcms-server
+   cd /tmp/mdcms-server
+   bun install
+   docker compose -f docker-compose.dev.yml up -d
+   ```
+   Server runs at http://localhost:4000. Demo credentials: demo@mdcms.local / Demo12345!
+
+3. **Initialize the project:**
+   ```bash
+   bunx mdcms init
+   ```
+   Follow the interactive wizard: enter server URL (http://localhost:4000), choose a project name, authenticate via browser, select content directories, and generate the config.
+
+4. **Embed Studio** in a Next.js App Router catch-all route:
+   Create `app/admin/[[...path]]/page.tsx`:
+   ```tsx
+   import { Studio } from "@mdcms/studio";
+
+   export default function AdminPage() {
+     return (
+       <Studio
+         serverUrl={process.env.NEXT_PUBLIC_MDCMS_SERVER_URL!}
+         project="marketing-site"
+         environment="production"
+       />
+     );
+   }
+   ```
+
+5. **Create a content type** in `mdcms.config.ts`:
+   ```typescript
+   import { defineConfig, defineType } from "@mdcms/shared";
+   import { z } from "zod";
+
+   const Page = defineType("Page", {
+     directory: "pages",
+     fields: {
+       title: z.string().min(1).max(200),
+       slug: z.string().regex(/^[a-z0-9-]+$/),
+       description: z.string().optional(),
+     },
+   });
+
+   export default defineConfig({
+     project: "marketing-site",
+     serverUrl: "http://localhost:4000",
+     types: [Page],
+   });
+   ```
+
+6. **Sync the schema:**
+   ```bash
+   bunx mdcms schema sync
+   ```
+
+7. **Start the dev server** and visit /admin to see the Studio.
+
+Verify each step works before proceeding to the next.
+</Prompt>
+
+## Embed Studio in Next.js
+
+Add the MDCMS Studio visual editor to an existing Next.js application.
+
+<Prompt
+  description="**Embed MDCMS Studio** in an existing Next.js App Router project"
+  icon="layout-dashboard"
+  actions={["copy", "cursor"]}
+>
+Add the MDCMS Studio visual CMS editor to this Next.js project.
+
+1. **Install:**
+   ```bash
+   bun add @mdcms/studio
+   ```
+
+2. **Add environment variables** to `.env.local`:
+   ```
+   NEXT_PUBLIC_MDCMS_SERVER_URL=http://localhost:4000
+   ```
+
+3. **Create the Studio route** at `app/admin/[[...path]]/page.tsx`:
+   ```tsx
+   import { Studio } from "@mdcms/studio";
+
+   export default function AdminPage() {
+     return (
+       <Studio
+         serverUrl={process.env.NEXT_PUBLIC_MDCMS_SERVER_URL!}
+         project="marketing-site"
+         environment="production"
+       />
+     );
+   }
+   ```
+
+4. **Start the dev server** and navigate to `/admin`. You should see the MDCMS Studio dashboard.
+
+The Studio component fetches a runtime bundle from the MDCMS server and renders the full CMS UI. It handles authentication, content editing, publishing, and schema browsing.
+
+If the server is unreachable, Studio shows an error with retry option. Make sure the MDCMS server is running at the configured URL.
+</Prompt>
+
+## Configure the SDK
+
+Set up the `@mdcms/sdk` client for fetching content in your application.
+
+<Prompt
+  description="**Configure MDCMS SDK** — client setup, content fetching, and Next.js integration"
+  icon="code"
+  actions={["copy", "cursor"]}
+>
+Set up the MDCMS SDK to fetch content from the CMS in this project.
+
+1. **Install:**
+   ```bash
+   bun add @mdcms/sdk
+   ```
+
+2. **Add environment variables** to `.env.local`:
+   ```
+   MDCMS_SERVER_URL=http://localhost:4000
+   MDCMS_API_KEY=your_api_key_here
+   MDCMS_PROJECT=marketing-site
+   MDCMS_ENVIRONMENT=production
+   ```
+
+3. **Create a shared client** at `lib/mdcms.ts`:
+   ```typescript
+   import { createClient } from "@mdcms/sdk";
+
+   export const cms = createClient({
+     serverUrl: process.env.MDCMS_SERVER_URL!,
+     apiKey: process.env.MDCMS_API_KEY!,
+     project: process.env.MDCMS_PROJECT!,
+     environment: process.env.MDCMS_ENVIRONMENT!,
+   });
+   ```
+
+4. **Fetch content** in a Next.js page (App Router):
+   ```typescript
+   import { cms } from "@/lib/mdcms";
+   import { notFound } from "next/navigation";
+   import { MdcmsApiError } from "@mdcms/sdk";
+
+   export async function generateStaticParams() {
+     const posts = await cms.list("BlogPost", { published: true });
+     return posts.data.map((post) => ({
+       slug: post.frontmatter.slug as string,
+     }));
+   }
+
+   export default async function BlogPost({ params }: { params: Promise<{ slug: string }> }) {
+     const { slug } = await params;
+     try {
+       const post = await cms.get("BlogPost", {
+         slug,
+         resolve: ["author"],
+       });
+       return (
+         <article>
+           <h1>{post.frontmatter.title as string}</h1>
+           <div>{post.body}</div>
+         </article>
+       );
+     } catch (error) {
+       if (error instanceof MdcmsApiError && error.statusCode === 404) notFound();
+       throw error;
+     }
+   }
+   ```
+
+The SDK methods are:
+- `cms.get(type, { id } | { slug }, options?)` — fetch a single document
+- `cms.list(type, options?)` — fetch a paginated list of documents
+
+Options include: `locale`, `resolve` (array of reference fields to expand), `draft` (boolean), `published`, `limit`, `offset`, `sort`, `order`.
+</Prompt>
+
+## Schema Definition and Sync
+
+Define content types and sync them to the server.
+
+<Prompt
+  description="**Define schema and sync** — create content types with Zod validation and push to server"
+  icon="file-code"
+  actions={["copy", "cursor"]}
+>
+Set up MDCMS content type definitions and sync them to the server.
+
+1. **Install CLI** (if not already):
+   ```bash
+   bun add -D @mdcms/cli
+   ```
+
+2. **Create or update `mdcms.config.ts`** at the project root:
+   ```typescript
+   import { defineConfig, defineType, reference } from "@mdcms/shared";
+   import { z } from "zod";
+
+   const Author = defineType("Author", {
+     directory: "authors",
+     fields: {
+       name: z.string().min(1),
+       bio: z.string().max(500).optional(),
+       avatar: z.string().url().optional(),
+     },
+   });
+
+   const BlogPost = defineType("BlogPost", {
+     directory: "blog",
+     localized: true,
+     fields: {
+       title: z.string().min(1).max(200),
+       slug: z.string().regex(/^[a-z0-9-]+$/),
+       author: reference("Author"),
+       publishedAt: z.coerce.date(),
+       tags: z.array(z.string()).default([]),
+       excerpt: z.string().max(300).optional(),
+       featured: z.boolean().default(false),
+     },
+   });
+
+   export default defineConfig({
+     project: "marketing-site",
+     serverUrl: "http://localhost:4000",
+     contentDirectories: ["content"],
+     locales: {
+       default: "en",
+       supported: ["en", "fr", "de"],
+     },
+     types: [Author, BlogPost],
+   });
+   ```
+
+3. **Sync to server:**
+   ```bash
+   bunx mdcms schema sync
+   ```
+
+4. **Verify** in Studio at `/admin/schema` — you should see both content types with their field definitions.
+
+Adapt the type definitions to match your content model. Each type needs:
+- `directory` — folder name for local content files
+- `fields` — Zod schemas defining the frontmatter structure
+- `localized` (optional) — set to `true` for multilingual content
+
+Available field types: `z.string()`, `z.number()`, `z.boolean()`, `z.coerce.date()`, `z.enum([...])`, `z.array(...)`, `z.object({...})`, `reference("TypeName")`.
+</Prompt>
+
+## Content Migration
+
+Run schema changes and apply content migrations.
+
+<Prompt
+  description="**Run content migration** — evolve schema and migrate existing documents"
+  icon="database"
+  actions={["copy", "cursor"]}
+>
+Run a schema migration for MDCMS. Follow these steps:
+
+1. **Make schema changes** in `mdcms.config.ts` — modify field types, add/remove fields, rename types as needed.
+
+2. **Check current status:**
+   ```bash
+   bunx mdcms status
+   ```
+   This shows any drift between local schema and server.
+
+3. **For non-breaking changes** (adding optional fields, adding new types):
+   Just sync the schema — no migration needed:
+   ```bash
+   bunx mdcms schema sync
+   ```
+
+4. **For breaking changes** (renaming types, changing field types, removing fields):
+   Generate a migration:
+   ```bash
+   bunx mdcms migrate
+   ```
+   Review the generated migration file in `migrations/`.
+
+   Apply the migration:
+   ```bash
+   bunx mdcms migrate --apply
+   ```
+   This transforms existing documents and auto-publishes new versions.
+
+5. **Verify** the migration succeeded:
+   ```bash
+   bunx mdcms status
+   ```
+   Should report "in sync" with exit code 0.
+
+IMPORTANT: Back up your database before running migrations in production. Test migrations locally with realistic data first.
+</Prompt>
+
+## CI/CD Pipeline Setup
+
+Configure automated schema sync and content deployment.
+
+<Prompt
+  description="**Set up CI/CD** — GitHub Actions for automated schema sync and content push"
+  icon="git-branch"
+  actions={["copy", "cursor"]}
+>
+Set up GitHub Actions CI/CD for MDCMS schema sync and content deployment.
+
+1. **Add repository secrets** in GitHub Settings > Secrets:
+   - `MDCMS_API_KEY` — API key with `schema:read`, `schema:write`, `content:write`, `content:write:draft` scopes
+   - `MDCMS_SERVER_URL` — your MDCMS server URL
+
+2. **Create `.github/workflows/mdcms-schema-sync.yml`:**
+   ```yaml
+   name: Sync MDCMS Schema
+   on:
+     push:
+       branches: [main]
+       paths: ['mdcms.config.ts']
+   jobs:
+     sync:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v4
+         - uses: oven-sh/setup-bun@v2
+         - run: bun install
+         - run: bunx mdcms schema sync
+           env:
+             MDCMS_API_KEY: ${{ secrets.MDCMS_API_KEY }}
+             MDCMS_PROJECT: marketing-site
+             MDCMS_ENVIRONMENT: production
+             MDCMS_SERVER_URL: ${{ secrets.MDCMS_SERVER_URL }}
+   ```
+
+3. **Create `.github/workflows/mdcms-content-push.yml`:**
+   ```yaml
+   name: Push MDCMS Content
+   on:
+     push:
+       branches: [main]
+       paths: ['content/**']
+   jobs:
+     push:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v4
+         - uses: oven-sh/setup-bun@v2
+         - run: bun install
+         - run: bunx mdcms push --force
+           env:
+             MDCMS_API_KEY: ${{ secrets.MDCMS_API_KEY }}
+             MDCMS_PROJECT: marketing-site
+             MDCMS_ENVIRONMENT: production
+             MDCMS_SERVER_URL: ${{ secrets.MDCMS_SERVER_URL }}
+   ```
+
+4. **Add a drift check** to your existing CI:
+   ```yaml
+   - run: bunx mdcms status
+     env:
+       MDCMS_API_KEY: ${{ secrets.MDCMS_API_KEY }}
+       MDCMS_PROJECT: marketing-site
+       MDCMS_ENVIRONMENT: production
+       MDCMS_SERVER_URL: ${{ secrets.MDCMS_SERVER_URL }}
+   ```
+   Exit code 1 means drift detected — use this to block deploys.
+
+Adapt project name, environment, and content paths to match your setup.
+</Prompt>

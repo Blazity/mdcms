@@ -1,0 +1,327 @@
+---
+title: "Schema API"
+description: "Schema registry endpoints for listing, reading, and syncing content types"
+---
+
+The Schema API provides access to the content type registry. It lets you introspect the types defined in your project and sync schema changes from the CLI.
+
+## List Types
+
+<ParamField method="GET" path="/api/v1/schema">
+  Returns all content types registered in the current project and environment, including resolved field metadata.
+</ParamField>
+
+**Scope required:** `schema:read`
+
+**Example request:**
+
+```bash
+curl "https://cms.example.com/api/v1/schema" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "types": [
+      {
+        "name": "Author",
+        "directory": "content/authors",
+        "localized": false,
+        "fields": {
+          "name": {
+            "kind": "string",
+            "required": true,
+            "nullable": false,
+            "default": null,
+            "reference": null,
+            "checks": [
+              { "type": "min", "value": 1 }
+            ]
+          },
+          "bio": {
+            "kind": "string",
+            "required": false,
+            "nullable": false,
+            "default": null,
+            "reference": null,
+            "checks": []
+          },
+          "website": {
+            "kind": "string",
+            "required": false,
+            "nullable": false,
+            "default": null,
+            "reference": null,
+            "checks": [
+              { "type": "url" }
+            ]
+          }
+        }
+      },
+      {
+        "name": "BlogPost",
+        "directory": "content/blog",
+        "localized": true,
+        "fields": {
+          "title": {
+            "kind": "string",
+            "required": true,
+            "nullable": false,
+            "default": null,
+            "reference": null,
+            "checks": [
+              { "type": "min", "value": 1 },
+              { "type": "max", "value": 200 }
+            ]
+          },
+          "slug": {
+            "kind": "string",
+            "required": true,
+            "nullable": false,
+            "default": null,
+            "reference": null,
+            "checks": [
+              { "type": "regex", "value": "^[a-z0-9-]+$" }
+            ]
+          },
+          "author": {
+            "kind": "reference",
+            "required": true,
+            "nullable": false,
+            "default": null,
+            "reference": {
+              "targetType": "Author"
+            },
+            "checks": []
+          },
+          "publishedAt": {
+            "kind": "date",
+            "required": true,
+            "nullable": false,
+            "default": null,
+            "reference": null,
+            "checks": []
+          },
+          "tags": {
+            "kind": "array",
+            "required": false,
+            "nullable": false,
+            "default": [],
+            "reference": null,
+            "checks": [],
+            "items": {
+              "kind": "string",
+              "checks": []
+            }
+          }
+        }
+      }
+    ],
+    "schemaHash": "sha256_abc123def456789"
+  }
+}
+```
+
+### Field Metadata
+
+Each field in the response includes the following properties:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `kind` | string | The field's data type: `string`, `number`, `boolean`, `date`, `array`, `object`, `reference`, `enum`. |
+| `required` | boolean | Whether the field must be present in frontmatter. |
+| `nullable` | boolean | Whether the field accepts `null` as a value. |
+| `default` | any | Default value applied when the field is omitted. `null` means no default. |
+| `reference` | object \| null | For reference fields, contains `targetType`. `null` for non-reference fields. |
+| `checks` | array | Validation constraints derived from the Zod schema (e.g., `min`, `max`, `regex`, `url`, `email`). |
+
+---
+
+## Get Type
+
+<ParamField method="GET" path="/api/v1/schema/{type}">
+  Returns the full schema definition for a single content type.
+</ParamField>
+
+**Scope required:** `schema:read`
+
+### Path Parameters
+
+<ParamField path="type" type="string" required>
+  The content type name (e.g., `BlogPost`).
+</ParamField>
+
+**Example request:**
+
+```bash
+curl "https://cms.example.com/api/v1/schema/BlogPost" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "Authorization: Bearer mdcms_key_live_abc123"
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "name": "BlogPost",
+    "directory": "content/blog",
+    "localized": true,
+    "fields": {
+      "title": {
+        "kind": "string",
+        "required": true,
+        "nullable": false,
+        "default": null,
+        "reference": null,
+        "checks": [
+          { "type": "min", "value": 1 },
+          { "type": "max", "value": 200 }
+        ]
+      },
+      "slug": {
+        "kind": "string",
+        "required": true,
+        "nullable": false,
+        "default": null,
+        "reference": null,
+        "checks": [
+          { "type": "regex", "value": "^[a-z0-9-]+$" }
+        ]
+      },
+      "author": {
+        "kind": "reference",
+        "required": true,
+        "nullable": false,
+        "default": null,
+        "reference": {
+          "targetType": "Author"
+        },
+        "checks": []
+      },
+      "publishedAt": {
+        "kind": "date",
+        "required": true,
+        "nullable": false,
+        "default": null,
+        "reference": null,
+        "checks": []
+      },
+      "tags": {
+        "kind": "array",
+        "required": false,
+        "nullable": false,
+        "default": [],
+        "reference": null,
+        "checks": [],
+        "items": {
+          "kind": "string",
+          "checks": []
+        }
+      }
+    },
+    "schemaHash": "sha256_abc123def456789"
+  }
+}
+```
+
+**Error cases:**
+
+| Error Code | Cause |
+|------------|-------|
+| `SCHEMA_NOT_FOUND` | The requested type name does not exist in the schema registry. |
+
+---
+
+## Sync Schema
+
+<ParamField method="PUT" path="/api/v1/schema/sync">
+  Push the current schema definition to the server. This is the endpoint called by `mdcms schema sync`. The operation is idempotent -- syncing the same schema twice produces no changes.
+</ParamField>
+
+**Scope required:** `schema:write`
+
+### Request Body
+
+<ParamField body="rawConfigSnapshot" type="object" required>
+  The raw configuration object from `mdcms.config.ts`, serialized as JSON. This is stored for audit and debugging purposes.
+</ParamField>
+
+<ParamField body="resolvedSchema" type="object" required>
+  The fully resolved schema with all field metadata, environment overlays applied, and references validated. This is what the server uses for content validation.
+</ParamField>
+
+<ParamField body="schemaHash" type="string" required>
+  A deterministic hash of the resolved schema. Used by content write endpoints to verify client-server schema consistency.
+</ParamField>
+
+**Example request:**
+
+```bash
+curl -X PUT "https://cms.example.com/api/v1/schema/sync" \
+  -H "Content-Type: application/json" \
+  -H "X-MDCMS-Project: marketing-site" \
+  -H "X-MDCMS-Environment: production" \
+  -H "X-MDCMS-CSRF-Token: csrf_token_value" \
+  -H "Authorization: Bearer mdcms_key_live_abc123" \
+  -d '{
+    "rawConfigSnapshot": {
+      "project": "marketing-site",
+      "types": ["Author", "BlogPost"]
+    },
+    "resolvedSchema": {
+      "types": [
+        {
+          "name": "Author",
+          "directory": "content/authors",
+          "localized": false,
+          "fields": {
+            "name": { "kind": "string", "required": true, "nullable": false, "default": null, "reference": null, "checks": [{ "type": "min", "value": 1 }] }
+          }
+        },
+        {
+          "name": "BlogPost",
+          "directory": "content/blog",
+          "localized": true,
+          "fields": {
+            "title": { "kind": "string", "required": true, "nullable": false, "default": null, "reference": null, "checks": [{ "type": "min", "value": 1 }, { "type": "max", "value": 200 }] },
+            "slug": { "kind": "string", "required": true, "nullable": false, "default": null, "reference": null, "checks": [{ "type": "regex", "value": "^[a-z0-9-]+$" }] },
+            "author": { "kind": "reference", "required": true, "nullable": false, "default": null, "reference": { "targetType": "Author" }, "checks": [] },
+            "publishedAt": { "kind": "date", "required": true, "nullable": false, "default": null, "reference": null, "checks": [] },
+            "tags": { "kind": "array", "required": false, "nullable": false, "default": [], "reference": null, "checks": [], "items": { "kind": "string", "checks": [] } }
+          }
+        }
+      ]
+    },
+    "schemaHash": "sha256_abc123def456789"
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "data": {
+    "synced": true,
+    "schemaHash": "sha256_abc123def456789",
+    "typesCount": 2,
+    "types": ["Author", "BlogPost"],
+    "syncedAt": "2026-01-20T10:00:00.000Z",
+    "syncedBy": "880e8400-e29b-41d4-a716-446655440002"
+  }
+}
+```
+
+<Note>
+  In practice, you should never call this endpoint directly. Use `mdcms schema sync` from the CLI, which reads your `mdcms.config.ts`, resolves the schema, computes the hash, and sends the request.
+</Note>
+
+<Warning>
+  Schema sync does not perform destructive migrations. If you remove a field from the schema, existing documents that contain that field are not modified. The field simply stops being validated and stops appearing in Studio forms.
+</Warning>
