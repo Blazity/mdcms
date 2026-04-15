@@ -5273,7 +5273,20 @@ export function mountAuthRoutes(
       }
 
       if (result.outcome === "throttled") {
-        return createAuthBackoffResponse(request, result.retryAfterSeconds);
+        return new Response(
+          renderCliAuthorizeLoginForm({
+            challengeId: query.challengeId,
+            state: query.state,
+            errorMessage: `Too many attempts. Try again in ${result.retryAfterSeconds}s.`,
+          }),
+          {
+            status: 429,
+            headers: {
+              "content-type": "text/html; charset=utf-8",
+              "retry-after": String(result.retryAfterSeconds),
+            },
+          },
+        );
       }
 
       if (result.outcome === "login_required") {
