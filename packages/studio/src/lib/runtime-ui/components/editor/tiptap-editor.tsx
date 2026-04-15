@@ -266,6 +266,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
         contentType: "markdown",
         editable: !isEditorReadOnly,
         immediatelyRender: false,
+        shouldRerenderOnTransaction: true,
         extensions: createEditorExtensions({
           mdxComponent: MdxComponentExtension.extend({
             addNodeView() {
@@ -440,7 +441,9 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             () => editor?.chain().focus().toggleItalic().run() ?? false,
           );
         case "underline":
-          return;
+          return run(
+            () => editor?.chain().focus().toggleUnderline().run() ?? false,
+          );
         case "strike":
           return run(
             () => editor?.chain().focus().toggleStrike().run() ?? false,
@@ -448,7 +451,9 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
         case "code":
           return run(() => editor?.chain().focus().toggleCode().run() ?? false);
         case "highlight":
-          return;
+          return run(
+            () => editor?.chain().focus().toggleHighlight().run() ?? false,
+          );
         case "heading1":
           return run(
             () =>
@@ -501,10 +506,14 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           return isActive("bold");
         case "italic":
           return isActive("italic");
+        case "underline":
+          return isActive("underline");
         case "strike":
           return isActive("strike");
         case "code":
           return isActive("code");
+        case "highlight":
+          return isActive("highlight");
         case "heading1":
           return isActive("heading", { level: 1 });
         case "heading2":
