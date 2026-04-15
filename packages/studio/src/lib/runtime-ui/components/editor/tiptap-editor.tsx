@@ -58,8 +58,10 @@ import {
 } from "./mdx-component-selection.js";
 import {
   getMdxComponentSlashTrigger,
+  getSlashTriggerCoords,
   replaceSlashTriggerWithMdxComponent,
   type MdxComponentSlashTrigger,
+  type SlashTriggerCoords,
 } from "./mdx-component-slash.js";
 import { Button } from "../ui/button.js";
 import { Separator } from "../ui/separator.js";
@@ -168,6 +170,11 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
     >(null);
     const [slashTrigger, setSlashTrigger] =
       useState<MdxComponentSlashTrigger | null>(null);
+    const [slashPickerCoords, setSlashPickerCoords] =
+      useState<SlashTriggerCoords | null>(null);
+    const editorWrapperRef = useRef<HTMLDivElement | null>(null);
+    const pickerSourceRef = useRef(pickerSource);
+    pickerSourceRef.current = pickerSource;
     const lastPublishedSelectionRef =
       useRef<PublishedMdxComponentSelectionSnapshot | null>(null);
     const lastEmittedMarkdownRef = useRef<string | null>(null);
@@ -199,6 +206,18 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
 
           return currentSource === "slash" ? null : currentSource;
         });
+
+        if (nextTrigger && editorWrapperRef.current) {
+          setSlashPickerCoords(
+            getSlashTriggerCoords(
+              nextEditor.view,
+              nextTrigger,
+              editorWrapperRef.current,
+            ),
+          );
+        } else {
+          setSlashPickerCoords(null);
+        }
       },
     );
     const publishSelectedMdxComponent = useEffectEvent(
@@ -288,6 +307,18 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             class:
               "prose prose-sm max-w-none min-h-[480px] px-4 py-4 focus:outline-none",
             "data-placeholder": placeholder,
+          },
+          handleKeyDown: (_view, event) => {
+            if (
+              event.key === "Escape" &&
+              pickerSourceRef.current === "slash"
+            ) {
+              setPickerSource(null);
+              setSlashTrigger(null);
+              setSlashPickerCoords(null);
+              return true;
+            }
+            return false;
           },
         },
         onUpdate({ editor }) {
@@ -556,119 +587,130 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       }
 
       setSlashTrigger(null);
+      setSlashPickerCoords(null);
       setPickerSource(null);
       publishSelectedMdxComponent(editor);
       handleEditorUpdate(editor);
       syncSlashTrigger(editor);
     };
 
-    const isPickerOpen =
-      pickerSource === "toolbar" ||
-      (pickerSource === "slash" && slashTrigger !== null);
-
     return (
-      <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-background">
-        <div className="border-b border-border bg-background-subtle">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2">
-            {toolbar.primaryGroups.map((group, groupIndex) => (
-              <div key={group.id} className="flex items-center gap-1.5">
-                {groupIndex > 0 ? (
-                  <Separator orientation="vertical" className="mr-1 h-6" />
-                ) : null}
-                {group.items.map((item) => (
-                  <div
+      <div ref={editorWrapperRef} className="relative">
+        <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-background">
+          <div className="border-b border-border bg-background-subtle">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2">
+              {toolbar.primaryGroups.map((group, groupIndex) => (
+                <div key={group.id} className="flex items-center gap-1.5">
+                  {groupIndex > 0 ? (
+                    <Separator orientation="vertical" className="mr-1 h-6" />
+                  ) : null}
+                  {group.items.map((item) => (
+                    <div
+                      key={item.id}
+                      onClick={() => {
+                        if (
+                          item.availability === "enabled" &&
+                          !isEditorReadOnly
+                        ) {
+                          triggerToolbarItem(item.id);
+                        }
+                      }}
+                    >
+                      <ToolbarButton
+                        disabled={
+                          item.availability !== "enabled" || isEditorReadOnly
+                        }
+                        label={
+                          item.availability === "visual-only"
+                            ? `${item.label} (planned)`
+                            : isEditorReadOnly
+                              ? `${item.label} (unavailable in read-only mode)`
+                              : item.label
+                        }
+                        active={isToolbarItemActive(item.id)}
+                        className={cn(
+                          item.id === "heading1" || item.id === "heading2"
+                            ? "min-w-10 px-3"
+                            : "w-8 px-0",
+                          item.availability === "visual-only" &&
+                            "text-foreground-muted",
+                        )}
+                      >
+                        {renderToolbarItem(item.id)}
+                      </ToolbarButton>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            {toolbar.secondaryItems.length > 0 ? (
+              <div className="flex items-center gap-2 border-t border-border px-3 py-2">
+                {toolbar.secondaryItems.map((item) => (
+                  <Button
                     key={item.id}
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={item.availability !== "enabled" || isEditorReadOnly}
                     onClick={() => {
-                      if (
-                        item.availability === "enabled" &&
-                        !isEditorReadOnly
-                      ) {
+                      if (item.availability === "enabled" && !isEditorReadOnly) {
                         triggerToolbarItem(item.id);
                       }
                     }}
+                    title={
+                      item.availability !== "enabled"
+                        ? `${item.label} (planned)`
+                        : isEditorReadOnly
+                          ? `${item.label} (unavailable in read-only mode)`
+                          : item.label
+                    }
+                    className="border-primary text-primary hover:bg-accent-subtle hover:text-primary"
                   >
-                    <ToolbarButton
-                      disabled={
-                        item.availability !== "enabled" || isEditorReadOnly
-                      }
-                      label={
-                        item.availability === "visual-only"
-                          ? `${item.label} (planned)`
-                          : isEditorReadOnly
-                            ? `${item.label} (unavailable in read-only mode)`
-                            : item.label
-                      }
-                      active={isToolbarItemActive(item.id)}
-                      className={cn(
-                        item.id === "heading1" || item.id === "heading2"
-                          ? "min-w-10 px-3"
-                          : "w-8 px-0",
-                        item.availability === "visual-only" &&
-                          "text-foreground-muted",
-                      )}
-                    >
-                      {renderToolbarItem(item.id)}
-                    </ToolbarButton>
-                  </div>
+                    {renderToolbarItem(item.id)}
+                  </Button>
                 ))}
               </div>
-            ))}
+            ) : null}
+
+            {pickerSource === "toolbar" ? (
+              <div
+                data-mdcms-mdx-picker-source="toolbar"
+                className="border-t border-border px-3 py-3"
+              >
+                <MdxComponentPicker
+                  components={catalogComponents}
+                  query=""
+                  forbidden={isEditorReadOnly}
+                  onSelect={insertSelectedComponent}
+                />
+              </div>
+            ) : null}
           </div>
 
-          {toolbar.secondaryItems.length > 0 ? (
-            <div className="flex items-center gap-2 border-t border-border px-3 py-2">
-              {toolbar.secondaryItems.map((item) => (
-                <Button
-                  key={item.id}
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={item.availability !== "enabled" || isEditorReadOnly}
-                  onClick={() => {
-                    if (item.availability === "enabled" && !isEditorReadOnly) {
-                      triggerToolbarItem(item.id);
-                    }
-                  }}
-                  title={
-                    item.availability !== "enabled"
-                      ? `${item.label} (planned)`
-                      : isEditorReadOnly
-                        ? `${item.label} (unavailable in read-only mode)`
-                        : item.label
-                  }
-                  className="border-primary text-primary hover:bg-accent-subtle hover:text-primary"
-                >
-                  {renderToolbarItem(item.id)}
-                </Button>
-              ))}
-            </div>
-          ) : null}
-
-          {isPickerOpen ? (
-            <div
-              data-mdcms-mdx-picker-source={pickerSource ?? "toolbar"}
-              className="border-t border-border px-3 py-3"
-            >
-              {pickerSource === "slash" && slashTrigger ? (
-                <p className="mb-2 text-xs text-foreground-muted">
-                  Slash filter: /{slashTrigger.query}
-                </p>
-              ) : null}
-              <MdxComponentPicker
-                components={catalogComponents}
-                query={
-                  pickerSource === "slash" ? (slashTrigger?.query ?? "") : ""
-                }
-                forbidden={isEditorReadOnly}
-                onSelect={insertSelectedComponent}
-              />
-            </div>
-          ) : null}
+          <div className="min-h-[480px] bg-transparent">
+            <EditorContent editor={editor} />
+          </div>
         </div>
 
-        <div className="min-h-[480px] bg-transparent">
-          <EditorContent editor={editor} />
-        </div>
+        {pickerSource === "slash" && slashTrigger && slashPickerCoords ? (
+          <div
+            data-mdcms-mdx-picker-source="slash"
+            style={{
+              position: "absolute",
+              top: slashPickerCoords.top,
+              left: slashPickerCoords.left,
+            }}
+            className="z-50 w-72 max-h-80 overflow-y-auto rounded-lg border border-border bg-background shadow-lg"
+          >
+            <MdxComponentPicker
+              components={catalogComponents}
+              query={slashTrigger.query}
+              forbidden={isEditorReadOnly}
+              onSelect={insertSelectedComponent}
+            />
+          </div>
+        ) : null}
       </div>
     );
   },

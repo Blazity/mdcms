@@ -94,7 +94,15 @@ export function MdxComponentNodeFrame(props: {
             Self-closing component
           </p>
         ) : (
-          props.children
+          <div className="space-y-1.5">
+            <p
+              data-mdcms-mdx-content-label={props.componentName}
+              className="text-xs font-medium text-foreground-muted"
+            >
+              Content
+            </p>
+            {props.children}
+          </div>
         )}
 
         {props.forbidden ? (
@@ -237,7 +245,8 @@ export function MdxComponentNodeView(
         <div ref={contentContainerRef}>
           <NodeViewContent
             as="div"
-            className="prose prose-sm max-w-none min-h-[3rem] rounded-md border border-border bg-background px-3 py-3 text-sm"
+            data-placeholder="Type content here..."
+            className="prose prose-sm max-w-none min-h-[3rem] rounded-md border border-border bg-background px-3 py-3 text-sm before:pointer-events-none before:float-left before:h-0 before:text-sm before:text-foreground-muted/60 before:content-[attr(data-placeholder)] has-[>:first-child:not(.is-empty)]:before:content-none"
           />
         </div>
       </MdxComponentNodeFrame>
