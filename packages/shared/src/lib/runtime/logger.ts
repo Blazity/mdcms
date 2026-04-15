@@ -71,6 +71,81 @@ function defaultConsoleSink(entry: LogEntry): void {
   console.error(payload);
 }
 
+function formatMeta(meta?: LogContext): string {
+  if (!meta || Object.keys(meta).length === 0) {
+    return "";
+  }
+
+  const pairs = Object.entries(meta)
+    .map(([key, value]) => {
+      if (Array.isArray(value)) {
+        const hasObjects = value.some(
+          (item) => typeof item === "object" && item !== null,
+        );
+        return `${key}=${hasObjects ? JSON.stringify(value) : value.join(",")}`;
+      }
+
+      if (typeof value === "object" && value !== null) {
+        return `${key}=${JSON.stringify(value)}`;
+      }
+
+      return `${key}=${String(value)}`;
+    })
+    .join(" ");
+
+  return ` ${pairs}`;
+}
+
+/**
+ * createCliConsoleSink formats log entries as human-friendly text for CLI use.
+ * When write is provided, it is called with each formatted line.
+ * When omitted, routes through console methods matching defaultConsoleSink routing.
+ */
+export function createCliConsoleSink(
+  write?: (line: string) => void,
+): (entry: LogEntry) => void {
+  return (entry: LogEntry): void => {
+    const merged = { ...entry.context, ...entry.meta };
+    const meta = formatMeta(
+      Object.keys(merged).length > 0 ? merged : undefined,
+    );
+    let line: string;
+
+    if (entry.level === "trace" || entry.level === "debug") {
+      line = `[${entry.level}] ${entry.message}${meta}`;
+    } else if (entry.level === "info") {
+      line = `${entry.message}${meta}`;
+    } else if (entry.level === "warn") {
+      line = `Warning: ${entry.message}${meta}`;
+    } else {
+      // error | fatal
+      line = `Error: ${entry.message}${meta}`;
+    }
+
+    if (write !== undefined) {
+      write(line);
+      return;
+    }
+
+    if (entry.level === "trace" || entry.level === "debug") {
+      console.debug(line);
+      return;
+    }
+
+    if (entry.level === "info") {
+      console.info(line);
+      return;
+    }
+
+    if (entry.level === "warn") {
+      console.warn(line);
+      return;
+    }
+
+    console.error(line);
+  };
+}
+
 /**
  * createConsoleLogger provides a lightweight structured logger implementation
  * for all runtime adapters without introducing a third-party logger yet.

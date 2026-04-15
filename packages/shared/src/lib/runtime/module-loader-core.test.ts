@@ -348,3 +348,70 @@ test("buildModuleLoadReport remains skip-based compatibility wrapper", () => {
     ],
   );
 });
+
+test("buildRuntimeModulePlan logs plan_ready at debug level", () => {
+  const entries: Array<{ level: string; message: string }> = [];
+  const capturingLogger = createConsoleLogger({
+    level: "debug",
+    sink: (entry) => {
+      entries.push({ level: entry.level, message: entry.message });
+    },
+  });
+
+  const plan = buildRuntimeModulePlan([createModule("alpha", { cli: true })], {
+    coreVersion: "1.0.0",
+    surface: "cli",
+    runtime: "cli",
+    logger: capturingLogger,
+  });
+
+  assert.equal(plan.ok, true);
+
+  const planReadyEntry = entries.find(
+    (entry) => entry.message === "cli_module_plan_ready",
+  );
+  assert.ok(planReadyEntry, "cli_module_plan_ready entry should be logged");
+  assert.equal(planReadyEntry.level, "debug");
+});
+
+test("buildModuleLoadReport logs loaded and summary at debug level and skipped at debug level", () => {
+  const entries: Array<{ level: string; message: string }> = [];
+  const capturingLogger = createConsoleLogger({
+    level: "debug",
+    sink: (entry) => {
+      entries.push({ level: entry.level, message: entry.message });
+    },
+  });
+
+  buildModuleLoadReport(
+    [
+      createModule("a.with-cli", { cli: true }),
+      createModule("b.no-cli", { server: true }),
+    ],
+    {
+      coreVersion: "1.0.0",
+      surface: "cli",
+      runtime: "cli",
+      logger: capturingLogger,
+    },
+  );
+
+  const loadedEntry = entries.find(
+    (entry) => entry.message === "cli_module_loaded",
+  );
+  const skippedEntry = entries.find(
+    (entry) => entry.message === "cli_module_skipped",
+  );
+  const summaryEntry = entries.find(
+    (entry) => entry.message === "cli_module_load_summary",
+  );
+
+  assert.ok(loadedEntry, "cli_module_loaded entry should be logged");
+  assert.equal(loadedEntry.level, "debug");
+
+  assert.ok(skippedEntry, "cli_module_skipped entry should be logged");
+  assert.equal(skippedEntry.level, "debug");
+
+  assert.ok(summaryEntry, "cli_module_load_summary entry should be logged");
+  assert.equal(summaryEntry.level, "debug");
+});

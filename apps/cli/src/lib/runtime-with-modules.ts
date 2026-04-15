@@ -1,4 +1,8 @@
-import { createCliRuntimeContext, type CliRuntimeContext } from "./cli.js";
+import {
+  createCliRuntimeContext,
+  type CreateCliRuntimeContextOptions,
+  type CliRuntimeContext,
+} from "./cli.js";
 import type {
   CliActionAlias,
   CliOutputFormatter,
@@ -26,8 +30,9 @@ export type CliRuntimeContextWithModules = CliRuntimeContext & {
  */
 export function createCliRuntimeContextWithModules(
   rawEnv: NodeJS.ProcessEnv = process.env,
+  options?: CreateCliRuntimeContextOptions,
 ): CliRuntimeContextWithModules {
-  const runtimeContext = createCliRuntimeContext(rawEnv);
+  const runtimeContext = createCliRuntimeContext(rawEnv, options);
   const moduleLoadReport = loadCliModules({
     coreVersion: runtimeContext.env.APP_VERSION,
     logger: runtimeContext.logger,

@@ -74,6 +74,7 @@ test("resolveExecutionContext applies target precedence flag > env > config", as
   const resolved = await resolveExecutionContext({
     global: {
       help: false,
+      verbose: false,
       version: false,
       project: "flag-project",
       environment: "flag-env",
@@ -100,6 +101,7 @@ test("resolveExecutionContext applies auth precedence --api-key > env > stored",
   const fromFlag = await resolveExecutionContext({
     global: {
       help: false,
+      verbose: false,
       version: false,
       project: "project",
       environment: "env",
@@ -121,6 +123,7 @@ test("resolveExecutionContext applies auth precedence --api-key > env > stored",
   const fromEnv = await resolveExecutionContext({
     global: {
       help: false,
+      verbose: false,
       version: false,
       project: "project",
       environment: "env",
@@ -522,6 +525,26 @@ test("runMdcmsCli passes remaining tokens as args for multi-word command", async
 
   assert.equal(exitCode, 0);
   assert.deepEqual(capturedArgs, ["--dry-run"]);
+});
+
+test("parseCliInvocation parses --verbose flag", () => {
+  const parsed = parseCliInvocation(["cms", "pull", "--verbose"]);
+
+  assert.equal(parsed.global.verbose, true);
+  assert.equal(parsed.commandName, "pull");
+});
+
+test("parseCliInvocation parses -v shorthand", () => {
+  const parsed = parseCliInvocation(["cms", "push", "-v"]);
+
+  assert.equal(parsed.global.verbose, true);
+  assert.equal(parsed.commandName, "push");
+});
+
+test("parseCliInvocation defaults verbose to false", () => {
+  const parsed = parseCliInvocation(["cms", "pull"]);
+
+  assert.equal(parsed.global.verbose, false);
 });
 
 test("runMdcmsCli still resolves single-word commands when multi-word commands exist", async () => {

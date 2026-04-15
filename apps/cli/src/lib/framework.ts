@@ -32,6 +32,7 @@ export type MultiSelectPrompt = <T extends string>(
 
 export type CliGlobalOptions = {
   help: boolean;
+  verbose: boolean;
   version: boolean;
   project?: string;
   environment?: string;
@@ -149,6 +150,7 @@ function readFlagValue(argv: string[], index: number, flag: string): string {
 export function parseCliInvocation(argv: string[]): ParsedCliInvocation {
   const global: CliGlobalOptions = {
     help: false,
+    verbose: false,
     version: false,
   };
   const commandTokens: string[] = [];
@@ -158,6 +160,11 @@ export function parseCliInvocation(argv: string[]): ParsedCliInvocation {
 
     if (token === "-h" || token === "--help") {
       global.help = true;
+      continue;
+    }
+
+    if (token === "-v" || token === "--verbose") {
+      global.verbose = true;
       continue;
     }
 
@@ -366,6 +373,7 @@ function renderHelp(commands: readonly CliCommand[]): string {
     "  --api-key <token>      API key for headless/CI auth",
     "  --config <path>        Config file path (default: mdcms.config.ts)",
     "  --server-url <url>     Override server URL",
+    "  -v, --verbose          Show internal runtime diagnostics",
     "  -V, --version          Show version",
     "  -h, --help             Show help",
     "",
@@ -450,8 +458,13 @@ export async function runMdcmsCli(
   const fetcher = options.fetcher ?? fetch;
   const confirm = options.confirm ?? defaultConfirmPrompt;
   const multiSelect = options.multiSelect ?? defaultMultiSelectPrompt;
+  const registry = createCommandRegistry(commands);
+  const invocation = parseCliInvocation(argv);
   const runtimeWithModules =
-    options.runtimeWithModules ?? createCliRuntimeContextWithModules(env);
+    options.runtimeWithModules ??
+    createCliRuntimeContextWithModules(env, {
+      verbose: invocation.global.verbose,
+    });
   const credentialStore =
     options.credentialStore ??
     createCredentialStore({
@@ -463,8 +476,6 @@ export async function runMdcmsCli(
       const profile = await credentialStore.getProfile(input);
       return profile?.apiKey;
     });
-  const registry = createCommandRegistry(commands);
-  const invocation = parseCliInvocation(argv);
 
   if (invocation.global.version) {
     stdout.write(`mdcms/${options.version ?? "0.0.0"}\n`);

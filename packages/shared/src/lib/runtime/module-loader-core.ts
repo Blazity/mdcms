@@ -520,7 +520,7 @@ export function buildRuntimeModulePlan<
 
   const moduleIds = loaded.map((moduleResult) => moduleResult.id);
 
-  logger.info(`${options.runtime}_module_plan_ready`, {
+  logger.debug(`${options.runtime}_module_plan_ready`, {
     moduleIds,
   });
 
@@ -616,13 +616,13 @@ export function buildModuleLoadReport<
     options.summaryEvent ?? defaultSummaryEvent(options.runtime);
 
   for (const moduleResult of loaded) {
-    logger.info(loadedEvent, {
+    logger.debug(loadedEvent, {
       moduleId: moduleResult.id,
     });
   }
 
   for (const skippedModule of skipped) {
-    logger.warn(skippedEvent, {
+    logger.debug(skippedEvent, {
       moduleId: skippedModule.id,
       reason: skippedModule.reason,
       details: skippedModule.details,
@@ -637,7 +637,7 @@ export function buildModuleLoadReport<
     skipped,
   };
 
-  logger.info(summaryEvent, {
+  logger.debug(summaryEvent, {
     evaluatedModuleIds: report.evaluatedModuleIds,
     loadedModuleIds: report.loadedModuleIds,
     skippedModuleIds: report.skippedModuleIds,

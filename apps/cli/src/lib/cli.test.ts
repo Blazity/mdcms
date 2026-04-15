@@ -35,6 +35,43 @@ test("createCliRuntimeContext wires env and logger", () => {
   assert.ok(context.logger);
 });
 
+test("createCliRuntimeContext sets LOG_LEVEL to debug when verbose is true", () => {
+  const context = createCliRuntimeContext(
+    {
+      NODE_ENV: "test",
+      APP_VERSION: "1.0.0",
+    } as NodeJS.ProcessEnv,
+    { verbose: true },
+  );
+
+  assert.equal(context.env.LOG_LEVEL, "debug");
+});
+
+test("createCliRuntimeContext respects explicit LOG_LEVEL over verbose", () => {
+  const context = createCliRuntimeContext(
+    {
+      NODE_ENV: "test",
+      LOG_LEVEL: "warn",
+      APP_VERSION: "1.0.0",
+    } as NodeJS.ProcessEnv,
+    { verbose: true },
+  );
+
+  assert.equal(context.env.LOG_LEVEL, "warn");
+});
+
+test("createCliRuntimeContext defaults to info when verbose is false", () => {
+  const context = createCliRuntimeContext(
+    {
+      NODE_ENV: "test",
+      APP_VERSION: "1.0.0",
+    } as NodeJS.ProcessEnv,
+    { verbose: false },
+  );
+
+  assert.equal(context.env.LOG_LEVEL, "info");
+});
+
 test("formatCliErrorEnvelope keeps RuntimeError code", () => {
   const envelope = formatCliErrorEnvelope(
     new RuntimeError({
