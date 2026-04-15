@@ -15,7 +15,7 @@ import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
 import { isMdxExpressionValue } from "../../../mdx-component-extension.js";
 import { Badge } from "../ui/badge.js";
 
-function formatPropsSummary(
+export function formatMdxComponentPropsSummary(
   props: Record<string, unknown> | undefined,
 ): string {
   const entries = Object.entries(props ?? {}).filter(
@@ -23,7 +23,7 @@ function formatPropsSummary(
   );
 
   if (entries.length === 0) {
-    return "No props";
+    return "No props set yet";
   }
 
   return entries
@@ -180,7 +180,7 @@ export function MdxComponentNodeView(
     (props.node.attrs.props as Record<string, unknown> | undefined) ?? {};
   const serializedPreviewProps = JSON.stringify(mdxProps);
   const serializedChildren = JSON.stringify(props.node.content.toJSON());
-  const propsSummary = formatPropsSummary(mdxProps);
+  const propsSummary = formatMdxComponentPropsSummary(mdxProps);
 
   useEffect(() => {
     const container = previewContainerRef.current;

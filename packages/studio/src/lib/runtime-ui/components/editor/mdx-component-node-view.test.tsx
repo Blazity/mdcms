@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   createMdxComponentPreviewProps,
+  formatMdxComponentPropsSummary,
   MdxComponentNodeFrame,
 } from "./mdx-component-node-view.js";
 
@@ -48,6 +49,11 @@ test("MdxComponentNodeFrame renders void component chrome without child slot", (
   assert.match(markup, /Local preview unavailable/);
   assert.match(markup, /Self-closing component/);
   assert.doesNotMatch(markup, /data-test-slot="children"/);
+});
+
+test("formatMdxComponentPropsSummary distinguishes empty props from non-editable components", () => {
+  assert.equal(formatMdxComponentPropsSummary({}), "No props set yet");
+  assert.equal(formatMdxComponentPropsSummary(undefined), "No props set yet");
 });
 
 test("createMdxComponentPreviewProps injects wrapper children into preview props", () => {

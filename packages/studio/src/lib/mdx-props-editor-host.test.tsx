@@ -9,6 +9,7 @@ import {
   createInitialMdxPropsEditorHostState,
   createMdxPropsEditorBindings,
   MdxPropsEditorHost,
+  renderReadyMdxPropsEditor,
   resolveMdxPropsEditorHostState,
   type PropsEditorComponentProps,
 } from "./mdx-props-editor-host.js";
@@ -268,4 +269,32 @@ test("MdxPropsEditorHost renders interactive auto-form controls for fallback pro
   assert.match(markup, /type="checkbox"/);
   assert.match(markup, /data-mdcms-mdx-auto-control="Chart:variant:select"/);
   assert.match(markup, /<select/);
+});
+
+test("renderReadyMdxPropsEditor keeps diagnostics out of the visible custom editor surface", () => {
+  const markup = renderToStaticMarkup(
+    createElement(
+      "section",
+      null,
+      renderReadyMdxPropsEditor({
+        componentName: "PricingTable",
+        editor: (_props: PropsEditorComponentProps) =>
+          createElement(
+            "div",
+            { "data-test-editor": "PricingTable" },
+            "Editor",
+          ),
+        bindings: {
+          value: {},
+          readOnly: false,
+          onChange: () => {},
+        },
+      }),
+    ),
+  );
+
+  assert.match(markup, /data-mdcms-mdx-props-editor-surface="PricingTable"/);
+  assert.match(markup, /data-test-editor="PricingTable"/);
+  assert.doesNotMatch(markup, /Custom editor ready/);
+  assert.doesNotMatch(markup, />Custom editor</);
 });

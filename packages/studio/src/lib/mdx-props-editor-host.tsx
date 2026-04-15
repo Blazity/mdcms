@@ -248,20 +248,11 @@ export function MdxPropsEditorHost({
 
       return (
         <PropsEditorRenderBoundary componentName={component.name}>
-          <>
-            <span data-mdcms-mdx-props-editor-state={`${component.name}:ready`}>
-              Custom editor ready.
-            </span>
-            <span data-mdcms-mdx-props-editor={component.name}>
-              Custom editor
-            </span>
-            <div data-mdcms-mdx-props-editor-surface={component.name}>
-              {createElement(
-                state.editor as PropsEditorComponent<PropsEditorValue>,
-                bindings,
-              )}
-            </div>
-          </>
+          {renderReadyMdxPropsEditor({
+            componentName: component.name,
+            editor: state.editor as PropsEditorComponent<PropsEditorValue>,
+            bindings,
+          })}
         </PropsEditorRenderBoundary>
       );
     }
@@ -320,6 +311,25 @@ function createFallbackState(
     : hasNestedRichTextChildren(component)
       ? { status: "content-only" }
       : { status: "empty" };
+}
+
+export function renderReadyMdxPropsEditor(input: {
+  componentName: string;
+  editor: PropsEditorComponent<PropsEditorValue>;
+  bindings: PropsEditorComponentProps<PropsEditorValue>;
+}): ReactNode {
+  return (
+    <>
+      <span
+        hidden
+        data-mdcms-mdx-props-editor-state={`${input.componentName}:ready`}
+      />
+      <span hidden data-mdcms-mdx-props-editor={input.componentName} />
+      <div data-mdcms-mdx-props-editor-surface={input.componentName}>
+        {createElement(input.editor, input.bindings)}
+      </div>
+    </>
+  );
 }
 
 function hasNestedRichTextChildren(component: MdxCatalogComponent): boolean {
