@@ -40,7 +40,10 @@ import {
 } from "../../document-version-diff.js";
 import { useStudioMountInfo } from "../app/admin/mount-info-context.js";
 import { useParams, useRouter } from "../adapters/next-navigation.js";
-import { type MdxPropsPanelSelection } from "../components/editor/mdx-props-panel.js";
+import {
+  MdxPropsPanel,
+  type MdxPropsPanelSelection,
+} from "../components/editor/mdx-props-panel.js";
 import {
   TipTapEditor,
   type TipTapEditorHandle,
@@ -1944,6 +1947,8 @@ export function SidebarInfoTab(props: {
 
 function SidebarPropertiesTab(props: {
   state: ContentDocumentPageReadyState;
+  context?: StudioMountContext;
+  activeMdxComponent?: MdxPropsPanelSelection | null;
   onFrontmatterFieldChange?: (fieldName: string, value: unknown) => void;
 }) {
   const propertyDescriptors = getPropertyDescriptors(props.state);
@@ -1952,6 +1957,15 @@ function SidebarPropertiesTab(props: {
 
   return (
     <div className="p-4">
+      {props.context ? (
+        <div className="mb-4 border-b border-border pb-4">
+          <MdxPropsPanel
+            context={props.context}
+            selection={props.activeMdxComponent ?? null}
+          />
+        </div>
+      ) : null}
+
       {propertyDescriptors.length > 0 ? (
         <div className="flex flex-col">
           {propertyDescriptors.map((descriptor) => {
@@ -2281,6 +2295,8 @@ function SidebarHistoryTab(props: {
 
 function ContentDocumentPageSidebar(props: {
   state: ContentDocumentPageReadyState;
+  context?: StudioMountContext;
+  activeMdxComponent?: MdxPropsPanelSelection | null;
   onFrontmatterFieldChange?: (fieldName: string, value: unknown) => void;
   onViewVersion?: (version: number) => void;
   onBackToDraft?: () => void;
@@ -2288,6 +2304,12 @@ function ContentDocumentPageSidebar(props: {
   const [activeTab, setActiveTab] = useState<"properties" | "info" | "history">(
     "properties",
   );
+
+  useEffect(() => {
+    if (props.activeMdxComponent) {
+      setActiveTab("properties");
+    }
+  }, [props.activeMdxComponent]);
 
   return (
     <aside
@@ -2339,6 +2361,8 @@ function ContentDocumentPageSidebar(props: {
         {activeTab === "properties" ? (
           <SidebarPropertiesTab
             state={props.state}
+            context={props.context}
+            activeMdxComponent={props.activeMdxComponent}
             onFrontmatterFieldChange={props.onFrontmatterFieldChange}
           />
         ) : activeTab === "info" ? (
@@ -2678,6 +2702,8 @@ export function ContentDocumentPageView({
           {state.status === "ready" && sidebarOpen ? (
             <ContentDocumentPageSidebar
               state={state}
+              context={context}
+              activeMdxComponent={activeMdxComponent}
               onFrontmatterFieldChange={onFrontmatterFieldChange}
               onViewVersion={onViewVersion}
               onBackToDraft={onBackToDraft}
