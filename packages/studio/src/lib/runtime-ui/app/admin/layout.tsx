@@ -65,8 +65,17 @@ export function createAdminLayoutSessionLoadInput(
 export function createAdminLayoutTokenSessionState(
   auth: StudioMountContext["auth"],
 ): StudioSessionState | null {
-  if (auth.mode !== "token" || !auth.token) {
+  if (auth.mode !== "token") {
     return null;
+  }
+
+  if (!auth.token) {
+    return {
+      status: "token-error",
+      reason: "missing",
+      message:
+        "No bearer token was provided. The host application must supply a token when using auth.mode = \"token\".",
+    };
   }
 
   return {
@@ -176,7 +185,7 @@ export default function AdminLayout({
           setCanManageSettings(response.capabilities.settings.manage);
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (!cancelled) {
           setCanReadSchema(false);
           setCanCreateContent(false);
@@ -185,6 +194,36 @@ export default function AdminLayout({
           setCanDeleteContent(false);
           setCanManageUsers(false);
           setCanManageSettings(false);
+
+          // In token mode, a capabilities 401/403 means the token is
+          // invalid, revoked, or not allowed for this project/environment.
+          // Surface a deterministic token-error instead of leaving the UI
+          // in a broken empty state.
+          if (context.auth.mode === "token") {
+            const statusCode =
+              error &&
+              typeof error === "object" &&
+              "statusCode" in error &&
+              typeof error.statusCode === "number"
+                ? error.statusCode
+                : null;
+
+            if (statusCode === 401) {
+              setSessionState({
+                status: "token-error",
+                reason: "invalid",
+                message:
+                  "The bearer token is invalid, expired, or has been revoked.",
+              });
+            } else if (statusCode === 403) {
+              setSessionState({
+                status: "token-error",
+                reason: "forbidden",
+                message:
+                  "The bearer token is not allowed for the requested project or environment.",
+              });
+            }
+          }
         }
       });
 
@@ -297,17 +336,20 @@ export default function AdminLayout({
   const pathname = usePathname();
   const router = useRouter();
 
-  // Auth gate: redirect only truly unauthenticated users to login.
-  // Transient errors (e.g. network blip) should not kick an
-  // authenticated user out — show an inline error instead.
+  // Auth gate: redirect only truly unauthenticated cookie-mode users to login.
+  // Token-mode embeds must never redirect to the login screen — token auth
+  // failures are shown inline via the "token-error" session state.
   useEffect(() => {
-    if (sessionState.status === "unauthenticated") {
+    if (
+      sessionState.status === "unauthenticated" &&
+      context.auth.mode !== "token"
+    ) {
       const returnTo = encodeURIComponent(
         pathname.includes("/admin") ? pathname : "/admin",
       );
       router.replace(`/admin/login?returnTo=${returnTo}`);
     }
-  }, [sessionState.status, pathname, router]);
+  }, [sessionState.status, pathname, router, context.auth.mode]);
 
   if (sessionState.status === "loading" && typeof window !== "undefined") {
     return (
@@ -319,6 +361,61 @@ export default function AdminLayout({
 
   if (sessionState.status === "unauthenticated") {
     return null;
+  }
+
+  if (sessionState.status === "token-error") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <div className="max-w-md w-full rounded-xl border border-border bg-card p-8 shadow-sm space-y-4">
+          <div className="space-y-1 text-center">
+            <p className="text-sm font-medium text-foreground">
+              Token authentication failed
+            </p>
+            <p className="text-sm text-foreground-muted">
+              Studio is configured for token-based authentication (
+              <code className="text-xs bg-muted px-1 py-0.5 rounded">
+                auth.mode = &quot;token&quot;
+              </code>
+              ) but the supplied token could not be used.
+            </p>
+          </div>
+
+          <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {sessionState.message}
+          </div>
+
+          <div className="rounded-md bg-muted px-3 py-2 text-xs text-foreground-muted space-y-1">
+            <p>
+              <span className="font-medium">Reason:</span>{" "}
+              {sessionState.reason}
+            </p>
+            <p>
+              <span className="font-medium">Auth mode:</span> token
+            </p>
+            {context.documentRoute?.project && (
+              <p>
+                <span className="font-medium">Project:</span>{" "}
+                {context.documentRoute.project}
+              </p>
+            )}
+            {activeEnvironment && (
+              <p>
+                <span className="font-medium">Environment:</span>{" "}
+                {activeEnvironment}
+              </p>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="w-full rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (sessionState.status === "error") {

@@ -75,3 +75,26 @@ test("createAdminLayoutTokenSessionState returns an authenticated shell session 
 test("createAdminLayoutTokenSessionState returns null for cookie auth", () => {
   assert.equal(createAdminLayoutTokenSessionState(createContext().auth), null);
 });
+
+test("createAdminLayoutTokenSessionState returns token-error for token auth with missing token", () => {
+  const context = createContext();
+  context.auth = { mode: "token", token: "" };
+
+  const result = createAdminLayoutTokenSessionState(context.auth);
+  assert.equal(result?.status, "token-error");
+  assert.equal(
+    result && "reason" in result ? result.reason : undefined,
+    "missing",
+  );
+});
+
+test("createAdminLayoutTokenSessionState returns token-error when token is undefined in token mode", () => {
+  const result = createAdminLayoutTokenSessionState({
+    mode: "token",
+  } as StudioMountContext["auth"]);
+  assert.equal(result?.status, "token-error");
+  assert.equal(
+    result && "reason" in result ? result.reason : undefined,
+    "missing",
+  );
+});
