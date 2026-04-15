@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "bun:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import type { StudioMountContext } from "@mdcms/shared";
 
 import {
+  AdminTokenErrorStateView,
   createAdminLayoutCapabilitiesLoadInput,
   createAdminLayoutSessionLoadInput,
+  createAdminLayoutTokenErrorState,
   createAdminLayoutTokenSessionState,
 } from "./layout.js";
 
@@ -44,6 +48,13 @@ test("createAdminLayoutCapabilitiesLoadInput maps the mounted project and enviro
 test("createAdminLayoutCapabilitiesLoadInput returns null without an active document route", () => {
   const context = createContext();
   delete context.documentRoute;
+
+  assert.equal(createAdminLayoutCapabilitiesLoadInput(context), null);
+});
+
+test("createAdminLayoutCapabilitiesLoadInput returns null for token auth without a token", () => {
+  const context = createContext();
+  context.auth = { mode: "token" };
 
   assert.equal(createAdminLayoutCapabilitiesLoadInput(context), null);
 });
@@ -97,4 +108,52 @@ test("createAdminLayoutTokenSessionState returns token-error when token is undef
     result && "reason" in result ? result.reason : undefined,
     "missing",
   );
+});
+
+test("createAdminLayoutTokenErrorState maps 401 to an invalid-token error", () => {
+  assert.deepEqual(createAdminLayoutTokenErrorState(401), {
+    status: "token-error",
+    reason: "invalid",
+    message: "The bearer token is invalid, expired, or has been revoked.",
+  });
+});
+
+test("createAdminLayoutTokenErrorState maps 403 to a forbidden-token error", () => {
+  assert.deepEqual(createAdminLayoutTokenErrorState(403), {
+    status: "token-error",
+    reason: "forbidden",
+    message:
+      "The bearer token is not allowed for the requested project or environment.",
+  });
+});
+
+test("createAdminLayoutTokenErrorState ignores non-auth status codes", () => {
+  assert.equal(createAdminLayoutTokenErrorState(500), null);
+  assert.equal(createAdminLayoutTokenErrorState(null), null);
+});
+
+test("AdminTokenErrorStateView renders retry action and technical details", () => {
+  const markup = renderToStaticMarkup(
+    createElement(AdminTokenErrorStateView, {
+      state: {
+        status: "token-error",
+        reason: "missing",
+        message:
+          'No bearer token was provided. The host application must supply a token when using auth.mode = "token".',
+      },
+      context: createContext(),
+      activeEnvironment: "staging",
+    }),
+  );
+
+  assert.match(markup, /Token authentication failed/);
+  assert.match(markup, /Retry/);
+  assert.match(markup, /Reason:/);
+  assert.match(markup, /missing/);
+  assert.match(markup, /Auth mode:/);
+  assert.match(markup, /Project:/);
+  assert.match(markup, /marketing-site/);
+  assert.match(markup, /Environment:/);
+  assert.match(markup, /staging/);
+  assert.match(markup, /auth.mode = &quot;token&quot;/);
 });
