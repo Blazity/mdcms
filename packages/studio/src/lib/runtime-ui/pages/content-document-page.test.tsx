@@ -467,8 +467,56 @@ test("ContentDocumentPageView renders guarded schema mismatch recovery controls"
   assert.match(markup, /Sync Schema/);
 });
 
-test("ContentDocumentPageView renders the active MDX component props panel in the sidebar properties tab", () => {
-  const markup = renderPageMarkup(createReadyState(), {
+test("ContentDocumentPageView keeps the dedicated Component tab hidden until an MDX component is selected", () => {
+  const state = createReadyState();
+  state.schemaState = createReadySchemaState({
+    entries: [
+      createSchemaEntry({
+        title: {
+          kind: "string",
+          required: true,
+          nullable: false,
+        },
+      }),
+    ],
+  });
+  state.document.frontmatter = {
+    title: "Launch Notes",
+  };
+  state.draftFrontmatter = {
+    ...state.document.frontmatter,
+  };
+
+  const markup = renderPageMarkup(state, {
+    context: createMdxMountContext(),
+  });
+
+  assert.doesNotMatch(markup, />Component</);
+  assert.match(markup, /data-mdcms-property-field="title"/);
+  assert.doesNotMatch(markup, /data-mdcms-mdx-props-panel="PricingTable"/);
+});
+
+test("ContentDocumentPageView renders the active MDX component props panel in a dedicated Component tab", () => {
+  const state = createReadyState();
+  state.schemaState = createReadySchemaState({
+    entries: [
+      createSchemaEntry({
+        title: {
+          kind: "string",
+          required: true,
+          nullable: false,
+        },
+      }),
+    ],
+  });
+  state.document.frontmatter = {
+    title: "Launch Notes",
+  };
+  state.draftFrontmatter = {
+    ...state.document.frontmatter,
+  };
+
+  const markup = renderPageMarkup(state, {
     context: createMdxMountContext(),
     activeMdxComponent: {
       component: createMdxMountContext().mdx!.catalog.components[0]!,
@@ -481,8 +529,10 @@ test("ContentDocumentPageView renders the active MDX component props panel in th
     },
   });
 
+  assert.match(markup, />Component</);
   assert.match(markup, /data-mdcms-mdx-props-panel="PricingTable"/);
   assert.match(markup, /MDX component props/);
+  assert.doesNotMatch(markup, /data-mdcms-property-field="title"/);
 });
 
 test("loadContentDocumentPageState applies the schema mismatch guard before returning the ready document state", async () => {

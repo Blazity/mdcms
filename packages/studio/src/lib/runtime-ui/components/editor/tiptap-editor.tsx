@@ -149,6 +149,24 @@ export function createTipTapEditorDependencies(input: {
   return [input.placeholder, input.hostBridge, input.readOnly, input.forbidden];
 }
 
+export function resolveSlashPickerCoordsForEditor(input: {
+  editor: {
+    view: Parameters<typeof getSlashTriggerCoords>[0];
+  };
+  trigger: MdxComponentSlashTrigger;
+  container: Parameters<typeof getSlashTriggerCoords>[2];
+}): SlashTriggerCoords | null {
+  try {
+    return getSlashTriggerCoords(
+      input.editor.view,
+      input.trigger,
+      input.container,
+    );
+  } catch {
+    return null;
+  }
+}
+
 export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
   function TipTapEditor(
     {
@@ -209,11 +227,11 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
 
         if (nextTrigger && editorWrapperRef.current) {
           setSlashPickerCoords(
-            getSlashTriggerCoords(
-              nextEditor.view,
-              nextTrigger,
-              editorWrapperRef.current,
-            ),
+            resolveSlashPickerCoordsForEditor({
+              editor: nextEditor,
+              trigger: nextTrigger,
+              container: editorWrapperRef.current,
+            }),
           );
         } else {
           setSlashPickerCoords(null);

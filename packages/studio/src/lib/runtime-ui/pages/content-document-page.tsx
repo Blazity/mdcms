@@ -1947,8 +1947,6 @@ export function SidebarInfoTab(props: {
 
 function SidebarPropertiesTab(props: {
   state: ContentDocumentPageReadyState;
-  context?: StudioMountContext;
-  activeMdxComponent?: MdxPropsPanelSelection | null;
   onFrontmatterFieldChange?: (fieldName: string, value: unknown) => void;
 }) {
   const propertyDescriptors = getPropertyDescriptors(props.state);
@@ -1957,15 +1955,6 @@ function SidebarPropertiesTab(props: {
 
   return (
     <div className="p-4">
-      {props.context ? (
-        <div className="mb-4 border-b border-border pb-4">
-          <MdxPropsPanel
-            context={props.context}
-            selection={props.activeMdxComponent ?? null}
-          />
-        </div>
-      ) : null}
-
       {propertyDescriptors.length > 0 ? (
         <div className="flex flex-col">
           {propertyDescriptors.map((descriptor) => {
@@ -2195,6 +2184,20 @@ function SidebarPropertiesTab(props: {
   );
 }
 
+function SidebarComponentTab(props: {
+  context: StudioMountContext;
+  activeMdxComponent: MdxPropsPanelSelection;
+}) {
+  return (
+    <div className="p-4">
+      <MdxPropsPanel
+        context={props.context}
+        selection={props.activeMdxComponent}
+      />
+    </div>
+  );
+}
+
 function SidebarHistoryTab(props: {
   state: ContentDocumentPageReadyState;
   onViewVersion?: (version: number) => void;
@@ -2301,15 +2304,21 @@ function ContentDocumentPageSidebar(props: {
   onViewVersion?: (version: number) => void;
   onBackToDraft?: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"properties" | "info" | "history">(
-    "properties",
-  );
+  const hasComponentTab = Boolean(props.context && props.activeMdxComponent);
+  const [activeTab, setActiveTab] = useState<
+    "properties" | "component" | "info" | "history"
+  >(() => (hasComponentTab ? "component" : "properties"));
 
   useEffect(() => {
-    if (props.activeMdxComponent) {
-      setActiveTab("properties");
+    if (hasComponentTab) {
+      setActiveTab("component");
+      return;
     }
-  }, [props.activeMdxComponent]);
+
+    setActiveTab((currentTab) =>
+      currentTab === "component" ? "properties" : currentTab,
+    );
+  }, [hasComponentTab]);
 
   return (
     <aside
@@ -2342,6 +2351,20 @@ function ContentDocumentPageSidebar(props: {
         >
           Properties
         </button>
+        {hasComponentTab ? (
+          <button
+            type="button"
+            className={cn(
+              "flex-1 py-2.5 text-center text-xs font-semibold transition-colors",
+              activeTab === "component"
+                ? "border-b-2 border-primary text-primary"
+                : "text-foreground-muted hover:text-foreground",
+            )}
+            onClick={() => setActiveTab("component")}
+          >
+            Component
+          </button>
+        ) : null}
         <button
           type="button"
           className={cn(
@@ -2361,9 +2384,14 @@ function ContentDocumentPageSidebar(props: {
         {activeTab === "properties" ? (
           <SidebarPropertiesTab
             state={props.state}
+            onFrontmatterFieldChange={props.onFrontmatterFieldChange}
+          />
+        ) : activeTab === "component" &&
+          props.context &&
+          props.activeMdxComponent ? (
+          <SidebarComponentTab
             context={props.context}
             activeMdxComponent={props.activeMdxComponent}
-            onFrontmatterFieldChange={props.onFrontmatterFieldChange}
           />
         ) : activeTab === "info" ? (
           <SidebarInfoTab state={props.state} />
