@@ -97,6 +97,36 @@ test("trace entries get [trace] prefix", () => {
   assert.equal(lines[0], "[trace] entering function fn=loadModule");
 });
 
+test("context fields are included in formatted output", () => {
+  const lines: string[] = [];
+  const sink = createCliConsoleSink((line) => lines.push(line));
+
+  sink({
+    level: "debug",
+    message: "loading",
+    timestamp: "2026-04-15T00:00:00.000Z",
+    context: { runtime: "cli" },
+    meta: { moduleId: "core.system" },
+  });
+
+  assert.equal(lines[0], "[debug] loading runtime=cli moduleId=core.system");
+});
+
+test("meta overrides context when keys overlap", () => {
+  const lines: string[] = [];
+  const sink = createCliConsoleSink((line) => lines.push(line));
+
+  sink({
+    level: "debug",
+    message: "event",
+    timestamp: "2026-04-15T00:00:00.000Z",
+    context: { source: "base" },
+    meta: { source: "override" },
+  });
+
+  assert.equal(lines[0], "[debug] event source=override");
+});
+
 test("array values in meta are joined with commas", () => {
   const lines: string[] = [];
   const sink = createCliConsoleSink((line) => lines.push(line));

@@ -95,7 +95,10 @@ export function createCliConsoleSink(
   write?: (line: string) => void,
 ): (entry: LogEntry) => void {
   return (entry: LogEntry): void => {
-    const meta = formatMeta(entry.meta);
+    const merged = { ...entry.context, ...entry.meta };
+    const meta = formatMeta(
+      Object.keys(merged).length > 0 ? merged : undefined,
+    );
     let line: string;
 
     if (entry.level === "trace" || entry.level === "debug") {
