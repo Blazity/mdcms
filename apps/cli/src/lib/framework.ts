@@ -32,6 +32,7 @@ export type MultiSelectPrompt = <T extends string>(
 
 export type CliGlobalOptions = {
   help: boolean;
+  version: boolean;
   project?: string;
   environment?: string;
   apiKey?: string;
@@ -87,6 +88,7 @@ export type RunMdcmsCliOptions = {
   env?: NodeJS.ProcessEnv;
   stdout?: Writer;
   stderr?: Writer;
+  version?: string;
   commands?: CliCommand[];
   loadConfig?: LoadCliConfig;
   resolveStoredApiKey?: ResolveStoredApiKey;
@@ -147,6 +149,7 @@ function readFlagValue(argv: string[], index: number, flag: string): string {
 export function parseCliInvocation(argv: string[]): ParsedCliInvocation {
   const global: CliGlobalOptions = {
     help: false,
+    version: false,
   };
   const commandTokens: string[] = [];
 
@@ -155,6 +158,11 @@ export function parseCliInvocation(argv: string[]): ParsedCliInvocation {
 
     if (token === "-h" || token === "--help") {
       global.help = true;
+      continue;
+    }
+
+    if (token === "-V" || token === "--version") {
+      global.version = true;
       continue;
     }
 
@@ -358,6 +366,7 @@ function renderHelp(commands: readonly CliCommand[]): string {
     "  --api-key <token>      API key for headless/CI auth",
     "  --config <path>        Config file path (default: mdcms.config.ts)",
     "  --server-url <url>     Override server URL",
+    "  -V, --version          Show version",
     "  -h, --help             Show help",
     "",
     "Commands:",
@@ -456,6 +465,11 @@ export async function runMdcmsCli(
     });
   const registry = createCommandRegistry(commands);
   const invocation = parseCliInvocation(argv);
+
+  if (invocation.global.version) {
+    stdout.write(`mdcms/${options.version ?? "0.0.0"}\n`);
+    return 0;
+  }
 
   if (invocation.global.help) {
     stdout.write(renderHelp(commands));
