@@ -218,10 +218,26 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       whileElementsMounted: autoUpdate,
       middleware: [
         offset(8),
-        flip({ padding: 12 }),
-        shift({ padding: 12 }),
+        flip({
+          padding: 12,
+          boundary:
+            editorWrapperRef.current?.closest(
+              '[data-mdcms-editor-pane="canvas"]',
+            ) ?? undefined,
+        }),
+        shift({
+          padding: 12,
+          boundary:
+            editorWrapperRef.current?.closest(
+              '[data-mdcms-editor-pane="canvas"]',
+            ) ?? undefined,
+        }),
         size({
           padding: 12,
+          boundary:
+            editorWrapperRef.current?.closest(
+              '[data-mdcms-editor-pane="canvas"]',
+            ) ?? undefined,
           apply({ availableHeight, elements }) {
             Object.assign(elements.floating.style, {
               maxHeight: `${Math.max(availableHeight, 0)}px`,
@@ -463,9 +479,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
         return;
       }
 
-      const contextElement =
-        editorWrapper.closest('[data-mdcms-editor-pane="canvas"]') ??
-        editorWrapper;
+      const contextElement = editorWrapper;
 
       floatingRefs.setReference(
         createSlashPickerVirtualReference({
