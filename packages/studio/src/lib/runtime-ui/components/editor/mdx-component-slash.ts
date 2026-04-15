@@ -85,7 +85,7 @@ export function getSlashTriggerCoords(
   trigger: MdxComponentSlashTrigger,
   _container?: { getBoundingClientRect: () => { top: number; left: number } },
 ): SlashTriggerCoords {
-  const cursorCoords = view.coordsAtPos(trigger.from);
+  const cursorCoords = view.coordsAtPos(trigger.to);
 
   return {
     top: cursorCoords.bottom,

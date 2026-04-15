@@ -99,19 +99,27 @@ test("replaceSlashTriggerWithMdxComponent removes the slash token and inserts th
   }
 });
 
-test("getSlashTriggerCoords returns viewport-relative coordinates", () => {
+test("getSlashTriggerCoords anchors the picker to the current caret position", () => {
   const trigger: MdxComponentSlashTrigger = { query: "Cal", from: 5, to: 9 };
+  let positionRequested = -1;
   const coords = getSlashTriggerCoords(
     {
-      coordsAtPos: (_pos: number) => ({ top: 200, left: 100, bottom: 220 }),
+      coordsAtPos: (pos: number) => {
+        positionRequested = pos;
+
+        return pos === trigger.to
+          ? { top: 200, left: 112, bottom: 220 }
+          : { top: 200, left: 100, bottom: 220 };
+      },
     },
     trigger,
     { getBoundingClientRect: () => ({ top: 50, left: 30 }) },
   );
 
+  assert.equal(positionRequested, trigger.to);
   assert.deepEqual(coords, {
     top: 220,
-    left: 100,
+    left: 112,
     cursorTop: 200,
     cursorBottom: 220,
   });
