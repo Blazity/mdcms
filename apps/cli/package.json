@@ -23,6 +23,7 @@
     "./package.json": "./package.json",
     ".": {
       "@mdcms/source": "./src/index.ts",
+      "bun": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
@@ -40,6 +41,8 @@
     }
   },
   "scripts": {
+    "prepack": "node ../../scripts/strip-dev-export-conditions.js",
+    "postpack": "node ../../scripts/restore-package-json.js",
     "test": "bun test ./src",
     "dev": "bun --conditions @mdcms/source src/bin/mdcms.ts --help"
   },

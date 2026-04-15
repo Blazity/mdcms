@@ -20,36 +20,42 @@
     "./package.json": "./package.json",
     "./action-catalog-adapter": {
       "@mdcms/source": "./src/lib/action-catalog-adapter.ts",
+      "bun": "./src/lib/action-catalog-adapter.ts",
       "types": "./dist/lib/action-catalog-adapter.d.ts",
       "import": "./dist/lib/action-catalog-adapter.js",
       "default": "./dist/lib/action-catalog-adapter.js"
     },
     "./build-runtime": {
       "@mdcms/source": "./src/lib/build-runtime.ts",
+      "bun": "./src/lib/build-runtime.ts",
       "types": "./dist/lib/build-runtime.d.ts",
       "import": "./dist/lib/build-runtime.js",
       "default": "./dist/lib/build-runtime.js"
     },
     "./document-shell": {
       "@mdcms/source": "./src/lib/document-shell.ts",
+      "bun": "./src/lib/document-shell.ts",
       "types": "./dist/lib/document-shell.d.ts",
       "import": "./dist/lib/document-shell.js",
       "default": "./dist/lib/document-shell.js"
     },
     "./markdown-pipeline": {
       "@mdcms/source": "./src/lib/markdown-pipeline.ts",
+      "bun": "./src/lib/markdown-pipeline.ts",
       "types": "./dist/lib/markdown-pipeline.d.ts",
       "import": "./dist/lib/markdown-pipeline.js",
       "default": "./dist/lib/markdown-pipeline.js"
     },
     "./runtime": {
       "@mdcms/source": "./src/lib/studio.ts",
+      "bun": "./src/lib/studio.ts",
       "types": "./dist/lib/studio.d.ts",
       "import": "./dist/lib/studio.js",
       "default": "./dist/lib/studio.js"
     },
     ".": {
       "@mdcms/source": "./src/index.ts",
+      "bun": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
@@ -67,6 +73,8 @@
     }
   },
   "scripts": {
+    "prepack": "node ../../scripts/strip-dev-export-conditions.js",
+    "postpack": "node ../../scripts/restore-package-json.js",
     "dev": "sh -lc 'trap \"kill 0\" INT TERM EXIT; bun x --bun tsc --build tsconfig.lib.json --watch --preserveWatchOutput & bun --conditions @mdcms/source src/lib/dev-runtime-watch.ts & wait'",
     "test": "bun test ./src"
   },
