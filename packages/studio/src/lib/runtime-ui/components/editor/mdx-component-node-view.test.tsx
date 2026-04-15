@@ -31,6 +31,7 @@ test("MdxComponentNodeFrame renders wrapper component chrome with nested slot", 
   assert.match(markup, />Callout</);
   assert.match(markup, /type=&quot;warning&quot;/);
   assert.match(markup, /data-test-slot="children"/);
+  assert.doesNotMatch(markup, />Wrapper</);
 });
 
 test("MdxComponentNodeFrame renders void component chrome without child slot", () => {
@@ -49,6 +50,7 @@ test("MdxComponentNodeFrame renders void component chrome without child slot", (
   assert.match(markup, /Local preview unavailable/);
   assert.match(markup, /Self-closing component/);
   assert.doesNotMatch(markup, /data-test-slot="children"/);
+  assert.doesNotMatch(markup, />Void</);
 });
 
 test("formatMdxComponentPropsSummary distinguishes empty props from non-editable components", () => {
