@@ -19,7 +19,7 @@
     },
     "apps/cli": {
       "name": "@mdcms/cli",
-      "version": "0.1.0",
+      "version": "0.1.4",
       "bin": {
         "mdcms": "./dist/bin/mdcms.js",
       },
@@ -102,7 +102,7 @@
     },
     "packages/sdk": {
       "name": "@mdcms/sdk",
-      "version": "0.1.0",
+      "version": "0.1.2",
       "dependencies": {
         "@mdcms/shared": "workspace:*",
         "tslib": "^2.3.0",
@@ -110,7 +110,7 @@
     },
     "packages/shared": {
       "name": "@mdcms/shared",
-      "version": "0.1.0",
+      "version": "0.1.3",
       "dependencies": {
         "elysia": "^1.4.25",
         "tslib": "^2.3.0",
@@ -120,13 +120,14 @@
     },
     "packages/studio": {
       "name": "@mdcms/studio",
-      "version": "0.1.0",
+      "version": "0.1.3",
       "dependencies": {
         "@elysiajs/eden": "^1.4.8",
+        "@floating-ui/react-dom": "^2.1.8",
         "@fontsource-variable/geist-mono": "^5.2.7",
         "@fontsource-variable/inter": "^5.2.8",
         "@fontsource-variable/space-grotesk": "^5.2.10",
-        "@mdcms/shared": "workspace:*",
+        "@mdcms/shared": "^0.1.3",
         "@radix-ui/react-avatar": "1.1.11",
         "@radix-ui/react-checkbox": "1.3.3",
         "@radix-ui/react-collapsible": "1.1.12",

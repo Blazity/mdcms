@@ -6,8 +6,8 @@ import type { StudioMountContext } from "@mdcms/shared";
 import { extractMarkdownFromEditor } from "../../../markdown-pipeline.js";
 import { createDocumentEditor } from "../../../document-editor.js";
 import {
+  createSlashPickerVirtualReference,
   getMdxComponentSlashTrigger,
-  getSlashPickerLayout,
   getSlashTriggerCoords,
   replaceSlashTriggerWithMdxComponent,
 } from "./mdx-component-slash.js";
@@ -117,52 +117,29 @@ test("getSlashTriggerCoords returns viewport-relative coordinates", () => {
   });
 });
 
-test("getSlashPickerLayout clamps horizontal overflow and flips above the trigger when needed", () => {
-  const layout = getSlashPickerLayout({
+test("createSlashPickerVirtualReference exposes a caret rect and keeps the context element", () => {
+  const contextElement = {} as Element;
+  const reference = createSlashPickerVirtualReference({
     anchor: {
-      top: 320,
-      left: 320,
-      cursorTop: 300,
-      cursorBottom: 320,
+      top: 220,
+      left: 100,
+      cursorTop: 200,
+      cursorBottom: 220,
     },
-    pickerSize: {
-      width: 240,
-      height: 180,
-    },
-    viewportSize: {
-      width: 360,
-      height: 420,
-    },
+    contextElement,
   });
+  const rect = reference.getBoundingClientRect();
 
-  assert.deepEqual(layout, {
-    top: 112,
-    left: 108,
-    maxHeight: 280,
-  });
-});
-
-test("getSlashPickerLayout keeps the picker below the trigger and caps height when neither side fits fully", () => {
-  const layout = getSlashPickerLayout({
-    anchor: {
-      top: 80,
-      left: 40,
-      cursorTop: 60,
-      cursorBottom: 80,
-    },
-    pickerSize: {
-      width: 220,
-      height: 200,
-    },
-    viewportSize: {
-      width: 360,
-      height: 260,
-    },
-  });
-
-  assert.deepEqual(layout, {
-    top: 88,
-    left: 40,
-    maxHeight: 160,
+  assert.equal(reference.contextElement, contextElement);
+  assert.deepEqual(rect, {
+    x: 100,
+    y: 200,
+    top: 200,
+    right: 100,
+    bottom: 220,
+    left: 100,
+    width: 0,
+    height: 20,
+    toJSON: rect.toJSON,
   });
 });

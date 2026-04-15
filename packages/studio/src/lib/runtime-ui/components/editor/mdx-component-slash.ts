@@ -73,14 +73,10 @@ export type SlashTriggerCoords = {
   cursorBottom: number;
 };
 
-export type SlashPickerLayout = {
-  top: number;
-  left: number;
-  maxHeight: number;
+export type SlashPickerVirtualReference = {
+  contextElement?: Element;
+  getBoundingClientRect: () => DOMRect;
 };
-
-const SLASH_PICKER_VIEWPORT_GUTTER = 12;
-const SLASH_PICKER_TRIGGER_GAP = 8;
 
 export function getSlashTriggerCoords(
   view: {
@@ -99,56 +95,40 @@ export function getSlashTriggerCoords(
   };
 }
 
-export function getSlashPickerLayout(input: {
+export function createSlashPickerVirtualReference(input: {
   anchor: SlashTriggerCoords;
-  pickerSize: { width: number; height: number };
-  viewportSize: { width: number; height: number };
-  gutter?: number;
-  gap?: number;
-}): SlashPickerLayout {
-  const gutter = input.gutter ?? SLASH_PICKER_VIEWPORT_GUTTER;
-  const gap = input.gap ?? SLASH_PICKER_TRIGGER_GAP;
-  const availableBelow = Math.max(
-    input.viewportSize.height - gutter - (input.anchor.cursorBottom + gap),
+  contextElement?: Element | null;
+}): SlashPickerVirtualReference {
+  const height = Math.max(
+    input.anchor.cursorBottom - input.anchor.cursorTop,
     0,
   );
-  const availableAbove = Math.max(input.anchor.cursorTop - gap - gutter, 0);
-  const minLeft = gutter;
-  const maxLeft = input.viewportSize.width - gutter - input.pickerSize.width;
-  const left =
-    maxLeft >= minLeft ? clamp(input.anchor.left, minLeft, maxLeft) : minLeft;
-
-  if (input.pickerSize.height <= availableBelow) {
-    return {
-      top: input.anchor.cursorBottom + gap,
+  const left = input.anchor.left;
+  const top = input.anchor.cursorTop;
+  const bottom = top + height;
+  const rect = {
+    x: left,
+    y: top,
+    top,
+    right: left,
+    bottom,
+    left,
+    width: 0,
+    height,
+    toJSON: () => ({
+      x: left,
+      y: top,
+      top,
+      right: left,
+      bottom,
       left,
-      maxHeight: availableBelow,
-    };
-  }
-
-  if (input.pickerSize.height <= availableAbove) {
-    return {
-      top: input.anchor.cursorTop - gap - input.pickerSize.height,
-      left,
-      maxHeight: availableAbove,
-    };
-  }
-
-  if (availableBelow >= availableAbove) {
-    return {
-      top: input.anchor.cursorBottom + gap,
-      left,
-      maxHeight: availableBelow,
-    };
-  }
+      width: 0,
+      height,
+    }),
+  } satisfies DOMRect;
 
   return {
-    top: Math.max(gutter, input.anchor.cursorTop - gap - availableAbove),
-    left,
-    maxHeight: availableAbove,
+    contextElement: input.contextElement ?? undefined,
+    getBoundingClientRect: () => rect,
   };
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
 }

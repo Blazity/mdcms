@@ -1,11 +1,18 @@
 "use client";
 
 import {
+  autoUpdate,
+  flip,
+  offset,
+  shift,
+  size,
+  useFloating,
+} from "@floating-ui/react-dom";
+import {
   forwardRef,
   useEffect,
   useEffectEvent,
   useImperativeHandle,
-  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -59,12 +66,11 @@ import {
   updateSelectedMdxComponentProps,
 } from "./mdx-component-selection.js";
 import {
+  createSlashPickerVirtualReference,
   getMdxComponentSlashTrigger,
-  getSlashPickerLayout,
   getSlashTriggerCoords,
   replaceSlashTriggerWithMdxComponent,
   type MdxComponentSlashTrigger,
-  type SlashPickerLayout,
   type SlashTriggerCoords,
 } from "./mdx-component-slash.js";
 import { Button } from "../ui/button.js";
@@ -194,12 +200,36 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       useState<MdxComponentSlashTrigger | null>(null);
     const [slashPickerCoords, setSlashPickerCoords] =
       useState<SlashTriggerCoords | null>(null);
-    const [slashPickerLayout, setSlashPickerLayout] =
-      useState<SlashPickerLayout | null>(null);
     const editorWrapperRef = useRef<HTMLDivElement | null>(null);
-    const slashPickerRef = useRef<HTMLDivElement | null>(null);
     const pickerSourceRef = useRef(pickerSource);
     pickerSourceRef.current = pickerSource;
+    const slashPickerOpen =
+      pickerSource === "slash" &&
+      slashTrigger !== null &&
+      slashPickerCoords !== null;
+    const {
+      refs: floatingRefs,
+      floatingStyles,
+      update: updateFloating,
+    } = useFloating({
+      open: slashPickerOpen,
+      placement: "bottom-start",
+      strategy: "fixed",
+      whileElementsMounted: autoUpdate,
+      middleware: [
+        offset(8),
+        flip({ padding: 12 }),
+        shift({ padding: 12 }),
+        size({
+          padding: 12,
+          apply({ availableHeight, elements }) {
+            Object.assign(elements.floating.style, {
+              maxHeight: `${Math.max(availableHeight, 0)}px`,
+            });
+          },
+        }),
+      ],
+    });
     const lastPublishedSelectionRef =
       useRef<PublishedMdxComponentSelectionSnapshot | null>(null);
     const lastEmittedMarkdownRef = useRef<string | null>(null);
@@ -242,7 +272,6 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           );
         } else {
           setSlashPickerCoords(null);
-          setSlashPickerLayout(null);
         }
       },
     );
@@ -422,51 +451,19 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
     }, [catalogComponents, editor, forbidden, isEditorReadOnly, readOnly]);
 
     useEffect(() => {
-      if (pickerSource !== "slash" || !editor) {
+      if (!slashPickerOpen || !slashPickerCoords) {
+        floatingRefs.setReference(null);
         return;
       }
 
-      const syncPosition = () => {
-        syncSlashTrigger(editor);
-      };
-
-      window.addEventListener("resize", syncPosition);
-      document.addEventListener("scroll", syncPosition, true);
-
-      return () => {
-        window.removeEventListener("resize", syncPosition);
-        document.removeEventListener("scroll", syncPosition, true);
-      };
-    }, [editor, pickerSource, syncSlashTrigger]);
-
-    useLayoutEffect(() => {
-      if (
-        pickerSource !== "slash" ||
-        !slashTrigger ||
-        !slashPickerCoords ||
-        !editorWrapperRef.current ||
-        !slashPickerRef.current
-      ) {
-        setSlashPickerLayout(null);
-        return;
-      }
-
-      const pickerRect = slashPickerRef.current.getBoundingClientRect();
-
-      setSlashPickerLayout(
-        getSlashPickerLayout({
+      floatingRefs.setReference(
+        createSlashPickerVirtualReference({
           anchor: slashPickerCoords,
-          pickerSize: {
-            width: pickerRect.width,
-            height: pickerRect.height,
-          },
-          viewportSize: {
-            width: window.innerWidth,
-            height: window.innerHeight,
-          },
-        }),
+          contextElement: editorWrapperRef.current,
+        }) as never,
       );
-    }, [pickerSource, slashPickerCoords, slashTrigger]);
+      updateFloating();
+    }, [floatingRefs, slashPickerCoords, slashPickerOpen, updateFloating]);
 
     const isActive = (name: string, attributes?: Record<string, unknown>) =>
       editor?.isActive(name, attributes) ?? false;
@@ -664,31 +661,25 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       syncSlashTrigger(editor);
     };
 
-    const slashPicker =
-      pickerSource === "slash" && slashTrigger && slashPickerCoords ? (
-        <div
-          ref={slashPickerRef}
-          data-mdcms-mdx-picker-source="slash"
-          style={{
-            position: "fixed",
-            top: (slashPickerLayout ?? slashPickerCoords).top,
-            left: (slashPickerLayout ?? slashPickerCoords).left,
-            width: "min(28rem, calc(100vw - 24px))",
-            maxHeight:
-              slashPickerLayout !== null
-                ? `${slashPickerLayout.maxHeight}px`
-                : "calc(100vh - 24px)",
-          }}
-          className="z-50 overflow-y-auto"
-        >
-          <MdxComponentPicker
-            components={catalogComponents}
-            query={slashTrigger.query}
-            forbidden={isEditorReadOnly}
-            onSelect={insertSelectedComponent}
-          />
-        </div>
-      ) : null;
+    const slashPicker = slashPickerOpen ? (
+      <div
+        ref={floatingRefs.setFloating}
+        data-mdcms-mdx-picker-source="slash"
+        style={{
+          ...floatingStyles,
+          width: "min(28rem, calc(100vw - 24px))",
+          maxHeight: "calc(100vh - 24px)",
+        }}
+        className="z-50 overflow-y-auto"
+      >
+        <MdxComponentPicker
+          components={catalogComponents}
+          query={slashTrigger.query}
+          forbidden={isEditorReadOnly}
+          onSelect={insertSelectedComponent}
+        />
+      </div>
+    ) : null;
 
     return (
       <div ref={editorWrapperRef} className="relative">
