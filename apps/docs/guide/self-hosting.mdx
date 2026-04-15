@@ -1,0 +1,277 @@
+---
+title: "Self-Hosting"
+description: "Stand up your own MDCMS server with Docker Compose"
+---
+
+Run MDCMS on your own infrastructure. This guide walks you through setting up a self-hosted instance from scratch using Docker Compose.
+
+<Note>
+  Already have a server running? Skip to the [Quick Start](/guide/quickstart) to install the CLI and start managing content.
+</Note>
+
+## Prerequisites
+
+You need **Docker** and **Docker Compose** installed. No other runtime (Bun, Node.js) is required for running the server.
+
+| Tool | Version | Install |
+|------|---------|---------|
+| Docker | 24+ | [docs.docker.com/get-docker](https://docs.docker.com/get-docker/) |
+| Docker Compose | v2+ (included with Docker Desktop) | Bundled with Docker Desktop on macOS/Windows |
+
+<Tabs>
+  <Tab title="macOS">
+    ```bash
+    brew install --cask docker
+    ```
+  </Tab>
+  <Tab title="Linux">
+    Follow the [official Docker install guide](https://docs.docker.com/engine/install/) for your distribution. Docker Compose v2 is included as a Docker plugin.
+  </Tab>
+  <Tab title="Windows">
+    Download and install [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/).
+  </Tab>
+</Tabs>
+
+## Setup
+
+<Steps>
+  <Step title="Get the MDCMS source">
+    ```bash
+    git clone https://github.com/Blazity/mdcms.git
+    cd mdcms
+    ```
+  </Step>
+
+  <Step title="Configure environment variables">
+    Copy the example environment file and review it:
+
+    ```bash
+    cp .env.example .env
+    ```
+
+    The defaults work for local evaluation. For production, you should change database credentials, S3 keys, and configure auth providers. See the [environment variables](#environment-variables) section below.
+  </Step>
+
+  <Step title="Start all services">
+    ```bash
+    docker compose up -d --build
+    ```
+
+    This starts:
+    - **MDCMS Server** on port `4000` — the API backend
+    - **PostgreSQL 16** on port `5432` — primary database
+    - **Redis 7** on port `6379` — sessions and caching
+    - **MinIO** on ports `9000`/`9001` — S3-compatible object storage
+    - **Mailhog** on ports `1025`/`8025` — email capture (dev/staging)
+
+    Database migrations run automatically before the server starts.
+  </Step>
+
+  <Step title="Verify the server is healthy">
+    ```bash
+    curl http://localhost:4000/healthz
+    ```
+
+    You should get a `200 OK` response. If the server is still starting, wait a few seconds and try again.
+  </Step>
+</Steps>
+
+## Service Endpoints
+
+| Service | URL | Purpose |
+|---------|-----|---------|
+| MDCMS Server API | [http://localhost:4000](http://localhost:4000) | Backend API — all clients connect here |
+| MinIO Console | [http://localhost:9001](http://localhost:9001) | Object storage admin (default: `minioadmin`/`minioadmin`) |
+| Mailhog UI | [http://localhost:8025](http://localhost:8025) | Captured email viewer (auth flows, invites) |
+| PostgreSQL | `localhost:5432` | Direct database access |
+| Redis | `localhost:6379` | Direct cache access |
+
+## First Boot
+
+After the server starts, you need to create your first user and connect the CLI.
+
+### Create an admin user
+
+Open the Studio UI from your host app (see [Embed the Studio UI](#embed-the-studio-ui) below), or use the CLI to authenticate:
+
+```bash
+npx mdcms login --server-url http://localhost:4000
+```
+
+This opens your browser for authentication. The first user to authenticate becomes the instance owner.
+
+### Connect the CLI
+
+Initialize a project against your server:
+
+```bash
+npx mdcms init --server-url http://localhost:4000
+```
+
+The init wizard walks you through project creation, environment selection, content directory scanning, and initial schema sync. See the [CLI Installation](/guide/cli/installation) guide for details.
+
+### Embed the Studio UI
+
+Add the visual content editor to your application:
+
+```bash
+npm install @mdcms/studio
+```
+
+```tsx
+// app/admin/[[...path]]/page.tsx (Next.js example)
+import { createStudioEmbedConfig } from "@mdcms/studio/runtime";
+import config from "../../../mdcms.config";
+import { AdminStudioClient } from "./admin-studio-client";
+
+export default async function AdminPage() {
+  return <AdminStudioClient config={createStudioEmbedConfig(config)} />;
+}
+```
+
+See the [Studio Guide](/guide/studio/dashboard) for full embedding instructions.
+
+## Environment Variables
+
+### Required
+
+These must be set for the server to start. The Docker Compose defaults handle these automatically for local use.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://mdcms:mdcms@postgres:5432/mdcms` |
+| `REDIS_URL` | Redis connection string | `redis://redis:6379` |
+| `S3_ENDPOINT` | S3-compatible storage endpoint | `http://minio:9000` |
+| `S3_ACCESS_KEY` | S3 access key | `minioadmin` |
+| `S3_SECRET_KEY` | S3 secret key | `minioadmin` |
+| `S3_BUCKET` | S3 bucket name | `mdcms-media` |
+
+### Server
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | Server listen port | `4000` |
+| `NODE_ENV` | Runtime environment | `development` |
+| `LOG_LEVEL` | Log verbosity (`debug`, `info`, `warn`, `error`) | `info` |
+
+### Email
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SMTP_HOST` | SMTP server hostname | `mailhog` |
+| `SMTP_PORT` | SMTP server port | `1025` |
+
+<Warning>
+  The default email configuration uses Mailhog, which captures all outgoing email without delivering it. For production, configure a real SMTP provider.
+</Warning>
+
+### Studio
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MDCMS_STUDIO_ALLOWED_ORIGINS` | Comma-separated CORS origins for Studio embedding | — |
+| `MDCMS_AUTH_INSECURE_COOKIES` | Allow HTTP cookies (set `true` for local dev without HTTPS) | `false` |
+
+### Auth Providers (optional)
+
+Configure SSO providers for your organization. Providers are enabled by presence — no feature flag is needed.
+
+| Variable | Description |
+|----------|-------------|
+| `MDCMS_AUTH_OIDC_PROVIDERS` | JSON array of OIDC provider configurations |
+| `MDCMS_AUTH_SAML_PROVIDERS` | JSON array of SAML provider configurations |
+| `MDCMS_AUTH_ADMIN_EMAILS` | Comma-separated emails that get admin role on first login |
+
+<Accordion title="Example OIDC provider config">
+```json
+[
+  {
+    "providerId": "okta",
+    "issuer": "https://example.okta.com/oauth2/default",
+    "domain": "example.com",
+    "clientId": "your-client-id",
+    "clientSecret": "your-client-secret"
+  }
+]
+```
+</Accordion>
+
+<Accordion title="Example SAML provider config">
+```json
+[
+  {
+    "providerId": "okta-saml",
+    "issuer": "https://www.okta.com/exk123456789",
+    "domain": "example.com",
+    "entryPoint": "https://example.okta.com/app/example/sso/saml",
+    "cert": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
+    "audience": "https://cms.example.com/saml/okta-saml/sp",
+    "spEntityId": "https://cms.example.com/saml/okta-saml/sp"
+  }
+]
+```
+</Accordion>
+
+## Production Considerations
+
+### Security
+
+- Set strong, unique values for `S3_ACCESS_KEY`, `S3_SECRET_KEY`, and database credentials
+- Configure `MDCMS_STUDIO_ALLOWED_ORIGINS` to restrict CORS to your actual Studio host domain
+- Set `NODE_ENV=production` to enable secure cookie defaults and disable development features
+- Remove `MDCMS_AUTH_INSECURE_COOKIES` (or set to `false`) when running behind HTTPS
+- Replace Mailhog with a production SMTP provider
+
+### Persistence
+
+The Docker Compose configuration uses named volumes (`pgdata`, `miniodata`) for PostgreSQL and MinIO. These persist across container restarts. To back up your data:
+
+```bash
+# Dump the database
+docker compose exec postgres pg_dump -U mdcms mdcms > backup.sql
+
+# Restore from a dump
+docker compose exec -T postgres psql -U mdcms mdcms < backup.sql
+```
+
+### Upgrading
+
+To upgrade to a newer version of MDCMS:
+
+```bash
+git pull origin main
+docker compose up -d --build
+```
+
+Migrations run automatically on server startup. The migration runner completes before the server accepts traffic, so there is no window where the server runs against an outdated schema.
+
+### Using an External Database
+
+To use an existing PostgreSQL instance instead of the bundled container, set `DATABASE_URL` to your external connection string and remove the `postgres` service from `docker-compose.yml`. The same applies to Redis (`REDIS_URL`) and S3-compatible storage (`S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`).
+
+## Stopping and Resetting
+
+```bash
+# Stop all services (preserves data)
+docker compose down
+
+# Stop and remove all data volumes (fresh start)
+docker compose down -v
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/guide/quickstart">
+    Install the CLI, define your schema, and start managing content
+  </Card>
+  <Card title="CLI Commands" icon="terminal" href="/guide/cli/commands">
+    Push, pull, login, schema sync, and all CLI flags
+  </Card>
+  <Card title="Studio Guide" icon="layout-dashboard" href="/guide/studio/dashboard">
+    Embed the visual content editor in your application
+  </Card>
+  <Card title="API Reference" icon="plug" href="/api-reference/overview">
+    REST API endpoints, authentication, and the TypeScript SDK
+  </Card>
+</CardGroup>

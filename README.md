@@ -14,6 +14,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> &middot;
+  <a href="#self-hosting">Self-Hosting</a> &middot;
   <a href="https://docs.mdcms.ai">Docs</a> &middot;
   <a href="#coming-soon">Roadmap</a> &middot;
   <a href="#contributing">Contributing</a>
@@ -99,6 +100,33 @@ npm install @mdcms/studio
 ```
 
 See the [`@mdcms/studio` README](packages/studio) for embedding instructions.
+
+## Self-Hosting
+
+Run your own MDCMS server with Docker Compose. The only prerequisites are Docker and Docker Compose.
+
+```bash
+git clone https://github.com/Blazity/mdcms.git
+cd mdcms
+cp .env.example .env
+docker compose up -d --build
+```
+
+This starts the MDCMS server along with PostgreSQL, Redis, MinIO, and Mailhog. Migrations run automatically on first boot.
+
+Verify the server is running:
+
+```bash
+curl http://localhost:4000/healthz
+```
+
+Then point your CLI at the server:
+
+```bash
+npx mdcms init --server-url http://localhost:4000
+```
+
+See the [self-hosting guide](https://docs.mdcms.ai/guide/self-hosting) for environment variable configuration, auth provider setup, and production deployment recommendations.
 
 ## Features
 
