@@ -8,7 +8,7 @@ description: "Installing and setting up the MDCMS CLI"
   icon="terminal"
   actions={["copy", "cursor"]}
 >
-Install and configure the MDCMS CLI in this project. Run `bun add -D @mdcms/cli` (or npm equivalent). Then run `bunx mdcms init` to interactively set up the project — it will prompt for server URL (default http://localhost:4000), project name, and environment. After init completes, run `bunx mdcms schema sync` to push the generated schema to the server. Verify with `bunx mdcms status` (exit code 0 means success). If the MDCMS server isn't running, start it with Docker: clone the mdcms repo and run `docker compose -f docker-compose.dev.yml up -d`.
+Install and configure the MDCMS CLI in this project. Run `npm install --save-dev @mdcms/cli`. Then run `npx mdcms init` to interactively set up the project — it will prompt for server URL (default http://localhost:4000), project name, and environment. After init completes, run `npx mdcms schema sync` to push the generated schema to the server. Verify with `npx mdcms status` (exit code 0 means success).
 </Prompt>
 
 The MDCMS CLI lets you sync content and schema between your local filesystem and the MDCMS server. It handles authentication, push/pull workflows, and CI/CD integration.
@@ -16,26 +16,32 @@ The MDCMS CLI lets you sync content and schema between your local filesystem and
 ## Install
 
 <CodeGroup>
-```bash bun
-bun add -D @mdcms/cli
-```
-
 ```bash npm
 npm install --save-dev @mdcms/cli
 ```
+
+```bash bun
+bun add -D @mdcms/cli
+```
 </CodeGroup>
 
-The binary name is `mdcms`. You can run it directly if installed globally, or use your package manager's runner:
+Or install globally to use the `mdcms` command directly:
 
 ```bash
-bunx mdcms --help
-# or
+npm install -g @mdcms/cli
+```
+
+The binary name is `mdcms`. If installed as a project dependency, use your package manager's runner:
+
+```bash
 npx mdcms --help
+# or
+bunx mdcms --help
 ```
 
 ### Prerequisites
 
-- **Bun** 1.3.11+ or **Node.js** 20+
+- **Node.js** 20+ or **Bun** 1.3.11+
 - A running MDCMS server instance
 
 ## First-time setup

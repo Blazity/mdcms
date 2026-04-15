@@ -1,0 +1,179 @@
+---
+title: "Quick Start"
+description: "Install MDCMS packages and start managing content in your project"
+---
+
+Get MDCMS running in your own application. This guide assumes you have an MDCMS server available (self-hosted or managed).
+
+<Note>
+  Looking to contribute to MDCMS itself? See [Development Setup](/development/setup).
+</Note>
+
+## 1. Install the CLI
+
+<CodeGroup>
+```bash npm
+npm install --save-dev @mdcms/cli
+```
+
+```bash bun
+bun add -D @mdcms/cli
+```
+</CodeGroup>
+
+## 2. Initialize your project
+
+The `mdcms init` wizard configures everything — server connection, project/environment selection, content type detection, and initial sync:
+
+```bash
+npx mdcms init
+```
+
+It will:
+- Ask for your MDCMS server URL
+- Open a browser for authentication
+- Scan your repo for existing Markdown/MDX files
+- Generate a `mdcms.config.ts` with inferred content types
+- Push the initial schema and content to the server
+
+See [CLI Installation](/guide/cli/installation) for details on the init wizard.
+
+## 3. Define your content schema
+
+The generated `mdcms.config.ts` is your starting point. Customize it to match your content model:
+
+```typescript mdcms.config.ts
+import { defineConfig, defineType, reference } from "@mdcms/cli";
+import { z } from "zod";
+
+const Author = defineType("Author", {
+  directory: "content/authors",
+  fields: {
+    name: z.string().min(1),
+    bio: z.string().optional(),
+  },
+});
+
+const BlogPost = defineType("BlogPost", {
+  directory: "content/blog",
+  localized: true,
+  fields: {
+    title: z.string().min(1),
+    author: reference("Author"),
+    tags: z.array(z.string()),
+  },
+});
+
+export default defineConfig({
+  project: "my-site",
+  environment: "production",
+  serverUrl: "https://your-mdcms-server.example.com",
+  contentDirectories: ["content"],
+  locales: {
+    default: "en",
+    supported: ["en", "fr"],
+  },
+  types: [Author, BlogPost],
+});
+```
+
+See the [Schema Guide](/guide/schema/defining-types) for field types, references, and environment overlays.
+
+## 4. Sync schema and content
+
+```bash
+# Push your schema to the server
+npx mdcms push
+
+# Pull content from the server to local Markdown files
+npx mdcms pull
+
+# Edit .md or .mdx files with any tool, then push changes back
+npx mdcms push
+```
+
+See the [CLI Commands](/guide/cli/commands) reference for all available flags.
+
+## 5. Fetch content in your app
+
+Install the SDK:
+
+<CodeGroup>
+```bash npm
+npm install @mdcms/sdk
+```
+
+```bash bun
+bun add @mdcms/sdk
+```
+</CodeGroup>
+
+Query content in your application:
+
+```typescript
+import { createClient } from "@mdcms/sdk";
+
+const cms = createClient({
+  serverUrl: "https://your-mdcms-server.example.com",
+  apiKey: process.env.MDCMS_API_KEY!,
+  project: "my-site",
+  environment: "production",
+});
+
+// List published blog posts
+const { data: posts } = await cms.list("BlogPost", {
+  locale: "en",
+  published: true,
+  limit: 10,
+});
+
+// Fetch a single post with resolved references
+const post = await cms.get("BlogPost", {
+  slug: "hello-world",
+  resolve: ["author"],
+});
+```
+
+See the [SDK reference](/api-reference/sdk) for the full API.
+
+## 6. Embed the Studio UI (optional)
+
+Add a visual editing interface to your app:
+
+<CodeGroup>
+```bash npm
+npm install @mdcms/studio
+```
+
+```bash bun
+bun add @mdcms/studio
+```
+</CodeGroup>
+
+```tsx app/admin/[[...path]]/page.tsx
+// Next.js example — catch-all route for Studio
+import { Studio } from "@mdcms/studio";
+
+export default function AdminPage() {
+  return <Studio config={config} basePath="/admin" />;
+}
+```
+
+See the [Studio Guide](/guide/studio/dashboard) for full embedding and usage instructions.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="CLI Commands" icon="terminal" href="/guide/cli/commands">
+    Push, pull, login, schema sync, and all CLI flags
+  </Card>
+  <Card title="Schema Guide" icon="file-code" href="/guide/schema/defining-types">
+    Field types, references, environment overlays, MDX components
+  </Card>
+  <Card title="Studio Guide" icon="layout-dashboard" href="/guide/studio/dashboard">
+    Visual content editing, publishing, and version history
+  </Card>
+  <Card title="SDK Reference" icon="plug" href="/api-reference/sdk">
+    Full typed client API for content reads
+  </Card>
+</CardGroup>
