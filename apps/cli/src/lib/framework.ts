@@ -33,6 +33,7 @@ export type MultiSelectPrompt = <T extends string>(
 export type CliGlobalOptions = {
   help: boolean;
   verbose: boolean;
+  version: boolean;
   project?: string;
   environment?: string;
   apiKey?: string;
@@ -88,6 +89,7 @@ export type RunMdcmsCliOptions = {
   env?: NodeJS.ProcessEnv;
   stdout?: Writer;
   stderr?: Writer;
+  version?: string;
   commands?: CliCommand[];
   loadConfig?: LoadCliConfig;
   resolveStoredApiKey?: ResolveStoredApiKey;
@@ -149,6 +151,7 @@ export function parseCliInvocation(argv: string[]): ParsedCliInvocation {
   const global: CliGlobalOptions = {
     help: false,
     verbose: false,
+    version: false,
   };
   const commandTokens: string[] = [];
 
@@ -162,6 +165,11 @@ export function parseCliInvocation(argv: string[]): ParsedCliInvocation {
 
     if (token === "-v" || token === "--verbose") {
       global.verbose = true;
+      continue;
+    }
+
+    if (token === "-V" || token === "--version") {
+      global.version = true;
       continue;
     }
 
@@ -366,6 +374,7 @@ function renderHelp(commands: readonly CliCommand[]): string {
     "  --config <path>        Config file path (default: mdcms.config.ts)",
     "  --server-url <url>     Override server URL",
     "  -v, --verbose          Show internal runtime diagnostics",
+    "  -V, --version          Show version",
     "  -h, --help             Show help",
     "",
     "Commands:",
@@ -467,6 +476,11 @@ export async function runMdcmsCli(
       const profile = await credentialStore.getProfile(input);
       return profile?.apiKey;
     });
+
+  if (invocation.global.version) {
+    stdout.write(`mdcms/${options.version ?? "0.0.0"}\n`);
+    return 0;
+  }
 
   if (invocation.global.help) {
     stdout.write(renderHelp(commands));

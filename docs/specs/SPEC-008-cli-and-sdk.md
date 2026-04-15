@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-04-14
+last_updated: 2026-04-15
 ---
 
 # SPEC-008 CLI and SDK
@@ -95,6 +95,20 @@ The SDK follows the same reference-resolution contract documented in SPEC-003. R
 | `cms <module-defined alias>` | Optional local alias mapped to `actionId` by bundled module CLI surface.    |
 
 All commands that interact with server content resolve a target `(project, environment)` from config defaults and allow per-run overrides via `--project` and `--environment`.
+
+### Global Options
+
+| Flag                   | Description                                              | Requires Config/Auth |
+| ---------------------- | -------------------------------------------------------- | -------------------- |
+| `--project <slug>`     | Override target project                                  | No                   |
+| `--environment <name>` | Override target environment                              | No                   |
+| `--api-key <token>`    | API key for headless/CI auth                             | No                   |
+| `--config <path>`      | Config file path (default: `mdcms.config.ts`)            | No                   |
+| `--server-url <url>`   | Override server URL                                      | No                   |
+| `-V`, `--version`      | Print installed CLI version (`mdcms/<version>`) and exit | No                   |
+| `-h`, `--help`         | Show help and exit                                       | No                   |
+
+`--version` exits immediately with code 0 and does not require a config file, authentication, or server connectivity. Output format is `mdcms/<semver>` (e.g. `mdcms/0.1.4`), suitable for scripting and troubleshooting.
 
 CLI extensibility in v1 is intentionally action-based: aliases, formatters, and preflight hooks are allowed; arbitrary command-tree injection is out of scope.
 

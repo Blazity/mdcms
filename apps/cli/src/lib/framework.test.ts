@@ -75,6 +75,7 @@ test("resolveExecutionContext applies target precedence flag > env > config", as
     global: {
       help: false,
       verbose: false,
+      version: false,
       project: "flag-project",
       environment: "flag-env",
     },
@@ -101,6 +102,7 @@ test("resolveExecutionContext applies auth precedence --api-key > env > stored",
     global: {
       help: false,
       verbose: false,
+      version: false,
       project: "project",
       environment: "env",
       apiKey: "flag-key",
@@ -122,6 +124,7 @@ test("resolveExecutionContext applies auth precedence --api-key > env > stored",
     global: {
       help: false,
       verbose: false,
+      version: false,
       project: "project",
       environment: "env",
     },
@@ -137,6 +140,52 @@ test("resolveExecutionContext applies auth precedence --api-key > env > stored",
     requiresTarget: true,
   });
   assert.equal(fromEnv.apiKey, "env-key");
+});
+
+test("parseCliInvocation parses --version flag", () => {
+  const parsed = parseCliInvocation(["--version"]);
+  assert.equal(parsed.global.version, true);
+  assert.equal(parsed.commandName, undefined);
+});
+
+test("parseCliInvocation parses -V flag", () => {
+  const parsed = parseCliInvocation(["-V"]);
+  assert.equal(parsed.global.version, true);
+});
+
+test("runMdcmsCli --version prints version and exits 0", async () => {
+  let stdout = "";
+  const exitCode = await runMdcmsCli(["--version"], {
+    version: "1.2.3",
+    stdout: {
+      write: (chunk) => {
+        stdout += chunk;
+      },
+    },
+    stderr: {
+      write: () => undefined,
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(stdout, "mdcms/1.2.3\n");
+});
+
+test("runMdcmsCli --version falls back to 0.0.0 when version not provided", async () => {
+  let stdout = "";
+  const exitCode = await runMdcmsCli(["--version"], {
+    stdout: {
+      write: (chunk) => {
+        stdout += chunk;
+      },
+    },
+    stderr: {
+      write: () => undefined,
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(stdout, "mdcms/0.0.0\n");
 });
 
 test("runMdcmsCli returns deterministic usage errors for unknown command", async () => {
