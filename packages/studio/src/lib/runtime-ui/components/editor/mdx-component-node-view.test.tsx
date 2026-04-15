@@ -67,7 +67,7 @@ test("createMdxComponentPreviewProps injects wrapper children into preview props
   assert.match(markup, /<strong>Body<\/strong>/);
 });
 
-test("MdxComponentNodeFrame renders 'Content' label for wrapper components", () => {
+test("MdxComponentNodeFrame renders 'Inner content' guidance for wrapper components", () => {
   const markup = renderToStaticMarkup(
     createElement(
       MdxComponentNodeFrame,
@@ -82,7 +82,8 @@ test("MdxComponentNodeFrame renders 'Content' label for wrapper components", () 
   );
 
   assert.match(markup, /data-mdcms-mdx-content-label="Callout"/);
-  assert.match(markup, />Content</);
+  assert.match(markup, />Inner content</);
+  assert.match(markup, /Edit nested markdown directly in this block/);
 });
 
 test("MdxComponentNodeFrame does not render content label for void components", () => {

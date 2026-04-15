@@ -94,3 +94,31 @@ test("MdxPropsPanel renders an unresolved state when the selected component is m
   assert.match(markup, /data-mdcms-mdx-props-panel="unregistered"/);
   assert.match(markup, /UnknownWidget/);
 });
+
+test("MdxPropsPanel explains that wrapper component children are edited inside the canvas", () => {
+  const wrapperComponent = {
+    name: "Callout",
+    importPath: "@/components/mdx/Callout",
+    description: "Wrapper callout",
+    extractedProps: {
+      tone: { type: "enum", required: true, values: ["info", "warning"] },
+      children: { type: "rich-text", required: false },
+    },
+  } satisfies NonNullable<
+    StudioMountContext["mdx"]
+  >["catalog"]["components"][number];
+  const markup = renderToStaticMarkup(
+    createElement(MdxPropsPanel, {
+      context: createContext(),
+      selection: createSelection({
+        component: wrapperComponent,
+        componentName: wrapperComponent.name,
+        isVoid: false,
+        props: { tone: "warning" },
+      }),
+    }),
+  );
+
+  assert.match(markup, /Wrapper content lives in the editor canvas/);
+  assert.match(markup, /data-mdcms-mdx-auto-form="Callout"/);
+});

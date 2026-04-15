@@ -158,7 +158,7 @@ function createDraftDocument(overrides?: Partial<ReviewScenario["document"]>) {
     body: [
       "# Hello World",
       "",
-      '<Callout type="info">Preview scenario</Callout>',
+      '<Callout tone="info">Preview scenario</Callout>',
       "",
       '<Chart type="bar" color="#0f766e" data={[12, 18, 9]} />',
     ].join("\n"),
@@ -209,7 +209,7 @@ function createVersions(): ReviewScenario["versions"] {
       body: [
         "# Hello World",
         "",
-        '<Callout type="info">Preview scenario</Callout>',
+        '<Callout tone="info">Preview scenario</Callout>',
       ].join("\n"),
     },
   ];

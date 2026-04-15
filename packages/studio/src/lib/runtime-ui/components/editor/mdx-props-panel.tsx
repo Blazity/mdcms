@@ -91,6 +91,16 @@ export function MdxPropsPanel({
             {component.description}
           </p>
         ) : null}
+        {kind === "wrapper" ? (
+          <p
+            data-mdcms-mdx-wrapper-guidance={component.name}
+            className="text-xs text-foreground-muted"
+          >
+            Wrapper content lives in the editor canvas. Use the inner content
+            area in the component block to edit nested markdown; this panel only
+            covers top-level props.
+          </p>
+        ) : null}
       </div>
 
       <div className="rounded-md border border-border bg-background-subtle p-3">

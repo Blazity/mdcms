@@ -154,6 +154,23 @@ test("resolveMdxPropsEditorHostState returns empty when no editor or auto-form c
   });
 });
 
+test("resolveMdxPropsEditorHostState returns content-only for wrapper components whose editable surface is nested children", async () => {
+  const state = await resolveMdxPropsEditorHostState({
+    component: createComponent({
+      name: "Callout",
+      extractedProps: {
+        children: { type: "rich-text", required: false },
+      },
+    }),
+    context: createContext(async () => null),
+    readOnly: false,
+  });
+
+  assert.deepEqual(state, {
+    status: "content-only",
+  });
+});
+
 test("resolveMdxPropsEditorHostState returns error when the custom editor resolver rejects", async () => {
   const state = await resolveMdxPropsEditorHostState({
     component: createComponent({

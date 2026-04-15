@@ -99,7 +99,10 @@ export function MdxComponentNodeFrame(props: {
               data-mdcms-mdx-content-label={props.componentName}
               className="text-xs font-medium text-foreground-muted"
             >
-              Content
+              Inner content
+            </p>
+            <p className="text-xs text-foreground-muted">
+              Edit nested markdown directly in this block.
             </p>
             {props.children}
           </div>

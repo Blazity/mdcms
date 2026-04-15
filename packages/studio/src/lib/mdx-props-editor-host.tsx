@@ -36,6 +36,7 @@ export type MdxPropsEditorHostState =
   | { status: "loading" }
   | { status: "ready"; editor: PropsEditorComponent }
   | { status: "auto-form"; fields: MdxAutoFormField[] }
+  | { status: "content-only" }
   | { status: "empty" }
   | { status: "error"; message: string }
   | { status: "forbidden" };
@@ -278,6 +279,15 @@ export function MdxPropsEditorHost({
           No editable props.
         </span>
       );
+    case "content-only":
+      return (
+        <span
+          data-mdcms-mdx-props-editor-state={`${component.name}:content-only`}
+        >
+          This wrapper component is edited through its nested content block in
+          the editor canvas.
+        </span>
+      );
     case "error":
       return (
         <span data-mdcms-mdx-props-editor-state={`${component.name}:error`}>
@@ -307,7 +317,15 @@ function createFallbackState(
 
   return fields.length > 0
     ? { status: "auto-form", fields }
-    : { status: "empty" };
+    : hasNestedRichTextChildren(component)
+      ? { status: "content-only" }
+      : { status: "empty" };
+}
+
+function hasNestedRichTextChildren(component: MdxCatalogComponent): boolean {
+  return (
+    component.extractedProps?.[MDX_CHILDREN_PROP_NAME]?.type === "rich-text"
+  );
 }
 
 function renderAutoFormFields(

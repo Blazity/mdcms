@@ -88,7 +88,7 @@ const defaultContent = `
 
 This is a sample markdown document created in MDCMS Studio.
 
-<Callout type="warning">
+<Callout tone="warning">
 This is **important** nested markdown content inside an MDX wrapper component.
 
 - First point
@@ -309,10 +309,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             "data-placeholder": placeholder,
           },
           handleKeyDown: (_view, event) => {
-            if (
-              event.key === "Escape" &&
-              pickerSourceRef.current === "slash"
-            ) {
+            if (event.key === "Escape" && pickerSourceRef.current === "slash") {
               setPickerSource(null);
               setSlashTrigger(null);
               setSlashPickerCoords(null);
@@ -652,9 +649,14 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
                     type="button"
                     variant="ghost"
                     size="sm"
-                    disabled={item.availability !== "enabled" || isEditorReadOnly}
+                    disabled={
+                      item.availability !== "enabled" || isEditorReadOnly
+                    }
                     onClick={() => {
-                      if (item.availability === "enabled" && !isEditorReadOnly) {
+                      if (
+                        item.availability === "enabled" &&
+                        !isEditorReadOnly
+                      ) {
                         triggerToolbarItem(item.id);
                       }
                     }}
