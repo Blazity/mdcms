@@ -71,6 +71,68 @@ function defaultConsoleSink(entry: LogEntry): void {
   console.error(payload);
 }
 
+function formatMeta(meta?: LogContext): string {
+  if (!meta || Object.keys(meta).length === 0) {
+    return "";
+  }
+
+  const pairs = Object.entries(meta)
+    .map(([key, value]) => {
+      const formatted = Array.isArray(value) ? value.join(",") : String(value);
+      return `${key}=${formatted}`;
+    })
+    .join(" ");
+
+  return ` ${pairs}`;
+}
+
+/**
+ * createCliConsoleSink formats log entries as human-friendly text for CLI use.
+ * When write is provided, it is called with each formatted line.
+ * When omitted, routes through console methods matching defaultConsoleSink routing.
+ */
+export function createCliConsoleSink(
+  write?: (line: string) => void,
+): (entry: LogEntry) => void {
+  return (entry: LogEntry): void => {
+    const meta = formatMeta(entry.meta);
+    let line: string;
+
+    if (entry.level === "trace" || entry.level === "debug") {
+      line = `[${entry.level}] ${entry.message}${meta}`;
+    } else if (entry.level === "info") {
+      line = `${entry.message}${meta}`;
+    } else if (entry.level === "warn") {
+      line = `Warning: ${entry.message}${meta}`;
+    } else {
+      // error | fatal
+      line = `Error: ${entry.message}${meta}`;
+    }
+
+    if (write !== undefined) {
+      write(line);
+      return;
+    }
+
+    if (entry.level === "trace" || entry.level === "debug") {
+      console.debug(line);
+      return;
+    }
+
+    if (entry.level === "info") {
+      console.info(line);
+      return;
+    }
+
+    if (entry.level === "warn") {
+      console.warn(line);
+      return;
+    }
+
+    console.error(line);
+  };
+}
+
 /**
  * createConsoleLogger provides a lightweight structured logger implementation
  * for all runtime adapters without introducing a third-party logger yet.
