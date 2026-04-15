@@ -32,6 +32,7 @@ export type MultiSelectPrompt = <T extends string>(
 
 export type CliGlobalOptions = {
   help: boolean;
+  verbose: boolean;
   project?: string;
   environment?: string;
   apiKey?: string;
@@ -147,6 +148,7 @@ function readFlagValue(argv: string[], index: number, flag: string): string {
 export function parseCliInvocation(argv: string[]): ParsedCliInvocation {
   const global: CliGlobalOptions = {
     help: false,
+    verbose: false,
   };
   const commandTokens: string[] = [];
 
@@ -155,6 +157,11 @@ export function parseCliInvocation(argv: string[]): ParsedCliInvocation {
 
     if (token === "-h" || token === "--help") {
       global.help = true;
+      continue;
+    }
+
+    if (token === "-v" || token === "--verbose") {
+      global.verbose = true;
       continue;
     }
 
@@ -358,6 +365,7 @@ function renderHelp(commands: readonly CliCommand[]): string {
     "  --api-key <token>      API key for headless/CI auth",
     "  --config <path>        Config file path (default: mdcms.config.ts)",
     "  --server-url <url>     Override server URL",
+    "  -v, --verbose          Show internal runtime diagnostics",
     "  -h, --help             Show help",
     "",
     "Commands:",
