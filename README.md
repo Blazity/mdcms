@@ -30,6 +30,10 @@ Developers define schemas in code and sync via CLI. Editors get a visual Studio 
 
 `mdcms pull` to work on files locally, `mdcms push` to sync them back. Same editing experience as local files, but the content lives outside your repo. Update a typo without triggering a rebuild. Have five editors on the same page without merge conflicts.
 
+## Demo
+
+https://github.com/user-attachments/assets/b0778e3f-c062-4e66-bd6d-87f1dcb41789
+
 ## Quick Start
 
 ### 1. Install packages
