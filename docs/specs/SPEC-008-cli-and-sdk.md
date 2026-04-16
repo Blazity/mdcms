@@ -78,21 +78,21 @@ The SDK follows the same reference-resolution contract documented in SPEC-003. R
 
 ### Commands
 
-| Command                      | Description                                                                 |
-| ---------------------------- | --------------------------------------------------------------------------- |
-| `cms init`                   | Interactive wizard to set up MDCMS in an existing project                   |
-| `cms login`                  | Authenticate via browser-based OAuth/email login                            |
-| `cms logout`                 | Clear stored credentials                                                    |
-| `cms pull`                   | Download all content from CMS to local `.md`/`.mdx` files                   |
-| `cms push`                   | Upload local `.md`/`.mdx` files to CMS                                      |
-| `cms push --validate`        | Validate content against schema before pushing                              |
-| `cms push --sync-schema`     | Allow push to sync schema in non-interactive mode on drift (ignored in TTY) |
-| `cms schema sync`            | Sync `mdcms.config.ts` schema to the server registry                        |
-| `cms migrate`                | Generate and apply content migrations for schema changes                    |
-| `cms status`                 | Show content drift and schema drift (local vs server)                       |
-| `cms action list`            | List available backend actions from `/actions` (with permissions metadata). |
-| `cms action run <actionId>`  | Execute a command/query action via the generic action runner.               |
-| `cms <module-defined alias>` | Optional local alias mapped to `actionId` by bundled module CLI surface.    |
+| Command                      | Description                                                                  |
+| ---------------------------- | ---------------------------------------------------------------------------- |
+| `cms init`                   | Interactive wizard (or non-interactive CI mode) to set up MDCMS in a project |
+| `cms login`                  | Authenticate via browser-based OAuth/email login                             |
+| `cms logout`                 | Clear stored credentials                                                     |
+| `cms pull`                   | Download all content from CMS to local `.md`/`.mdx` files                    |
+| `cms push`                   | Upload local `.md`/`.mdx` files to CMS                                       |
+| `cms push --validate`        | Validate content against schema before pushing                               |
+| `cms push --sync-schema`     | Allow push to sync schema in non-interactive mode on drift (ignored in TTY)  |
+| `cms schema sync`            | Sync `mdcms.config.ts` schema to the server registry                         |
+| `cms migrate`                | Generate and apply content migrations for schema changes                     |
+| `cms status`                 | Show content drift and schema drift (local vs server)                        |
+| `cms action list`            | List available backend actions from `/actions` (with permissions metadata).  |
+| `cms action run <actionId>`  | Execute a command/query action via the generic action runner.                |
+| `cms <module-defined alias>` | Optional local alias mapped to `actionId` by bundled module CLI surface.     |
 
 All commands that interact with server content resolve a target `(project, environment)` from config defaults and allow per-run overrides via `--project` and `--environment`.
 
@@ -112,9 +112,40 @@ All commands that interact with server content resolve a target `(project, envir
 
 CLI extensibility in v1 is intentionally action-based: aliases, formatters, and preflight hooks are allowed; arbitrary command-tree injection is out of scope.
 
-### `cms init` — Interactive Wizard
+### `cms init` — Interactive Wizard and Non-Interactive Mode
 
-The setup wizard uses `@inquirer/prompts` for the interactive TUI and walks through:
+The setup wizard uses `@inquirer/prompts` for the interactive TUI by default. A non-interactive mode is supported for CI and AI-agent driven setup: the same 13 steps run end-to-end, but every prompt is answered from flags, env vars, or config and any missing required input causes a clear `INIT_MISSING_INPUT` error instead of hanging on a prompt.
+
+#### Init-specific flags
+
+| Flag                               | Description                                                                                                                                                         |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-y`, `--yes`, `--non-interactive` | Enable non-interactive mode. Auto-accept every confirm, skip every select/text prompt, fail loud on any missing required value.                                     |
+| `--directory <dir>`                | Managed content directory. Repeatable. Each value must match an existing directory when content is found, or is used as the scaffold target when no content exists. |
+| `--directories <a,b,c>`            | Same as repeated `--directory`, comma-separated.                                                                                                                    |
+| `--default-locale <locale>`        | Preset default locale. Must be one of the locales detected from content. Skips the confirm/select for default locale.                                               |
+| `--no-import`                      | Skip the initial content import step, even if matching files are found.                                                                                             |
+| `--no-git-cleanup`                 | Skip the `.gitignore` update and the tracked-file untrack step.                                                                                                     |
+| `--no-example-post`                | When the repo has no content files, still generate `mdcms.config.ts` and scaffold the starter type, but do not write the `example.md` file.                         |
+| `-h`, `--help`                     | Show help.                                                                                                                                                          |
+
+Global flags also contribute to non-interactive resolution (`--server-url`, `--project`, `--environment`, `--api-key`) alongside env vars `MDCMS_SERVER_URL`, `MDCMS_PROJECT`, `MDCMS_ENVIRONMENT`, `MDCMS_API_KEY`.
+
+#### Value resolution order
+
+For each required input the wizard resolves (first match wins):
+
+1. Global flag (e.g. `--server-url`).
+2. Env var (e.g. `MDCMS_SERVER_URL`).
+3. Existing `mdcms.config.ts` field (if present).
+4. Stored credential store entry (API key only).
+5. Interactive prompt (skipped in non-interactive mode; missing value raises `INIT_MISSING_INPUT`).
+
+Environment name falls back to `"production"` in non-interactive mode when not otherwise provided.
+
+In non-interactive mode, `mdcms.config.ts` that already exists is overwritten implicitly (the mode acts as an auto-yes for all confirms). The intent is that automated setup can be re-run idempotently.
+
+The setup wizard still walks through:
 
 1. **Server URL** — Prompt for the MDCMS server URL + health check (`GET /healthz`).
 2. **Project + environment names** — Prompt for project name and environment name (default: `"production"`). These are collected before authentication so the login challenge can scope the API key to `(project, environment)`.
