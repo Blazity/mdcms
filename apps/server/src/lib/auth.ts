@@ -2225,6 +2225,10 @@ export function createAuthService(
   const baseUrl = resolveAuthBaseUrl(rawEnv);
   const secret = resolveAuthSecret(rawEnv);
   const useSecureCookies = resolveSecureCookiePolicy(rawEnv);
+  // Cookie-mode Studio is allowed to run cross-origin in local loopback dev,
+  // so SameSite must remain None even when Secure is disabled for HTTP.
+  const csrfCookieSameSite = "None" as const;
+  const sessionCookieSameSite = "none" as const;
   const adminAllowlist = resolveAdminAllowlist(rawEnv);
   const staticSamlProviders = buildStaticSamlProviders(
     baseUrl,
@@ -2287,7 +2291,7 @@ export function createAuthService(
         name: CSRF_COOKIE_NAME,
         value: token,
         path: "/",
-        sameSite: useSecureCookies ? "None" : "Lax",
+        sameSite: csrfCookieSameSite,
         secure: useSecureCookies,
         maxAge: SESSION_INACTIVITY_TIMEOUT_SECONDS,
       }),
@@ -2299,7 +2303,7 @@ export function createAuthService(
       name: CSRF_COOKIE_NAME,
       value: "",
       path: "/",
-      sameSite: useSecureCookies ? "None" : "Lax",
+      sameSite: csrfCookieSameSite,
       secure: useSecureCookies,
       maxAge: 0,
     });
@@ -2655,7 +2659,7 @@ export function createAuthService(
       defaultCookieAttributes: {
         path: "/",
         httpOnly: true,
-        sameSite: useSecureCookies ? "none" : "lax",
+        sameSite: sessionCookieSameSite,
         secure: useSecureCookies,
       },
     },
