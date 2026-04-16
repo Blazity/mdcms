@@ -41,3 +41,43 @@ export const studioExampleMdxComponents = [
       ),
   },
 ] as const;
+
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
+
+function normalizeConfiguredServerUrl(url: URL): string {
+  const pathname = url.pathname.replace(/\/$/, "");
+  return `${url.origin}${pathname}`;
+}
+
+function parseHostHeaderHostname(requestHost: string | undefined): string | null {
+  if (!requestHost) {
+    return null;
+  }
+
+  const firstHost = requestHost.split(",")[0]?.trim();
+
+  if (!firstHost) {
+    return null;
+  }
+
+  try {
+    return new URL(`http://${firstHost}`).hostname;
+  } catch {
+    return null;
+  }
+}
+
+export function resolveStudioExampleServerUrl(requestHost?: string): string {
+  const serverUrl = new URL(studioExampleServerUrl);
+  const requestHostname = parseHostHeaderHostname(requestHost);
+
+  if (
+    requestHostname &&
+    LOOPBACK_HOSTNAMES.has(serverUrl.hostname) &&
+    LOOPBACK_HOSTNAMES.has(requestHostname)
+  ) {
+    serverUrl.hostname = requestHostname;
+  }
+
+  return normalizeConfiguredServerUrl(serverUrl);
+}

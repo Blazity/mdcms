@@ -12,11 +12,13 @@ export function AdminStudioClient(props: {
   preparedComponents: PreparedStudioComponentMetadata[];
   schemaHash?: string;
   documentRouteMetadata?: MdcmsConfig["_documentRouteMetadata"];
+  requestHost?: string;
 }) {
   const config = createClientStudioConfig(
     props.preparedComponents,
     props.schemaHash,
     props.documentRouteMetadata ?? undefined,
+    props.requestHost,
   );
 
   return <Studio config={config} basePath="/admin" />;

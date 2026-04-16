@@ -5,7 +5,7 @@ import {
   studioExampleLocales,
   studioExampleMdxComponents,
   studioExampleProject,
-  studioExampleServerUrl,
+  resolveStudioExampleServerUrl,
 } from "../../lib/studio-example-studio-config";
 
 type PreparedStudioConfig = Awaited<ReturnType<typeof prepareStudioConfig>>;
@@ -36,6 +36,7 @@ export function createClientStudioConfig(
   preparedComponents: PreparedStudioComponentMetadata[],
   schemaHash?: string,
   documentRouteMetadata?: PreparedDocumentRouteMetadata,
+  requestHost?: string,
 ): MdcmsConfig {
   const extractedPropsByName = new Map(
     preparedComponents.map((component) => [
@@ -50,7 +51,7 @@ export function createClientStudioConfig(
   return {
     project: studioExampleProject,
     environment: studioExampleEnvironment,
-    serverUrl: studioExampleServerUrl,
+    serverUrl: resolveStudioExampleServerUrl(requestHost),
     locales: studioExampleLocales,
     // Pre-computed schema hash from the server component where the full
     // config (with Zod types/environments) is available for derivation.

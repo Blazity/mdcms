@@ -79,3 +79,14 @@ test("createClientStudioConfig preserves explicit locale metadata", () => {
     supported: ["en", "fr"],
   });
 });
+
+test("createClientStudioConfig aligns loopback api host with request host", () => {
+  const config = createClientStudioConfig(
+    [],
+    undefined,
+    undefined,
+    "127.0.0.1:4173",
+  );
+
+  assert.equal(config.serverUrl, "http://127.0.0.1:4000");
+});
