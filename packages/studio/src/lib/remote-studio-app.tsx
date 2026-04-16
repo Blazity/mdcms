@@ -512,7 +512,7 @@ export function RemoteStudioApp({
   };
 
   return (
-    <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <StudioNavigationProvider
         value={{
           pathname,

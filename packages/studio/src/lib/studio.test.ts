@@ -20,6 +20,7 @@ import { createStudioActionCatalogAdapter } from "./action-catalog-adapter.js";
 import {
   StudioShellFrame,
   describeStudioStartupError,
+  resolveShellAppliedTheme,
 } from "./studio-component.js";
 import { loadStudioDocumentShell } from "./document-shell.js";
 
@@ -632,6 +633,93 @@ test("StudioShellFrame renders loading startup message", () => {
   assert.match(markup, /<style>/);
   assert.match(markup, /overflow-y:\s*auto/);
   assert.match(markup, /overflow-x:\s*hidden/);
+});
+
+test("StudioShellFrame defaults shell theme to light when no theme is provided", () => {
+  const node = StudioShellFrame({
+    config: {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+    },
+    basePath: "/admin",
+    startupState: "loading",
+  });
+
+  assert.equal(node.props["data-mdcms-theme"], "light");
+});
+
+test("StudioShellFrame applies the caller-provided shell theme", () => {
+  const node = StudioShellFrame({
+    config: {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+    },
+    basePath: "/admin",
+    startupState: "loading",
+    shellTheme: "dark",
+  });
+
+  assert.equal(node.props["data-mdcms-theme"], "dark");
+});
+
+test("StudioShellFrame loading markup embeds a dark-mode palette override", () => {
+  const markup = renderToStaticMarkup(
+    StudioShellFrame({
+      config: {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+      },
+      basePath: "/admin",
+      startupState: "loading",
+      shellTheme: "dark",
+    }),
+  );
+
+  assert.match(markup, /\[data-mdcms-theme="dark"\]/);
+  assert.match(markup, /data-mdcms-theme="dark"/);
+});
+
+test("resolveShellAppliedTheme returns dark when system prefers dark and no theme is stored", () => {
+  assert.equal(
+    resolveShellAppliedTheme({
+      storedThemeRaw: null,
+      systemPrefersDark: true,
+    }),
+    "dark",
+  );
+});
+
+test("resolveShellAppliedTheme honours a stored light preference even when system prefers dark", () => {
+  assert.equal(
+    resolveShellAppliedTheme({
+      storedThemeRaw: "light",
+      systemPrefersDark: true,
+    }),
+    "light",
+  );
+});
+
+test("resolveShellAppliedTheme honours a stored dark preference when system prefers light", () => {
+  assert.equal(
+    resolveShellAppliedTheme({
+      storedThemeRaw: "dark",
+      systemPrefersDark: false,
+    }),
+    "dark",
+  );
+});
+
+test("resolveShellAppliedTheme treats unknown stored values as system default", () => {
+  assert.equal(
+    resolveShellAppliedTheme({
+      storedThemeRaw: "garbage",
+      systemPrefersDark: true,
+    }),
+    "dark",
+  );
 });
 
 test("describeStudioStartupError keeps generic cross-origin load failures neutral", () => {

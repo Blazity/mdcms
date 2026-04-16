@@ -13,6 +13,10 @@ import {
   type MdcmsConfig,
   type StudioLoaderOptions,
 } from "./studio-loader.js";
+import {
+  readStoredThemePreference,
+  resolveAppliedTheme,
+} from "./runtime-ui/adapters/next-themes.js";
 
 export type { MdcmsConfig } from "./studio-loader.js";
 
@@ -27,12 +31,15 @@ export type StudioProps = {
   loadRemoteModule?: StudioLoaderOptions["loadRemoteModule"];
 };
 
+export type ShellAppliedTheme = "light" | "dark";
+
 export type StudioShellFrameProps = {
   config: MdcmsConfig;
   basePath: string;
   startupState: StudioStartupState;
   startupError?: unknown;
   containerRef?: RefObject<HTMLDivElement | null>;
+  shellTheme?: ShellAppliedTheme;
 };
 
 export type StudioStartupErrorMetadataRow = {
@@ -85,6 +92,7 @@ const STUDIO_SHELL_STYLES = `
   --s-glow: rgba(47, 73, 229, 0.04);
   --s-path-bg: rgba(197, 197, 216, 0.1);
   --s-path-border: rgba(197, 197, 216, 0.18);
+  color-scheme: light;
 
   position: fixed;
   inset: 0;
@@ -97,6 +105,31 @@ const STUDIO_SHELL_STYLES = `
   font-family: "Inter Variable", "Inter", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.mdcms-studio-shell[data-mdcms-theme="dark"] {
+  --s-bg: #0C0C0E;
+  --s-surface: #151518;
+  --s-fg: #F5F4F4;
+  --s-fg-muted: #A0A2B5;
+  --s-primary: #5B72F5;
+  --s-border: rgba(197, 197, 216, 0.15);
+  --s-border-subtle: rgba(197, 197, 216, 0.08);
+  --s-surface-inner: rgba(40, 40, 48, 0.6);
+  --s-surface-inner-subtle: rgba(40, 40, 48, 0.4);
+  --s-skeleton-strong: rgba(197, 197, 216, 0.14);
+  --s-skeleton-mid: rgba(197, 197, 216, 0.09);
+  --s-skeleton-soft: rgba(197, 197, 216, 0.06);
+  --s-check-bg: rgba(91, 114, 245, 0.1);
+  --s-destructive: #f87171;
+  --s-destructive-border: rgba(248, 113, 113, 0.25);
+  --s-destructive-bg: rgba(248, 113, 113, 0.1);
+  --s-warning: #fbbf24;
+  --s-code-bg: #1A1A1E;
+  --s-glow: rgba(91, 114, 245, 0.08);
+  --s-path-bg: rgba(197, 197, 216, 0.06);
+  --s-path-border: rgba(197, 197, 216, 0.12);
+  color-scheme: dark;
 }
 
 .mdcms-studio-shell__backdrop {
@@ -593,12 +626,77 @@ export function describeStudioStartupError(
   };
 }
 
+export function resolveShellAppliedTheme(input: {
+  storedThemeRaw: string | null;
+  systemPrefersDark: boolean;
+}): ShellAppliedTheme {
+  const stored =
+    input.storedThemeRaw === "light" ||
+    input.storedThemeRaw === "dark" ||
+    input.storedThemeRaw === "system"
+      ? input.storedThemeRaw
+      : null;
+
+  return resolveAppliedTheme(stored ?? "system", input.systemPrefersDark);
+}
+
+function useResolvedShellTheme(): ShellAppliedTheme {
+  const [applied, setApplied] = useState<ShellAppliedTheme>(() => {
+    if (typeof window === "undefined") {
+      return "light";
+    }
+
+    const storage = window.localStorage ?? null;
+    const stored = readStoredThemePreference(storage);
+    const systemPrefersDark =
+      typeof window.matchMedia === "function"
+        ? window.matchMedia("(prefers-color-scheme: dark)").matches
+        : false;
+
+    return resolveAppliedTheme(stored ?? "system", systemPrefersDark);
+  });
+
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const storage = window.localStorage ?? null;
+
+    const recompute = () => {
+      const stored = readStoredThemePreference(storage);
+      setApplied(resolveAppliedTheme(stored ?? "system", mediaQuery.matches));
+    };
+
+    recompute();
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", recompute);
+      return () => {
+        mediaQuery.removeEventListener("change", recompute);
+      };
+    }
+
+    mediaQuery.addListener(recompute);
+    return () => {
+      mediaQuery.removeListener(recompute);
+    };
+  }, []);
+
+  return applied;
+}
+
 export function StudioShellFrame({
   config,
   basePath,
   startupState,
   startupError,
   containerRef,
+  shellTheme = "light",
 }: StudioShellFrameProps) {
   const describedError =
     startupState === "error"
@@ -613,6 +711,7 @@ export function StudioShellFrame({
       data-mdcms-base-path={basePath}
       data-mdcms-state={startupState}
       data-mdcms-brand="MDCMS"
+      data-mdcms-theme={shellTheme}
       className={startupState === "ready" ? undefined : "mdcms-studio-shell"}
     >
       <div
@@ -805,6 +904,7 @@ export function Studio({
   const [startupState, setStartupState] =
     useState<StudioStartupState>("loading");
   const [startupError, setStartupError] = useState<unknown>();
+  const shellTheme = useResolvedShellTheme();
 
   useEffect(() => {
     const container = containerRef.current;
@@ -859,6 +959,7 @@ export function Studio({
       startupState={startupState}
       startupError={startupError}
       containerRef={containerRef}
+      shellTheme={shellTheme}
     />
   );
 }
