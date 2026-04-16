@@ -7,6 +7,7 @@ import {
   defineConfig,
   defineType,
   parseMdcmsConfig,
+  RuntimeError,
   type MdcmsFieldSchema,
 } from "@mdcms/shared";
 import { buildSchemaSyncPayload } from "@mdcms/shared/server";
@@ -46,6 +47,127 @@ export type InitCommandOptions = {
   skipAuth?: boolean;
   credentialStore?: CredentialStore;
 };
+
+export type InitFlagOptions = {
+  help: boolean;
+  nonInteractive: boolean;
+  noImport: boolean;
+  noGitCleanup: boolean;
+  noExamplePost: boolean;
+  directories?: string[];
+  defaultLocale?: string;
+};
+
+function readInitFlagValue(
+  args: string[],
+  index: number,
+  flag: string,
+): string {
+  const next = args[index + 1];
+  if (!next || next.startsWith("-")) {
+    throw new RuntimeError({
+      code: "INVALID_INPUT",
+      message: `Flag "${flag}" requires a value.`,
+      statusCode: 400,
+      details: { flag },
+    });
+  }
+  return next;
+}
+
+function splitCsv(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
+export function parseInitOptions(args: string[]): InitFlagOptions {
+  const opts: InitFlagOptions = {
+    help: false,
+    nonInteractive: false,
+    noImport: false,
+    noGitCleanup: false,
+    noExamplePost: false,
+  };
+  const directories: string[] = [];
+
+  for (let i = 0; i < args.length; i += 1) {
+    const token = args[i]!;
+
+    if (token === "-h" || token === "--help") {
+      opts.help = true;
+      continue;
+    }
+    if (token === "-y" || token === "--yes" || token === "--non-interactive") {
+      opts.nonInteractive = true;
+      continue;
+    }
+    if (token === "--no-import") {
+      opts.noImport = true;
+      continue;
+    }
+    if (token === "--no-git-cleanup") {
+      opts.noGitCleanup = true;
+      continue;
+    }
+    if (token === "--no-example-post") {
+      opts.noExamplePost = true;
+      continue;
+    }
+    if (token === "--directory") {
+      directories.push(readInitFlagValue(args, i, "--directory"));
+      i += 1;
+      continue;
+    }
+    if (token.startsWith("--directory=")) {
+      directories.push(token.slice("--directory=".length));
+      continue;
+    }
+    if (token === "--directories") {
+      directories.push(
+        ...splitCsv(readInitFlagValue(args, i, "--directories")),
+      );
+      i += 1;
+      continue;
+    }
+    if (token.startsWith("--directories=")) {
+      directories.push(...splitCsv(token.slice("--directories=".length)));
+      continue;
+    }
+    if (token === "--default-locale") {
+      opts.defaultLocale = readInitFlagValue(args, i, "--default-locale");
+      i += 1;
+      continue;
+    }
+    if (token.startsWith("--default-locale=")) {
+      opts.defaultLocale = token.slice("--default-locale=".length);
+      continue;
+    }
+
+    throw new RuntimeError({
+      code: "INVALID_INPUT",
+      message: `Unknown flag "${token}" for \`mdcms init\`.`,
+      statusCode: 400,
+      details: { flag: token },
+    });
+  }
+
+  if (directories.length > 0) {
+    opts.directories = directories;
+  }
+
+  return opts;
+}
+
+function missingInitInput(what: string, flag: string): never {
+  throw new RuntimeError({
+    code: "INIT_MISSING_INPUT",
+    message: `${what} is required in non-interactive mode. Pass ${flag} (or set via env/config).`,
+    statusCode: 400,
+    details: { flag },
+  });
+}
 
 function groupFilesByDirectory(
   files: DiscoveredFile[],
@@ -274,19 +396,34 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
     requiresConfig: false,
     requiresTarget: false,
     run: async (context: CliCommandContext): Promise<number> => {
-      if (context.args.includes("--help") || context.args.includes("-h")) {
+      const initOpts = parseInitOptions(context.args);
+
+      if (initOpts.help) {
         context.stdout.write(
           [
-            "Usage: mdcms init",
+            "Usage: mdcms init [options]",
             "",
-            "Interactive wizard to set up MDCMS in an existing project.",
+            "Interactive wizard (or non-interactive CI flow) to set up MDCMS in a project.",
             "",
             "Steps: server URL, login, project creation,",
             "directory scan, schema inference, config generation,",
             "schema sync, content import, and git cleanup.",
             "",
-            "Options:",
-            "  -h, --help   Show this help text",
+            "Init-specific options:",
+            "  -y, --yes, --non-interactive  Run without prompts; fail on missing inputs",
+            "  --directory <dir>             Managed content directory (repeatable)",
+            "  --directories <a,b,c>         Managed content directories (comma-separated)",
+            "  --default-locale <locale>     Preset default locale (skip locale confirm)",
+            "  --no-import                   Skip initial content import",
+            "  --no-git-cleanup              Skip gitignore/untrack step",
+            "  --no-example-post             Skip scaffolded example.md for empty content",
+            "  -h, --help                    Show this help text",
+            "",
+            "Value sources (resolved in this order):",
+            "  --server-url / MDCMS_SERVER_URL / mdcms.config.ts serverUrl",
+            "  --project    / MDCMS_PROJECT    / mdcms.config.ts project",
+            "  --environment / MDCMS_ENVIRONMENT / mdcms.config.ts environment (default: production)",
+            "  --api-key    / MDCMS_API_KEY    (non-interactive only; interactive mode opens OAuth)",
             "",
           ].join("\n"),
         );
@@ -299,9 +436,11 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
 
       const existingConfigPath = join(cwd, "mdcms.config.ts");
       if (existsSync(existingConfigPath)) {
-        const overwrite = await prompter.confirm(
-          "mdcms.config.ts already exists. Re-running init will overwrite it. Continue?",
-        );
+        const overwrite = initOpts.nonInteractive
+          ? true
+          : await prompter.confirm(
+              "mdcms.config.ts already exists. Re-running init will overwrite it. Continue?",
+            );
         if (!overwrite) {
           stdout.write("Init cancelled. Existing config preserved.\n");
           return 0;
@@ -311,10 +450,12 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
       prompter.intro("mdcms init");
 
       // ── Step 1: Server URL ──────────────────────────────────────────
-      const serverUrl = await prompter.text(
-        "Server URL",
-        "http://localhost:4000",
-      );
+      const contextServerUrl = context.serverUrl?.trim();
+      const serverUrl = contextServerUrl
+        ? contextServerUrl
+        : initOpts.nonInteractive
+          ? missingInitInput("Server URL", "--server-url")
+          : await prompter.text("Server URL", "http://localhost:4000");
 
       {
         const s = prompter.spinner();
@@ -333,13 +474,29 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
       }
 
       // ── Step 2: Project + Environment Names ──────────────────────────
-      const projectName = await prompter.text("Project name");
-      const envName = await prompter.text("Environment name", "production");
+      const contextProject = context.project?.trim();
+      const projectName = contextProject
+        ? contextProject
+        : initOpts.nonInteractive
+          ? missingInitInput("Project name", "--project")
+          : await prompter.text("Project name");
+
+      const contextEnvironment = context.environment?.trim();
+      const envName = contextEnvironment
+        ? contextEnvironment
+        : initOpts.nonInteractive
+          ? "production"
+          : await prompter.text("Environment name", "production");
 
       // ── Step 3: Login ──────────────────────────────────────────────
       let apiKey: string;
+      const contextApiKey = context.apiKey?.trim();
       if (options?.skipAuth) {
         apiKey = "skip-auth-key";
+      } else if (contextApiKey) {
+        apiKey = contextApiKey;
+      } else if (initOpts.nonInteractive) {
+        missingInitInput("API key", "--api-key");
       } else {
         const s = prompter.spinner();
         s.start("Opening browser for login...");
@@ -460,10 +617,14 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
       if (dirGroups.size === 0) {
         stdout.write("No content files found.\n");
 
-        const dirName = await prompter.text(
-          "Content directory (e.g. content/posts)",
-          "content/posts",
-        );
+        const dirName = initOpts.directories?.[0]
+          ? initOpts.directories[0]
+          : initOpts.nonInteractive
+            ? "content/posts"
+            : await prompter.text(
+                "Content directory (e.g. content/posts)",
+                "content/posts",
+              );
         selectedDirectories = [dirName];
 
         const lastSegment = dirName.split("/").pop() ?? dirName;
@@ -486,21 +647,44 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
           `Will create type "${typeName}" for directory "${dirName}" with fields: title, slug\n`,
         );
 
-        // Create example post
-        const examplePath = join(cwd, dirName, "example.md");
-        await mkdir(join(cwd, dirName), { recursive: true });
-        await writeFile(
-          examplePath,
-          [
-            "---",
-            "title: Example Post",
-            "slug: example",
-            "---",
-            "",
-            "This is an example post created by `mdcms init`.",
-            "",
-          ].join("\n"),
-          "utf-8",
+        if (!initOpts.noExamplePost) {
+          // Create example post
+          const examplePath = join(cwd, dirName, "example.md");
+          await mkdir(join(cwd, dirName), { recursive: true });
+          await writeFile(
+            examplePath,
+            [
+              "---",
+              "title: Example Post",
+              "slug: example",
+              "---",
+              "",
+              "This is an example post created by `mdcms init`.",
+              "",
+            ].join("\n"),
+            "utf-8",
+          );
+        }
+      } else if (initOpts.directories && initOpts.directories.length > 0) {
+        const known = new Set(dirGroups.keys());
+        const missing = initOpts.directories.filter((dir) => !known.has(dir));
+        if (missing.length > 0) {
+          throw new RuntimeError({
+            code: "INIT_INVALID_DIRECTORY",
+            message: `Requested --directory ${missing
+              .map((d) => `"${d}"`)
+              .join(", ")} not found among content directories (${[...known]
+              .map((d) => `"${d}"`)
+              .join(", ")}).`,
+            statusCode: 400,
+            details: { missing, available: [...known] },
+          });
+        }
+        selectedDirectories = [...initOpts.directories];
+      } else if (initOpts.nonInteractive) {
+        missingInitInput(
+          "Content directory selection",
+          "--directory <dir> (repeatable) or --directories <a,b,c>",
         );
       } else {
         const choices = [...dirGroups.entries()].map(([dir, files]) => ({
@@ -523,22 +707,37 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
       const localeConfig = await detectLocaleConfig(
         allFiles,
         inferredTypes,
-        prompter,
+        initOpts.nonInteractive ? undefined : prompter,
       );
 
       if (localeConfig) {
-        const confirmDefault = await prompter.confirm(
-          `Use "${localeConfig.defaultLocale}" as the default locale?`,
-        );
-        if (!confirmDefault) {
-          const choices = localeConfig.supported.map((l) => ({
-            label: l,
-            value: l,
-          }));
-          localeConfig.defaultLocale = await prompter.select(
-            "Select default locale",
-            choices,
+        if (initOpts.defaultLocale) {
+          if (!localeConfig.supported.includes(initOpts.defaultLocale)) {
+            throw new RuntimeError({
+              code: "INIT_INVALID_DEFAULT_LOCALE",
+              message: `--default-locale "${initOpts.defaultLocale}" is not among detected locales [${localeConfig.supported.join(", ")}].`,
+              statusCode: 400,
+              details: {
+                defaultLocale: initOpts.defaultLocale,
+                supported: localeConfig.supported,
+              },
+            });
+          }
+          localeConfig.defaultLocale = initOpts.defaultLocale;
+        } else if (!initOpts.nonInteractive) {
+          const confirmDefault = await prompter.confirm(
+            `Use "${localeConfig.defaultLocale}" as the default locale?`,
           );
+          if (!confirmDefault) {
+            const choices = localeConfig.supported.map((l) => ({
+              label: l,
+              value: l,
+            }));
+            localeConfig.defaultLocale = await prompter.select(
+              "Select default locale",
+              choices,
+            );
+          }
         }
       }
 
@@ -551,8 +750,10 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
           );
         }
 
-        const confirmed = await prompter.confirm("Confirm inferred types?");
-        if (!confirmed) return 0;
+        if (!initOpts.nonInteractive) {
+          const confirmed = await prompter.confirm("Confirm inferred types?");
+          if (!confirmed) return 0;
+        }
       }
 
       // ── Step 7: Generate Config + Sync Schema ───────────────────────
@@ -649,10 +850,12 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
         ),
       );
 
-      if (filesToImport.length > 0) {
-        const shouldImport = await prompter.confirm(
-          `Import ${filesToImport.length} file${filesToImport.length !== 1 ? "s" : ""} to server?`,
-        );
+      if (filesToImport.length > 0 && !initOpts.noImport) {
+        const shouldImport = initOpts.nonInteractive
+          ? true
+          : await prompter.confirm(
+              `Import ${filesToImport.length} file${filesToImport.length !== 1 ? "s" : ""} to server?`,
+            );
 
         if (shouldImport) {
           const manifest: ScopedManifest = {};
@@ -846,15 +1049,17 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
       }
 
       // ── Step 9: Git Cleanup ─────────────────────────────────────────
-      if (selectedDirectories.length > 0) {
+      if (selectedDirectories.length > 0 && !initOpts.noGitCleanup) {
         await updateGitignore(cwd, selectedDirectories);
 
         const tracked = detectTrackedFiles(cwd, selectedDirectories);
 
         if (tracked.length > 0) {
-          const shouldUntrack = await prompter.confirm(
-            `Found ${tracked.length} tracked file${tracked.length !== 1 ? "s" : ""} in managed directories. Untrack them?`,
-          );
+          const shouldUntrack = initOpts.nonInteractive
+            ? true
+            : await prompter.confirm(
+                `Found ${tracked.length} tracked file${tracked.length !== 1 ? "s" : ""} in managed directories. Untrack them?`,
+              );
 
           if (shouldUntrack) {
             const removed = untrackFiles(cwd, selectedDirectories);

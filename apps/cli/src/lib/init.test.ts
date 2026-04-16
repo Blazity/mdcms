@@ -4,9 +4,30 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import type { CredentialStore } from "./credentials.js";
 import { runMdcmsCli } from "./framework.js";
-import { createInitCommand } from "./init.js";
+import { createInitCommand, parseInitOptions } from "./init.js";
 import { createMockPrompter } from "./init/prompt.js";
+
+function createInMemoryCredentialStore(): CredentialStore {
+  const profiles = new Map<string, unknown>();
+  const key = (t: {
+    serverUrl: string;
+    project: string;
+    environment: string;
+  }) => `${t.serverUrl}|${t.project}|${t.environment}`;
+  return {
+    async getProfile(tuple) {
+      return profiles.get(key(tuple)) as never;
+    },
+    async setProfile(tuple, profile) {
+      profiles.set(key(tuple), profile);
+    },
+    async deleteProfile(tuple) {
+      return profiles.delete(key(tuple));
+    },
+  };
+}
 
 async function withTempDir(run: (cwd: string) => Promise<void>): Promise<void> {
   const cwd = await mkdtemp(join(tmpdir(), "mdcms-cli-init-"));
@@ -705,5 +726,349 @@ test("init creates new project and generates config", async () => {
       configContent.includes("new-project"),
       "config should contain new project name",
     );
+  });
+});
+
+test("parseInitOptions parses all recognized flags", () => {
+  const opts = parseInitOptions([
+    "--non-interactive",
+    "--directory",
+    "content/posts",
+    "--directory",
+    "content/pages",
+    "--default-locale",
+    "en",
+    "--no-import",
+    "--no-git-cleanup",
+    "--no-example-post",
+  ]);
+
+  assert.equal(opts.nonInteractive, true);
+  assert.deepEqual(opts.directories, ["content/posts", "content/pages"]);
+  assert.equal(opts.defaultLocale, "en");
+  assert.equal(opts.noImport, true);
+  assert.equal(opts.noGitCleanup, true);
+  assert.equal(opts.noExamplePost, true);
+  assert.equal(opts.help, false);
+});
+
+test("parseInitOptions treats -y and --yes as --non-interactive", () => {
+  assert.equal(parseInitOptions(["-y"]).nonInteractive, true);
+  assert.equal(parseInitOptions(["--yes"]).nonInteractive, true);
+  assert.equal(parseInitOptions(["--non-interactive"]).nonInteractive, true);
+});
+
+test("parseInitOptions parses --directories csv and inline =value forms", () => {
+  const viaCsv = parseInitOptions([
+    "--directories",
+    "content/posts,content/pages",
+  ]);
+  assert.deepEqual(viaCsv.directories, ["content/posts", "content/pages"]);
+
+  const viaInline = parseInitOptions([
+    "--directories=content/posts, content/pages",
+    "--default-locale=fr",
+  ]);
+  assert.deepEqual(viaInline.directories, ["content/posts", "content/pages"]);
+  assert.equal(viaInline.defaultLocale, "fr");
+});
+
+test("parseInitOptions throws on unknown flag", () => {
+  assert.throws(() => parseInitOptions(["--not-a-real-flag"]), /Unknown flag/);
+});
+
+test("parseInitOptions throws when flag value is missing", () => {
+  assert.throws(() => parseInitOptions(["--directory"]), /requires a value/);
+});
+
+test("init --non-interactive completes without prompting", async () => {
+  await withTempDir(async (cwd) => {
+    await mkdir(join(cwd, "content", "posts"), { recursive: true });
+    await writeFile(
+      join(cwd, "content", "posts", "hello.md"),
+      "---\ntitle: Hello\nslug: hello\n---\nBody\n",
+    );
+
+    const fetcher = createMockFetcher(createDefaultFetchHandlers());
+
+    // Empty queues — any prompter call throws and fails the test.
+    const prompter = createMockPrompter({});
+
+    const command = createInitCommand({
+      prompter,
+      fetcher,
+      credentialStore: createInMemoryCredentialStore(),
+    });
+
+    const exitCode = await runMdcmsCli(
+      ["init", "--non-interactive", "--directory", "content/posts"],
+      {
+        cwd,
+        commands: [command],
+        env: {
+          MDCMS_SERVER_URL: "http://localhost:4000",
+          MDCMS_PROJECT: "my-project",
+          MDCMS_ENVIRONMENT: "staging",
+          MDCMS_API_KEY: "test-api-key",
+        },
+        resolveStoredApiKey: async () => undefined,
+        stdout: { write: () => undefined },
+        stderr: { write: () => undefined },
+        fetcher,
+      },
+    );
+
+    assert.equal(exitCode, 0);
+    const configPath = join(cwd, "mdcms.config.ts");
+    assert.ok(existsSync(configPath), "mdcms.config.ts should exist");
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "my-project.staging.json",
+    );
+    assert.ok(existsSync(manifestPath), "manifest should exist");
+  });
+});
+
+test("init --non-interactive fails loud when project is missing", async () => {
+  await withTempDir(async (cwd) => {
+    const fetcher = createMockFetcher(createDefaultFetchHandlers());
+    const prompter = createMockPrompter({});
+
+    const command = createInitCommand({
+      prompter,
+      fetcher,
+      credentialStore: createInMemoryCredentialStore(),
+    });
+
+    let stderr = "";
+    const exitCode = await runMdcmsCli(["init", "--non-interactive"], {
+      cwd,
+      commands: [command],
+      env: {
+        MDCMS_SERVER_URL: "http://localhost:4000",
+        MDCMS_API_KEY: "test-api-key",
+      },
+      resolveStoredApiKey: async () => undefined,
+      stdout: { write: () => undefined },
+      stderr: {
+        write: (c) => {
+          stderr += c;
+        },
+      },
+      fetcher,
+    });
+
+    assert.equal(exitCode, 1);
+    assert.match(stderr, /Project name/i);
+    assert.match(stderr, /--project/);
+  });
+});
+
+test("init --non-interactive fails loud when api-key is missing", async () => {
+  await withTempDir(async (cwd) => {
+    await mkdir(join(cwd, "content", "posts"), { recursive: true });
+    await writeFile(
+      join(cwd, "content", "posts", "hello.md"),
+      "---\ntitle: Hello\n---\nBody\n",
+    );
+    const fetcher = createMockFetcher(createDefaultFetchHandlers());
+    const prompter = createMockPrompter({});
+
+    const command = createInitCommand({
+      prompter,
+      fetcher,
+      credentialStore: createInMemoryCredentialStore(),
+    });
+
+    let stderr = "";
+    const exitCode = await runMdcmsCli(
+      ["init", "--non-interactive", "--directory", "content/posts"],
+      {
+        cwd,
+        commands: [command],
+        env: {
+          MDCMS_SERVER_URL: "http://localhost:4000",
+          MDCMS_PROJECT: "my-project",
+          MDCMS_ENVIRONMENT: "staging",
+        },
+        resolveStoredApiKey: async () => undefined,
+        stdout: { write: () => undefined },
+        stderr: {
+          write: (c) => {
+            stderr += c;
+          },
+        },
+        fetcher,
+      },
+    );
+
+    assert.equal(exitCode, 1);
+    assert.match(stderr, /API key/i);
+    assert.match(stderr, /--api-key/);
+  });
+});
+
+test("init --non-interactive --no-import skips content import", async () => {
+  await withTempDir(async (cwd) => {
+    await mkdir(join(cwd, "content", "posts"), { recursive: true });
+    await writeFile(
+      join(cwd, "content", "posts", "hello.md"),
+      "---\ntitle: Hello\n---\nBody\n",
+    );
+
+    let contentCallCount = 0;
+    const fetcher = createMockFetcher({
+      ...createDefaultFetchHandlers(),
+      "/api/v1/content": (_url: string) => {
+        contentCallCount += 1;
+        return new Response(
+          JSON.stringify({
+            data: {
+              documentId: "doc-1",
+              draftRevision: 1,
+              publishedVersion: null,
+            },
+          }),
+          { status: 201, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+
+    const prompter = createMockPrompter({});
+    const command = createInitCommand({
+      prompter,
+      fetcher,
+      credentialStore: createInMemoryCredentialStore(),
+    });
+
+    const exitCode = await runMdcmsCli(
+      [
+        "init",
+        "--non-interactive",
+        "--directory",
+        "content/posts",
+        "--no-import",
+      ],
+      {
+        cwd,
+        commands: [command],
+        env: {
+          MDCMS_SERVER_URL: "http://localhost:4000",
+          MDCMS_PROJECT: "my-project",
+          MDCMS_ENVIRONMENT: "staging",
+          MDCMS_API_KEY: "test-api-key",
+        },
+        resolveStoredApiKey: async () => undefined,
+        stdout: { write: () => undefined },
+        stderr: { write: () => undefined },
+        fetcher,
+      },
+    );
+
+    assert.equal(exitCode, 0);
+    assert.equal(contentCallCount, 0, "no content POSTs should be made");
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "my-project.staging.json",
+    );
+    assert.equal(
+      existsSync(manifestPath),
+      false,
+      "manifest should not be written when import is skipped",
+    );
+  });
+});
+
+test("init --non-interactive --no-example-post on empty repo skips example.md", async () => {
+  await withTempDir(async (cwd) => {
+    const fetcher = createMockFetcher(createDefaultFetchHandlers());
+    const prompter = createMockPrompter({});
+    const command = createInitCommand({
+      prompter,
+      fetcher,
+      credentialStore: createInMemoryCredentialStore(),
+    });
+
+    const exitCode = await runMdcmsCli(
+      [
+        "init",
+        "--non-interactive",
+        "--directory",
+        "content/posts",
+        "--no-example-post",
+      ],
+      {
+        cwd,
+        commands: [command],
+        env: {
+          MDCMS_SERVER_URL: "http://localhost:4000",
+          MDCMS_PROJECT: "my-project",
+          MDCMS_ENVIRONMENT: "staging",
+          MDCMS_API_KEY: "test-api-key",
+        },
+        resolveStoredApiKey: async () => undefined,
+        stdout: { write: () => undefined },
+        stderr: { write: () => undefined },
+        fetcher,
+      },
+    );
+
+    assert.equal(exitCode, 0);
+    assert.equal(
+      existsSync(join(cwd, "content", "posts", "example.md")),
+      false,
+      "example.md should not be scaffolded",
+    );
+    assert.ok(
+      existsSync(join(cwd, "mdcms.config.ts")),
+      "config should still be written",
+    );
+  });
+});
+
+test("init --non-interactive rejects --directory that doesn't match any found content", async () => {
+  await withTempDir(async (cwd) => {
+    await mkdir(join(cwd, "content", "posts"), { recursive: true });
+    await writeFile(
+      join(cwd, "content", "posts", "hello.md"),
+      "---\ntitle: Hello\n---\nBody\n",
+    );
+    const fetcher = createMockFetcher(createDefaultFetchHandlers());
+    const prompter = createMockPrompter({});
+    const command = createInitCommand({
+      prompter,
+      fetcher,
+      credentialStore: createInMemoryCredentialStore(),
+    });
+
+    let stderr = "";
+    const exitCode = await runMdcmsCli(
+      ["init", "--non-interactive", "--directory", "content/pages"],
+      {
+        cwd,
+        commands: [command],
+        env: {
+          MDCMS_SERVER_URL: "http://localhost:4000",
+          MDCMS_PROJECT: "my-project",
+          MDCMS_ENVIRONMENT: "staging",
+          MDCMS_API_KEY: "test-api-key",
+        },
+        resolveStoredApiKey: async () => undefined,
+        stdout: { write: () => undefined },
+        stderr: {
+          write: (c) => {
+            stderr += c;
+          },
+        },
+        fetcher,
+      },
+    );
+
+    assert.equal(exitCode, 1);
+    assert.match(stderr, /content\/pages/);
   });
 });
