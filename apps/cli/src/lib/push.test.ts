@@ -564,6 +564,82 @@ test("push exits successfully without API calls when no changed documents are fo
   });
 });
 
+test("push exits successfully without local schema state when no content writes are needed", async () => {
+  await withTempDir(async (cwd) => {
+    const manifestPath = join(
+      cwd,
+      ".mdcms",
+      "manifests",
+      "marketing-site.staging.json",
+    );
+    await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
+    await mkdir(join(cwd, "content", "blog"), { recursive: true });
+
+    const localContent = "# Stable document\n";
+    await writeFile(
+      join(cwd, "content/blog/stable.en.md"),
+      localContent,
+      "utf8",
+    );
+    await writeFile(
+      manifestPath,
+      JSON.stringify(
+        {
+          "doc-stable": {
+            path: "content/blog/stable.en.md",
+            format: "md",
+            draftRevision: 3,
+            publishedVersion: 1,
+            hash: hashRawContent(localContent),
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const restoreTTY = setTTY(false);
+    try {
+      let stdout = "";
+      let requestCount = 0;
+      let confirmCount = 0;
+      const exitCode = await runMdcmsCli(["push"], {
+        cwd,
+        env: {} as NodeJS.ProcessEnv,
+        fetcher: async (input, init) => {
+          if (isSchemaGetRequest(input, init)) {
+            return createSchemaListResponse(BLOG_POST_CONFIG, "staging");
+          }
+          requestCount += 1;
+          throw new Error("fetch should not be called");
+        },
+        loadConfig: async () => ({
+          config: BLOG_POST_CONFIG,
+          configPath: join(cwd, "mdcms.config.ts"),
+        }),
+        stdout: {
+          write: (chunk) => {
+            stdout += chunk;
+          },
+        },
+        stderr: { write: () => undefined },
+        confirm: async () => {
+          confirmCount += 1;
+          return true;
+        },
+      });
+
+      assert.equal(exitCode, 0);
+      assert.equal(requestCount, 0);
+      assert.equal(confirmCount, 0);
+      assert.equal(stdout.includes("No changes to push"), true);
+    } finally {
+      restoreTTY();
+    }
+  });
+});
+
 test("push treats missing manifest hash as changed and repairs hash after success", async () => {
   await withTempDir(async (cwd) => {
     const manifestPath = join(
@@ -1384,7 +1460,10 @@ const DRIFT_CONFIG = parseMdcmsConfig(
   }),
 );
 
-async function seedPushableWorkspace(cwd: string): Promise<void> {
+async function seedPushableWorkspace(
+  cwd: string,
+  options: { writeSchemaState?: boolean } = {},
+): Promise<void> {
   const manifestPath = join(
     cwd,
     ".mdcms",
@@ -1392,7 +1471,9 @@ async function seedPushableWorkspace(cwd: string): Promise<void> {
     "marketing-site.staging.json",
   );
   await mkdir(join(cwd, ".mdcms", "manifests"), { recursive: true });
-  await writeSchemaStateFile(cwd, "marketing-site", "staging");
+  if (options.writeSchemaState !== false) {
+    await writeSchemaStateFile(cwd, "marketing-site", "staging");
+  }
   await writeFile(
     manifestPath,
     JSON.stringify(
@@ -1417,6 +1498,49 @@ async function seedPushableWorkspace(cwd: string): Promise<void> {
     "utf8",
   );
 }
+
+test("push --dry-run does not require local schema state before writes", async () => {
+  await withTempDir(async (cwd) => {
+    await seedPushableWorkspace(cwd, { writeSchemaState: false });
+    const restoreTTY = setTTY(false);
+    try {
+      let schemaGetCalls = 0;
+      let contentWriteCalls = 0;
+      let stdout = "";
+
+      const exitCode = await runMdcmsCli(["push", "--force", "--dry-run"], {
+        cwd,
+        env: {} as NodeJS.ProcessEnv,
+        fetcher: async (input, init) => {
+          if (isSchemaGetRequest(input, init)) {
+            schemaGetCalls += 1;
+            return createSchemaListResponse(BLOG_POST_CONFIG, "staging");
+          }
+          contentWriteCalls += 1;
+          throw new Error("dry run should not write content");
+        },
+        loadConfig: async () => ({
+          config: BLOG_POST_CONFIG,
+          configPath: join(cwd, "mdcms.config.ts"),
+        }),
+        stdout: {
+          write: (chunk: string) => {
+            stdout += chunk;
+          },
+        },
+        stderr: { write: () => undefined },
+        confirm: async () => true,
+      });
+
+      assert.equal(exitCode, 0);
+      assert.equal(schemaGetCalls, 1);
+      assert.equal(contentWriteCalls, 0);
+      assert.ok(stdout.includes("Dry run complete. No changes were pushed."));
+    } finally {
+      restoreTTY();
+    }
+  });
+});
 
 test("preflight: no drift continues to content writes", async () => {
   await withTempDir(async (cwd) => {
