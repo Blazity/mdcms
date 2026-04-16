@@ -8,7 +8,8 @@ description: "File upload, media management, and webhook configuration endpoints
 The Media API handles file uploads and media asset management. Media files are stored in S3-compatible object storage and are reusable across all environments within a project.
 
 <Note>
-  The Media API is a post-MVP feature. The endpoints are defined and will be available in an upcoming release.
+  The Media API is a post-MVP feature. The endpoints are defined and will be
+  available in an upcoming release.
 </Note>
 
 ### Upload Media
@@ -54,7 +55,8 @@ curl -X POST "https://cms.example.com/api/v1/media" \
 ### Delete Media
 
 <ParamField method="DELETE" path="/api/v1/media/{id}">
-  Delete a media file. This removes the file from storage and invalidates all URLs.
+  Delete a media file. This removes the file from storage and invalidates all
+  URLs.
 </ParamField>
 
 **Scope required:** `media:delete`
@@ -88,7 +90,8 @@ curl -X DELETE "https://cms.example.com/api/v1/media/med_550e8400-e29b-41d4-a716
 ```
 
 <Warning>
-  Media deletion is permanent and cannot be undone. Ensure no documents reference the file before deleting.
+  Media deletion is permanent and cannot be undone. Ensure no documents
+  reference the file before deleting.
 </Warning>
 
 ---
@@ -98,7 +101,8 @@ curl -X DELETE "https://cms.example.com/api/v1/media/med_550e8400-e29b-41d4-a716
 Webhooks let you receive real-time HTTP notifications when content changes occur in your project. Configure webhook endpoints to trigger builds, invalidate caches, or sync data with external systems.
 
 <Note>
-  The Webhooks API is a post-MVP feature. The endpoints are defined and will be available in an upcoming release.
+  The Webhooks API is a post-MVP feature. The endpoints are defined and will be
+  available in an upcoming release.
 </Note>
 
 ### List Webhooks
@@ -251,7 +255,12 @@ curl -X PUT "https://cms.example.com/api/v1/webhooks/wh_770e8400-e29b-41d4-a716-
   "data": {
     "id": "wh_770e8400-e29b-41d4-a716-446655440002",
     "url": "https://api.example.com/webhooks/mdcms",
-    "events": ["content.published", "content.unpublished", "content.deleted", "content.created"],
+    "events": [
+      "content.published",
+      "content.unpublished",
+      "content.deleted",
+      "content.created"
+    ],
     "active": true,
     "createdAt": "2026-01-20T10:00:00.000Z",
     "updatedAt": "2026-01-20T11:00:00.000Z"
@@ -299,15 +308,15 @@ curl -X DELETE "https://cms.example.com/api/v1/webhooks/wh_770e8400-e29b-41d4-a7
 
 ### Event Types
 
-| Event | Trigger |
-|-------|---------|
-| `content.created` | A new document is created. |
-| `content.updated` | A document's draft is updated (frontmatter or body change). |
-| `content.published` | A document is published, creating a new version. |
-| `content.unpublished` | A published document is unpublished. |
-| `content.deleted` | A document is soft-deleted. |
-| `content.restored` | A soft-deleted document is restored. |
-| `media.uploaded` | A media file is uploaded. |
+| Event                 | Trigger                                                     |
+| --------------------- | ----------------------------------------------------------- |
+| `content.created`     | A new document is created.                                  |
+| `content.updated`     | A document's draft is updated (frontmatter or body change). |
+| `content.published`   | A document is published, creating a new version.            |
+| `content.unpublished` | A published document is unpublished.                        |
+| `content.deleted`     | A document is soft-deleted.                                 |
+| `content.restored`    | A soft-deleted document is restored.                        |
+| `media.uploaded`      | A media file is uploaded.                                   |
 
 ### Webhook Payload
 
@@ -356,13 +365,13 @@ function verifyWebhookSignature(
   rawBody: string,
   signatureHeader: string,
   secret: string,
-  toleranceSeconds = 300
+  toleranceSeconds = 300,
 ): boolean {
   const parts = Object.fromEntries(
     signatureHeader.split(",").map((p) => {
       const [key, value] = p.split("=");
       return [key, value];
-    })
+    }),
   );
 
   const timestamp = parts.t;
@@ -397,5 +406,6 @@ function verifyWebhookSignature(
 - **Timeout** -- Each delivery attempt has a 10-second timeout. If the endpoint does not respond within 10 seconds, the attempt is marked as failed.
 
 <Tip>
-  Return a `200` status code as quickly as possible from your webhook endpoint. Perform any heavy processing asynchronously to avoid timeouts.
+  Return a `200` status code as quickly as possible from your webhook endpoint.
+  Perform any heavy processing asynchronously to avoid timeouts.
 </Tip>

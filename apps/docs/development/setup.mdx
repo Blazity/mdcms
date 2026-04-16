@@ -6,19 +6,20 @@ description: "Prerequisites, installation, environment variables, and running MD
 This guide walks you through setting up a local MDCMS development environment from scratch for **contributing to MDCMS itself**. By the end, you will have all services running and be ready to develop.
 
 <Note>
-  If you want to use MDCMS in your own project (not contribute to the MDCMS codebase), see the [Quick Start](/guide/quickstart) instead.
+  If you want to use MDCMS in your own project (not contribute to the MDCMS
+  codebase), see the [Quick Start](/guide/quickstart) instead.
 </Note>
 
 ## Prerequisites
 
 Before you begin, install the following tools:
 
-| Tool | Version | Purpose |
-|------|---------|---------|
-| **Bun** | 1.3.11+ (pinned in `.bun-version`) | Package manager, runtime, and test runner |
-| **Docker & Docker Compose** | Latest stable | Infrastructure services (PostgreSQL, Redis, MinIO) |
-| **Node.js** | 20+ | Required for Next.js apps (studio-example, studio-review) |
-| **Git** | Latest stable | Source control |
+| Tool                        | Version                            | Purpose                                                   |
+| --------------------------- | ---------------------------------- | --------------------------------------------------------- |
+| **Bun**                     | 1.3.11+ (pinned in `.bun-version`) | Package manager, runtime, and test runner                 |
+| **Docker & Docker Compose** | Latest stable                      | Infrastructure services (PostgreSQL, Redis, MinIO)        |
+| **Node.js**                 | 20+                                | Required for Next.js apps (studio-example, studio-review) |
+| **Git**                     | Latest stable                      | Source control                                            |
 
 <Tabs>
   <Tab title="macOS">
@@ -33,6 +34,7 @@ Before you begin, install the following tools:
     brew install nvm
     nvm install 20
     ```
+
   </Tab>
   <Tab title="Linux">
     ```bash
@@ -46,32 +48,29 @@ Before you begin, install the following tools:
     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
     nvm install 20
     ```
+
   </Tab>
 </Tabs>
 
 <Note>
-The repository includes a `.bun-version` file that pins Bun to 1.3.11. If you use a version manager like `mise` or `proto`, it will pick this up automatically.
+  The repository includes a `.bun-version` file that pins Bun to 1.3.11. If you
+  use a version manager like `mise` or `proto`, it will pick this up
+  automatically.
 </Note>
 
 ## Clone & Install
 
 <Steps>
   <Step title="Clone the repository">
-    ```bash
-    git clone git@github.com:Blazity/mdcms.git && cd mdcms
-    ```
+    ```bash git clone git@github.com:Blazity/mdcms.git && cd mdcms ```
   </Step>
   <Step title="Install dependencies">
-    ```bash
-    bun install
-    ```
-    This also sets up the pre-push git hook that runs CI checks before every push.
+    ```bash bun install ``` This also sets up the pre-push git hook that runs CI
+    checks before every push.
   </Step>
   <Step title="Copy environment file">
-    ```bash
-    cp .env.example .env
-    ```
-    Edit `.env` to override any defaults for your local setup. See the environment variables section below.
+    ```bash cp .env.example .env ``` Edit `.env` to override any defaults for
+    your local setup. See the environment variables section below.
   </Step>
 </Steps>
 
@@ -81,47 +80,49 @@ The repository includes a `.bun-version` file that pins Bun to 1.3.11. If you us
 
 These must be set for the server to start.
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:postgres@localhost:5432/mdcms` |
-| `REDIS_URL` | Redis connection string | `redis://localhost:6379` |
-| `S3_ENDPOINT` | S3-compatible storage endpoint | `http://localhost:9000` |
-| `S3_ACCESS_KEY` | S3 access key | `minioadmin` |
-| `S3_SECRET_KEY` | S3 secret key | `minioadmin` |
-| `S3_BUCKET` | S3 bucket name | `mdcms` |
+| Variable        | Description                    | Example                                               |
+| --------------- | ------------------------------ | ----------------------------------------------------- |
+| `DATABASE_URL`  | PostgreSQL connection string   | `postgresql://postgres:postgres@localhost:5432/mdcms` |
+| `REDIS_URL`     | Redis connection string        | `redis://localhost:6379`                              |
+| `S3_ENDPOINT`   | S3-compatible storage endpoint | `http://localhost:9000`                               |
+| `S3_ACCESS_KEY` | S3 access key                  | `minioadmin`                                          |
+| `S3_SECRET_KEY` | S3 secret key                  | `minioadmin`                                          |
+| `S3_BUCKET`     | S3 bucket name                 | `mdcms`                                               |
 
 ### Server
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `PORT` | Server listen port | `4000` |
-| `NODE_ENV` | Runtime environment | `development` |
-| `LOG_LEVEL` | Log verbosity (`debug`, `info`, `warn`, `error`) | `debug` |
+| Variable    | Description                                      | Example       |
+| ----------- | ------------------------------------------------ | ------------- |
+| `PORT`      | Server listen port                               | `4000`        |
+| `NODE_ENV`  | Runtime environment                              | `development` |
+| `LOG_LEVEL` | Log verbosity (`debug`, `info`, `warn`, `error`) | `debug`       |
 
 ### Studio
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `MDCMS_STUDIO_ALLOWED_ORIGINS` | CORS allowed origins for Studio | `http://localhost:4173` |
-| `MDCMS_AUTH_INSECURE_COOKIES` | Allow HTTP cookies in dev (no HTTPS) | `true` |
+| Variable                       | Description                          | Example                 |
+| ------------------------------ | ------------------------------------ | ----------------------- |
+| `MDCMS_STUDIO_ALLOWED_ORIGINS` | CORS allowed origins for Studio      | `http://localhost:4173` |
+| `MDCMS_AUTH_INSECURE_COOKIES`  | Allow HTTP cookies in dev (no HTTPS) | `true`                  |
 
 ### Auth Providers (optional)
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `MDCMS_AUTH_OIDC_PROVIDERS` | OIDC provider configuration (JSON) | |
-| `MDCMS_AUTH_SAML_PROVIDERS` | SAML provider configuration (JSON) | |
+| Variable                    | Description                        | Example |
+| --------------------------- | ---------------------------------- | ------- |
+| `MDCMS_AUTH_OIDC_PROVIDERS` | OIDC provider configuration (JSON) |         |
+| `MDCMS_AUTH_SAML_PROVIDERS` | SAML provider configuration (JSON) |         |
 
 ### Demo
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `MDCMS_DEMO_API_KEY` | API key for demo seed data | `mdcms_key_demo_local_compose_seed_2026_read` |
-| `MDCMS_DEMO_PROJECT` | Demo project slug | `marketing-site` |
-| `MDCMS_DEMO_ENVIRONMENT` | Demo environment name | `staging` |
+| Variable                 | Description                | Example                                       |
+| ------------------------ | -------------------------- | --------------------------------------------- |
+| `MDCMS_DEMO_API_KEY`     | API key for demo seed data | `mdcms_key_demo_local_compose_seed_2026_read` |
+| `MDCMS_DEMO_PROJECT`     | Demo project slug          | `marketing-site`                              |
+| `MDCMS_DEMO_ENVIRONMENT` | Demo environment name      | `staging`                                     |
 
 <Tip>
-The Docker Compose dev configuration sets all required variables automatically. You only need to configure `.env` manually if running services outside Docker.
+  The Docker Compose dev configuration sets all required variables
+  automatically. You only need to configure `.env` manually if running services
+  outside Docker.
 </Tip>
 
 ## Start Development
@@ -147,6 +148,7 @@ The Docker Compose dev configuration sets all required variables automatically. 
     ```bash
     docker compose -f docker-compose.dev.yml down
     ```
+
   </Tab>
   <Tab title="Manual">
     Start infrastructure services only, then run apps individually for more control:
@@ -167,6 +169,7 @@ The Docker Compose dev configuration sets all required variables automatically. 
     # Terminal 2: Start the Studio example app
     bun nx dev studio-example
     ```
+
   </Tab>
 </Tabs>
 
@@ -174,38 +177,38 @@ The Docker Compose dev configuration sets all required variables automatically. 
 
 Once running, these services are available:
 
-| Service | URL |
-|---------|-----|
-| Server API | [http://localhost:4000](http://localhost:4000) |
+| Service        | URL                                            |
+| -------------- | ---------------------------------------------- |
+| Server API     | [http://localhost:4000](http://localhost:4000) |
 | Studio Example | [http://localhost:4173](http://localhost:4173) |
-| Studio Review | [http://localhost:3000](http://localhost:3000) |
-| MinIO Console | [http://localhost:9001](http://localhost:9001) |
-| Mailhog | [http://localhost:8025](http://localhost:8025) |
-| PostgreSQL | `localhost:5432` |
-| Redis | `localhost:6379` |
+| Studio Review  | [http://localhost:3000](http://localhost:3000) |
+| MinIO Console  | [http://localhost:9001](http://localhost:9001) |
+| Mailhog        | [http://localhost:8025](http://localhost:8025) |
+| PostgreSQL     | `localhost:5432`                               |
+| Redis          | `localhost:6379`                               |
 
 ## Demo Credentials
 
 The dev seed data creates a demo user you can use to log in to Studio:
 
-| Field | Value |
-|-------|-------|
-| Email | `demo@mdcms.local` |
-| Password | `Demo12345!` |
+| Field    | Value              |
+| -------- | ------------------ |
+| Email    | `demo@mdcms.local` |
+| Password | `Demo12345!`       |
 
 ## Available Commands
 
 These scripts are defined in the root `package.json` and orchestrated by Nx:
 
-| Command | Description |
-|---------|-------------|
-| `bun run dev` | Start the server in development mode |
-| `bun run compose:dev` | Start full dev stack via Docker Compose |
-| `bun run compose:dev:down` | Stop the dev Docker Compose stack |
-| `bun run build` | Build all packages and apps |
-| `bun run typecheck` | Run TypeScript type checking across all packages |
-| `bun run quality` | Run format check + typecheck |
-| `bun run unit` | Run unit tests |
-| `bun run integration` | Run integration tests (requires Docker services) |
-| `bun run ci:required` | Run the full CI gate: format + typecheck + unit + integration |
-| `bun run format` | Format code with Prettier |
+| Command                    | Description                                                   |
+| -------------------------- | ------------------------------------------------------------- |
+| `bun run dev`              | Start the server in development mode                          |
+| `bun run compose:dev`      | Start full dev stack via Docker Compose                       |
+| `bun run compose:dev:down` | Stop the dev Docker Compose stack                             |
+| `bun run build`            | Build all packages and apps                                   |
+| `bun run typecheck`        | Run TypeScript type checking across all packages              |
+| `bun run quality`          | Run format check + typecheck                                  |
+| `bun run unit`             | Run unit tests                                                |
+| `bun run integration`      | Run integration tests (requires Docker services)              |
+| `bun run ci:required`      | Run the full CI gate: format + typecheck + unit + integration |
+| `bun run format`           | Format code with Prettier                                     |

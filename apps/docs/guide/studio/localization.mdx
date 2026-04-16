@@ -38,14 +38,16 @@ export default defineConfig({
 });
 ```
 
-| Property | Type | Description |
-| --- | --- | --- |
-| `default` | `string` | The default locale used when no locale is specified |
-| `supported` | `string[]` | All locales your project supports |
-| `aliases` | `Record<string, string>` | Maps variant codes to canonical locales (e.g., `"en-US"` resolves to `"en"`) |
+| Property    | Type                     | Description                                                                  |
+| ----------- | ------------------------ | ---------------------------------------------------------------------------- |
+| `default`   | `string`                 | The default locale used when no locale is specified                          |
+| `supported` | `string[]`               | All locales your project supports                                            |
+| `aliases`   | `Record<string, string>` | Maps variant codes to canonical locales (e.g., `"en-US"` resolves to `"en"`) |
 
 <Note>
-  Non-localized types ignore the locale configuration entirely. The locale switcher does not appear in their editor, and they are stored under the internal `__mdcms_default__` locale.
+  Non-localized types ignore the locale configuration entirely. The locale
+  switcher does not appear in their editor, and they are stored under the
+  internal `__mdcms_default__` locale.
 </Note>
 
 ## Locale switcher
@@ -70,7 +72,8 @@ The variant list is fetched from `GET /api/v1/content/:documentId/variants`, whi
     Choose a locale that shows a "Create" option.
   </Step>
   <Step title="Create the variant">
-    A new document is created in the target locale. You can optionally prefill it from the default locale to use as a starting point for translation.
+    A new document is created in the target locale. You can optionally prefill
+    it from the default locale to use as a starting point for translation.
   </Step>
 </Steps>
 
@@ -89,7 +92,9 @@ Each locale variant is a fully independent document:
 Changes to one locale variant do not affect any other variant. There is no automatic content synchronization between locales.
 
 <Tip>
-  Locale variants are linked together through a shared `translationGroupId`. This is visible in the document Info tab and is used internally to group variants for the locale switcher and translation coverage reporting.
+  Locale variants are linked together through a shared `translationGroupId`.
+  This is visible in the document Info tab and is used internally to group
+  variants for the locale switcher and translation coverage reporting.
 </Tip>
 
 ## Translation status in content lists

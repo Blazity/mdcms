@@ -64,7 +64,8 @@ Key properties of environments:
 - **Clone & promote** -- You can clone all content from one environment to another, or promote a subset of documents between environments.
 
 <Note>
-The `environment` field in the config selects which environment the CLI operates against by default. If omitted, operations target `production`.
+  The `environment` field in the config selects which environment the CLI
+  operates against by default. If omitted, operations target `production`.
 </Note>
 
 ## Content Types (Schema)
@@ -107,12 +108,12 @@ export default defineConfig({
 
 Each `defineType()` call accepts:
 
-| Parameter | Description |
-|-----------|-------------|
-| `name` | Unique type identifier (first argument). Used in API queries and references. |
-| `directory` | Filesystem directory where documents of this type live (relative to a content directory). |
-| `localized` | When `true`, documents of this type support multiple locale variants. |
-| `fields` | A record of Zod schemas. Each field becomes a frontmatter property and a Studio form field. |
+| Parameter   | Description                                                                                 |
+| ----------- | ------------------------------------------------------------------------------------------- |
+| `name`      | Unique type identifier (first argument). Used in API queries and references.                |
+| `directory` | Filesystem directory where documents of this type live (relative to a content directory).   |
+| `localized` | When `true`, documents of this type support multiple locale variants.                       |
+| `fields`    | A record of Zod schemas. Each field becomes a frontmatter property and a Studio form field. |
 
 The schema drives three things:
 
@@ -130,18 +131,20 @@ mdcms schema sync
 
 A **document** is an instance of a content type. It consists of structured frontmatter (validated against the schema) and a Markdown or MDX body.
 
-| Property | Description |
-|----------|-------------|
-| `documentId` | Stable UUID. The true identity of a document -- never changes, even if the path does. |
-| `translationGroupId` | UUID that links locale variants of the same logical content together. |
-| `path` | Mutable, filesystem-like path (e.g., `content/blog/hello-world`). Can be renamed without losing history. |
-| `locale` | BCP 47 language tag (e.g., `en`, `fr`, `ja`). Set to `__mdcms_default__` for non-localized types. |
-| `format` | `md` for standard Markdown, `mdx` for MDX with component support. |
-| `frontmatter` | JSON object containing structured data that matches the content type schema. |
-| `body` | The Markdown or MDX content string. |
+| Property             | Description                                                                                              |
+| -------------------- | -------------------------------------------------------------------------------------------------------- |
+| `documentId`         | Stable UUID. The true identity of a document -- never changes, even if the path does.                    |
+| `translationGroupId` | UUID that links locale variants of the same logical content together.                                    |
+| `path`               | Mutable, filesystem-like path (e.g., `content/blog/hello-world`). Can be renamed without losing history. |
+| `locale`             | BCP 47 language tag (e.g., `en`, `fr`, `ja`). Set to `__mdcms_default__` for non-localized types.        |
+| `format`             | `md` for standard Markdown, `mdx` for MDX with component support.                                        |
+| `frontmatter`        | JSON object containing structured data that matches the content type schema.                             |
+| `body`               | The Markdown or MDX content string.                                                                      |
 
 <Tip>
-Because `documentId` is stable, you can safely reference documents by ID in your application code. The `path` is designed for human readability and filesystem mapping, but should not be treated as a permanent identifier.
+  Because `documentId` is stable, you can safely reference documents by ID in
+  your application code. The `path` is designed for human readability and
+  filesystem mapping, but should not be treated as a permanent identifier.
 </Tip>
 
 On disk, a document looks like a standard Markdown file with YAML frontmatter:
@@ -166,24 +169,35 @@ Every document follows a draft/publish lifecycle that tracks changes through imm
 
 <Steps>
   <Step title="Create">
-    A new document starts as a **draft**. It has no published version and is only visible to users with `content:read:draft` permission.
+    A new document starts as a **draft**. It has no published version and is
+    only visible to users with `content:read:draft` permission.
   </Step>
   <Step title="Edit">
-    Edits are auto-saved. Each save increments the `draftRevision` counter. Drafts do not create version history entries -- they represent work in progress.
+    Edits are auto-saved. Each save increments the `draftRevision` counter.
+    Drafts do not create version history entries -- they represent work in
+    progress.
   </Step>
   <Step title="Publish">
-    Publishing creates an **immutable version snapshot**. The `version` number increments and the snapshot captures the full frontmatter and body at that point in time. You can attach an optional change summary to each published version.
+    Publishing creates an **immutable version snapshot**. The `version` number
+    increments and the snapshot captures the full frontmatter and body at that
+    point in time. You can attach an optional change summary to each published
+    version.
   </Step>
   <Step title="Continue Editing">
-    After publishing, further edits create new draft revisions on top of the published version. The published content remains stable and visible to readers.
+    After publishing, further edits create new draft revisions on top of the
+    published version. The published content remains stable and visible to
+    readers.
   </Step>
   <Step title="Re-publish">
-    Publishing again creates a new version snapshot. The full version history is preserved, allowing you to review or compare any previous published state.
+    Publishing again creates a new version snapshot. The full version history is
+    preserved, allowing you to review or compare any previous published state.
   </Step>
 </Steps>
 
 <Note>
-The `hasUnpublishedChanges` flag on a document tells you whether the current draft differs from the latest published version. This is useful for building editorial dashboards that show pending changes.
+  The `hasUnpublishedChanges` flag on a document tells you whether the current
+  draft differs from the latest published version. This is useful for building
+  editorial dashboards that show pending changes.
 </Note>
 
 ## Localization
@@ -229,7 +243,9 @@ How localized documents work:
 - The SDK accepts a `locale` parameter to query content in a specific language.
 
 <Warning>
-Non-localized types (where `localized` is `false` or omitted) operate in implicit single-locale mode. Their documents use the internal locale token `__mdcms_default__` and do not participate in translation groups.
+  Non-localized types (where `localized` is `false` or omitted) operate in
+  implicit single-locale mode. Their documents use the internal locale token
+  `__mdcms_default__` and do not participate in translation groups.
 </Warning>
 
 ## References
@@ -255,15 +271,17 @@ How references are resolved:
 
 Reference resolution error codes:
 
-| Error Code | Meaning |
-|-----------|---------|
-| `REFERENCE_NOT_FOUND` | The referenced document does not exist in the target project/environment. |
-| `REFERENCE_DELETED` | The referenced document has been soft-deleted. |
+| Error Code                | Meaning                                                                                        |
+| ------------------------- | ---------------------------------------------------------------------------------------------- |
+| `REFERENCE_NOT_FOUND`     | The referenced document does not exist in the target project/environment.                      |
+| `REFERENCE_DELETED`       | The referenced document has been soft-deleted.                                                 |
 | `REFERENCE_TYPE_MISMATCH` | The referenced document's type does not match the expected target type declared in the schema. |
-| `REFERENCE_FORBIDDEN` | The current API key or user does not have read access to the referenced document. |
+| `REFERENCE_FORBIDDEN`     | The current API key or user does not have read access to the referenced document.              |
 
 <Tip>
-References can be optional (`reference("Author").optional()`) or collected in arrays (`z.array(reference("BlogPost"))`). The resolution engine handles both forms.
+  References can be optional (`reference("Author").optional()`) or collected in
+  arrays (`z.array(reference("BlogPost"))`). The resolution engine handles both
+  forms.
 </Tip>
 
 ## API Keys
@@ -272,12 +290,12 @@ API keys provide scoped, token-based access to the MDCMS API. They are the prima
 
 Each API key has:
 
-| Property | Description |
-|----------|-------------|
-| `label` | Human-readable name (e.g., "Production Read-Only", "CI Deploy Key"). |
-| `scopes` | List of permitted operations. |
-| `contextAllowlist` | Restricts the key to specific project/environment pairs. |
-| `expiresAt` | Optional expiration timestamp. |
+| Property           | Description                                                          |
+| ------------------ | -------------------------------------------------------------------- |
+| `label`            | Human-readable name (e.g., "Production Read-Only", "CI Deploy Key"). |
+| `scopes`           | List of permitted operations.                                        |
+| `contextAllowlist` | Restricts the key to specific project/environment pairs.             |
+| `expiresAt`        | Optional expiration timestamp.                                       |
 
 API keys are prefixed with `mdcms_key_` for easy identification in logs and secret scanners.
 
@@ -285,25 +303,25 @@ API keys are prefixed with `mdcms_key_` for easy identification in logs and secr
 
 <Accordion title="Full list of API key scopes">
 
-| Scope | Description |
-|-------|-------------|
-| `content:read` | Read published content. |
-| `content:read:draft` | Read draft (unpublished) content. |
-| `content:write` | Create and update content. |
-| `content:write:draft` | Create and update draft content. |
-| `content:publish` | Publish documents. |
-| `content:delete` | Delete documents. |
-| `schema:read` | Read schema registry entries. |
-| `schema:write` | Sync schema changes. |
-| `media:upload` | Upload media files. |
-| `media:delete` | Delete media files. |
-| `webhooks:read` | List webhook configurations. |
-| `webhooks:write` | Create, update, and delete webhooks. |
-| `environments:clone` | Clone content between environments. |
+| Scope                  | Description                           |
+| ---------------------- | ------------------------------------- |
+| `content:read`         | Read published content.               |
+| `content:read:draft`   | Read draft (unpublished) content.     |
+| `content:write`        | Create and update content.            |
+| `content:write:draft`  | Create and update draft content.      |
+| `content:publish`      | Publish documents.                    |
+| `content:delete`       | Delete documents.                     |
+| `schema:read`          | Read schema registry entries.         |
+| `schema:write`         | Sync schema changes.                  |
+| `media:upload`         | Upload media files.                   |
+| `media:delete`         | Delete media files.                   |
+| `webhooks:read`        | List webhook configurations.          |
+| `webhooks:write`       | Create, update, and delete webhooks.  |
+| `environments:clone`   | Clone content between environments.   |
 | `environments:promote` | Promote content between environments. |
-| `migrations:run` | Execute content migrations. |
-| `projects:read` | Read project metadata. |
-| `projects:write` | Update project settings. |
+| `migrations:run`       | Execute content migrations.           |
+| `projects:read`        | Read project metadata.                |
+| `projects:write`       | Update project settings.              |
 
 </Accordion>
 
@@ -313,20 +331,20 @@ A typical production frontend key would use only `content:read` and `schema:read
 
 MDCMS uses role-based access control for user permissions. Roles are hierarchical -- each role includes all permissions of the roles below it.
 
-| Permission | Viewer | Editor | Admin | Owner |
-|-----------|--------|--------|-------|-------|
-| `content:read` | Yes | Yes | Yes | Yes |
-| `content:read:draft` | | Yes | Yes | Yes |
-| `content:write` | | Yes | Yes | Yes |
-| `content:publish` | | Yes | Yes | Yes |
-| `content:unpublish` | | Yes | Yes | Yes |
-| `content:delete` | | Yes | Yes | Yes |
-| `schema:read` | Yes | Yes | Yes | Yes |
-| `schema:write` | | | Yes | Yes |
-| `projects:read` | Yes | Yes | Yes | Yes |
-| `projects:write` | | | Yes | Yes |
-| `user:manage` | | | Yes | Yes |
-| `settings:manage` | | | Yes | Yes |
+| Permission           | Viewer | Editor | Admin | Owner |
+| -------------------- | ------ | ------ | ----- | ----- |
+| `content:read`       | Yes    | Yes    | Yes   | Yes   |
+| `content:read:draft` |        | Yes    | Yes   | Yes   |
+| `content:write`      |        | Yes    | Yes   | Yes   |
+| `content:publish`    |        | Yes    | Yes   | Yes   |
+| `content:unpublish`  |        | Yes    | Yes   | Yes   |
+| `content:delete`     |        | Yes    | Yes   | Yes   |
+| `schema:read`        | Yes    | Yes    | Yes   | Yes   |
+| `schema:write`       |        |        | Yes   | Yes   |
+| `projects:read`      | Yes    | Yes    | Yes   | Yes   |
+| `projects:write`     |        |        | Yes   | Yes   |
+| `user:manage`        |        |        | Yes   | Yes   |
+| `settings:manage`    |        |        | Yes   | Yes   |
 
 ### Scope and Constraints
 
@@ -350,12 +368,12 @@ graph LR
     D --> H["S3-Compatible<br/>Object Storage"]
 ```
 
-| Component | Role |
-|-----------|------|
-| **MDCMS Server** | Elysia-based HTTP API running on Bun. Handles content CRUD, schema registry, auth, webhooks, and media. |
-| **@mdcms/cli** | Command-line tool for schema sync, content push/pull, migrations, and project initialization. |
-| **@mdcms/sdk** | TypeScript client for querying content from your application at build time or runtime. |
-| **@mdcms/studio** | Embeddable React component that provides the visual editing interface. Communicates directly with the server. |
-| **PostgreSQL** | Primary data store for all content, schema metadata, users, API keys, and version history. |
-| **Redis** | Used for session management, caching, and real-time features. |
+| Component                 | Role                                                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **MDCMS Server**          | Elysia-based HTTP API running on Bun. Handles content CRUD, schema registry, auth, webhooks, and media.                        |
+| **@mdcms/cli**            | Command-line tool for schema sync, content push/pull, migrations, and project initialization.                                  |
+| **@mdcms/sdk**            | TypeScript client for querying content from your application at build time or runtime.                                         |
+| **@mdcms/studio**         | Embeddable React component that provides the visual editing interface. Communicates directly with the server.                  |
+| **PostgreSQL**            | Primary data store for all content, schema metadata, users, API keys, and version history.                                     |
+| **Redis**                 | Used for session management, caching, and real-time features.                                                                  |
 | **S3-Compatible Storage** | Stores uploaded media files (images, documents, etc.). Works with AWS S3, MinIO, Cloudflare R2, or any S3-compatible provider. |

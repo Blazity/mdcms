@@ -132,9 +132,7 @@ export default function SettingsPage({
                     Manage API keys for external integrations
                   </p>
                 </div>
-                <Button
-                  onClick={() => setCreateDialogOpen(true)}
-                >
+                <Button onClick={() => setCreateDialogOpen(true)}>
                   <Plus className="mr-2 h-4 w-4" />
                   Create API Key
                 </Button>

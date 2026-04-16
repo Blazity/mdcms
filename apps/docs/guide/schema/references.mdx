@@ -39,7 +39,9 @@ author: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 ```
 
 <Note>
-  The server validates reference identity on every write. If you supply a documentId that doesn't exist, belongs to a different type, or references a deleted document, the write will fail with an `INVALID_INPUT` error.
+  The server validates reference identity on every write. If you supply a
+  documentId that doesn't exist, belongs to a different type, or references a
+  deleted document, the write will fail with an `INVALID_INPUT` error.
 </Note>
 
 ## Resolving references
@@ -59,6 +61,7 @@ const post = await client.content.get("blog/my-post", {
 });
 // post.frontmatter.author is now the full Author document object
 ```
+
 </CodeGroup>
 
 ### Resolved response structure
@@ -129,15 +132,16 @@ If a reference cannot be resolved, the field value is set to `null` and an entry
 
 ### Error codes
 
-| Code | Description |
-|---|---|
-| `REFERENCE_NOT_FOUND` | The referenced document does not exist in the target project/environment. |
-| `REFERENCE_DELETED` | The referenced document has been soft-deleted. |
+| Code                      | Description                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------ |
+| `REFERENCE_NOT_FOUND`     | The referenced document does not exist in the target project/environment.                        |
+| `REFERENCE_DELETED`       | The referenced document has been soft-deleted.                                                   |
 | `REFERENCE_TYPE_MISMATCH` | The referenced document exists but belongs to a different type than the reference field expects. |
-| `REFERENCE_FORBIDDEN` | The referenced document exists but is not readable with the current API key scope. |
+| `REFERENCE_FORBIDDEN`     | The referenced document exists but is not readable with the current API key scope.               |
 
 <Tip>
-  Check for the `resolveErrors` key in API responses when using `resolve`. A missing key means all references resolved successfully.
+  Check for the `resolveErrors` key in API responses when using `resolve`. A
+  missing key means all references resolved successfully.
 </Tip>
 
 ## Studio behavior
@@ -149,10 +153,12 @@ In Studio, reference fields render as a **document picker** filtered by the targ
     The document picker opens, showing documents of the target type.
   </Step>
   <Step title="Search or browse">
-    Filter by title or browse the list. Only documents matching the target type are shown.
+    Filter by title or browse the list. Only documents matching the target type
+    are shown.
   </Step>
   <Step title="Select a document">
-    The selected document's ID is stored in frontmatter. Studio displays the document title as a preview.
+    The selected document's ID is stored in frontmatter. Studio displays the
+    document title as a preview.
   </Step>
 </Steps>
 
@@ -176,5 +182,7 @@ curl "http://localhost:4000/api/content/posts/my-post?type=Post&resolve=authors"
 ```
 
 <Warning>
-  Deleting a referenced document does not cascade. Documents that reference the deleted document will get `REFERENCE_DELETED` or `REFERENCE_NOT_FOUND` resolve errors until the reference is updated or removed.
+  Deleting a referenced document does not cascade. Documents that reference the
+  deleted document will get `REFERENCE_DELETED` or `REFERENCE_NOT_FOUND` resolve
+  errors until the reference is updated or removed.
 </Warning>

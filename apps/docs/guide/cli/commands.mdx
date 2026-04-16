@@ -18,45 +18,52 @@ The wizard runs through the following steps:
     Prompts for the MDCMS server URL and validates it with a health check.
   </Step>
 
-  <Step title="Project selection">
-    Lists existing projects on the server or creates a new one.
-  </Step>
+<Step title="Project selection">
+  Lists existing projects on the server or creates a new one.
+</Step>
 
-  <Step title="OAuth login">
-    Opens a browser window for authentication using the device flow (same mechanism as `mdcms login`).
-  </Step>
+<Step title="OAuth login">
+  Opens a browser window for authentication using the device flow (same
+  mechanism as `mdcms login`).
+</Step>
 
-  <Step title="Environment selection">
-    Choose an existing environment or create one (e.g. `development`, `staging`).
-  </Step>
+<Step title="Environment selection">
+  Choose an existing environment or create one (e.g. `development`, `staging`).
+</Step>
 
-  <Step title="Directory scanning">
-    Recursively scans the repository for `.md` and `.mdx` files and groups them by top-level content directories.
-  </Step>
+<Step title="Directory scanning">
+  Recursively scans the repository for `.md` and `.mdx` files and groups them by
+  top-level content directories.
+</Step>
 
-  <Step title="Locale detection">
-    Analyzes file naming patterns to detect locale suffixes (e.g. `post.en.mdx`, `post.fr.mdx`) and infers default/supported locale configuration.
-  </Step>
+<Step title="Locale detection">
+  Analyzes file naming patterns to detect locale suffixes (e.g. `post.en.mdx`,
+  `post.fr.mdx`) and infers default/supported locale configuration.
+</Step>
 
-  <Step title="Schema inference">
-    Parses frontmatter from discovered files to infer content types and their field schemas using Zod types.
-  </Step>
+<Step title="Schema inference">
+  Parses frontmatter from discovered files to infer content types and their
+  field schemas using Zod types.
+</Step>
 
-  <Step title="Config generation">
-    Writes `mdcms.config.ts` with `defineConfig` and `defineType` calls reflecting all discovered types, directories, and locale settings.
-  </Step>
+<Step title="Config generation">
+  Writes `mdcms.config.ts` with `defineConfig` and `defineType` calls reflecting
+  all discovered types, directories, and locale settings.
+</Step>
 
-  <Step title="Schema sync">
-    Uploads the inferred schema to the server for the selected project/environment.
-  </Step>
+<Step title="Schema sync">
+  Uploads the inferred schema to the server for the selected
+  project/environment.
+</Step>
 
-  <Step title="Content push">
-    Pushes all discovered content files to the server as draft documents and writes the initial manifest.
-  </Step>
+<Step title="Content push">
+  Pushes all discovered content files to the server as draft documents and
+  writes the initial manifest.
+</Step>
 
-  <Step title=".gitignore update">
-    Appends `.mdcms/` and manifest paths to `.gitignore`.
-  </Step>
+<Step title=".gitignore update">
+  Appends `.mdcms/` and manifest paths to `.gitignore`.
+</Step>
 
   <Step title="Untrack managed files">
     Runs `git rm -r --cached` on any managed files that were previously committed to git.
@@ -64,7 +71,8 @@ The wizard runs through the following steps:
 </Steps>
 
 <Note>
-  Running `mdcms init` in a repository that already has an `mdcms.config.ts` will prompt before overwriting.
+  Running `mdcms init` in a repository that already has an `mdcms.config.ts`
+  will prompt before overwriting.
 </Note>
 
 ---
@@ -82,17 +90,19 @@ mdcms login
     The CLI sends a login challenge to the server with a cryptographic state parameter and a loopback redirect URI.
   </Step>
 
-  <Step title="Browser authentication">
-    Your default browser opens the server's authorization page. Complete the login there.
-  </Step>
+<Step title="Browser authentication">
+  Your default browser opens the server's authorization page. Complete the login
+  there.
+</Step>
 
-  <Step title="Receive callback">
-    The CLI listens on a local port for the OAuth callback. The browser redirects back with an authorization code.
-  </Step>
+<Step title="Receive callback">
+  The CLI listens on a local port for the OAuth callback. The browser redirects
+  back with an authorization code.
+</Step>
 
-  <Step title="Exchange for API key">
-    The CLI exchanges the authorization code for a scoped API key.
-  </Step>
+<Step title="Exchange for API key">
+  The CLI exchanges the authorization code for a scoped API key.
+</Step>
 
   <Step title="Store credentials">
     The API key is stored in the local credential store, scoped to the current server/project/environment tuple.
@@ -145,12 +155,12 @@ Upload local content changes to the MDCMS server.
 mdcms push [--force] [--dry-run] [--validate] [--published]
 ```
 
-| Flag | Description |
-| --- | --- |
-| `--force` | Skip all interactive prompts; auto-select all new and deleted files |
-| `--dry-run` | Show the push plan without making any API writes |
-| `--validate` | Validate frontmatter against the local schema before pushing |
-| `--published` | Reserved for future use |
+| Flag          | Description                                                         |
+| ------------- | ------------------------------------------------------------------- |
+| `--force`     | Skip all interactive prompts; auto-select all new and deleted files |
+| `--dry-run`   | Show the push plan without making any API writes                    |
+| `--validate`  | Validate frontmatter against the local schema before pushing        |
+| `--published` | Reserved for future use                                             |
 
 ### How push works
 
@@ -168,7 +178,9 @@ mdcms push [--force] [--dry-run] [--validate] [--published]
 Push uses optimistic concurrency via the `draftRevision` field. If the server's current revision does not match the manifest's recorded revision, the push for that document is rejected. Run `mdcms pull` to reconcile before retrying.
 
 <Warning>
-  Push requires a valid schema hash from a previous `mdcms schema sync`. If the schema has never been synced or the local hash is missing, the command will fail.
+  Push requires a valid schema hash from a previous `mdcms schema sync`. If the
+  schema has never been synced or the local hash is missing, the command will
+  fail.
 </Warning>
 
 ---
@@ -181,29 +193,30 @@ Download content from the MDCMS server to your local filesystem.
 mdcms pull [--published] [--force] [--dry-run]
 ```
 
-| Flag | Description |
-| --- | --- |
-| `--published` | Pull published snapshots instead of draft heads |
-| `--force` | Skip overwrite confirmation for locally modified files |
-| `--dry-run` | Show the pull plan without writing any files |
+| Flag          | Description                                            |
+| ------------- | ------------------------------------------------------ |
+| `--published` | Pull published snapshots instead of draft heads        |
+| `--force`     | Skip overwrite confirmation for locally modified files |
+| `--dry-run`   | Show the pull plan without writing any files           |
 
 ### Change categories
 
 The pull command classifies each document into one of these categories:
 
-| Category | Behavior |
-| --- | --- |
-| **Both Modified** | Local and server changes detected. Prompts for confirmation before overwriting |
-| **Server Modified** | Server has newer content. File is updated automatically |
-| **Locally Modified** | Only local changes exist. File is skipped (not overwritten) |
-| **New** | Document exists on server but not locally. File is created |
-| **Moved/Renamed** | Server path differs from manifest path. File is moved to the new location |
+| Category              | Behavior                                                                                  |
+| --------------------- | ----------------------------------------------------------------------------------------- |
+| **Both Modified**     | Local and server changes detected. Prompts for confirmation before overwriting            |
+| **Server Modified**   | Server has newer content. File is updated automatically                                   |
+| **Locally Modified**  | Only local changes exist. File is skipped (not overwritten)                               |
+| **New**               | Document exists on server but not locally. File is created                                |
+| **Moved/Renamed**     | Server path differs from manifest path. File is moved to the new location                 |
 | **Deleted on Server** | Document was removed server-side. Prompts for confirmation before deleting the local file |
-| **Unknown Type** | Document type has no matching config entry. Skipped with a warning |
-| **Unchanged** | Content hashes match. No action taken |
+| **Unknown Type**      | Document type has no matching config entry. Skipped with a warning                        |
+| **Unchanged**         | Content hashes match. No action taken                                                     |
 
 <Note>
-  Use `--force` to skip confirmation prompts in non-interactive environments (e.g. CI pipelines). Locally modified files will be overwritten.
+  Use `--force` to skip confirmation prompts in non-interactive environments
+  (e.g. CI pipelines). Locally modified files will be overwritten.
 </Note>
 
 ---
@@ -234,7 +247,9 @@ mdcms schema sync --environment staging
 ```
 
 <Warning>
-  At least one content type must be defined in `mdcms.config.ts` before running schema sync. The command will fail with a `NO_TYPES_DEFINED` error if the `types` array is empty.
+  At least one content type must be defined in `mdcms.config.ts` before running
+  schema sync. The command will fail with a `NO_TYPES_DEFINED` error if the
+  `types` array is empty.
 </Warning>
 
 ---
@@ -254,25 +269,26 @@ The status command reports:
 
 ### Drift categories
 
-| Category | Description |
-| --- | --- |
+| Category             | Description                                              |
+| -------------------- | -------------------------------------------------------- |
 | `modified_on_server` | Server has newer content than the local manifest records |
-| `modified_locally` | Local file has changed since last push/pull |
-| `both_modified` | Both local and server content have diverged |
-| `new_on_server` | Document exists on server but not in the local manifest |
-| `deleted_on_server` | Document is in the manifest but no longer on the server |
-| `moved_renamed` | Server path differs from the manifest path |
-| `unchanged` | Everything is in sync |
+| `modified_locally`   | Local file has changed since last push/pull              |
+| `both_modified`      | Both local and server content have diverged              |
+| `new_on_server`      | Document exists on server but not in the local manifest  |
+| `deleted_on_server`  | Document is in the manifest but no longer on the server  |
+| `moved_renamed`      | Server path differs from the manifest path               |
+| `unchanged`          | Everything is in sync                                    |
 
 ### Exit codes
 
-| Code | Meaning |
-| --- | --- |
-| `0` | Everything is in sync |
-| `1` | Drift detected (content or schema) |
+| Code | Meaning                            |
+| ---- | ---------------------------------- |
+| `0`  | Everything is in sync              |
+| `1`  | Drift detected (content or schema) |
 
 <Tip>
-  Use `mdcms status` in CI pipelines as a gate. A non-zero exit code can block deployments when content or schema is out of sync.
+  Use `mdcms status` in CI pipelines as a gate. A non-zero exit code can block
+  deployments when content or schema is out of sync.
 </Tip>
 
 ---
@@ -285,8 +301,8 @@ Generate and apply content migrations when the schema changes.
 mdcms migrate [--apply]
 ```
 
-| Flag | Description |
-| --- | --- |
+| Flag      | Description                                                   |
+| --------- | ------------------------------------------------------------- |
 | `--apply` | Execute the generated migration instead of just previewing it |
 
 ### How migrations work
@@ -297,5 +313,6 @@ mdcms migrate [--apply]
 4. **Apply** — With `--apply`, each document is transformed and pushed as a new draft revision. If the document was previously published, a new version is auto-published
 
 <Note>
-  Migrations are forward-only. Always review the preview output before running with `--apply`.
+  Migrations are forward-only. Always review the preview output before running
+  with `--apply`.
 </Note>

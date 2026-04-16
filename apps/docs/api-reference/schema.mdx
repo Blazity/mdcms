@@ -8,7 +8,8 @@ The Schema API provides access to the content type registry. It lets you introsp
 ## List Types
 
 <ParamField method="GET" path="/api/v1/schema">
-  Returns all content types registered in the current project and environment, including resolved field metadata.
+  Returns all content types registered in the current project and environment,
+  including resolved field metadata.
 </ParamField>
 
 **Scope required:** `schema:read`
@@ -39,9 +40,7 @@ curl "https://cms.example.com/api/v1/schema" \
             "nullable": false,
             "default": null,
             "reference": null,
-            "checks": [
-              { "type": "min", "value": 1 }
-            ]
+            "checks": [{ "type": "min", "value": 1 }]
           },
           "bio": {
             "kind": "string",
@@ -57,9 +56,7 @@ curl "https://cms.example.com/api/v1/schema" \
             "nullable": false,
             "default": null,
             "reference": null,
-            "checks": [
-              { "type": "url" }
-            ]
+            "checks": [{ "type": "url" }]
           }
         }
       },
@@ -85,9 +82,7 @@ curl "https://cms.example.com/api/v1/schema" \
             "nullable": false,
             "default": null,
             "reference": null,
-            "checks": [
-              { "type": "regex", "value": "^[a-z0-9-]+$" }
-            ]
+            "checks": [{ "type": "regex", "value": "^[a-z0-9-]+$" }]
           },
           "author": {
             "kind": "reference",
@@ -131,14 +126,14 @@ curl "https://cms.example.com/api/v1/schema" \
 
 Each field in the response includes the following properties:
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `kind` | string | The field's data type: `string`, `number`, `boolean`, `date`, `array`, `object`, `reference`, `enum`. |
-| `required` | boolean | Whether the field must be present in frontmatter. |
-| `nullable` | boolean | Whether the field accepts `null` as a value. |
-| `default` | any | Default value applied when the field is omitted. `null` means no default. |
-| `reference` | object \| null | For reference fields, contains `targetType`. `null` for non-reference fields. |
-| `checks` | array | Validation constraints derived from the Zod schema (e.g., `min`, `max`, `regex`, `url`, `email`). |
+| Property    | Type           | Description                                                                                           |
+| ----------- | -------------- | ----------------------------------------------------------------------------------------------------- |
+| `kind`      | string         | The field's data type: `string`, `number`, `boolean`, `date`, `array`, `object`, `reference`, `enum`. |
+| `required`  | boolean        | Whether the field must be present in frontmatter.                                                     |
+| `nullable`  | boolean        | Whether the field accepts `null` as a value.                                                          |
+| `default`   | any            | Default value applied when the field is omitted. `null` means no default.                             |
+| `reference` | object \| null | For reference fields, contains `targetType`. `null` for non-reference fields.                         |
+| `checks`    | array          | Validation constraints derived from the Zod schema (e.g., `min`, `max`, `regex`, `url`, `email`).     |
 
 ---
 
@@ -191,9 +186,7 @@ curl "https://cms.example.com/api/v1/schema/BlogPost" \
         "nullable": false,
         "default": null,
         "reference": null,
-        "checks": [
-          { "type": "regex", "value": "^[a-z0-9-]+$" }
-        ]
+        "checks": [{ "type": "regex", "value": "^[a-z0-9-]+$" }]
       },
       "author": {
         "kind": "reference",
@@ -233,8 +226,8 @@ curl "https://cms.example.com/api/v1/schema/BlogPost" \
 
 **Error cases:**
 
-| Error Code | Cause |
-|------------|-------|
+| Error Code         | Cause                                                          |
+| ------------------ | -------------------------------------------------------------- |
 | `SCHEMA_NOT_FOUND` | The requested type name does not exist in the schema registry. |
 
 ---
@@ -242,7 +235,9 @@ curl "https://cms.example.com/api/v1/schema/BlogPost" \
 ## Sync Schema
 
 <ParamField method="PUT" path="/api/v1/schema/sync">
-  Push the current schema definition to the server. This is the endpoint called by `mdcms schema sync`. The operation is idempotent -- syncing the same schema twice produces no changes.
+  Push the current schema definition to the server. This is the endpoint called
+  by `mdcms schema sync`. The operation is idempotent -- syncing the same schema
+  twice produces no changes.
 </ParamField>
 
 **Scope required:** `schema:write`
@@ -250,15 +245,19 @@ curl "https://cms.example.com/api/v1/schema/BlogPost" \
 ### Request Body
 
 <ParamField body="rawConfigSnapshot" type="object" required>
-  The raw configuration object from `mdcms.config.ts`, serialized as JSON. This is stored for audit and debugging purposes.
+  The raw configuration object from `mdcms.config.ts`, serialized as JSON. This
+  is stored for audit and debugging purposes.
 </ParamField>
 
 <ParamField body="resolvedSchema" type="object" required>
-  The fully resolved schema with all field metadata, environment overlays applied, and references validated. This is what the server uses for content validation.
+  The fully resolved schema with all field metadata, environment overlays
+  applied, and references validated. This is what the server uses for content
+  validation.
 </ParamField>
 
 <ParamField body="schemaHash" type="string" required>
-  A deterministic hash of the resolved schema. Used by content write endpoints to verify client-server schema consistency.
+  A deterministic hash of the resolved schema. Used by content write endpoints
+  to verify client-server schema consistency.
 </ParamField>
 
 **Example request:**
@@ -319,9 +318,13 @@ curl -X PUT "https://cms.example.com/api/v1/schema/sync" \
 ```
 
 <Note>
-  In practice, you should never call this endpoint directly. Use `mdcms schema sync` from the CLI, which reads your `mdcms.config.ts`, resolves the schema, computes the hash, and sends the request.
+  In practice, you should never call this endpoint directly. Use `mdcms schema
+  sync` from the CLI, which reads your `mdcms.config.ts`, resolves the schema,
+  computes the hash, and sends the request.
 </Note>
 
 <Warning>
-  Schema sync does not perform destructive migrations. If you remove a field from the schema, existing documents that contain that field are not modified. The field simply stops being validated and stops appearing in Studio forms.
+  Schema sync does not perform destructive migrations. If you remove a field
+  from the schema, existing documents that contain that field are not modified.
+  The field simply stops being validated and stops appearing in Studio forms.
 </Warning>

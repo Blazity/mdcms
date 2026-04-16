@@ -43,12 +43,12 @@ const posts = await cms.list("BlogPost", {
 
 Creates an SDK client instance.
 
-| Option | Required | Description |
-| --- | --- | --- |
-| `serverUrl` | Yes | MDCMS server URL |
-| `apiKey` | Yes | API key for authentication |
-| `project` | Yes | Default project name |
-| `environment` | Yes | Default environment name |
+| Option        | Required | Description                |
+| ------------- | -------- | -------------------------- |
+| `serverUrl`   | Yes      | MDCMS server URL           |
+| `apiKey`      | Yes      | API key for authentication |
+| `project`     | Yes      | Default project name       |
+| `environment` | Yes      | Default environment name   |
 
 ### `client.get(type, options)`
 

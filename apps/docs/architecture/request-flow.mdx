@@ -39,16 +39,16 @@ sequenceDiagram
     Envelope->>Client: Standard JSON response
 ```
 
-| Stage | Responsibility |
-| --- | --- |
-| **1. CORS** | Validates the `Origin` header against `MDCMS_STUDIO_ALLOWED_ORIGINS`. Handles `OPTIONS` preflight requests for Studio browser routes. Rejects disallowed origins with `403 FORBIDDEN_ORIGIN`. |
-| **2. Request Logging** | Captures request metadata (method, URL, timing) for observability. |
-| **3. CSRF** | For cookie-authenticated mutations, verifies the `X-MDCMS-CSRF-Token` header matches the `mdcms_csrf` cookie. API key requests bypass CSRF since they use `Authorization` headers. |
-| **4. Authentication** | Identifies the calling principal -- either an API key (via `Authorization: Bearer mdcms_key_...`) or a session (via cookie). |
-| **5. Target Routing** | Validates that scoped routes include the required `X-MDCMS-Project` and/or `X-MDCMS-Environment` headers. Returns `400` if headers are missing. |
-| **6. Authorization** | Checks the authenticated principal's permissions against the requirements of the target route (scope, role, resource path). |
-| **7. Route Handler** | Executes the business logic (content CRUD, schema sync, media upload, etc.). |
-| **8. Response Envelope** | Wraps the result in a standard JSON response format with appropriate status codes and CORS headers. |
+| Stage                    | Responsibility                                                                                                                                                                                |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1. CORS**              | Validates the `Origin` header against `MDCMS_STUDIO_ALLOWED_ORIGINS`. Handles `OPTIONS` preflight requests for Studio browser routes. Rejects disallowed origins with `403 FORBIDDEN_ORIGIN`. |
+| **2. Request Logging**   | Captures request metadata (method, URL, timing) for observability.                                                                                                                            |
+| **3. CSRF**              | For cookie-authenticated mutations, verifies the `X-MDCMS-CSRF-Token` header matches the `mdcms_csrf` cookie. API key requests bypass CSRF since they use `Authorization` headers.            |
+| **4. Authentication**    | Identifies the calling principal -- either an API key (via `Authorization: Bearer mdcms_key_...`) or a session (via cookie).                                                                  |
+| **5. Target Routing**    | Validates that scoped routes include the required `X-MDCMS-Project` and/or `X-MDCMS-Environment` headers. Returns `400` if headers are missing.                                               |
+| **6. Authorization**     | Checks the authenticated principal's permissions against the requirements of the target route (scope, role, resource path).                                                                   |
+| **7. Route Handler**     | Executes the business logic (content CRUD, schema sync, media upload, etc.).                                                                                                                  |
+| **8. Response Envelope** | Wraps the result in a standard JSON response format with appropriate status codes and CORS headers.                                                                                           |
 
 ## Authentication Flows
 
@@ -84,13 +84,18 @@ The CLI authenticates via a device-authorization-like flow:
 
 <Steps>
   <Step title="Challenge creation">
-    The CLI creates a login challenge with a 10-minute TTL, specifying the target project, environment, redirect URI, and requested scopes.
+    The CLI creates a login challenge with a 10-minute TTL, specifying the
+    target project, environment, redirect URI, and requested scopes.
   </Step>
   <Step title="Browser authorization">
-    The user opens a browser URL, authenticates via session (password/OIDC/SAML), and authorizes the CLI challenge. The challenge status transitions from `pending` to `authorized`.
+    The user opens a browser URL, authenticates via session
+    (password/OIDC/SAML), and authorizes the CLI challenge. The challenge status
+    transitions from `pending` to `authorized`.
   </Step>
   <Step title="Code exchange">
-    The CLI polls for the authorization code, exchanges it for a scoped API key, and stores the credentials locally. The challenge status transitions from `authorized` to `exchanged`.
+    The CLI polls for the authorization code, exchanges it for a scoped API key,
+    and stores the credentials locally. The challenge status transitions from
+    `authorized` to `exchanged`.
   </Step>
 </Steps>
 
@@ -104,67 +109,68 @@ MDCMS implements role-based access control with hierarchical scoping.
 
 Roles form an ordered hierarchy. Higher roles inherit all capabilities of lower roles.
 
-| Role | Level | Scope Restriction |
-| --- | --- | --- |
-| `viewer` | 0 | Global, project, or folder prefix |
-| `editor` | 1 | Global, project, or folder prefix |
-| `admin` | 2 | Global only |
-| `owner` | 3 | Global only |
+| Role     | Level | Scope Restriction                 |
+| -------- | ----- | --------------------------------- |
+| `viewer` | 0     | Global, project, or folder prefix |
+| `editor` | 1     | Global, project, or folder prefix |
+| `admin`  | 2     | Global only                       |
+| `owner`  | 3     | Global only                       |
 
 <Note>
-`admin` and `owner` roles are restricted to global scope by a database check constraint. They cannot be scoped to a specific project or folder prefix.
+  `admin` and `owner` roles are restricted to global scope by a database check
+  constraint. They cannot be scoped to a specific project or folder prefix.
 </Note>
 
 ### Scopes
 
 Each RBAC grant is bound to a scope that determines where the role applies:
 
-| Scope Kind | Fields Required | Meaning |
-| --- | --- | --- |
-| `global` | None | Applies to all projects and environments. |
-| `project` | `project` | Applies to all environments within a specific project. |
+| Scope Kind      | Fields Required                        | Meaning                                                                                                      |
+| --------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `global`        | None                                   | Applies to all projects and environments.                                                                    |
+| `project`       | `project`                              | Applies to all environments within a specific project.                                                       |
 | `folder_prefix` | `project`, `environment`, `pathPrefix` | Applies only to documents whose path starts with the given prefix within a specific project and environment. |
 
 ### Role Capability Matrix
 
-| Capability | `viewer` | `editor` | `admin` | `owner` |
-| --- | --- | --- | --- | --- |
-| `content:read` | Yes | Yes | Yes | Yes |
-| `content:read:draft` | -- | Yes | Yes | Yes |
-| `content:write` | -- | Yes | Yes | Yes |
-| `content:publish` | -- | Yes | Yes | Yes |
-| `content:unpublish` | -- | Yes | Yes | Yes |
-| `content:delete` | -- | Yes | Yes | Yes |
-| `schema:read` | Yes | Yes | Yes | Yes |
-| `schema:write` | -- | -- | Yes | Yes |
-| `projects:read` | Yes | Yes | Yes | Yes |
-| `projects:write` | -- | -- | Yes | Yes |
-| `user:manage` | -- | -- | Yes | Yes |
-| `settings:manage` | -- | -- | Yes | Yes |
+| Capability           | `viewer` | `editor` | `admin` | `owner` |
+| -------------------- | -------- | -------- | ------- | ------- |
+| `content:read`       | Yes      | Yes      | Yes     | Yes     |
+| `content:read:draft` | --       | Yes      | Yes     | Yes     |
+| `content:write`      | --       | Yes      | Yes     | Yes     |
+| `content:publish`    | --       | Yes      | Yes     | Yes     |
+| `content:unpublish`  | --       | Yes      | Yes     | Yes     |
+| `content:delete`     | --       | Yes      | Yes     | Yes     |
+| `schema:read`        | Yes      | Yes      | Yes     | Yes     |
+| `schema:write`       | --       | --       | Yes     | Yes     |
+| `projects:read`      | Yes      | Yes      | Yes     | Yes     |
+| `projects:write`     | --       | --       | Yes     | Yes     |
+| `user:manage`        | --       | --       | Yes     | Yes     |
+| `settings:manage`    | --       | --       | Yes     | Yes     |
 
 ## API Key Scopes
 
 API keys use a fine-grained scope model independent of RBAC roles. Each key declares which operations it is permitted to perform.
 
-| Scope | Description |
-| --- | --- |
-| `content:read` | Read published content documents. |
-| `content:read:draft` | Read draft (unpublished) content documents. |
-| `content:write` | Create and update content documents. |
-| `content:write:draft` | Legacy scope for draft writes (aliases `content:write`). |
-| `content:publish` | Publish documents (create immutable version snapshots). |
-| `content:delete` | Soft-delete and restore content documents. |
-| `schema:read` | Read schema registry entries and sync state. |
-| `schema:write` | Sync schema changes to the server. |
-| `media:upload` | Upload media files to S3 storage. |
-| `media:delete` | Delete media files. |
-| `webhooks:read` | List and inspect webhook configurations. |
-| `webhooks:write` | Create, update, and delete webhook configurations. |
-| `environments:clone` | Clone content between environments. |
-| `environments:promote` | Promote content from one environment to another. |
-| `migrations:run` | Execute content migrations. |
-| `projects:read` | Read project metadata. |
-| `projects:write` | Update project settings. |
+| Scope                  | Description                                              |
+| ---------------------- | -------------------------------------------------------- |
+| `content:read`         | Read published content documents.                        |
+| `content:read:draft`   | Read draft (unpublished) content documents.              |
+| `content:write`        | Create and update content documents.                     |
+| `content:write:draft`  | Legacy scope for draft writes (aliases `content:write`). |
+| `content:publish`      | Publish documents (create immutable version snapshots).  |
+| `content:delete`       | Soft-delete and restore content documents.               |
+| `schema:read`          | Read schema registry entries and sync state.             |
+| `schema:write`         | Sync schema changes to the server.                       |
+| `media:upload`         | Upload media files to S3 storage.                        |
+| `media:delete`         | Delete media files.                                      |
+| `webhooks:read`        | List and inspect webhook configurations.                 |
+| `webhooks:write`       | Create, update, and delete webhook configurations.       |
+| `environments:clone`   | Clone content between environments.                      |
+| `environments:promote` | Promote content from one environment to another.         |
+| `migrations:run`       | Execute content migrations.                              |
+| `projects:read`        | Read project metadata.                                   |
+| `projects:write`       | Update project settings.                                 |
 
 <Warning>
 API keys are scoped to specific project/environment pairs via the `contextAllowlist`. A key with `content:read` scope but an allowlist of `[{project: "docs", environment: "production"}]` cannot read content from any other project or environment.
@@ -243,5 +249,7 @@ MDCMS_STUDIO_ALLOWED_ORIGINS=http://localhost:4173,https://admin.example.com
 The server validates that the `Origin` header matches either the request's own origin (same-origin) or one of the configured allowed origins. Requests from disallowed origins receive a `403 FORBIDDEN_ORIGIN` response. Preflight `OPTIONS` requests are handled automatically with the appropriate `access-control-allow-*` headers.
 
 <Tip>
-In local development, the default docker-compose configuration sets `MDCMS_STUDIO_ALLOWED_ORIGINS` to the studio-example dev server origin. Add additional origins when embedding Studio in a separate application.
+  In local development, the default docker-compose configuration sets
+  `MDCMS_STUDIO_ALLOWED_ORIGINS` to the studio-example dev server origin. Add
+  additional origins when embedding Studio in a separate application.
 </Tip>

@@ -12,18 +12,23 @@ Publishing creates an immutable version snapshot that represents the "live" stat
     Make your changes in the document editor. The draft auto-saves as you work.
   </Step>
   <Step title="Click Publish">
-    From the document editor or the content list row actions menu, click **Publish**.
+    From the document editor or the content list row actions menu, click
+    **Publish**.
   </Step>
   <Step title="Add a change summary (optional)">
-    Enter a short description of what changed. This appears in the version history.
+    Enter a short description of what changed. This appears in the version
+    history.
   </Step>
   <Step title="Confirm">
-    The publish request is sent to the server, and a new immutable version is created.
+    The publish request is sent to the server, and a new immutable version is
+    created.
   </Step>
 </Steps>
 
 <Tip>
-  Change summaries are optional but recommended. They make version history useful for teams by providing context about what changed and why, rather than requiring reviewers to read diffs.
+  Change summaries are optional but recommended. They make version history
+  useful for teams by providing context about what changed and why, rather than
+  requiring reviewers to read diffs.
 </Tip>
 
 ## What happens on publish
@@ -70,7 +75,10 @@ Studio includes a diff viewer for comparing any two versions side-by-side. The d
 - **Body** -- Line-by-line diff of the Markdown/MDX content using LCS-based comparison, with lines marked as unchanged, added, removed, or changed
 
 <Note>
-  Version history only tracks published snapshots, not auto-saves. Each auto-save increments the `draftRevision` counter, but these intermediate states are not preserved. Publish whenever you want to create a recoverable checkpoint.
+  Version history only tracks published snapshots, not auto-saves. Each
+  auto-save increments the `draftRevision` counter, but these intermediate
+  states are not preserved. Publish whenever you want to create a recoverable
+  checkpoint.
 </Note>
 
 ## Restoring a version
@@ -81,11 +89,10 @@ You can restore any previous version to make it the current working draft:
   <Step title="Open version history">
     Navigate to the document editor and open the version history in the sidebar.
   </Step>
-  <Step title="Select a version">
-    Find the version you want to restore.
-  </Step>
+  <Step title="Select a version">Find the version you want to restore.</Step>
   <Step title="Restore">
-    Click **Restore**. The version's snapshot (path, frontmatter, body) becomes the new draft content.
+    Click **Restore**. The version's snapshot (path, frontmatter, body) becomes
+    the new draft content.
   </Step>
 </Steps>
 
@@ -106,7 +113,8 @@ The trash page provides:
 When you restore a deleted document, it returns as a draft. If a document already exists at the same path and locale, the restore will fail with a `CONTENT_PATH_CONFLICT` error -- you need to rename or delete the conflicting document first.
 
 <Warning>
-  Restoring a deleted document requires the `content:write` capability. The trash page itself requires read access to deleted content.
+  Restoring a deleted document requires the `content:write` capability. The
+  trash page itself requires read access to deleted content.
 </Warning>
 
 ## Duplicating a document
