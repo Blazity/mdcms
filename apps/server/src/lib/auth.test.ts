@@ -1953,7 +1953,7 @@ testWithDatabase(
 );
 
 testWithDatabase(
-  "auth login cookie uses None policy and secure-by-default with local override",
+  "auth login cookie uses SameSite=None+Secure by default and SameSite=Lax for insecure override",
   async () => {
     const secureDefaultEmail = uniqueEmail();
     const insecureOverrideEmail = uniqueEmail();
@@ -1996,7 +1996,7 @@ testWithDatabase(
       });
 
       assert.equal(insecureLogin.setCookie.includes("HttpOnly"), true);
-      assert.equal(insecureLogin.setCookie.includes("SameSite=None"), true);
+      assert.equal(insecureLogin.setCookie.includes("SameSite=Lax"), true);
       assert.equal(insecureLogin.setCookie.includes("Path=/"), true);
       assert.equal(insecureLogin.setCookie.includes("Secure"), false);
     } finally {
@@ -4327,10 +4327,7 @@ testWithDatabase(
           ?.includes("text/html"),
         true,
       );
-      assert.equal(
-        lockedAuthorizeHtml.includes("Too many attempts"),
-        true,
-      );
+      assert.equal(lockedAuthorizeHtml.includes("Too many attempts"), true);
       assert.equal(lockedAuthorizeHtml.includes("<form"), true);
       assert.equal(lockedAuthorizeResponse.headers.get("retry-after"), "1");
 
