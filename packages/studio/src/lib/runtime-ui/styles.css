@@ -288,7 +288,7 @@
 
   .mdcms-studio-runtime .tiptap p {
     margin-top: 0;
-    margin-bottom: 0.75em;
+    margin-bottom: 0.5em;
   }
 
   .mdcms-studio-runtime .tiptap > *:first-child {
@@ -304,16 +304,16 @@
     font-size: 2rem;
     line-height: 1.2;
     letter-spacing: -0.02em;
-    margin-top: 1.5em;
-    margin-bottom: 0.5em;
+    margin-top: 0.75em;
+    margin-bottom: 0.25em;
   }
 
   .mdcms-studio-runtime .tiptap h2 {
     font-size: 1.5rem;
     line-height: 1.25;
     letter-spacing: -0.01em;
-    margin-top: 1.25em;
-    margin-bottom: 0.5em;
+    margin-top: 0.75em;
+    margin-bottom: 0.25em;
   }
 
   /* Inline marks */
@@ -346,12 +346,12 @@
   .mdcms-studio-runtime .tiptap ul:not([data-type="taskList"]) {
     list-style-type: disc;
     padding-left: 1.5rem;
-    margin-top: 0.5em;
-    margin-bottom: 0.75em;
+    margin-top: 0.25em;
+    margin-bottom: 0.5em;
   }
 
   .mdcms-studio-runtime .tiptap ul:not([data-type="taskList"]) li {
-    margin-bottom: 0.25em;
+    margin-bottom: 0.125em;
   }
 
   .mdcms-studio-runtime .tiptap ul:not([data-type="taskList"]) li p {
@@ -362,12 +362,12 @@
   .mdcms-studio-runtime .tiptap ol {
     list-style-type: decimal;
     padding-left: 1.5rem;
-    margin-top: 0.5em;
-    margin-bottom: 0.75em;
+    margin-top: 0.25em;
+    margin-bottom: 0.5em;
   }
 
   .mdcms-studio-runtime .tiptap ol li {
-    margin-bottom: 0.25em;
+    margin-bottom: 0.125em;
   }
 
   .mdcms-studio-runtime .tiptap ol li p {
@@ -378,15 +378,15 @@
   .mdcms-studio-runtime .tiptap ul[data-type="taskList"] {
     list-style: none;
     padding-left: 0;
-    margin-top: 0.5em;
-    margin-bottom: 0.75em;
+    margin-top: 0.25em;
+    margin-bottom: 0.5em;
   }
 
   .mdcms-studio-runtime .tiptap ul[data-type="taskList"] li {
     display: flex;
     align-items: flex-start;
     gap: 0.5rem;
-    margin-bottom: 0.25em;
+    margin-bottom: 0.125em;
   }
 
   .mdcms-studio-runtime .tiptap ul[data-type="taskList"] li > label {
@@ -421,8 +421,8 @@
     border-left: 3px solid var(--border);
     padding-left: 1rem;
     margin-left: 0;
-    margin-top: 0.75em;
-    margin-bottom: 0.75em;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
     color: var(--foreground-muted);
   }
 
@@ -434,8 +434,8 @@
     font-family: var(--font-mono);
     font-size: 0.8125rem;
     line-height: 1.6;
-    margin-top: 0.75em;
-    margin-bottom: 0.75em;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
     border: 1px solid var(--border);
   }
 
@@ -451,16 +451,16 @@
   .mdcms-studio-runtime .tiptap hr {
     border: none;
     border-top: 1px solid var(--divider);
-    margin-top: 1.5em;
-    margin-bottom: 1.5em;
+    margin-top: 1em;
+    margin-bottom: 1em;
   }
 
   /* Image */
   .mdcms-studio-runtime .tiptap img {
     max-width: 100%;
     height: auto;
-    margin-top: 0.75em;
-    margin-bottom: 0.75em;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
   }
 
   .mdcms-studio-runtime :is(button, input, textarea, select) {
