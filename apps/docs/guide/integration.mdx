@@ -68,10 +68,12 @@ const BlogPost = defineType("BlogPost", {
 });
 
 export default defineConfig({
-  // These four fields are used by Studio at runtime:
+  // Core runtime fields used by StudioEmbedConfig:
   project: "my-site",
   environment: "production",
   serverUrl: "https://cms.example.com",
+  // Optional — locales are not part of StudioEmbedConfig but are
+  // used by Studio when available on the full MdcmsConfig:
   locales: {
     default: "en",
     supported: ["en", "fr"],
