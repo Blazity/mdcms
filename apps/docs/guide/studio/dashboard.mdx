@@ -5,6 +5,12 @@ description: "Studio dashboard overview, navigation, and embedding setup"
 
 ## Embedding Studio
 
+<Tip>
+  For a complete walkthrough of integrating MDCMS into your application —
+  including MDX components, authentication, and production setup — see the
+  [Integration Guide](/guide/integration).
+</Tip>
+
 MDCMS Studio is an embeddable React component from the `@mdcms/studio` package. You mount it inside a Next.js catch-all route so it owns all `/admin/*` paths.
 
 Studio is a client component. The recommended setup splits server and client concerns:
@@ -34,18 +40,20 @@ export function AdminStudioClient({ config }: { config: MdcmsConfig }) {
 `createStudioEmbedConfig` strips client-only MDX loader callbacks so the config is safe to pass through the server-to-client boundary. If your config includes MDX component registrations with runtime loaders (`load`, `loadPropsEditor`), keep everything in the client component instead.
 
 <Note>
-  `basePath` is required because the remote runtime cannot infer its subtree root from deep links. Set it to whatever path prefix your catch-all route uses.
+  `basePath` is required because the remote runtime cannot infer its subtree
+  root from deep links. Set it to whatever path prefix your catch-all route
+  uses.
 </Note>
 
 ### Studio props
 
-| Prop | Type | Description |
-| --- | --- | --- |
-| `config` | `MdcmsConfig` | Project, environment, server URL, and optional component registrations |
-| `basePath` | `string` | The URL prefix where Studio is mounted (e.g., `/admin`) |
-| `auth` | `{ mode: "cookie" } \| { mode: "token"; token: string }` | Authentication strategy (defaults to cookie) |
-| `hostBridge` | `HostBridgeV1` | Optional bridge for MDX preview rendering from the host app |
-| `fetcher` | `typeof fetch` | Custom fetch implementation |
+| Prop         | Type                                                     | Description                                                            |
+| ------------ | -------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `config`     | `MdcmsConfig`                                            | Project, environment, server URL, and optional component registrations |
+| `basePath`   | `string`                                                 | The URL prefix where Studio is mounted (e.g., `/admin`)                |
+| `auth`       | `{ mode: "cookie" } \| { mode: "token"; token: string }` | Authentication strategy (defaults to cookie)                           |
+| `hostBridge` | `HostBridgeV1`                                           | Optional bridge for MDX preview rendering from the host app            |
+| `fetcher`    | `typeof fetch`                                           | Custom fetch implementation                                            |
 
 ## Dashboard features
 
@@ -82,18 +90,18 @@ If you have create permissions, a **New Document** button appears above the cont
 
 Studio uses a fixed sidebar for navigation. The sidebar contains these items:
 
-| Route | Label | Visibility |
-| --- | --- | --- |
-| `/admin` | Dashboard | Always |
-| `/admin/content` | Content | Always |
-| `/admin/environments` | Environments | Admin/owner only |
-| `/admin/media` | Media | Always |
-| `/admin/schema` | Schema | Users with schema read permission |
-| `/admin/users` | Users | Users with user management permission |
-| `/admin/settings` | Settings | Users with settings management permission |
-| `/admin/workflows` | Workflows | Always |
-| `/admin/api` | API | Always |
-| `/admin/trash` | Trash | Always |
+| Route                 | Label        | Visibility                                |
+| --------------------- | ------------ | ----------------------------------------- |
+| `/admin`              | Dashboard    | Always                                    |
+| `/admin/content`      | Content      | Always                                    |
+| `/admin/environments` | Environments | Admin/owner only                          |
+| `/admin/media`        | Media        | Always                                    |
+| `/admin/schema`       | Schema       | Users with schema read permission         |
+| `/admin/users`        | Users        | Users with user management permission     |
+| `/admin/settings`     | Settings     | Users with settings management permission |
+| `/admin/workflows`    | Workflows    | Always                                    |
+| `/admin/api`          | API          | Always                                    |
+| `/admin/trash`        | Trash        | Always                                    |
 
 The sidebar is collapsible. In collapsed mode, only icons are shown with tooltips on hover.
 
@@ -108,7 +116,11 @@ Fields that exist only in certain environments (due to schema overlays defined i
 ## Bootstrap
 
 <Note>
-  On load, Studio fetches a bootstrap manifest from `GET /api/v1/studio/bootstrap` on the MDCMS server. This manifest identifies the active runtime build, its integrity hash, and compatibility bounds. If the server is unreachable, Studio shows an error screen with the server URL, error details, and a **Retry** button.
+  On load, Studio fetches a bootstrap manifest from `GET
+  /api/v1/studio/bootstrap` on the MDCMS server. This manifest identifies the
+  active runtime build, its integrity hash, and compatibility bounds. If the
+  server is unreachable, Studio shows an error screen with the server URL, error
+  details, and a **Retry** button.
 </Note>
 
 The bootstrap process validates:
@@ -132,6 +144,7 @@ Studio supports two authentication modes, set via the `auth` prop:
     // or explicitly:
     <Studio config={config} basePath="/admin" auth={{ mode: "cookie" }} />
     ```
+
   </Tab>
   <Tab title="Token">
     For headless or non-browser contexts, pass a Bearer API key directly. Studio sends it as an `Authorization: Bearer <token>` header on every request.
@@ -145,5 +158,6 @@ Studio supports two authentication modes, set via the `auth` prop:
     ```
 
     API keys are created in **Settings > API Keys** and use the `mdcms_key_` prefix.
+
   </Tab>
 </Tabs>
