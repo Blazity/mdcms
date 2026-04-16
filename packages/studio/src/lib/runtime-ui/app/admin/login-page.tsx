@@ -79,14 +79,12 @@ export default function LoginPage() {
     const api = createLoginApi({ serverUrl: mountInfo.apiBaseUrl });
     const result = await api.login(email, password);
 
-    setSubmitting(false);
-
     switch (result.outcome) {
       case "success":
         window.location.href = basePath
           ? `${basePath}${stripAdminPrefix(returnTo)}`
           : returnTo;
-        break;
+        return;
       case "invalid_credentials":
         setError("Invalid email or password.");
         break;
@@ -99,6 +97,8 @@ export default function LoginPage() {
         setError(result.message);
         break;
     }
+
+    setSubmitting(false);
   };
 
   const handleSsoClick = (providerId: string) => {
