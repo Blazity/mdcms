@@ -291,13 +291,15 @@ export function MdxComponentNodeView(
         readOnly={props.readOnly}
         forbidden={props.forbidden}
       >
-        <div ref={contentContainerRef}>
-          <NodeViewContent
-            as="div"
-            data-placeholder="Type content here..."
-            className="prose prose-sm max-w-none min-h-[3rem] rounded-md bg-background px-3 py-3 text-sm before:pointer-events-none before:float-left before:h-0 before:text-sm before:text-foreground-muted/60 before:content-[attr(data-placeholder)] has-[>:first-child:not(.is-empty)]:before:content-none"
-          />
-        </div>
+        {isVoid ? null : (
+          <div ref={contentContainerRef}>
+            <NodeViewContent
+              as="div"
+              data-placeholder="Type content here..."
+              className="prose prose-sm max-w-none min-h-[3rem] rounded-md bg-background px-3 py-3 text-sm before:pointer-events-none before:float-left before:h-0 before:text-sm before:text-foreground-muted/60 before:content-[attr(data-placeholder)] has-[>:first-child:not(.is-empty)]:before:content-none"
+            />
+          </div>
+        )}
       </MdxComponentNodeFrame>
     </NodeViewWrapper>
   );

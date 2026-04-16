@@ -408,7 +408,7 @@ function renderAutoFormFieldControl(input: {
       return (
         <input
           {...commonProps}
-          key={`${controlId}:${String(input.value ?? "")}`}
+          key={controlId}
           type={getAutoFormInputType(input.field.control)}
           defaultValue={
             typeof input.value === "string"
@@ -429,7 +429,7 @@ function renderAutoFormFieldControl(input: {
       return (
         <textarea
           {...commonProps}
-          key={`${controlId}:${String(input.value ?? "")}`}
+          key={controlId}
           rows={4}
           defaultValue={
             typeof input.value === "string"
@@ -450,7 +450,7 @@ function renderAutoFormFieldControl(input: {
       return (
         <input
           {...commonProps}
-          key={`${controlId}:${String(input.value ?? "")}`}
+          key={controlId}
           type="number"
           defaultValue={
             typeof input.value === "number" ? String(input.value) : ""
@@ -476,7 +476,7 @@ function renderAutoFormFieldControl(input: {
         <div className="space-y-1">
           <input
             {...commonProps}
-            key={`${controlId}:${String(input.value ?? input.field.min)}`}
+            key={controlId}
             type="range"
             min={input.field.min}
             max={input.field.max}
@@ -501,7 +501,7 @@ function renderAutoFormFieldControl(input: {
         <label className="flex items-center gap-2 text-sm text-foreground">
           <input
             id={id}
-            key={`${controlId}:${String(Boolean(input.value))}`}
+            key={controlId}
             type="checkbox"
             disabled={input.readOnly}
             defaultChecked={Boolean(input.value)}
@@ -524,7 +524,7 @@ function renderAutoFormFieldControl(input: {
       return (
         <select
           {...commonProps}
-          key={`${controlId}:${serializeAutoFormSelectValue(input.value)}`}
+          key={controlId}
           defaultValue={serializeAutoFormSelectValue(input.value)}
           onChange={(event) => {
             const nextValue = event.currentTarget.value;
@@ -557,7 +557,7 @@ function renderAutoFormFieldControl(input: {
       return (
         <textarea
           {...commonProps}
-          key={`${controlId}:${formatAutoFormListValue(input.value)}`}
+          key={controlId}
           rows={4}
           defaultValue={formatAutoFormListValue(input.value)}
           onChange={(event) => {
@@ -573,7 +573,7 @@ function renderAutoFormFieldControl(input: {
       return (
         <textarea
           {...commonProps}
-          key={`${controlId}:${formatAutoFormListValue(input.value)}`}
+          key={controlId}
           rows={4}
           defaultValue={formatAutoFormListValue(input.value)}
           onChange={(event) => {
@@ -602,7 +602,7 @@ function renderAutoFormFieldControl(input: {
       return (
         <textarea
           {...commonProps}
-          key={`${controlId}:${formatAutoFormJsonValue(input.value)}`}
+          key={controlId}
           rows={6}
           defaultValue={formatAutoFormJsonValue(input.value)}
           onChange={(event) => {
