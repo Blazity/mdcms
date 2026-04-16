@@ -1,0 +1,52 @@
+---
+title: "Agent Skills"
+description: "Install the MDCMS Skills Pack so your AI coding agent can set up MDCMS end-to-end"
+---
+
+The **MDCMS Skills Pack** is an installable bundle of AI-agent skills that walks a coding agent through adding MDCMS to any React-based project — from standing up a self-hosted backend to day-to-day `pull`/`push` automation.
+
+If you use Claude Code, Cursor, Gemini CLI, Codex, Copilot, OpenCode, or any of the 40+ agents supported by [skills.sh](https://skills.sh), this is the fastest way to get an agent to do the setup for you.
+
+## Install
+
+```bash
+# Install all nine skills into the current project
+npx skills add Blazity/mdcms
+
+# Install globally so every project sees them
+npx skills add Blazity/mdcms -g
+
+# Non-interactive (CI / scripted install)
+npx skills add Blazity/mdcms -y
+```
+
+Installing the whole pack is recommended — the master skill delegates to the focused skills by slug.
+
+See the [skills.sh CLI reference](https://github.com/vercel-labs/skills) for `--copy`, `--skill`, `--agent`, and update/remove commands.
+
+## What's in the pack
+
+| Skill                         | Purpose                                                                                        |
+| ----------------------------- | ---------------------------------------------------------------------------------------------- |
+| `mdcms-setup`                 | **Master orchestrator.** Detects repo state and routes to the right focused skill. Start here. |
+| `mdcms-self-host-setup`       | Stand up the MDCMS backend via Docker Compose. Env, first boot, admin bootstrap.               |
+| `mdcms-brownfield-init`       | Import an existing Markdown/MDX repo into MDCMS via `mdcms init --non-interactive`.            |
+| `mdcms-greenfield-init`       | Bootstrap MDCMS in an empty repo with a scaffolded starter.                                    |
+| `mdcms-schema-refine`         | Add/edit content types, fields, references; `mdcms schema sync`.                               |
+| `mdcms-studio-embed`          | Mount `<Studio />` at a catch-all route inside the host app.                                   |
+| `mdcms-sdk-integration`       | Fetch content with `@mdcms/sdk`; drafts vs published; SSR.                                     |
+| `mdcms-mdx-components`        | Register custom MDX components so Studio preview and host SSR match.                           |
+| `mdcms-content-sync-workflow` | Day-to-day `pull`/`push`; key rotation; CI automation.                                         |
+
+## How to use it
+
+Once installed, start any conversation with your agent with an intent like "set up MDCMS in this project" or "add MDCMS here." The master skill (`mdcms-setup`) activates, detects whether you have a running server, existing content, and a host app, then delegates to each focused skill at the right phase.
+
+The full flow diagram and per-skill details live in the [pack's README on GitHub](https://github.com/Blazity/mdcms/blob/main/skills/README.md).
+
+## When to use skills vs. copy-paste prompts
+
+- **Skills pack** (this page) — recommended when you use one of the agents supported by skills.sh. Skills stay installed, are versioned, and delegate across setup phases.
+- **[Copy-paste prompts](/agent-instructions)** — use when you want a one-shot paste into an agent window, don't want to install anything, or your agent isn't supported by skills.sh.
+
+Both paths target the same CLI contract (`mdcms init --non-interactive` and friends), so you can switch between them.
