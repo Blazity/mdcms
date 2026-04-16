@@ -258,7 +258,7 @@ This ensures schemas only change through deliberate, reviewable actions.
 - One file per `(project, environment)` tuple.
 - `.gitignore`d — local to each developer's machine, not a shared artifact.
 - The file is written by `cms schema sync` and by `cms push` when its bundled preflight performs a sync (interactive prompt acceptance or `--sync-schema` flag in non-interactive mode, see SPEC-008 and ADR-006). Both paths use the same `performSchemaSync` helper with identical atomic-write semantics, so file invariants are preserved regardless of the entry point.
-- Write clients (`cms push`, future SDK write methods) read the `schemaHash` value from this file and send it as the `x-mdcms-schema-hash` header. If the file does not exist, the write command fails immediately with an actionable error directing the developer to run `cms schema sync`.
+- Write clients (`cms push`, future SDK write methods) read the `schemaHash` value from this file and send it as the `x-mdcms-schema-hash` header. If the file does not exist, `cms push` applies the same interactive/non-interactive sync flow used for schema drift (see SPEC-008): in TTY mode it prompts to sync; in non-interactive mode it fails closed unless `--sync-schema` is supplied. A successful sync creates the file before any content writes proceed.
 
 ### Reference Field Identity
 
