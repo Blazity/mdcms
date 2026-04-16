@@ -28,10 +28,10 @@ test("MdxComponentNodeFrame renders wrapper component chrome with nested slot", 
   assert.match(markup, /data-mdcms-mdx-component-kind="wrapper"/);
   assert.match(markup, /data-mdcms-mdx-preview-state="ready"/);
   assert.match(markup, /data-test-preview="ready"/);
-  assert.match(markup, />Callout</);
-  assert.match(markup, /type=&quot;warning&quot;/);
+  assert.match(markup, /&lt;Callout \/&gt;/);
   assert.match(markup, /data-test-slot="children"/);
   assert.doesNotMatch(markup, />Wrapper</);
+  assert.doesNotMatch(markup, /type=&quot;warning&quot;/);
 });
 
 test("MdxComponentNodeFrame renders void component chrome without child slot", () => {
@@ -47,8 +47,9 @@ test("MdxComponentNodeFrame renders void component chrome without child slot", (
   assert.match(markup, /data-mdcms-mdx-component-frame="HeroBanner"/);
   assert.match(markup, /data-mdcms-mdx-component-kind="void"/);
   assert.match(markup, /data-mdcms-mdx-preview-state="empty"/);
-  assert.match(markup, /Local preview unavailable/);
-  assert.match(markup, /Self-closing component/);
+  assert.match(markup, /&lt;HeroBanner \/&gt;/);
+  assert.doesNotMatch(markup, /Local preview unavailable/);
+  assert.doesNotMatch(markup, /Self-closing component/);
   assert.doesNotMatch(markup, /data-test-slot="children"/);
   assert.doesNotMatch(markup, />Void</);
 });
@@ -75,7 +76,7 @@ test("createMdxComponentPreviewProps injects wrapper children into preview props
   assert.match(markup, /<strong>Body<\/strong>/);
 });
 
-test("MdxComponentNodeFrame renders 'Inner content' guidance for wrapper components", () => {
+test("MdxComponentNodeFrame renders content-label data attribute for wrapper components", () => {
   const markup = renderToStaticMarkup(
     createElement(
       MdxComponentNodeFrame,
@@ -90,8 +91,8 @@ test("MdxComponentNodeFrame renders 'Inner content' guidance for wrapper compone
   );
 
   assert.match(markup, /data-mdcms-mdx-content-label="Callout"/);
-  assert.match(markup, />Inner content</);
-  assert.match(markup, /Edit nested markdown directly in this block/);
+  assert.doesNotMatch(markup, />Inner content</);
+  assert.doesNotMatch(markup, /Edit nested markdown directly in this block/);
 });
 
 test("MdxComponentNodeFrame does not render content label for void components", () => {
@@ -105,4 +106,63 @@ test("MdxComponentNodeFrame does not render content label for void components", 
   );
 
   assert.doesNotMatch(markup, /data-mdcms-mdx-content-label/);
+});
+
+test("MdxComponentNodeFrame renders action buttons when callbacks are provided", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MdxComponentNodeFrame, {
+      componentName: "Alert",
+      isVoid: true,
+      propsSummary: "",
+      previewState: "empty",
+      onEditProps: () => {},
+      onDelete: () => {},
+    }),
+  );
+
+  assert.match(markup, /aria-label="Edit Alert props"/);
+  assert.match(markup, /aria-label="Delete Alert"/);
+});
+
+test("MdxComponentNodeFrame omits action buttons when callbacks are not provided", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MdxComponentNodeFrame, {
+      componentName: "Alert",
+      isVoid: true,
+      propsSummary: "",
+      previewState: "empty",
+    }),
+  );
+
+  assert.doesNotMatch(markup, /aria-label="Edit Alert props"/);
+  assert.doesNotMatch(markup, /aria-label="Delete Alert"/);
+});
+
+test("MdxComponentNodeFrame applies selected styles when selected", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MdxComponentNodeFrame, {
+      componentName: "Banner",
+      isVoid: true,
+      propsSummary: "",
+      selected: true,
+      previewState: "empty",
+    }),
+  );
+
+  assert.match(markup, /border-l-primary bg-accent-subtle/);
+});
+
+test("MdxComponentNodeFrame applies unselected styles when not selected", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MdxComponentNodeFrame, {
+      componentName: "Banner",
+      isVoid: true,
+      propsSummary: "",
+      selected: false,
+      previewState: "empty",
+    }),
+  );
+
+  assert.match(markup, /border-l-primary\/20/);
+  assert.doesNotMatch(markup, /bg-accent-subtle/);
 });

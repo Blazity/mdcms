@@ -12,7 +12,10 @@ import type { StudioMountContext } from "@mdcms/shared";
 import type { ReactNodeViewProps } from "@tiptap/react";
 import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
 
+import { GripVertical, Settings, Trash2 } from "lucide-react";
+
 import { isMdxExpressionValue } from "../../../mdx-component-extension.js";
+import { cn } from "../../lib/utils.js";
 
 export function formatMdxComponentPropsSummary(
   props: Record<string, unknown> | undefined,
@@ -44,40 +47,88 @@ export function MdxComponentNodeFrame(props: {
   componentName: string;
   isVoid: boolean;
   propsSummary: string;
+  selected?: boolean;
   previewState?: "ready" | "empty" | "error";
   previewSurface?: ReactNode;
   readOnly?: boolean;
   forbidden?: boolean;
+  onEditProps?: () => void;
+  onDelete?: () => void;
   children?: ReactNode;
 }) {
   return (
     <div
       data-mdcms-mdx-component-frame={props.componentName}
       data-mdcms-mdx-component-kind={props.isVoid ? "void" : "wrapper"}
-      className="my-4 rounded-lg border border-dashed border-border bg-background-subtle"
+      className={cn(
+        "group/mdx-block relative my-4 rounded-md border-l-[3px] pl-3 transition-colors duration-150",
+        props.selected
+          ? "border-l-primary bg-accent-subtle"
+          : "border-l-primary/20 hover:border-l-primary/50",
+      )}
     >
-      <div className="border-b border-border px-3 py-2">
-        <div className="space-y-1">
-          <div className="text-sm font-medium text-foreground">
-            {props.componentName}
-          </div>
-          <div className="font-mono text-xs text-foreground-muted">
-            {props.propsSummary}
-          </div>
+      {/* Drag handle */}
+      <div className="absolute -left-7 top-1.5 flex opacity-0 transition-opacity duration-150 group-hover/mdx-block:opacity-100">
+        <span className="cursor-grab rounded p-0.5 text-foreground-muted hover:bg-background-subtle hover:text-foreground">
+          <GripVertical className="h-4 w-4" />
+        </span>
+      </div>
+
+      {/* Chip row */}
+      <div className="flex items-center justify-between py-1.5">
+        <span className="text-mono-label select-none text-foreground-muted">
+          {"<"}{props.componentName}{" />"}
+        </span>
+
+        <div
+          className={cn(
+            "flex items-center gap-1 transition-opacity duration-150",
+            props.selected
+              ? "opacity-100"
+              : "opacity-0 group-hover/mdx-block:opacity-100",
+          )}
+        >
+          {props.forbidden ? (
+            <span className="text-xs text-foreground-muted">
+              Unavailable
+            </span>
+          ) : props.readOnly ? (
+            <span className="text-xs text-foreground-muted">
+              Read-only
+            </span>
+          ) : null}
+          {props.onEditProps ? (
+            <button
+              type="button"
+              onClick={props.onEditProps}
+              aria-label={`Edit ${props.componentName} props`}
+              title="Edit props"
+              className="inline-flex h-6 w-6 items-center justify-center rounded text-foreground-muted hover:bg-background-subtle hover:text-foreground"
+            >
+              <Settings className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+          {props.onDelete ? (
+            <button
+              type="button"
+              onClick={props.onDelete}
+              aria-label={`Delete ${props.componentName}`}
+              title="Delete component"
+              className="inline-flex h-6 w-6 items-center justify-center rounded text-foreground-muted hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
         </div>
       </div>
 
-      <div className="space-y-3 px-3 py-3">
+      {/* Content area */}
+      <div className="pb-3">
+        {/* Preview surface */}
         <div
           data-mdcms-mdx-preview-state={props.previewState ?? "empty"}
-          className="relative min-h-[4.5rem] rounded-md border border-border bg-background px-3 py-3"
         >
           {props.previewSurface}
-          {props.previewState === "empty" ? (
-            <p className="text-xs text-foreground-muted">
-              Local preview unavailable.
-            </p>
-          ) : null}
           {props.previewState === "error" ? (
             <p className="text-xs text-destructive">
               Preview failed to render.
@@ -85,32 +136,15 @@ export function MdxComponentNodeFrame(props: {
           ) : null}
         </div>
 
-        {props.isVoid ? (
-          <p className="text-xs text-foreground-muted">
-            Self-closing component
-          </p>
-        ) : (
-          <div className="space-y-1.5">
-            <p
-              data-mdcms-mdx-content-label={props.componentName}
-              className="text-xs font-medium text-foreground-muted"
-            >
-              Inner content
-            </p>
-            <p className="text-xs text-foreground-muted">
-              Edit nested markdown directly in this block.
-            </p>
+        {/* Wrapper children */}
+        {props.isVoid ? null : (
+          <div
+            data-mdcms-mdx-content-label={props.componentName}
+            className={props.previewState === "ready" ? "mt-2 border-t border-border pt-2" : undefined}
+          >
             {props.children}
           </div>
         )}
-
-        {props.forbidden ? (
-          <p className="text-xs text-foreground-muted">
-            Editing is unavailable.
-          </p>
-        ) : props.readOnly ? (
-          <p className="text-xs text-foreground-muted">Read-only preview.</p>
-        ) : null}
       </div>
     </div>
   );
@@ -224,6 +258,19 @@ export function MdxComponentNodeView(
     serializedPreviewProps,
   ]);
 
+  const handleEditProps = () => {
+    const pos = props.getPos();
+    if (typeof pos === "number") {
+      props.editor.commands.setNodeSelection(pos);
+    }
+  };
+
+  const handleDelete = () => {
+    props.deleteNode();
+  };
+
+  const isEditable = !props.readOnly && !props.forbidden;
+
   return (
     <NodeViewWrapper as="div">
       <MdxComponentNodeFrame
@@ -231,6 +278,9 @@ export function MdxComponentNodeView(
         isVoid={isVoid}
         propsSummary={propsSummary}
         previewState={previewState}
+        selected={props.selected}
+        onEditProps={isEditable ? handleEditProps : undefined}
+        onDelete={isEditable ? handleDelete : undefined}
         previewSurface={
           <div
             ref={previewContainerRef}
@@ -245,7 +295,7 @@ export function MdxComponentNodeView(
           <NodeViewContent
             as="div"
             data-placeholder="Type content here..."
-            className="prose prose-sm max-w-none min-h-[3rem] rounded-md border border-border bg-background px-3 py-3 text-sm before:pointer-events-none before:float-left before:h-0 before:text-sm before:text-foreground-muted/60 before:content-[attr(data-placeholder)] has-[>:first-child:not(.is-empty)]:before:content-none"
+            className="prose prose-sm max-w-none min-h-[3rem] rounded-md bg-background px-3 py-3 text-sm before:pointer-events-none before:float-left before:h-0 before:text-sm before:text-foreground-muted/60 before:content-[attr(data-placeholder)] has-[>:first-child:not(.is-empty)]:before:content-none"
           />
         </div>
       </MdxComponentNodeFrame>
