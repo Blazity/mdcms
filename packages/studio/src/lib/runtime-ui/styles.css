@@ -342,6 +342,12 @@
     text-underline-offset: 2px;
   }
 
+  /* Selection highlight preserved when the editor loses focus */
+  .mdcms-studio-runtime .tiptap .ProseMirror-blur-selection {
+    background-color: color-mix(in srgb, var(--primary) 25%, transparent);
+    border-radius: 2px;
+  }
+
   /* Unordered list */
   .mdcms-studio-runtime .tiptap ul:not([data-type="taskList"]) {
     list-style-type: disc;

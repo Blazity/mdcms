@@ -30,6 +30,8 @@ import {
 import {
   Bold,
   Code,
+  CornerDownLeft,
+  ExternalLink,
   FileCode,
   Highlighter,
   Image as ImageIcon,
@@ -44,6 +46,7 @@ import {
   Redo,
   Strikethrough,
   Table2,
+  Trash2,
   Underline as UnderlineIcon,
   Undo,
 } from "lucide-react";
@@ -74,6 +77,7 @@ import {
   type SlashTriggerCoords,
 } from "./mdx-component-slash.js";
 import { Button } from "../ui/button.js";
+import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover.js";
 import { Separator } from "../ui/separator.js";
 import { cn } from "../../lib/utils.js";
 
@@ -200,6 +204,8 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       useState<MdxComponentSlashTrigger | null>(null);
     const [slashPickerCoords, setSlashPickerCoords] =
       useState<SlashTriggerCoords | null>(null);
+    const [linkPopoverOpen, setLinkPopoverOpen] = useState(false);
+    const [linkInputValue, setLinkInputValue] = useState("");
     const editorWrapperRef = useRef<HTMLDivElement | null>(null);
     const pickerSourceRef = useRef(pickerSource);
     pickerSourceRef.current = pickerSource;
@@ -625,6 +631,15 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           return run(
             () => editor?.chain().focus().setHorizontalRule().run() ?? false,
           );
+        case "link": {
+          if (!editor) return;
+          const existingHref = editor.getAttributes("link").href as
+            | string
+            | undefined;
+          setLinkInputValue(existingHref ?? "");
+          setLinkPopoverOpen(true);
+          return;
+        }
         case "insertComponent":
           setPickerSource((currentSource) =>
             currentSource === "toolbar" ? null : "toolbar",
@@ -663,8 +678,34 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           return isActive("blockquote");
         case "codeBlock":
           return isActive("codeBlock");
+        case "link":
+          return isActive("link");
         default:
           return false;
+      }
+    };
+
+    const submitLink = () => {
+      if (!editor) return;
+      const url = linkInputValue.trim();
+      if (url) {
+        editor.chain().focus().setLink({ href: url }).run();
+      }
+      setLinkPopoverOpen(false);
+      setLinkInputValue("");
+    };
+
+    const removeLink = () => {
+      if (!editor) return;
+      editor.chain().focus().unsetLink().run();
+      setLinkPopoverOpen(false);
+      setLinkInputValue("");
+    };
+
+    const openLink = () => {
+      const url = linkInputValue.trim();
+      if (url) {
+        window.open(url, "_blank", "noopener,noreferrer");
       }
     };
 
@@ -728,18 +769,8 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
                   {groupIndex > 0 ? (
                     <Separator orientation="vertical" className="mr-1 h-6" />
                   ) : null}
-                  {group.items.map((item) => (
-                    <div
-                      key={item.id}
-                      onClick={() => {
-                        if (
-                          item.availability === "enabled" &&
-                          !isEditorReadOnly
-                        ) {
-                          triggerToolbarItem(item.id);
-                        }
-                      }}
-                    >
+                  {group.items.map((item) => {
+                    const toolbarButton = (
                       <ToolbarButton
                         disabled={
                           item.availability !== "enabled" || isEditorReadOnly
@@ -762,8 +793,115 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
                       >
                         {renderToolbarItem(item.id)}
                       </ToolbarButton>
-                    </div>
-                  ))}
+                    );
+
+                    if (item.id === "link") {
+                      return (
+                        <Popover
+                          key={item.id}
+                          open={linkPopoverOpen}
+                          onOpenChange={(open) => {
+                            setLinkPopoverOpen(open);
+                            if (!open) setLinkInputValue("");
+                          }}
+                        >
+                          <PopoverTrigger
+                            asChild
+                            onClick={(e) => {
+                              if (
+                                item.availability === "enabled" &&
+                                !isEditorReadOnly
+                              ) {
+                                e.preventDefault();
+                                triggerToolbarItem(item.id);
+                              }
+                            }}
+                          >
+                            <div>{toolbarButton}</div>
+                          </PopoverTrigger>
+                          <PopoverContent
+                            className="w-auto p-1.5"
+                            side="bottom"
+                            align="start"
+                            onOpenAutoFocus={(e) => e.preventDefault()}
+                          >
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="url"
+                                value={linkInputValue}
+                                onChange={(e) =>
+                                  setLinkInputValue(e.target.value)
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    submitLink();
+                                  }
+                                  if (e.key === "Escape") {
+                                    setLinkPopoverOpen(false);
+                                    setLinkInputValue("");
+                                  }
+                                }}
+                                placeholder="Paste a link..."
+                                className="h-7 w-48 rounded border-none bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
+                              />
+                              <Separator
+                                orientation="vertical"
+                                className="mx-0.5 h-5"
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                title="Apply link"
+                                onClick={submitLink}
+                              >
+                                <CornerDownLeft className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                title="Open link in new tab"
+                                disabled={!linkInputValue.trim()}
+                                onClick={openLink}
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                title="Remove link"
+                                onClick={removeLink}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => {
+                          if (
+                            item.availability === "enabled" &&
+                            !isEditorReadOnly
+                          ) {
+                            triggerToolbarItem(item.id);
+                          }
+                        }}
+                      >
+                        {toolbarButton}
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
             </div>
