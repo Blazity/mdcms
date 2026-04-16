@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useTheme } from "../../adapters/next-themes.js";
 import Link from "../../adapters/next-link.js";
-import { Sun, Moon, ChevronRight, LogOut } from "lucide-react";
+import { Sun, Moon, Monitor, ChevronRight, LogOut, Check } from "lucide-react";
 import { Button } from "../ui/button.js";
 import { Avatar, AvatarFallback } from "../ui/avatar.js";
 import {
@@ -21,12 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select.js";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "../ui/tooltip.js";
+import { TooltipProvider } from "../ui/tooltip.js";
 import { cn } from "../../lib/utils.js";
 import { useStudioSession } from "../../app/admin/session-context.js";
 import { useStudioMountInfo } from "../../app/admin/mount-info-context.js";
@@ -134,6 +129,58 @@ export function BreadcrumbTrail({
   );
 }
 
+type ThemeOption = {
+  value: "system" | "light" | "dark";
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+};
+
+const THEME_OPTIONS: readonly ThemeOption[] = [
+  { value: "system", label: "System", Icon: Monitor },
+  { value: "light", label: "Light", Icon: Sun },
+  { value: "dark", label: "Dark", Icon: Moon },
+] as const;
+
+export function ThemePickerMenu() {
+  const { theme, setTheme } = useTheme();
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-foreground-muted relative"
+          aria-label="Theme"
+          data-testid="mdcms-theme-picker-trigger"
+        >
+          <Sun className="h-5 w-5 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" />
+          <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
+          <span className="sr-only">Theme</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-40">
+        {THEME_OPTIONS.map(({ value, label, Icon }) => {
+          const selected = theme === value;
+          return (
+            <DropdownMenuItem
+              key={value}
+              onSelect={() => setTheme(value)}
+              data-testid={`mdcms-theme-option-${value}`}
+              aria-checked={selected}
+              role="menuitemradio"
+            >
+              <Icon className="mr-2 h-4 w-4" />
+              <span className="flex-1">{label}</span>
+              {selected ? <Check className="h-4 w-4" /> : null}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function deriveInitials(email: string): string {
   const local = email.split("@")[0] ?? "";
   const parts = local.split(/[._-]/).filter(Boolean);
@@ -144,7 +191,6 @@ function deriveInitials(email: string): string {
 }
 
 export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
-  const { theme, setTheme } = useTheme();
   const sessionState = useStudioSession();
   const mountInfo = useStudioMountInfo();
 
@@ -204,22 +250,8 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
             </div>
           )}
 
-          {/* Dark mode toggle */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                className="text-foreground-muted"
-              >
-                <Sun className="h-5 w-5 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" />
-                <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
-                <span className="sr-only">Toggle theme</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Toggle theme</TooltipContent>
-          </Tooltip>
+          {/* Theme picker */}
+          <ThemePickerMenu />
 
           {/* User menu */}
           {sessionState.status === "authenticated" ? (

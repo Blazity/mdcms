@@ -84,3 +84,26 @@ test("resolveThemePreference falls back to system when enabled", () => {
   );
   assert.equal(resolveAppliedTheme("system", true), "dark");
 });
+
+test("resolveThemePreference honours a 'system' default even without enableSystem", () => {
+  assert.equal(
+    resolveThemePreference({
+      storedTheme: null,
+      defaultTheme: "system",
+      enableSystem: false,
+      systemPrefersDark: false,
+    }),
+    "light",
+  );
+});
+
+test("readStoredThemePreference returns 'system' when persisted", () => {
+  const storage = createStorage();
+  storage.setItem(STUDIO_THEME_STORAGE_KEY, "system");
+
+  assert.equal(readStoredThemePreference(storage), "system");
+});
+
+test("resolveAppliedTheme picks light when 'system' and OS prefers light", () => {
+  assert.equal(resolveAppliedTheme("system", false), "light");
+});
