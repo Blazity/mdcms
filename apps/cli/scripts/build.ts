@@ -16,10 +16,7 @@ const externalDeps = [
   "node:*",
 ];
 
-const entrypoints = [
-  "src/bin/mdcms.ts",
-  "src/index.ts",
-];
+const entrypoints = ["src/bin/mdcms.ts", "src/index.ts"];
 
 const result = await Bun.build({
   entrypoints,

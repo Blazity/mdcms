@@ -6,11 +6,14 @@ description: "Install MDCMS packages and start managing content in your project"
 Get MDCMS running in your own application. This guide assumes you have an MDCMS server available (self-hosted or managed).
 
 <Tip>
-  Need to set up your own server first? Follow the [Self-Hosting guide](/guide/self-hosting) to get MDCMS running with Docker Compose, then come back here.
+  Need to set up your own server first? Follow the [Self-Hosting
+  guide](/guide/self-hosting) to get MDCMS running with Docker Compose, then
+  come back here.
 </Tip>
 
 <Note>
-  Looking to contribute to MDCMS itself? See [Development Setup](/development/setup).
+  Looking to contribute to MDCMS itself? See [Development
+  Setup](/development/setup).
 </Note>
 
 ## 1. Install the CLI
@@ -23,6 +26,7 @@ npm install --save-dev @mdcms/cli
 ```bash bun
 bun add -D @mdcms/cli
 ```
+
 </CodeGroup>
 
 ## 2. Initialize your project
@@ -34,6 +38,7 @@ npx mdcms init
 ```
 
 It will:
+
 - Ask for your MDCMS server URL
 - Open a browser for authentication
 - Scan your repo for existing Markdown/MDX files
@@ -110,6 +115,7 @@ npm install @mdcms/sdk
 ```bash bun
 bun add @mdcms/sdk
 ```
+
 </CodeGroup>
 
 Query content in your application:
@@ -152,6 +158,7 @@ npm install @mdcms/studio
 ```bash bun
 bun add @mdcms/studio
 ```
+
 </CodeGroup>
 
 ```tsx app/admin/[[...path]]/page.tsx
@@ -171,10 +178,18 @@ See the [Studio Guide](/guide/studio/dashboard) for full embedding and usage ins
   <Card title="CLI Commands" icon="terminal" href="/guide/cli/commands">
     Push, pull, login, schema sync, and all CLI flags
   </Card>
-  <Card title="Schema Guide" icon="file-code" href="/guide/schema/defining-types">
+  <Card
+    title="Schema Guide"
+    icon="file-code"
+    href="/guide/schema/defining-types"
+  >
     Field types, references, environment overlays, MDX components
   </Card>
-  <Card title="Studio Guide" icon="layout-dashboard" href="/guide/studio/dashboard">
+  <Card
+    title="Studio Guide"
+    icon="layout-dashboard"
+    href="/guide/studio/dashboard"
+  >
     Visual content editing, publishing, and version history
   </Card>
   <Card title="SDK Reference" icon="plug" href="/api-reference/sdk">

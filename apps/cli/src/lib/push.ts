@@ -1450,9 +1450,7 @@ export async function runPushCommand(
           "Sync schema from server before pushing content?",
         );
         if (!accepted) {
-          context.stdout.write(
-            "Sync declined. No content writes performed.\n",
-          );
+          context.stdout.write("Sync declined. No content writes performed.\n");
           return 1;
         }
       }
@@ -1505,15 +1503,6 @@ export async function runPushCommand(
   if (preflight.outcome === "abort") {
     return preflight.exitCode;
   }
-
-  // Preflight may have synced schema and updated the local state file.
-  // Re-read so content writes carry the fresh hash, not the stale one.
-  const schemaState =
-    (await readSchemaState({
-      cwd: context.cwd,
-      project: context.project,
-      environment: context.environment,
-    })) ?? initialSchemaState;
 
   const manifestPath = resolveScopedManifestPath({
     cwd: context.cwd,
@@ -1568,6 +1557,25 @@ export async function runPushCommand(
   if (options.dryRun) {
     context.stdout.write("Dry run complete. No changes were pushed.\n");
     return 0;
+  }
+
+  // Preflight may have synced schema and updated the local state file.
+  // Re-read so content writes carry the fresh hash, not the stale one.
+  const schemaState =
+    (await readSchemaState({
+      cwd: context.cwd,
+      project: context.project,
+      environment: context.environment,
+    })) ?? initialSchemaState;
+  if (!schemaState) {
+    throw new RuntimeError({
+      code: "SCHEMA_STATE_MISSING",
+      message:
+        `No local schema state found for ${context.project}/${context.environment}.\n` +
+        `To sync schema as part of this push, re-run with --sync-schema.\n` +
+        `To sync explicitly without push, run: mdcms schema sync`,
+      statusCode: 400,
+    });
   }
 
   // Interactive selection for new files

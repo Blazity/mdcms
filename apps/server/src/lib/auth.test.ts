@@ -4327,10 +4327,7 @@ testWithDatabase(
           ?.includes("text/html"),
         true,
       );
-      assert.equal(
-        lockedAuthorizeHtml.includes("Too many attempts"),
-        true,
-      );
+      assert.equal(lockedAuthorizeHtml.includes("Too many attempts"), true);
       assert.equal(lockedAuthorizeHtml.includes("<form"), true);
       assert.equal(lockedAuthorizeResponse.headers.get("retry-after"), "1");
 

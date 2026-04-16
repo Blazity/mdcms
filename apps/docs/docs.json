@@ -61,7 +61,13 @@
         "groups": [
           {
             "group": "Introduction",
-            "pages": ["index", "guide/quickstart", "guide/self-hosting", "guide/concepts", "agent-instructions"]
+            "pages": [
+              "index",
+              "guide/quickstart",
+              "guide/self-hosting",
+              "guide/concepts",
+              "agent-instructions"
+            ]
           },
           {
             "group": "Studio",
@@ -128,9 +134,7 @@
           },
           {
             "group": "SDK",
-            "pages": [
-              "api-reference/sdk"
-            ]
+            "pages": ["api-reference/sdk"]
           }
         ]
       },
@@ -139,17 +143,11 @@
         "groups": [
           {
             "group": "Getting Started",
-            "pages": [
-              "development/setup",
-              "development/packages"
-            ]
+            "pages": ["development/setup", "development/packages"]
           },
           {
             "group": "Contributing",
-            "pages": [
-              "development/contributing",
-              "development/testing"
-            ]
+            "pages": ["development/contributing", "development/testing"]
           }
         ]
       }

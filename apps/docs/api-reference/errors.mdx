@@ -26,38 +26,40 @@ All errors follow a consistent envelope:
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `status` | string | Always `"error"`. |
-| `code` | string | Machine-readable error code. Use this for programmatic error handling. |
-| `message` | string | Human-readable description of what went wrong. |
+| Field        | Type    | Description                                                             |
+| ------------ | ------- | ----------------------------------------------------------------------- |
+| `status`     | string  | Always `"error"`.                                                       |
+| `code`       | string  | Machine-readable error code. Use this for programmatic error handling.  |
+| `message`    | string  | Human-readable description of what went wrong.                          |
 | `statusCode` | integer | HTTP status code (duplicated from the response status for convenience). |
-| `details` | object | Additional context specific to the error type. May be empty `{}`. |
-| `requestId` | string | Unique identifier for this request. Include this when reporting issues. |
-| `timestamp` | string | ISO 8601 timestamp of when the error occurred. |
+| `details`    | object  | Additional context specific to the error type. May be empty `{}`.       |
+| `requestId`  | string  | Unique identifier for this request. Include this when reporting issues. |
+| `timestamp`  | string  | ISO 8601 timestamp of when the error occurred.                          |
 
 <Note>
-  Every error response includes a `requestId`. When contacting support or filing bug reports, include the `requestId` to help trace the request through server logs.
+  Every error response includes a `requestId`. When contacting support or filing
+  bug reports, include the `requestId` to help trace the request through server
+  logs.
 </Note>
 
 ## Error Codes
 
-| Code | HTTP Status | Description | Common Cause |
-|------|-------------|-------------|--------------|
-| `UNAUTHORIZED` | 401 | Missing or invalid authentication credentials. | Expired API key, missing `Authorization` header, invalid session cookie. |
-| `FORBIDDEN` | 403 | Authenticated but insufficient permissions. | API key lacks the required scope, or user role does not include the needed capability. |
-| `NOT_FOUND` | 404 | The requested resource does not exist. | Invalid document ID, deleted document, or wrong project/environment. |
-| `INVALID_INPUT` | 400 | Request body failed validation. | Missing required fields, wrong data types, or values that violate schema constraints. |
-| `INVALID_QUERY_PARAM` | 400 | A query parameter has an invalid value. | Non-numeric `limit`, unsupported `sort` field, or unknown filter parameter. |
-| `INVALID_CONTENT_SCOPE` | 400 | The content scope in the request is invalid. | Requesting a type that does not exist, or a locale that is not configured for the project. |
-| `SCHEMA_NOT_FOUND` | 404 | The requested schema type does not exist in the registry. | Querying for a type name that has not been synced. |
-| `SCHEMA_HASH_REQUIRED` | 400 | Content write operation attempted without schema hash header. | Missing `X-MDCMS-Schema-Hash` header on a create or update request. |
-| `SCHEMA_HASH_MISMATCH` | 409 | The schema hash provided does not match the server's current schema. | Local schema is out of date. Run `mdcms schema sync` to update. |
-| `SCHEMA_NOT_SYNCED` | 409 | No schema has been synced to the server yet. | The project has no schema registry entries. Run `mdcms schema sync` first. |
-| `CONTENT_PATH_CONFLICT` | 409 | A document already exists at the given path and locale. | Attempting to create a document with a `path` that is already taken. |
-| `CONFLICT` | 409 | Optimistic concurrency conflict on document update. | The `draftRevision` in the request body is stale. Re-fetch the document, merge changes, and retry with the current revision. |
-| `RATE_LIMITED` | 429 | Too many requests. | Exceeding the rate limit for the API key or session. Back off and retry after the `Retry-After` header value. |
-| `INTERNAL_ERROR` | 500 | An unexpected server error occurred. | Server bug or infrastructure issue. Report with the `requestId`. |
+| Code                    | HTTP Status | Description                                                          | Common Cause                                                                                                                 |
+| ----------------------- | ----------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `UNAUTHORIZED`          | 401         | Missing or invalid authentication credentials.                       | Expired API key, missing `Authorization` header, invalid session cookie.                                                     |
+| `FORBIDDEN`             | 403         | Authenticated but insufficient permissions.                          | API key lacks the required scope, or user role does not include the needed capability.                                       |
+| `NOT_FOUND`             | 404         | The requested resource does not exist.                               | Invalid document ID, deleted document, or wrong project/environment.                                                         |
+| `INVALID_INPUT`         | 400         | Request body failed validation.                                      | Missing required fields, wrong data types, or values that violate schema constraints.                                        |
+| `INVALID_QUERY_PARAM`   | 400         | A query parameter has an invalid value.                              | Non-numeric `limit`, unsupported `sort` field, or unknown filter parameter.                                                  |
+| `INVALID_CONTENT_SCOPE` | 400         | The content scope in the request is invalid.                         | Requesting a type that does not exist, or a locale that is not configured for the project.                                   |
+| `SCHEMA_NOT_FOUND`      | 404         | The requested schema type does not exist in the registry.            | Querying for a type name that has not been synced.                                                                           |
+| `SCHEMA_HASH_REQUIRED`  | 400         | Content write operation attempted without schema hash header.        | Missing `X-MDCMS-Schema-Hash` header on a create or update request.                                                          |
+| `SCHEMA_HASH_MISMATCH`  | 409         | The schema hash provided does not match the server's current schema. | Local schema is out of date. Run `mdcms schema sync` to update.                                                              |
+| `SCHEMA_NOT_SYNCED`     | 409         | No schema has been synced to the server yet.                         | The project has no schema registry entries. Run `mdcms schema sync` first.                                                   |
+| `CONTENT_PATH_CONFLICT` | 409         | A document already exists at the given path and locale.              | Attempting to create a document with a `path` that is already taken.                                                         |
+| `CONFLICT`              | 409         | Optimistic concurrency conflict on document update.                  | The `draftRevision` in the request body is stale. Re-fetch the document, merge changes, and retry with the current revision. |
+| `RATE_LIMITED`          | 429         | Too many requests.                                                   | Exceeding the rate limit for the API key or session. Back off and retry after the `Retry-After` header value.                |
+| `INTERNAL_ERROR`        | 500         | An unexpected server error occurred.                                 | Server bug or infrastructure issue. Report with the `requestId`.                                                             |
 
 ### Handling Specific Errors
 
@@ -125,7 +127,11 @@ When you use the `resolve` parameter to expand [references](/guide/concepts#refe
       "title": "Hello World",
       "author": null,
       "relatedPosts": [
-        { "documentId": "...", "type": "BlogPost", "frontmatter": { "title": "Other Post" } },
+        {
+          "documentId": "...",
+          "type": "BlogPost",
+          "frontmatter": { "title": "Other Post" }
+        },
         null
       ]
     },
@@ -147,13 +153,15 @@ When you use the `resolve` parameter to expand [references](/guide/concepts#refe
 
 ### Resolve Error Codes
 
-| Code | Description |
-|------|-------------|
-| `REFERENCE_NOT_FOUND` | The referenced document does not exist in the target project and environment. It may have been deleted permanently or never existed. |
-| `REFERENCE_DELETED` | The referenced document exists but has been soft-deleted. It can be restored via the [restore endpoint](/api-reference/content#restore-deleted). |
-| `REFERENCE_TYPE_MISMATCH` | The referenced document exists but its type does not match the expected target type declared in the schema. This typically indicates a data integrity issue. |
-| `REFERENCE_FORBIDDEN` | The current API key or user does not have `content:read` permission for the referenced document. The reference exists but cannot be resolved with the current credentials. |
+| Code                      | Description                                                                                                                                                                |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `REFERENCE_NOT_FOUND`     | The referenced document does not exist in the target project and environment. It may have been deleted permanently or never existed.                                       |
+| `REFERENCE_DELETED`       | The referenced document exists but has been soft-deleted. It can be restored via the [restore endpoint](/api-reference/content#restore-deleted).                           |
+| `REFERENCE_TYPE_MISMATCH` | The referenced document exists but its type does not match the expected target type declared in the schema. This typically indicates a data integrity issue.               |
+| `REFERENCE_FORBIDDEN`     | The current API key or user does not have `content:read` permission for the referenced document. The reference exists but cannot be resolved with the current credentials. |
 
 <Warning>
-  Resolve errors are informational and do not cause the request to fail. Always check the `resolveErrors` field when using resolved references, especially in production applications where referenced content may change independently.
+  Resolve errors are informational and do not cause the request to fail. Always
+  check the `resolveErrors` field when using resolved references, especially in
+  production applications where referenced content may change independently.
 </Warning>

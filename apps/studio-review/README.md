@@ -25,14 +25,14 @@ This command:
 
 ## Scenario Routes
 
-| Route | Description |
-| --- | --- |
-| `/review/editor/admin` | Editor role view |
+| Route                                   | Description          |
+| --------------------------------------- | -------------------- |
+| `/review/editor/admin`                  | Editor role view     |
 | `/review/editor/admin/content/post/:id` | Editor document view |
-| `/review/owner/admin` | Owner role view |
-| `/review/owner/admin/schema` | Owner schema view |
-| `/review/viewer/admin` | Viewer role view |
-| `/review/schema-error/admin/schema` | Schema error state |
+| `/review/owner/admin`                   | Owner role view      |
+| `/review/owner/admin/schema`            | Owner schema view    |
+| `/review/viewer/admin`                  | Viewer role view     |
+| `/review/schema-error/admin/schema`     | Schema error state   |
 
 ## Notes
 

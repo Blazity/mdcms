@@ -18,10 +18,10 @@ packages/modules/<module-id>/src/
 
 ## Current Modules
 
-| Module | Description |
-| --- | --- |
-| `core.system` | System-level preflight validation and server routes |
-| `domain.content` | Content domain preflight hooks and server routes |
+| Module           | Description                                         |
+| ---------------- | --------------------------------------------------- |
+| `core.system`    | System-level preflight validation and server routes |
+| `domain.content` | Content domain preflight hooks and server routes    |
 
 ## How It Works
 

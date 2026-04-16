@@ -68,34 +68,34 @@ export default defineConfig({
 
 All properties accepted by `defineConfig`:
 
-| Property | Type | Required | Description |
-| --- | --- | --- | --- |
-| `project` | `string` | Yes | Project slug. Must match the project on the server |
-| `serverUrl` | `string` | Yes | Base URL of the MDCMS server |
-| `environment` | `string` | No | Default environment name (e.g. `development`) |
-| `contentDirectories` | `string[]` | No | Directories to scan for content files. Default: `["content"]` |
-| `locales` | `object` | No | Locale configuration (see below) |
-| `types` | `MdcmsTypeDefinition[]` | No | Content type definitions created with `defineType` |
-| `environments` | `Record<string, object>` | No | Per-environment config overlays (can override `serverUrl`, `environment`) |
-| `components` | `object[]` | No | MDX component registrations for the Studio editor |
+| Property             | Type                     | Required | Description                                                               |
+| -------------------- | ------------------------ | -------- | ------------------------------------------------------------------------- |
+| `project`            | `string`                 | Yes      | Project slug. Must match the project on the server                        |
+| `serverUrl`          | `string`                 | Yes      | Base URL of the MDCMS server                                              |
+| `environment`        | `string`                 | No       | Default environment name (e.g. `development`)                             |
+| `contentDirectories` | `string[]`               | No       | Directories to scan for content files. Default: `["content"]`             |
+| `locales`            | `object`                 | No       | Locale configuration (see below)                                          |
+| `types`              | `MdcmsTypeDefinition[]`  | No       | Content type definitions created with `defineType`                        |
+| `environments`       | `Record<string, object>` | No       | Per-environment config overlays (can override `serverUrl`, `environment`) |
+| `components`         | `object[]`               | No       | MDX component registrations for the Studio editor                         |
 
 ### Locale options
 
-| Property | Type | Description |
-| --- | --- | --- |
-| `locales.default` | `string` | The default locale code (e.g. `"en"`) |
-| `locales.supported` | `string[]` | All supported locale codes |
-| `locales.aliases` | `Record<string, string>` | Map alternate locale codes to canonical ones |
+| Property            | Type                     | Description                                  |
+| ------------------- | ------------------------ | -------------------------------------------- |
+| `locales.default`   | `string`                 | The default locale code (e.g. `"en"`)        |
+| `locales.supported` | `string[]`               | All supported locale codes                   |
+| `locales.aliases`   | `Record<string, string>` | Map alternate locale codes to canonical ones |
 
 ### Type definition options
 
 Each `defineType(name, options)` accepts:
 
-| Property | Type | Description |
-| --- | --- | --- |
-| `directory` | `string` | Filesystem directory for this type's content files |
-| `localized` | `boolean` | Whether documents of this type are localized. Default: `false` |
-| `fields` | `Record<string, ZodSchema>` | Frontmatter field definitions using Zod schemas |
+| Property    | Type                        | Description                                                    |
+| ----------- | --------------------------- | -------------------------------------------------------------- |
+| `directory` | `string`                    | Filesystem directory for this type's content files             |
+| `localized` | `boolean`                   | Whether documents of this type are localized. Default: `false` |
+| `fields`    | `Record<string, ZodSchema>` | Frontmatter field definitions using Zod schemas                |
 
 ---
 
@@ -104,7 +104,8 @@ Each `defineType(name, options)` accepts:
 The manifest tracks the mapping between server documents and local files. It is stored at `.mdcms.manifest.json` in the project root, scoped to the current project and environment.
 
 <Warning>
-  The manifest file should be added to `.gitignore`. It contains local state that varies between developers and environments.
+  The manifest file should be added to `.gitignore`. It contains local state
+  that varies between developers and environments.
 </Warning>
 
 ### Structure
@@ -130,13 +131,13 @@ The manifest is a JSON object where each key is a `documentId` and the value des
 }
 ```
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `path` | `string` | Relative path to the content file from project root |
-| `format` | `"md" \| "mdx"` | File format |
-| `draftRevision` | `number` | Current draft revision number on the server |
+| Field              | Type             | Description                                            |
+| ------------------ | ---------------- | ------------------------------------------------------ |
+| `path`             | `string`         | Relative path to the content file from project root    |
+| `format`           | `"md" \| "mdx"`  | File format                                            |
+| `draftRevision`    | `number`         | Current draft revision number on the server            |
 | `publishedVersion` | `number \| null` | Published version number, or `null` if never published |
-| `hash` | `string` | Content hash of the file at last sync |
+| `hash`             | `string`         | Content hash of the file at last sync                  |
 
 ---
 
@@ -167,7 +168,8 @@ For example, `marketing-site` project in the `development` environment produces:
 The `schemaHash` is required by `mdcms push` to validate that content is being pushed against the correct schema version. If this file is missing or the hash is stale, push operations will fail.
 
 <Note>
-  The `.mdcms/` directory should be added to `.gitignore`. The `mdcms init` wizard does this automatically.
+  The `.mdcms/` directory should be added to `.gitignore`. The `mdcms init`
+  wizard does this automatically.
 </Note>
 
 ---
