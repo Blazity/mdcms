@@ -9,12 +9,12 @@ MDCMS uses Bun's built-in test runner for both unit and integration tests. This 
 
 Unit tests live alongside source files with the `*.test.ts` suffix.
 
-| | |
-|---|---|
-| **Pattern** | `*.test.ts` next to the source file |
-| **Runner** | Bun test (`bun test`) |
-| **Command** | `bun run unit` |
-| **Per-package** | `bun nx test <package>` |
+|                 |                                     |
+| --------------- | ----------------------------------- |
+| **Pattern**     | `*.test.ts` next to the source file |
+| **Runner**      | Bun test (`bun test`)               |
+| **Command**     | `bun run unit`                      |
+| **Per-package** | `bun nx test <package>`             |
 
 Unit tests cover config parsing, validation logic, contracts, SDK methods, and utility functions. They do not require any external services.
 
@@ -31,10 +31,10 @@ bun nx test sdk
 
 Integration tests exercise the full stack -- API endpoints, authentication flows, database operations, and the content lifecycle.
 
-| | |
-|---|---|
+|              |                                                    |
+| ------------ | -------------------------------------------------- |
 | **Requires** | Docker Compose services (PostgreSQL, Redis, MinIO) |
-| **Command** | `bun run integration` |
+| **Command**  | `bun run integration`                              |
 
 <Warning>
 Integration tests require Docker services to be running. Start them before running:
@@ -42,6 +42,7 @@ Integration tests require Docker services to be running. Start them before runni
 ```bash
 docker compose -f docker-compose.dev.yml up -d
 ```
+
 </Warning>
 
 ```bash
@@ -60,6 +61,7 @@ The CI pipeline runs three sequential stages. All must pass before a PR can be m
     ```bash
     bun run quality
     ```
+
   </Step>
   <Step title="Unit tests">
     All unit tests across every package.
@@ -67,6 +69,7 @@ The CI pipeline runs three sequential stages. All must pass before a PR can be m
     ```bash
     bun run unit
     ```
+
   </Step>
   <Step title="Integration tests">
     Full integration test suite. Requires Docker services.
@@ -74,6 +77,7 @@ The CI pipeline runs three sequential stages. All must pass before a PR can be m
     ```bash
     bun run integration
     ```
+
   </Step>
 </Steps>
 
@@ -100,7 +104,10 @@ import { parseConfig } from "./parse-config";
 
 describe("parseConfig", () => {
   test("returns parsed config when input is valid", () => {
-    const result = parseConfig({ project: "my-site", serverUrl: "http://localhost:4000" });
+    const result = parseConfig({
+      project: "my-site",
+      serverUrl: "http://localhost:4000",
+    });
     expect(result.project).toBe("my-site");
   });
 
@@ -111,7 +118,8 @@ describe("parseConfig", () => {
 ```
 
 <Tip>
-Run `bun run unit` during development for fast feedback. Save `bun run integration` for before pushing.
+  Run `bun run unit` during development for fast feedback. Save `bun run
+  integration` for before pushing.
 </Tip>
 
 ## Database Migrations
@@ -125,6 +133,7 @@ MDCMS uses Drizzle ORM for database schema management. Migrations are generated 
     ```
     apps/server/src/lib/db/schema.ts
     ```
+
   </Step>
   <Step title="Generate migration">
     ```bash
@@ -132,6 +141,7 @@ MDCMS uses Drizzle ORM for database schema management. Migrations are generated 
     ```
 
     This creates a new SQL migration file in the `drizzle/` directory.
+
   </Step>
   <Step title="Review the generated SQL">
     Open the generated file in `drizzle/` and verify the SQL matches your intent. Pay attention to destructive operations like column drops or type changes.
@@ -151,9 +161,12 @@ MDCMS uses Drizzle ORM for database schema management. Migrations are generated 
     git add apps/server/src/lib/db/schema.ts drizzle/
     git commit -m "feat(server): add webhook retry columns"
     ```
+
   </Step>
 </Steps>
 
 <Warning>
-Always test migrations against a database with realistic data before deploying to production. A migration that works on an empty database may fail or corrupt data on a populated one.
+  Always test migrations against a database with realistic data before deploying
+  to production. A migration that works on an empty database may fail or corrupt
+  data on a populated one.
 </Warning>

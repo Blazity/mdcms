@@ -1432,88 +1432,16 @@ export async function runPushCommand(
     });
   }
 
-  let initialSchemaState = await readSchemaState({
+  const initialSchemaState = await readSchemaState({
     cwd: context.cwd,
     project: context.project,
     environment: context.environment,
   });
 
-  if (!initialSchemaState) {
-    const isInteractive = process.stdin.isTTY === true;
-
-    if (isInteractive || options.syncSchema) {
-      if (isInteractive && !options.syncSchema) {
-        context.stdout.write(
-          `No local schema state found for ${context.project}/${context.environment}.\n`,
-        );
-        const accepted = await context.confirm(
-          "Sync schema from server before pushing content?",
-        );
-        if (!accepted) {
-          context.stdout.write(
-            "Sync declined. No content writes performed.\n",
-          );
-          return 1;
-        }
-      }
-
-      if (options.dryRun) {
-        context.stdout.write(
-          "Dry run: skipping schema sync (no local state).\n",
-        );
-      } else {
-        const syncResult = await performSchemaSync({
-          config: context.config as ParsedMdcmsConfig,
-          serverUrl: context.serverUrl,
-          project: context.project,
-          environment: context.environment,
-          apiKey: context.apiKey,
-          cwd: context.cwd,
-          fetcher: context.fetcher,
-        });
-
-        if (syncResult.outcome === "failure") {
-          context.stderr.write(
-            `${syncResult.errorCode}: ${syncResult.message}\n`,
-          );
-          return 1;
-        }
-
-        context.stdout.write(
-          `Schema synced (hash: ${syncResult.schemaHash.slice(0, 12)}...)\n`,
-        );
-
-        initialSchemaState = await readSchemaState({
-          cwd: context.cwd,
-          project: context.project,
-          environment: context.environment,
-        });
-      }
-    } else {
-      throw new RuntimeError({
-        code: "SCHEMA_STATE_MISSING",
-        message:
-          `No local schema state found for ${context.project}/${context.environment}.\n` +
-          `To sync schema as part of this push, re-run with --sync-schema.\n` +
-          `To sync explicitly without push, run: mdcms schema sync`,
-        statusCode: 400,
-      });
-    }
-  }
-
   const preflight = await runSchemaPreflight(context, options);
   if (preflight.outcome === "abort") {
     return preflight.exitCode;
   }
-
-  // Preflight may have synced schema and updated the local state file.
-  // Re-read so content writes carry the fresh hash, not the stale one.
-  const schemaState =
-    (await readSchemaState({
-      cwd: context.cwd,
-      project: context.project,
-      environment: context.environment,
-    })) ?? initialSchemaState;
 
   const manifestPath = resolveScopedManifestPath({
     cwd: context.cwd,
@@ -1711,6 +1639,73 @@ export async function runPushCommand(
         statusCode: 400,
       });
     }
+  }
+
+  // Preflight or the missing-state flow may sync schema and update the local
+  // state file. Re-read immediately before writes so requests carry the fresh
+  // hash, while dry-run/no-work paths never require local schema state.
+  let schemaState =
+    (await readSchemaState({
+      cwd: context.cwd,
+      project: context.project,
+      environment: context.environment,
+    })) ?? initialSchemaState;
+
+  if (!schemaState) {
+    const isInteractive = process.stdin.isTTY === true;
+
+    if (isInteractive) {
+      context.stdout.write(
+        `No local schema state found for ${context.project}/${context.environment}.\n`,
+      );
+      const accepted = await context.confirm(
+        "Sync schema from server before pushing content?",
+      );
+      if (!accepted) {
+        context.stdout.write("Sync declined. No content writes performed.\n");
+        return 1;
+      }
+    }
+
+    if (isInteractive || options.syncSchema) {
+      const syncResult = await performSchemaSync({
+        config: context.config as ParsedMdcmsConfig,
+        serverUrl: context.serverUrl,
+        project: context.project,
+        environment: context.environment,
+        apiKey: context.apiKey,
+        cwd: context.cwd,
+        fetcher: context.fetcher,
+      });
+
+      if (syncResult.outcome === "failure") {
+        context.stderr.write(
+          `${syncResult.errorCode}: ${syncResult.message}\n`,
+        );
+        return 1;
+      }
+
+      context.stdout.write(
+        `Schema synced (hash: ${syncResult.schemaHash.slice(0, 12)}...)\n`,
+      );
+
+      schemaState = await readSchemaState({
+        cwd: context.cwd,
+        project: context.project,
+        environment: context.environment,
+      });
+    }
+  }
+
+  if (!schemaState) {
+    throw new RuntimeError({
+      code: "SCHEMA_STATE_MISSING",
+      message:
+        `No local schema state found for ${context.project}/${context.environment}.\n` +
+        `To sync schema as part of this push, re-run with --sync-schema.\n` +
+        `To sync explicitly without push, run: mdcms schema sync`,
+      statusCode: 400,
+    });
   }
 
   const { results, failures } = await applyPush(

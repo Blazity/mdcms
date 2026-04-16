@@ -9,7 +9,11 @@ export type StudioSessionState =
   | { status: "authenticated"; session: StudioSessionInfo; csrfToken: string }
   | { status: "unauthenticated" }
   | { status: "error"; message: string }
-  | { status: "token-error"; reason: "missing" | "invalid" | "forbidden"; message: string };
+  | {
+      status: "token-error";
+      reason: "missing" | "invalid" | "forbidden";
+      message: string;
+    };
 
 const DEFAULT_SESSION_STATE: StudioSessionState = { status: "loading" };
 

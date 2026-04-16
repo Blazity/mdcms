@@ -6,29 +6,29 @@ description: "Stand up your own MDCMS server with Docker Compose"
 Run MDCMS on your own infrastructure. This guide walks you through setting up a self-hosted instance from scratch using Docker Compose.
 
 <Note>
-  Already have a server running? Skip to the [Quick Start](/guide/quickstart) to install the CLI and start managing content.
+  Already have a server running? Skip to the [Quick Start](/guide/quickstart) to
+  install the CLI and start managing content.
 </Note>
 
 ## Prerequisites
 
 You need **Docker** and **Docker Compose** installed. No other runtime (Bun, Node.js) is required for running the server.
 
-| Tool | Version | Install |
-|------|---------|---------|
-| Docker | 24+ | [docs.docker.com/get-docker](https://docs.docker.com/get-docker/) |
-| Docker Compose | v2+ (included with Docker Desktop) | Bundled with Docker Desktop on macOS/Windows |
+| Tool           | Version                            | Install                                                           |
+| -------------- | ---------------------------------- | ----------------------------------------------------------------- |
+| Docker         | 24+                                | [docs.docker.com/get-docker](https://docs.docker.com/get-docker/) |
+| Docker Compose | v2+ (included with Docker Desktop) | Bundled with Docker Desktop on macOS/Windows                      |
 
 <Tabs>
-  <Tab title="macOS">
-    ```bash
-    brew install --cask docker
-    ```
-  </Tab>
+  <Tab title="macOS">```bash brew install --cask docker ```</Tab>
   <Tab title="Linux">
-    Follow the [official Docker install guide](https://docs.docker.com/engine/install/) for your distribution. Docker Compose v2 is included as a Docker plugin.
+    Follow the [official Docker install
+    guide](https://docs.docker.com/engine/install/) for your distribution.
+    Docker Compose v2 is included as a Docker plugin.
   </Tab>
   <Tab title="Windows">
-    Download and install [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/).
+    Download and install [Docker Desktop for
+    Windows](https://docs.docker.com/desktop/install/windows-install/).
   </Tab>
 </Tabs>
 
@@ -50,6 +50,7 @@ You need **Docker** and **Docker Compose** installed. No other runtime (Bun, Nod
     ```
 
     The defaults work for local evaluation. For production, you should change database credentials, S3 keys, and configure auth providers. See the [environment variables](#environment-variables) section below.
+
   </Step>
 
   <Step title="Start all services">
@@ -65,6 +66,7 @@ You need **Docker** and **Docker Compose** installed. No other runtime (Bun, Nod
     - **Mailhog** on ports `1025`/`8025` — email capture (dev/staging)
 
     Database migrations run automatically before the server starts.
+
   </Step>
 
   <Step title="Verify the server is healthy">
@@ -73,18 +75,19 @@ You need **Docker** and **Docker Compose** installed. No other runtime (Bun, Nod
     ```
 
     You should get a `200 OK` response. If the server is still starting, wait a few seconds and try again.
+
   </Step>
 </Steps>
 
 ## Service Endpoints
 
-| Service | URL | Purpose |
-|---------|-----|---------|
-| MDCMS Server API | [http://localhost:4000](http://localhost:4000) | Backend API — all clients connect here |
-| MinIO Console | [http://localhost:9001](http://localhost:9001) | Object storage admin (default: `minioadmin`/`minioadmin`) |
-| Mailhog UI | [http://localhost:8025](http://localhost:8025) | Captured email viewer (auth flows, invites) |
-| PostgreSQL | `localhost:5432` | Direct database access |
-| Redis | `localhost:6379` | Direct cache access |
+| Service          | URL                                            | Purpose                                                   |
+| ---------------- | ---------------------------------------------- | --------------------------------------------------------- |
+| MDCMS Server API | [http://localhost:4000](http://localhost:4000) | Backend API — all clients connect here                    |
+| MinIO Console    | [http://localhost:9001](http://localhost:9001) | Object storage admin (default: `minioadmin`/`minioadmin`) |
+| Mailhog UI       | [http://localhost:8025](http://localhost:8025) | Captured email viewer (auth flows, invites)               |
+| PostgreSQL       | `localhost:5432`                               | Direct database access                                    |
+| Redis            | `localhost:6379`                               | Direct cache access                                       |
 
 ## First Boot
 
@@ -112,24 +115,7 @@ The init wizard walks you through project creation, environment selection, conte
 
 ### Embed the Studio UI
 
-Add the visual content editor to your application:
-
-```bash
-npm install @mdcms/studio
-```
-
-```tsx
-// app/admin/[[...path]]/page.tsx (Next.js example)
-import { createStudioEmbedConfig } from "@mdcms/studio/runtime";
-import config from "../../../mdcms.config";
-import { AdminStudioClient } from "./admin-studio-client";
-
-export default async function AdminPage() {
-  return <AdminStudioClient config={createStudioEmbedConfig(config)} />;
-}
-```
-
-See the [Studio Guide](/guide/studio/dashboard) for full embedding instructions.
+Add the visual content editor to your application. Install `@mdcms/studio` and mount it on a catch-all route in your app. See the [Integration Guide](/guide/integration) for full step-by-step instructions covering Studio embedding, MDX components, authentication, and CORS setup.
 
 ## Environment Variables
 
@@ -137,50 +123,51 @@ See the [Studio Guide](/guide/studio/dashboard) for full embedding instructions.
 
 These must be set for the server to start. The Docker Compose defaults handle these automatically for local use.
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://mdcms:mdcms@postgres:5432/mdcms` |
-| `REDIS_URL` | Redis connection string | `redis://redis:6379` |
-| `S3_ENDPOINT` | S3-compatible storage endpoint | `http://minio:9000` |
-| `S3_ACCESS_KEY` | S3 access key | `minioadmin` |
-| `S3_SECRET_KEY` | S3 secret key | `minioadmin` |
-| `S3_BUCKET` | S3 bucket name | `mdcms-media` |
+| Variable        | Description                    | Default                                        |
+| --------------- | ------------------------------ | ---------------------------------------------- |
+| `DATABASE_URL`  | PostgreSQL connection string   | `postgresql://mdcms:mdcms@postgres:5432/mdcms` |
+| `REDIS_URL`     | Redis connection string        | `redis://redis:6379`                           |
+| `S3_ENDPOINT`   | S3-compatible storage endpoint | `http://minio:9000`                            |
+| `S3_ACCESS_KEY` | S3 access key                  | `minioadmin`                                   |
+| `S3_SECRET_KEY` | S3 secret key                  | `minioadmin`                                   |
+| `S3_BUCKET`     | S3 bucket name                 | `mdcms-media`                                  |
 
 ### Server
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | Server listen port | `4000` |
-| `NODE_ENV` | Runtime environment | `development` |
-| `LOG_LEVEL` | Log verbosity (`debug`, `info`, `warn`, `error`) | `info` |
+| Variable    | Description                                      | Default       |
+| ----------- | ------------------------------------------------ | ------------- |
+| `PORT`      | Server listen port                               | `4000`        |
+| `NODE_ENV`  | Runtime environment                              | `development` |
+| `LOG_LEVEL` | Log verbosity (`debug`, `info`, `warn`, `error`) | `info`        |
 
 ### Email
 
-| Variable | Description | Default |
-|----------|-------------|---------|
+| Variable    | Description          | Default   |
+| ----------- | -------------------- | --------- |
 | `SMTP_HOST` | SMTP server hostname | `mailhog` |
-| `SMTP_PORT` | SMTP server port | `1025` |
+| `SMTP_PORT` | SMTP server port     | `1025`    |
 
 <Warning>
-  The default email configuration uses Mailhog, which captures all outgoing email without delivering it. For production, configure a real SMTP provider.
+  The default email configuration uses Mailhog, which captures all outgoing
+  email without delivering it. For production, configure a real SMTP provider.
 </Warning>
 
 ### Studio
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `MDCMS_STUDIO_ALLOWED_ORIGINS` | Comma-separated CORS origins for Studio embedding | — |
-| `MDCMS_AUTH_INSECURE_COOKIES` | Allow HTTP cookies (set `true` for local dev without HTTPS) | `false` |
+| Variable                       | Description                                                 | Default |
+| ------------------------------ | ----------------------------------------------------------- | ------- |
+| `MDCMS_STUDIO_ALLOWED_ORIGINS` | Comma-separated CORS origins for Studio embedding           | —       |
+| `MDCMS_AUTH_INSECURE_COOKIES`  | Allow HTTP cookies (set `true` for local dev without HTTPS) | `false` |
 
 ### Auth Providers (optional)
 
 Configure SSO providers for your organization. Providers are enabled by presence — no feature flag is needed.
 
-| Variable | Description |
-|----------|-------------|
-| `MDCMS_AUTH_OIDC_PROVIDERS` | JSON array of OIDC provider configurations |
-| `MDCMS_AUTH_SAML_PROVIDERS` | JSON array of SAML provider configurations |
-| `MDCMS_AUTH_ADMIN_EMAILS` | Comma-separated emails that get admin role on first login |
+| Variable                    | Description                                               |
+| --------------------------- | --------------------------------------------------------- |
+| `MDCMS_AUTH_OIDC_PROVIDERS` | JSON array of OIDC provider configurations                |
+| `MDCMS_AUTH_SAML_PROVIDERS` | JSON array of SAML provider configurations                |
+| `MDCMS_AUTH_ADMIN_EMAILS`   | Comma-separated emails that get admin role on first login |
 
 <Accordion title="Example OIDC provider config">
 ```json
@@ -268,7 +255,11 @@ docker compose down -v
   <Card title="CLI Commands" icon="terminal" href="/guide/cli/commands">
     Push, pull, login, schema sync, and all CLI flags
   </Card>
-  <Card title="Studio Guide" icon="layout-dashboard" href="/guide/studio/dashboard">
+  <Card
+    title="Studio Guide"
+    icon="layout-dashboard"
+    href="/guide/studio/dashboard"
+  >
     Embed the visual content editor in your application
   </Card>
   <Card title="API Reference" icon="plug" href="/api-reference/overview">

@@ -301,10 +301,7 @@ export default function DashboardPage() {
         {/* Quick Actions */}
         {canCreateContent && (
           <div className="flex flex-wrap gap-3">
-            <Button
-              variant="default"
-              asChild
-            >
+            <Button variant="default" asChild>
               <Link href="/admin/content">
                 <Plus className="mr-2 h-4 w-4" />
                 New Document

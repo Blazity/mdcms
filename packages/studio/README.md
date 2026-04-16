@@ -50,16 +50,16 @@ The shell handles startup errors (network failures, incompatible versions, disab
 
 Once mounted, Studio provides these routes under your `basePath`:
 
-| Route | Description |
-| --- | --- |
-| `/admin` | Dashboard |
-| `/admin/content` | Content list with type filtering |
+| Route                              | Description                                                   |
+| ---------------------------------- | ------------------------------------------------------------- |
+| `/admin`                           | Dashboard                                                     |
+| `/admin/content`                   | Content list with type filtering                              |
 | `/admin/content/:type/:documentId` | Document editor with draft save, publish, and version history |
-| `/admin/environments` | Environment management |
-| `/admin/schema` | Read-only schema browser |
-| `/admin/users` | User management (admin/owner only) |
-| `/admin/settings` | Settings (admin/owner only) |
-| `/admin/trash` | Deleted content |
+| `/admin/environments`              | Environment management                                        |
+| `/admin/schema`                    | Read-only schema browser                                      |
+| `/admin/users`                     | User management (admin/owner only)                            |
+| `/admin/settings`                  | Settings (admin/owner only)                                   |
+| `/admin/trash`                     | Deleted content                                               |
 
 ## MDX Components
 
@@ -83,13 +83,13 @@ Registered components can be inserted from the toolbar or via `/` slash commands
 
 ## Exports
 
-| Import Path | Description |
-| --- | --- |
-| `@mdcms/studio` | `Studio` component, `PropsEditorComponent` type |
-| `@mdcms/studio/runtime` | `prepareStudioConfig`, `createStudioEmbedConfig`, runtime helpers |
-| `@mdcms/studio/markdown-pipeline` | `parseMarkdownToDocument`, `serializeDocumentToMarkdown` |
-| `@mdcms/studio/document-shell` | `loadStudioDocumentShell` for host-app shell rendering |
-| `@mdcms/studio/action-catalog-adapter` | Typed action catalog client |
+| Import Path                            | Description                                                       |
+| -------------------------------------- | ----------------------------------------------------------------- |
+| `@mdcms/studio`                        | `Studio` component, `PropsEditorComponent` type                   |
+| `@mdcms/studio/runtime`                | `prepareStudioConfig`, `createStudioEmbedConfig`, runtime helpers |
+| `@mdcms/studio/markdown-pipeline`      | `parseMarkdownToDocument`, `serializeDocumentToMarkdown`          |
+| `@mdcms/studio/document-shell`         | `loadStudioDocumentShell` for host-app shell rendering            |
+| `@mdcms/studio/action-catalog-adapter` | Typed action catalog client                                       |
 
 ## Documentation
 

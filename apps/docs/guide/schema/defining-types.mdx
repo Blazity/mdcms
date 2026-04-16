@@ -33,11 +33,11 @@ export default defineConfig({
 
 Each type accepts the following options:
 
-| Option | Type | Required | Description |
-|---|---|---|---|
-| `directory` | `string` | Yes | Filesystem path where documents of this type are stored. Must be covered by `contentDirectories`. |
-| `localized` | `boolean` | No (default: `false`) | Whether documents of this type support per-locale variants. Requires `locales` config when `true`. |
-| `fields` | `Record<string, ZodSchema>` | Yes | Map of field names to Zod schemas. Each field becomes a frontmatter property and a Studio form control. |
+| Option      | Type                        | Required              | Description                                                                                             |
+| ----------- | --------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------- |
+| `directory` | `string`                    | Yes                   | Filesystem path where documents of this type are stored. Must be covered by `contentDirectories`.       |
+| `localized` | `boolean`                   | No (default: `false`) | Whether documents of this type support per-locale variants. Requires `locales` config when `true`.      |
+| `fields`    | `Record<string, ZodSchema>` | Yes                   | Map of field names to Zod schemas. Each field becomes a frontmatter property and a Studio form control. |
 
 ## Field types
 
@@ -45,12 +45,12 @@ Every Zod type maps to a specific Studio form control. MDCMS serializes each fie
 
 ### Primitives
 
-| Zod schema | Registry kind | Studio control | Notes |
-|---|---|---|---|
-| `z.string()` | `string` | Text input | Base type for most text fields |
-| `z.number()` | `number` | Number input | Supports `.int()`, `.min()`, `.max()` checks |
-| `z.boolean()` | `boolean` | Toggle switch | Commonly paired with `.default(false)` |
-| `z.coerce.date()` | `date` | Date picker | Coerces string values to `Date` objects |
+| Zod schema        | Registry kind | Studio control | Notes                                        |
+| ----------------- | ------------- | -------------- | -------------------------------------------- |
+| `z.string()`      | `string`      | Text input     | Base type for most text fields               |
+| `z.number()`      | `number`      | Number input   | Supports `.int()`, `.min()`, `.max()` checks |
+| `z.boolean()`     | `boolean`     | Toggle switch  | Commonly paired with `.default(false)`       |
+| `z.coerce.date()` | `date`        | Date picker    | Coerces string values to `Date` objects      |
 
 ```typescript
 fields: {
@@ -63,13 +63,13 @@ fields: {
 
 ### Complex types
 
-| Zod schema | Registry kind | Studio control | Notes |
-|---|---|---|---|
-| `z.array(z.string())` | `array` (item: `string`) | Tag input | Repeatable string entries |
-| `z.array(z.number())` | `array` (item: `number`) | Repeatable number inputs | |
-| `z.object({...})` | `object` | Nested fieldset | Each property rendered recursively |
-| `z.enum(["a", "b", "c"])` | `enum` | Dropdown select | Options extracted from enum entries |
-| `z.literal("x")` | `literal` | Hidden / read-only | Fixed value, useful for discriminators |
+| Zod schema                | Registry kind            | Studio control           | Notes                                  |
+| ------------------------- | ------------------------ | ------------------------ | -------------------------------------- |
+| `z.array(z.string())`     | `array` (item: `string`) | Tag input                | Repeatable string entries              |
+| `z.array(z.number())`     | `array` (item: `number`) | Repeatable number inputs |                                        |
+| `z.object({...})`         | `object`                 | Nested fieldset          | Each property rendered recursively     |
+| `z.enum(["a", "b", "c"])` | `enum`                   | Dropdown select          | Options extracted from enum entries    |
+| `z.literal("x")`          | `literal`                | Hidden / read-only       | Fixed value, useful for discriminators |
 
 ```typescript
 fields: {
@@ -88,10 +88,10 @@ fields: {
 
 Modifiers control whether fields are required, nullable, or have defaults. They affect both the schema registry snapshot and Studio form behavior.
 
-| Modifier | Effect | Registry impact |
-|---|---|---|
-| `.optional()` | Field can be omitted entirely | `required: false` |
-| `.nullable()` | Field can be explicitly set to `null` | `nullable: true` |
+| Modifier          | Effect                                           | Registry impact                       |
+| ----------------- | ------------------------------------------------ | ------------------------------------- |
+| `.optional()`     | Field can be omitted entirely                    | `required: false`                     |
+| `.nullable()`     | Field can be explicitly set to `null`            | `nullable: true`                      |
 | `.default(value)` | Provides a default value; field becomes optional | `required: false`, `default: <value>` |
 
 ```typescript
@@ -104,7 +104,9 @@ fields: {
 ```
 
 <Note>
-  A field with `.default()` is implicitly optional in the schema registry. The default value is stored in the registry snapshot and applied during validation.
+  A field with `.default()` is implicitly optional in the schema registry. The
+  default value is stored in the registry snapshot and applied during
+  validation.
 </Note>
 
 ## Validation
@@ -126,32 +128,26 @@ fields: {
 ### Available checks by type
 
 <Accordion title="String checks">
-  | Method | Description |
-  |---|---|
-  | `.min(n)` | Minimum length |
-  | `.max(n)` | Maximum length |
-  | `.email()` | Valid email format |
-  | `.url()` | Valid URL format |
-  | `.regex(pattern)` | Matches regular expression (pattern and flags are serialized) |
+  | Method | Description | |---|---| | `.min(n)` | Minimum length | | `.max(n)`
+  | Maximum length | | `.email()` | Valid email format | | `.url()` | Valid URL
+  format | | `.regex(pattern)` | Matches regular expression (pattern and flags
+  are serialized) |
 </Accordion>
 
 <Accordion title="Number checks">
-  | Method | Description |
-  |---|---|
-  | `.min(n)` | Minimum value |
-  | `.max(n)` | Maximum value |
-  | `.int()` | Must be an integer |
+  | Method | Description | |---|---| | `.min(n)` | Minimum value | | `.max(n)` |
+  Maximum value | | `.int()` | Must be an integer |
 </Accordion>
 
 <Accordion title="Array checks">
-  | Method | Description |
-  |---|---|
-  | `.min(n)` | Minimum array length |
-  | `.max(n)` | Maximum array length |
+  | Method | Description | |---|---| | `.min(n)` | Minimum array length | |
+  `.max(n)` | Maximum array length |
 </Accordion>
 
 <Warning>
-  Custom Zod validators (`.refine()`, `.transform()`, `.pipe()`) cannot be serialized to the schema registry and will cause a sync error. Use only built-in Zod checks.
+  Custom Zod validators (`.refine()`, `.transform()`, `.pipe()`) cannot be
+  serialized to the schema registry and will cause a sync error. Use only
+  built-in Zod checks.
 </Warning>
 
 ## Registering types
@@ -184,7 +180,8 @@ Every write operation to the MDCMS API requires an `x-mdcms-schema-hash` header 
 - Re-run `mdcms schema sync` to update after config changes.
 
 <Tip>
-  In CI/CD pipelines, always run `mdcms schema sync` before `mdcms push` to ensure the schema hash is current.
+  In CI/CD pipelines, always run `mdcms schema sync` before `mdcms push` to
+  ensure the schema hash is current.
 </Tip>
 
 ## Environment overlays
@@ -215,12 +212,12 @@ export default defineConfig({
 
 ### Overlay operations
 
-| Operation | Description |
-|---|---|
-| `add` | Add new fields that don't exist on the base type. Errors if the field already exists. |
-| `modify` | Replace the schema for an existing field. Errors if the field doesn't exist. |
-| `omit` | Remove fields by name. Errors if the field doesn't exist. |
-| `extends` | Inherit from another environment instead of the base types. Supports chaining. |
+| Operation | Description                                                                           |
+| --------- | ------------------------------------------------------------------------------------- |
+| `add`     | Add new fields that don't exist on the base type. Errors if the field already exists. |
+| `modify`  | Replace the schema for an existing field. Errors if the field doesn't exist.          |
+| `omit`    | Remove fields by name. Errors if the field doesn't exist.                             |
+| `extends` | Inherit from another environment instead of the base types. Supports chaining.        |
 
 ### Field-level environment targeting
 
@@ -240,7 +237,8 @@ const Post = defineType("post", {
 Fields with `.env()` are only included in the specified environments. This is syntactic sugar that gets expanded into `add` overlays during config parsing.
 
 <Warning>
-  You cannot use `.env()` on fields inside overlay `add`/`modify` maps. Keep environment targeting on the base type only.
+  You cannot use `.env()` on fields inside overlay `add`/`modify` maps. Keep
+  environment targeting on the base type only.
 </Warning>
 
 ## Complete example
@@ -298,5 +296,6 @@ export default defineConfig({
 ```
 
 <Warning>
-  Changing type names or removing types that have existing content requires a migration. Use `mdcms migrate` to handle these changes safely.
+  Changing type names or removing types that have existing content requires a
+  migration. Use `mdcms migrate` to handle these changes safely.
 </Warning>

@@ -683,10 +683,7 @@ export default function UsersPage() {
               >
                 Cancel
               </Button>
-              <Button
-                disabled={isUpdatingGrants}
-                onClick={handleEditRole}
-              >
+              <Button disabled={isUpdatingGrants} onClick={handleEditRole}>
                 {isUpdatingGrants ? "Saving..." : "Save"}
               </Button>
             </DialogFooter>

@@ -9,15 +9,17 @@ The MDCMS CLI is designed for headless operation in CI/CD pipelines. All command
 
 Set these in your CI provider's secret management:
 
-| Variable | Description |
-| --- | --- |
-| `MDCMS_API_KEY` | API key for authentication (replaces `mdcms login`) |
-| `MDCMS_PROJECT` | Target project slug |
-| `MDCMS_ENVIRONMENT` | Target environment name |
-| `MDCMS_SERVER_URL` | MDCMS server URL (overrides `mdcms.config.ts`) |
+| Variable            | Description                                         |
+| ------------------- | --------------------------------------------------- |
+| `MDCMS_API_KEY`     | API key for authentication (replaces `mdcms login`) |
+| `MDCMS_PROJECT`     | Target project slug                                 |
+| `MDCMS_ENVIRONMENT` | Target environment name                             |
+| `MDCMS_SERVER_URL`  | MDCMS server URL (overrides `mdcms.config.ts`)      |
 
 <Tip>
-  Create a dedicated API key with minimal scopes for CI use. Schema sync requires `schema:read` and `schema:write`. Content push requires `content:write` and `content:read:draft`.
+  Create a dedicated API key with minimal scopes for CI use. Schema sync
+  requires `schema:read` and `schema:write`. Content push requires
+  `content:write` and `content:read:draft`.
 </Tip>
 
 ## GitHub Actions: Schema sync
@@ -103,7 +105,8 @@ jobs:
 ```
 
 <Note>
-  Schema sync runs before content push to ensure the schema hash is available. Push requires a valid schema hash from a prior sync.
+  Schema sync runs before content push to ensure the schema hash is available.
+  Push requires a valid schema hash from a prior sync.
 </Note>
 
 ## Status check
@@ -158,5 +161,7 @@ jobs:
 ```
 
 <Warning>
-  If `mdcms status` reports drift on a pull request, the author should run `mdcms schema sync` and `mdcms push` locally before merging, or include the schema sync step in the merge workflow.
+  If `mdcms status` reports drift on a pull request, the author should run
+  `mdcms schema sync` and `mdcms push` locally before merging, or include the
+  schema sync step in the merge workflow.
 </Warning>

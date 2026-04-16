@@ -50,8 +50,7 @@ export type StudioStartupErrorDescription = {
 };
 
 const LOADING_TITLE = "Loading Studio";
-const LOADING_SUMMARY =
-  "Fetching and validating the runtime bundle.";
+const LOADING_SUMMARY = "Fetching and validating the runtime bundle.";
 const READY_CONTAINER_STYLE = {
   minHeight: "20rem",
 } as const;

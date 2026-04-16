@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-readonly SERVICES=(postgres redis minio mailhog server)
+readonly INFRA_SERVICES=(postgres redis minio mailhog)
+readonly SERVICES=("${INFRA_SERVICES[@]}" server)
 
 cleanup() {
   docker compose down -v --remove-orphans >/dev/null 2>&1 || true
@@ -77,14 +78,28 @@ assert_services_healthy() {
   done
 }
 
+assert_infra_services_healthy() {
+  local service
+  for service in "${INFRA_SERVICES[@]}"; do
+    wait_for_service "$service"
+  done
+}
+
+start_stack() {
+  docker compose up -d --build "${INFRA_SERVICES[@]}"
+  assert_infra_services_healthy
+  docker compose run --rm --no-deps --build db-migrate
+  docker compose up -d --build --no-deps server
+  wait_for_service server
+}
+
 trap cleanup EXIT
 
 echo "Resetting any existing compose stack"
 cleanup
 
 echo "Bringing stack up"
-docker compose up -d --build
-assert_services_healthy
+start_stack
 
 echo "Checking health endpoint and port mappings"
 verify_health_endpoint
@@ -107,8 +122,7 @@ docker compose exec -T minio sh -lc "printf '%s' '$SENTINEL_VALUE' > /data/cms3_
 
 echo "Restarting stack without deleting volumes"
 docker compose down
-docker compose up -d
-assert_services_healthy
+start_stack
 
 echo "Validating persistence sentinels after restart"
 postgres_value="$(

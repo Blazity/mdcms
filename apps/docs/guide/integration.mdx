@@ -1,0 +1,383 @@
+---
+title: "Integrating MDCMS"
+description: "Embed MDCMS Studio and the content SDK into your own application"
+---
+
+Wire MDCMS into a real application you own. This guide covers host app responsibilities, Studio embedding, authentication, and production configuration.
+
+<Tip>
+  Need a running server first? See [Self-Hosting](/guide/self-hosting). Need to
+  install the CLI and define your schema? See the [Quick
+  Start](/guide/quickstart).
+</Tip>
+
+## Prerequisites
+
+Before integrating, you need:
+
+1. **A running MDCMS server** — self-hosted via Docker Compose or a managed instance
+2. **The CLI installed and a project initialized** — `npx mdcms init` creates your `mdcms.config.ts` and syncs your schema
+3. **A React application** — Next.js App Router is the primary example below; any React framework with catch-all routing works
+
+## Host app responsibilities
+
+MDCMS handles content storage, the Studio UI, authentication flows, and the API. Your host app provides the mount point and configuration.
+
+| Your app provides                                           | MDCMS handles                              |
+| ----------------------------------------------------------- | ------------------------------------------ |
+| A catch-all route where Studio mounts                       | Studio UI, runtime, and in-app navigation  |
+| `MDCMS_STUDIO_ALLOWED_ORIGINS` includes your app's origin   | Authentication flow and session management |
+| `mdcms.config.ts` with project, environment, and server URL | Content storage, versioning, and media     |
+| Optional: custom MDX component registrations                | Schema validation and API serving          |
+| Optional: SDK queries for rendering content                 | Published content delivery                 |
+
+## Installing packages
+
+Install `@mdcms/studio` to embed the visual editor. Add `@mdcms/sdk` if you also query content for rendering.
+
+<CodeGroup>
+```bash npm
+npm install @mdcms/studio
+# Optional: content SDK
+npm install @mdcms/sdk
+```
+
+```bash bun
+bun add @mdcms/studio
+# Optional: content SDK
+bun add @mdcms/sdk
+```
+
+</CodeGroup>
+
+## Project configuration
+
+Your `mdcms.config.ts` (created by `mdcms init`) drives both CLI sync and Studio embedding. The fields that matter for integration:
+
+```typescript mdcms.config.ts
+import { defineConfig, defineType } from "@mdcms/cli";
+import { z } from "zod";
+
+const BlogPost = defineType("BlogPost", {
+  directory: "content/blog",
+  localized: true,
+  fields: {
+    title: z.string().min(1),
+    slug: z.string().regex(/^[a-z0-9-]+$/),
+  },
+});
+
+export default defineConfig({
+  // Core runtime fields used by StudioEmbedConfig:
+  project: "my-site",
+  environment: "production",
+  serverUrl: "https://cms.example.com",
+  // Optional — locales are not part of StudioEmbedConfig but are
+  // used by Studio when available on the full MdcmsConfig:
+  locales: {
+    default: "en",
+    supported: ["en", "fr"],
+  },
+  // Schema and sync config:
+  contentDirectories: ["content"],
+  types: [BlogPost],
+});
+```
+
+See the [Schema Guide](/guide/schema/defining-types) for field types, references, and environment overlays.
+
+## Embedding Studio
+
+Studio is a React component that owns all rendering under a catch-all route (e.g., `/admin/*`). The recommended pattern splits server and client concerns so the config can be safely serialized across the boundary.
+
+### Basic setup
+
+Use this when you do not register custom MDX components.
+
+<Steps>
+  <Step title="Create the server component">
+    The server component imports your config, strips non-serializable values via `createStudioEmbedConfig`, and passes the result to the client component.
+
+    ```tsx app/admin/[[...path]]/page.tsx
+    import { createStudioEmbedConfig } from "@mdcms/studio/runtime";
+    import config from "../../../mdcms.config";
+    import { AdminStudioClient } from "./admin-studio-client";
+
+    export default async function AdminPage() {
+      return <AdminStudioClient config={createStudioEmbedConfig(config)} />;
+    }
+    ```
+
+  </Step>
+
+  <Step title="Create the client component">
+    The client component renders Studio. The `basePath` prop tells Studio which URL prefix it owns.
+
+    ```tsx app/admin/[[...path]]/admin-studio-client.tsx
+    "use client";
+
+    import { Studio, type MdcmsConfig } from "@mdcms/studio";
+
+    export function AdminStudioClient({ config }: { config: MdcmsConfig }) {
+      return <Studio config={config} basePath="/admin" />;
+    }
+    ```
+
+  </Step>
+</Steps>
+
+<Note>
+  `basePath` is required. Studio cannot infer its mount prefix from deep links
+  like `/admin/content/posts/abc`. Set it to the path prefix your catch-all
+  route uses.
+</Note>
+
+<Note>
+  **Other React frameworks:** The pattern is the same for any framework — create a catch-all route that renders the `<Studio>` component. In Remix, use a splat route (`admin.$.tsx`). In Vite with React Router, use a wildcard route (`/admin/*`). The key requirement is that Studio receives all sub-paths under its mount point.
+</Note>
+
+### Setup with MDX components
+
+If your app registers custom MDX components for the Studio editor (e.g., `<Chart>`, `<Callout>`, `<PricingTable>`), use `prepareStudioConfig` on the server to extract TypeScript prop metadata at build time.
+
+<Steps>
+  <Step title="Register components in your config">
+    Add component registrations to your `mdcms.config.ts`. Each component needs a `name`, `importPath`, and a `load` function. Optional: `propHints` for widget customization, `propsEditor`/`loadPropsEditor` for fully custom prop editing UI.
+
+    ```typescript mdcms.config.ts
+    import { defineConfig, defineType } from "@mdcms/cli";
+
+    export const mdxComponents = [
+      {
+        name: "Chart",
+        importPath: "./components/mdx/Chart",
+        description: "Inline data chart.",
+        load: () => import("./components/mdx/Chart").then((m) => m.Chart),
+        propHints: {
+          color: { widget: "color-picker" },
+        },
+      },
+      {
+        name: "Callout",
+        importPath: "./components/mdx/Callout",
+        description: "Styled callout block with nested content.",
+        load: () => import("./components/mdx/Callout").then((m) => m.Callout),
+      },
+    ] as const;
+
+    export default defineConfig({
+      project: "my-site",
+      environment: "production",
+      serverUrl: "https://cms.example.com",
+      contentDirectories: ["content"],
+      components: [...mdxComponents],
+      types: [/* your types */],
+    });
+    ```
+
+  </Step>
+
+  <Step title="Prepare config on the server">
+    `prepareStudioConfig` reads your component source files and extracts TypeScript prop types so the Studio editor can generate form controls automatically.
+
+    ```tsx app/admin/[[...path]]/page.tsx
+    import { resolve } from "node:path";
+    import { prepareStudioConfig } from "@mdcms/studio/runtime";
+    import config from "../../../mdcms.config";
+    import { AdminStudioClient } from "./admin-studio-client";
+
+    export default async function AdminPage() {
+      const appRoot = process.cwd();
+      const prepared = await prepareStudioConfig(config, {
+        cwd: appRoot,
+        tsconfigPath: resolve(appRoot, "tsconfig.json"),
+      });
+
+      // Extract only the serializable metadata for the client
+      const componentMeta = prepared.components?.map((c) => ({
+        name: c.name,
+        ...(c.extractedProps ? { extractedProps: c.extractedProps } : {}),
+      })) ?? [];
+
+      return (
+        <AdminStudioClient
+          preparedComponents={componentMeta}
+          schemaHash={
+            "_schemaHash" in prepared
+              ? (prepared._schemaHash as string)
+              : undefined
+          }
+        />
+      );
+    }
+    ```
+
+  </Step>
+
+  <Step title="Build the client config">
+    The client component merges extracted prop metadata back onto the component registrations (which include the runtime `load` callbacks).
+
+    ```tsx app/admin/[[...path]]/admin-studio-client.tsx
+    "use client";
+
+    import { Studio, type MdcmsConfig } from "@mdcms/studio";
+    import { mdxComponents } from "../../../mdcms.config";
+
+    type ComponentMeta = { name: string; extractedProps?: Record<string, unknown> };
+
+    export function AdminStudioClient(props: {
+      preparedComponents: ComponentMeta[];
+      schemaHash?: string;
+    }) {
+      const extractedByName = new Map(
+        props.preparedComponents.map((c) => [c.name, c.extractedProps]),
+      );
+
+      const config: MdcmsConfig = {
+        project: "my-site",
+        environment: "production",
+        serverUrl: "https://cms.example.com",
+        ...(props.schemaHash ? { _schemaHash: props.schemaHash } : {}),
+        components: [...mdxComponents].map((component) => {
+          const extracted = extractedByName.get(component.name);
+          return extracted ? { ...component, extractedProps: extracted } : component;
+        }),
+      };
+
+      return <Studio config={config} basePath="/admin" />;
+    }
+    ```
+
+  </Step>
+</Steps>
+
+<Warning>
+  `prepareStudioConfig` reads your TypeScript source files at build time. It
+  requires `cwd` pointing to your project root and `tsconfigPath` to your
+  `tsconfig.json`. If your components are in a separate package, adjust these
+  paths accordingly.
+</Warning>
+
+## Authentication and CORS
+
+Studio communicates directly with the MDCMS server API. Authentication determines how Studio identifies the current user.
+
+<Tabs>
+  <Tab title="Cookie (default)">
+    The default mode. Studio sends requests with `credentials: "include"` and the server manages session cookies. CSRF protection is automatic via the `x-mdcms-csrf-token` header.
+
+    ```tsx
+    <Studio config={config} basePath="/admin" />
+    ```
+
+    **Required server config:** The MDCMS server must allow your host app's origin for CORS and cookie delivery:
+
+    ```bash
+    MDCMS_STUDIO_ALLOWED_ORIGINS=https://myapp.example.com
+    ```
+
+    For local development with HTTP:
+
+    ```bash
+    MDCMS_STUDIO_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+    MDCMS_AUTH_INSECURE_COOKIES=true
+    ```
+
+  </Tab>
+  <Tab title="Token">
+    For headless or non-browser contexts, pass a Bearer API key directly:
+
+    ```tsx
+    <Studio
+      config={config}
+      basePath="/admin"
+      auth={{ mode: "token", token: process.env.MDCMS_API_KEY! }}
+    />
+    ```
+
+    API keys are created in **Settings > API Keys** inside Studio and use the `mdcms_key_` prefix.
+
+  </Tab>
+</Tabs>
+
+### Studio props reference
+
+| Prop         | Type                                                     | Description                                                            |
+| ------------ | -------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `config`     | `MdcmsConfig`                                            | Project, environment, server URL, and optional component registrations |
+| `basePath`   | `string`                                                 | URL prefix where Studio is mounted (e.g., `/admin`)                    |
+| `auth`       | `{ mode: "cookie" } \| { mode: "token"; token: string }` | Authentication strategy (defaults to cookie)                           |
+| `hostBridge` | `HostBridgeV1`                                           | Optional bridge for MDX preview rendering from the host app            |
+| `fetcher`    | `typeof fetch`                                           | Custom fetch implementation                                            |
+
+## Fetching content with the SDK
+
+If your app renders MDCMS content (blog posts, pages, etc.), use `@mdcms/sdk` to query the API:
+
+```typescript
+import { createClient } from "@mdcms/sdk";
+
+const cms = createClient({
+  serverUrl: "https://cms.example.com",
+  apiKey: process.env.MDCMS_API_KEY!,
+  project: "my-site",
+  environment: "production",
+});
+
+// List published posts
+const { data: posts } = await cms.list("BlogPost", {
+  locale: "en",
+  published: true,
+  limit: 10,
+});
+
+// Get a single post by slug
+const post = await cms.get("BlogPost", {
+  slug: "hello-world",
+  resolve: ["author"],
+});
+```
+
+See the [SDK reference](/api-reference/sdk) for filtering, pagination, error handling, and Next.js patterns.
+
+## Production checklist
+
+Before going live, verify each item:
+
+1. **HTTPS everywhere** — both the MDCMS server and your host app serve over HTTPS
+2. **Secure cookies** — `MDCMS_AUTH_INSECURE_COOKIES` is removed or set to `false`
+3. **CORS locked down** — `MDCMS_STUDIO_ALLOWED_ORIGINS` lists only your production origin, not `localhost`
+4. **Production mode** — `NODE_ENV=production` on the MDCMS server
+5. **Strong credentials** — database, S3, and Redis credentials are unique and not defaults
+6. **API keys scoped** — keys are scoped to the minimum required permissions and rotated periodically
+7. **Real email provider** — SMTP is configured with a production provider, not Mailhog
+
+<Tip>
+  See the [Self-Hosting guide](/guide/self-hosting#production-considerations)
+  for detailed server-side production hardening.
+</Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Studio Guide"
+    icon="layout-dashboard"
+    href="/guide/studio/dashboard"
+  >
+    Dashboard overview, navigation, and all Studio features
+  </Card>
+  <Card
+    title="Schema Guide"
+    icon="file-code"
+    href="/guide/schema/defining-types"
+  >
+    Field types, references, environment overlays, and MDX components
+  </Card>
+  <Card title="CLI Commands" icon="terminal" href="/guide/cli/commands">
+    Push, pull, login, schema sync, and all CLI flags
+  </Card>
+  <Card title="SDK Reference" icon="plug" href="/api-reference/sdk">
+    Full typed client API for content reads
+  </Card>
+</CardGroup>

@@ -14,6 +14,7 @@ This page covers everything you need to know about contributing to MDCMS, from b
     ```bash
     git checkout -b feat/my-feature
     ```
+
   </Step>
   <Step title="Develop with tests">
     Write failing tests first, then implement until they pass. Run unit tests during development for fast feedback:
@@ -21,6 +22,7 @@ This page covers everything you need to know about contributing to MDCMS, from b
     ```bash
     bun run unit
     ```
+
   </Step>
   <Step title="Verify everything passes">
     Before committing, run the full CI gate:
@@ -30,6 +32,7 @@ This page covers everything you need to know about contributing to MDCMS, from b
     ```
 
     This runs format check, typecheck, unit tests, and integration tests sequentially.
+
   </Step>
   <Step title="Commit with conventional commits">
     ```bash
@@ -42,12 +45,12 @@ This page covers everything you need to know about contributing to MDCMS, from b
 
 All branches follow a `type/kebab-case-description` pattern:
 
-| Prefix | Use for |
-|--------|---------|
-| `feat/` | New features |
-| `fix/` | Bug fixes |
-| `chore/` | Maintenance, dependency updates, config changes |
-| `refactor/` | Code restructuring without behavior changes |
+| Prefix      | Use for                                         |
+| ----------- | ----------------------------------------------- |
+| `feat/`     | New features                                    |
+| `fix/`      | Bug fixes                                       |
+| `chore/`    | Maintenance, dependency updates, config changes |
+| `refactor/` | Code restructuring without behavior changes     |
 
 Examples: `feat/media-upload-drag-drop`, `fix/reference-resolution-null`, `chore/bump-elysia`.
 
@@ -59,18 +62,19 @@ Commits follow the conventional commits format:
 type(scope): brief message
 ```
 
-| Type | Use for |
-|------|---------|
-| `feat` | New feature |
-| `fix` | Bug fix |
-| `chore` | Maintenance task |
-| `refactor` | Code restructuring |
-| `docs` | Documentation changes |
-| `test` | Test additions or modifications |
+| Type       | Use for                         |
+| ---------- | ------------------------------- |
+| `feat`     | New feature                     |
+| `fix`      | Bug fix                         |
+| `chore`    | Maintenance task                |
+| `refactor` | Code restructuring              |
+| `docs`     | Documentation changes           |
+| `test`     | Test additions or modifications |
 
 The **scope** is the package name or area of the codebase (e.g., `server`, `studio`, `cli`, `shared`, `sdk`, `modules`).
 
 Rules:
+
 - First line only -- no body, no footer
 - Keep the message concise and descriptive
 - Use imperative mood ("add feature" not "added feature")
@@ -87,6 +91,7 @@ git commit -m "fixed stuff"
 git commit -m "feat: update"
 git commit -m "WIP"
 ```
+
 </CodeGroup>
 
 ## Code Conventions
@@ -107,12 +112,12 @@ bun run format
 
 ### Naming
 
-| Entity | Convention | Example |
-|--------|-----------|---------|
-| Files | kebab-case | `content-api.ts` |
-| Types / Interfaces | PascalCase | `ContentDocument` |
-| Functions / Variables | camelCase | `getDocument` |
-| Constants | SCREAMING_SNAKE_CASE | `MAX_LIMIT` |
+| Entity                | Convention           | Example           |
+| --------------------- | -------------------- | ----------------- |
+| Files                 | kebab-case           | `content-api.ts`  |
+| Types / Interfaces    | PascalCase           | `ContentDocument` |
+| Functions / Variables | camelCase            | `getDocument`     |
+| Constants             | SCREAMING_SNAKE_CASE | `MAX_LIMIT`       |
 
 - No abbreviations except widely known ones (`id`, `url`, `ctx`)
 - Self-documenting names -- comments explain "why", not "what"
@@ -132,6 +137,7 @@ bun run format
     ```bash
     git push -u origin feat/my-feature
     ```
+
   </Step>
   <Step title="CI runs automatically">
     GitHub Actions runs the full CI pipeline on every PR. All required checks must pass before merge.
@@ -160,9 +166,13 @@ This runs the following checks sequentially:
 4. **Integration tests** -- Runs integration tests (requires Docker services running)
 
 <Warning>
-The pre-push hook blocks the push if any check fails. Fix all failures before pushing. Do not skip the hook with `--no-verify` unless you have a specific reason.
+  The pre-push hook blocks the push if any check fails. Fix all failures before
+  pushing. Do not skip the hook with `--no-verify` unless you have a specific
+  reason.
 </Warning>
 
 <Tip>
-Run `bun run quality` (format + typecheck) as a quick sanity check during development. Save the full `bun run ci:required` for when you are ready to push.
+  Run `bun run quality` (format + typecheck) as a quick sanity check during
+  development. Save the full `bun run ci:required` for when you are ready to
+  push.
 </Tip>
