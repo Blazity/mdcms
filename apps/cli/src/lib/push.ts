@@ -1644,12 +1644,11 @@ export async function runPushCommand(
   // Preflight or the missing-state flow may sync schema and update the local
   // state file. Re-read immediately before writes so requests carry the fresh
   // hash, while dry-run/no-work paths never require local schema state.
-  let schemaState =
-    (await readSchemaState({
-      cwd: context.cwd,
-      project: context.project,
-      environment: context.environment,
-    })) ?? initialSchemaState;
+  let schemaState = await readSchemaState({
+    cwd: context.cwd,
+    project: context.project,
+    environment: context.environment,
+  });
 
   if (!schemaState) {
     const isInteractive = process.stdin.isTTY === true;

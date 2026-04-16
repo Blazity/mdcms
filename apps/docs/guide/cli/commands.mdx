@@ -178,9 +178,11 @@ mdcms push [--force] [--dry-run] [--validate] [--published]
 Push uses optimistic concurrency via the `draftRevision` field. If the server's current revision does not match the manifest's recorded revision, the push for that document is rejected. Run `mdcms pull` to reconcile before retrying.
 
 <Warning>
-  Push requires a valid schema hash from a previous `mdcms schema sync`. If the
-  schema has never been synced or the local hash is missing, the command will
-  fail.
+  Push requires a valid schema hash from a previous `mdcms schema sync` when
+  performing actual writes. If the schema has never been synced or the local
+  hash is missing, write operations will fail. However, dry-run/no-write
+  invocations (e.g., using --dry-run) do not require local schema state and can
+  proceed.
 </Warning>
 
 ---

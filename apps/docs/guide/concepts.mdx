@@ -135,7 +135,7 @@ A **document** is an instance of a content type. It consists of structured front
 | -------------------- | -------------------------------------------------------------------------------------------------------- |
 | `documentId`         | Stable UUID. The true identity of a document -- never changes, even if the path does.                    |
 | `translationGroupId` | UUID that links locale variants of the same logical content together.                                    |
-| `path`               | Mutable, filesystem-like path (e.g., `content/blog/hello-world`). Can be renamed without losing history. |
+| `path`               | Mutable, filesystem-like path (e.g., `content/blog/hello-world`). It can be renamed without losing history. |
 | `locale`             | BCP 47 language tag (e.g., `en`, `fr`, `ja`). Set to `__mdcms_default__` for non-localized types.        |
 | `format`             | `md` for standard Markdown, `mdx` for MDX with component support.                                        |
 | `frontmatter`        | JSON object containing structured data that matches the content type schema.                             |
