@@ -24,7 +24,8 @@ Session-based auth is used by the Studio and browser clients. It requires a CSRF
 ### Login
 
 <ParamField method="POST" path="/api/v1/auth/login">
-  Authenticate with email and password. Returns a session and sets an HTTP-only session cookie.
+  Authenticate with email and password. Returns a session and sets an HTTP-only
+  session cookie.
 </ParamField>
 
 <ParamField body="email" type="string" required>
@@ -101,7 +102,8 @@ curl -X POST "https://cms.example.com/api/v1/auth/logout" \
 ### Initiate OIDC
 
 <ParamField method="POST" path="/api/v1/auth/sso/{provider}">
-  Initiate an OpenID Connect authentication flow with an external identity provider.
+  Initiate an OpenID Connect authentication flow with an external identity
+  provider.
 </ParamField>
 
 <ParamField path="provider" type="string" required>
@@ -134,7 +136,8 @@ Redirect the user to the `redirectUrl`. After successful authentication, the pro
 ### SAML Assertion Consumer
 
 <ParamField method="POST" path="/api/v1/auth/saml/acs">
-  SAML assertion consumer service endpoint. Receives and processes SAML assertions from the identity provider after authentication.
+  SAML assertion consumer service endpoint. Receives and processes SAML
+  assertions from the identity provider after authentication.
 </ParamField>
 
 This endpoint is called by the SAML identity provider, not by client applications directly. On successful assertion validation, a session is established and the user is redirected to the Studio.
@@ -146,7 +149,9 @@ This endpoint is called by the SAML identity provider, not by client application
 ### SAML Metadata
 
 <ParamField method="GET" path="/api/v1/auth/saml/metadata">
-  Returns the SAML service provider metadata XML document. Use this URL when configuring MDCMS as a service provider in your identity provider's admin console.
+  Returns the SAML service provider metadata XML document. Use this URL when
+  configuring MDCMS as a service provider in your identity provider's admin
+  console.
 </ParamField>
 
 **Example request:**
@@ -184,7 +189,8 @@ The CLI uses a device authorization flow to authenticate without exposing creden
 ### Start Challenge
 
 <ParamField method="POST" path="/api/v1/auth/cli/start">
-  Begin a CLI device authorization flow. Returns a challenge ID and a URL for the user to authorize in their browser.
+  Begin a CLI device authorization flow. Returns a challenge ID and a URL for
+  the user to authorize in their browser.
 </ParamField>
 
 <ParamField body="project" type="string" required>
@@ -219,13 +225,15 @@ curl -X POST "https://cms.example.com/api/v1/auth/cli/start" \
 ```
 
 <Warning>
-  The challenge expires after 10 minutes. If the user does not authorize within that window, the CLI must restart the flow.
+  The challenge expires after 10 minutes. If the user does not authorize within
+  that window, the CLI must restart the flow.
 </Warning>
 
 ### Authorize Challenge
 
 <ParamField method="POST" path="/api/v1/auth/cli/authorize">
-  Authorize a pending CLI device challenge. Called from the browser after the user logs in and approves the CLI session.
+  Authorize a pending CLI device challenge. Called from the browser after the
+  user logs in and approves the CLI session.
 </ParamField>
 
 **Example request:**
@@ -254,7 +262,8 @@ curl -X POST "https://cms.example.com/api/v1/auth/cli/authorize" \
 ### Exchange Code
 
 <ParamField method="POST" path="/api/v1/auth/cli/exchange">
-  Exchange the authorization code for an API key. Called by the CLI after the user authorizes the challenge.
+  Exchange the authorization code for an API key. Called by the CLI after the
+  user authorizes the challenge.
 </ParamField>
 
 **Example request:**
@@ -288,7 +297,8 @@ The CLI stores this API key locally and uses it for subsequent requests.
 ### Get Current User
 
 <ParamField method="GET" path="/api/v1/me">
-  Returns the current authenticated principal's identity and capabilities within the active project and environment.
+  Returns the current authenticated principal's identity and capabilities within
+  the active project and environment.
 </ParamField>
 
 **Example request:**
@@ -342,7 +352,13 @@ For session-based authentication, the response includes the user's email and rol
     "role": "admin",
     "capabilities": {
       "schema": { "read": true, "write": true },
-      "content": { "read": true, "readDraft": true, "write": true, "publish": true, "delete": true },
+      "content": {
+        "read": true,
+        "readDraft": true,
+        "write": true,
+        "publish": true,
+        "delete": true
+      },
       "users": { "manage": true },
       "settings": { "manage": true }
     }
@@ -397,5 +413,7 @@ curl "https://cms.example.com/api/v1/environments" \
 ```
 
 <Note>
-  The `X-MDCMS-Environment` header is still required for this endpoint, even though it returns all environments. The header is used for authentication context.
+  The `X-MDCMS-Environment` header is still required for this endpoint, even
+  though it returns all environments. The header is used for authentication
+  context.
 </Note>

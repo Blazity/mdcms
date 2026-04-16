@@ -10,7 +10,8 @@ All content endpoints require the standard [authentication headers](/api-referen
 ## List Documents
 
 <ParamField method="GET" path="/api/v1/content">
-  Retrieve a paginated list of documents, filtered by type and optional criteria.
+  Retrieve a paginated list of documents, filtered by type and optional
+  criteria.
 </ParamField>
 
 **Scope required:** `content:read`. Add `content:read:draft` to include draft documents (when `draft=true`).
@@ -30,11 +31,13 @@ All content endpoints require the standard [authentication headers](/api-referen
 </ParamField>
 
 <ParamField query="slug" type="string">
-  Filter by the `slug` frontmatter field. Requires the type to have a `slug` field.
+  Filter by the `slug` frontmatter field. Requires the type to have a `slug`
+  field.
 </ParamField>
 
 <ParamField query="published" type="boolean">
-  When `true`, only return documents with at least one published version. When `false`, only return never-published documents.
+  When `true`, only return documents with at least one published version. When
+  `false`, only return never-published documents.
 </ParamField>
 
 <ParamField query="isDeleted" type="boolean">
@@ -42,15 +45,18 @@ All content endpoints require the standard [authentication headers](/api-referen
 </ParamField>
 
 <ParamField query="hasUnpublishedChanges" type="boolean">
-  When `true`, only return documents with draft changes ahead of the published version.
+  When `true`, only return documents with draft changes ahead of the published
+  version.
 </ParamField>
 
 <ParamField query="draft" type="boolean">
-  When `true`, return draft content instead of the published version. Requires `content:read:draft` scope.
+  When `true`, return draft content instead of the published version. Requires
+  `content:read:draft` scope.
 </ParamField>
 
 <ParamField query="resolve" type="string">
-  Reference field name to resolve. Can be repeated for multiple fields (e.g., `resolve=author&resolve=category`). Resolution is one level deep.
+  Reference field name to resolve. Can be repeated for multiple fields (e.g.,
+  `resolve=author&resolve=category`). Resolution is one level deep.
 </ParamField>
 
 <ParamField query="limit" type="integer">
@@ -62,7 +68,8 @@ All content endpoints require the standard [authentication headers](/api-referen
 </ParamField>
 
 <ParamField query="sort" type="string">
-  Sort field. Accepted values: `createdAt`, `updatedAt`, `path`. Default `createdAt`.
+  Sort field. Accepted values: `createdAt`, `updatedAt`, `path`. Default
+  `createdAt`.
 </ParamField>
 
 <ParamField query="order" type="string">
@@ -166,7 +173,8 @@ const posts = await client.list("BlogPost", {
 ### Query Parameters
 
 <ParamField query="locale" type="string">
-  Locale override. If the document is localized, returns the variant for this locale.
+  Locale override. If the document is localized, returns the variant for this
+  locale.
 </ParamField>
 
 <ParamField query="resolve" type="string">
@@ -265,7 +273,8 @@ const post = await client.get("BlogPost", {
 </ParamField>
 
 <ParamField body="locale" type="string">
-  BCP 47 locale tag. Required for localized types. Defaults to `__mdcms_default__` for non-localized types.
+  BCP 47 locale tag. Required for localized types. Defaults to
+  `__mdcms_default__` for non-localized types.
 </ParamField>
 
 <ParamField body="format" type="string">
@@ -351,11 +360,11 @@ curl -X POST "https://cms.example.com/api/v1/content" \
 
 **Error cases:**
 
-| Error Code | Cause |
-|------------|-------|
-| `SCHEMA_HASH_MISMATCH` | The `X-MDCMS-Schema-Hash` does not match the server. Run `mdcms schema sync`. |
-| `CONTENT_PATH_CONFLICT` | A document already exists at the given path and locale. |
-| `INVALID_INPUT` | Frontmatter does not pass schema validation. Check `details` for field-level errors. |
+| Error Code              | Cause                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------ |
+| `SCHEMA_HASH_MISMATCH`  | The `X-MDCMS-Schema-Hash` does not match the server. Run `mdcms schema sync`.        |
+| `CONTENT_PATH_CONFLICT` | A document already exists at the given path and locale.                              |
+| `INVALID_INPUT`         | Frontmatter does not pass schema validation. Check `details` for field-level errors. |
 
 ---
 
@@ -378,7 +387,8 @@ curl -X POST "https://cms.example.com/api/v1/content" \
 ### Request Body
 
 <ParamField body="frontmatter" type="object">
-  Updated frontmatter. Partial updates are not supported -- provide the complete frontmatter object.
+  Updated frontmatter. Partial updates are not supported -- provide the complete
+  frontmatter object.
 </ParamField>
 
 <ParamField body="body" type="string">
@@ -386,7 +396,9 @@ curl -X POST "https://cms.example.com/api/v1/content" \
 </ParamField>
 
 <ParamField body="draftRevision" type="integer" required>
-  The `draftRevision` value from the last fetch. Used for optimistic concurrency control. If the server's current revision is higher, the update is rejected with a `CONFLICT` error.
+  The `draftRevision` value from the last fetch. Used for optimistic concurrency
+  control. If the server's current revision is higher, the update is rejected
+  with a `CONFLICT` error.
 </ParamField>
 
 ### Example
@@ -457,11 +469,11 @@ curl -X PUT "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-4466
 
 **Error cases:**
 
-| Error Code | Cause |
-|------------|-------|
-| `CONFLICT` | The `draftRevision` is stale. Another edit was saved after your last fetch. Re-fetch, merge, and retry. |
-| `SCHEMA_HASH_MISMATCH` | Schema is out of date. Run `mdcms schema sync`. |
-| `INVALID_INPUT` | Frontmatter does not pass schema validation. |
+| Error Code             | Cause                                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------------------------------- |
+| `CONFLICT`             | The `draftRevision` is stale. Another edit was saved after your last fetch. Re-fetch, merge, and retry. |
+| `SCHEMA_HASH_MISMATCH` | Schema is out of date. Run `mdcms schema sync`.                                                         |
+| `INVALID_INPUT`        | Frontmatter does not pass schema validation.                                                            |
 
 ---
 
@@ -482,7 +494,8 @@ curl -X PUT "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-4466
 ### Request Body
 
 <ParamField body="changeSummary" type="string">
-  Optional summary of changes in this version (e.g., "Fixed typos and updated pricing section").
+  Optional summary of changes in this version (e.g., "Fixed typos and updated
+  pricing section").
 </ParamField>
 
 ### Example
@@ -529,7 +542,8 @@ curl -X POST "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-446
 ## Unpublish Document
 
 <ParamField method="POST" path="/api/v1/content/{documentId}/unpublish">
-  Remove the published version, reverting the document to draft-only state. The version history is preserved.
+  Remove the published version, reverting the document to draft-only state. The
+  version history is preserved.
 </ParamField>
 
 **Scope required:** `content:publish`
@@ -568,7 +582,8 @@ curl -X POST "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-446
 ## List Versions
 
 <ParamField method="GET" path="/api/v1/content/{documentId}/versions">
-  Retrieve the version history of a document. Each entry represents a published snapshot.
+  Retrieve the version history of a document. Each entry represents a published
+  snapshot.
 </ParamField>
 
 **Scope required:** `content:read`
@@ -692,8 +707,13 @@ curl "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-44665544000
 
 ## Restore Version
 
-<ParamField method="POST" path="/api/v1/content/{documentId}/versions/{version}/restore">
-  Restore the document's draft to the state captured in a specific version. This does not delete any version history -- it creates a new draft revision with the content from the specified version.
+<ParamField
+  method="POST"
+  path="/api/v1/content/{documentId}/versions/{version}/restore"
+>
+  Restore the document's draft to the state captured in a specific version. This
+  does not delete any version history -- it creates a new draft revision with
+  the content from the specified version.
 </ParamField>
 
 **Scope required:** `content:write`
@@ -738,7 +758,8 @@ curl -X POST "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-446
 ## Delete Document
 
 <ParamField method="DELETE" path="/api/v1/content/{documentId}">
-  Soft-delete a document. The document remains in the database but is excluded from normal queries. It can be restored later.
+  Soft-delete a document. The document remains in the database but is excluded
+  from normal queries. It can be restored later.
 </ParamField>
 
 **Scope required:** `content:delete`
@@ -816,7 +837,8 @@ curl -X POST "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-446
 ## Duplicate Document
 
 <ParamField method="POST" path="/api/v1/content/{documentId}/duplicate">
-  Create a copy of a document with a new ID and path. The duplicate starts as a draft with no published version, regardless of the source document's state.
+  Create a copy of a document with a new ID and path. The duplicate starts as a
+  draft with no published version, regardless of the source document's state.
 </ParamField>
 
 **Scope required:** `content:write`
@@ -877,7 +899,8 @@ curl -X POST "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-446
 ## Overview Stats
 
 <ParamField method="GET" path="/api/v1/content/overview">
-  Get aggregate counts of documents per content type. Useful for building editorial dashboards.
+  Get aggregate counts of documents per content type. Useful for building
+  editorial dashboards.
 </ParamField>
 
 **Scope required:** `content:read`
@@ -885,7 +908,8 @@ curl -X POST "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-446
 ### Query Parameters
 
 <ParamField query="type" type="string">
-  Filter to specific types. Can be repeated (e.g., `type=BlogPost&type=Author`). When omitted, returns counts for all types.
+  Filter to specific types. Can be repeated (e.g., `type=BlogPost&type=Author`).
+  When omitted, returns counts for all types.
 </ParamField>
 
 **Example request:**
@@ -927,7 +951,8 @@ curl "https://cms.example.com/api/v1/content/overview?type=BlogPost&type=Author"
 ## Get Variants
 
 <ParamField method="GET" path="/api/v1/content/{documentId}/variants">
-  Returns all locale variants for a document, identified by their shared translation group.
+  Returns all locale variants for a document, identified by their shared
+  translation group.
 </ParamField>
 
 **Scope required:** `content:read`
@@ -935,7 +960,8 @@ curl "https://cms.example.com/api/v1/content/overview?type=BlogPost&type=Author"
 ### Path Parameters
 
 <ParamField path="documentId" type="string" required>
-  The document's UUID. Any locale variant can be used -- the server looks up the translation group automatically.
+  The document's UUID. Any locale variant can be used -- the server looks up the
+  translation group automatically.
 </ParamField>
 
 **Example request:**
@@ -984,5 +1010,6 @@ curl "https://cms.example.com/api/v1/content/550e8400-e29b-41d4-a716-44665544000
 ```
 
 <Tip>
-  Non-localized types return a single-element array with the `__mdcms_default__` locale.
+  Non-localized types return a single-element array with the `__mdcms_default__`
+  locale.
 </Tip>

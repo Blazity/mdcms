@@ -316,18 +316,23 @@ export function SchemaPageView({ state }: { state: StudioSchemaState }) {
             </p>
           </section>
         ) : (
-          <div data-mdcms-schema-page-state="ready" className="grid gap-4 lg:grid-cols-2">
+          <div
+            data-mdcms-schema-page-state="ready"
+            className="grid gap-4 lg:grid-cols-2"
+          >
             {sortEntries(state.entries).map((entry) => (
-              <Card key={entry.type} data-mdcms-schema-entry-type={entry.type} className="p-0 gap-0">
+              <Card
+                key={entry.type}
+                data-mdcms-schema-entry-type={entry.type}
+                className="p-0 gap-0"
+              >
                 <CardHeader className="gap-2 p-5 pb-3">
                   <div className="space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
                       <CardTitle className="text-lg tracking-tight">
                         {entry.type}
                       </CardTitle>
-                      <Badge
-                        variant={entry.localized ? "default" : "outline"}
-                      >
+                      <Badge variant={entry.localized ? "default" : "outline"}>
                         {entry.localized ? "Localized" : "Single locale"}
                       </Badge>
                     </div>

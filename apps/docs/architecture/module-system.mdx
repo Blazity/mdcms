@@ -9,11 +9,11 @@ MDCMS is built on a module system that organizes all server-side functionality i
 
 A module is a self-contained unit that can contribute to one or more runtime surfaces:
 
-| Surface | What it provides |
-| --- | --- |
+| Surface    | What it provides                                                                                        |
+| ---------- | ------------------------------------------------------------------------------------------------------- |
 | **Server** | HTTP route handlers mounted on the Elysia app, plus action catalog entries for discoverable operations. |
-| **CLI** | Action aliases, output formatters, and preflight hooks that extend the `mdcms` command. |
-| **Studio** | UI extension points including routes, navigation items, slot widgets, field kinds, and editor nodes. |
+| **CLI**    | Action aliases, output formatters, and preflight hooks that extend the `mdcms` command.                 |
+| **Studio** | UI extension points including routes, navigation items, slot widgets, field kinds, and editor nodes.    |
 
 Modules declare a manifest with metadata (id, version, API version, dependencies) and one or more surface implementations.
 
@@ -58,13 +58,20 @@ Modules are registered at compile time in `packages/modules/src/index.ts` and lo
 
 <Steps>
   <Step title="Build load report">
-    `buildServerModuleLoadReport()` validates every registered module package against the Zod schema, checks manifest compatibility (API version, core version range), resolves the dependency graph, and produces a `ServerModuleLoadReport`.
+    `buildServerModuleLoadReport()` validates every registered module package
+    against the Zod schema, checks manifest compatibility (API version, core
+    version range), resolves the dependency graph, and produces a
+    `ServerModuleLoadReport`.
   </Step>
   <Step title="Load modules">
-    `loadServerModules()` reads from the `installedModules` compile-time registry and delegates to the build step. If any module fails validation or has unresolvable dependencies, the server refuses to start.
+    `loadServerModules()` reads from the `installedModules` compile-time
+    registry and delegates to the build step. If any module fails validation or
+    has unresolvable dependencies, the server refuses to start.
   </Step>
   <Step title="Mount modules">
-    `mountLoadedServerModules()` iterates the loaded modules in dependency order and calls each module's `server.mount()`, passing the Elysia app instance and shared dependencies (database DAL, auth service, etc.).
+    `mountLoadedServerModules()` iterates the loaded modules in dependency order
+    and calls each module's `server.mount()`, passing the Elysia app instance
+    and shared dependencies (database DAL, auth service, etc.).
   </Step>
 </Steps>
 
@@ -83,12 +90,14 @@ MDCMS ships with two first-party modules:
 **Kind:** `core`
 
 Provides the foundational infrastructure surface: health checks (`/healthz`), Studio bootstrap endpoint, authentication routes, user management, API key management, RBAC grant management, and invite flows.
+
 </Accordion>
 
 <Accordion title="domain.content">
 **Kind:** `domain`
 
 Provides the content domain surface: document CRUD, schema registry sync, media upload and management, webhook dispatch, environment cloning/promotion, search, and content migration execution.
+
 </Accordion>
 
 Both modules implement `server` and `cli` surfaces. The module registry in `packages/modules/src/index.ts` sorts them deterministically by manifest id before exposing them to the loader.
@@ -99,15 +108,15 @@ Every server-side operation is registered as an **action** -- a discoverable, se
 
 ```typescript
 type ActionCatalogItem = {
-  id: string;                        // e.g. "content.documents.list"
-  kind: "command" | "query";         // write vs read
+  id: string; // e.g. "content.documents.list"
+  kind: "command" | "query"; // write vs read
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  path: string;                      // e.g. "/api/v1/content"
-  permissions: string[];             // required scopes
-  studio?: StudioActionMeta;         // visibility, surface, label, form hints
-  cli?: CliActionMeta;               // visibility, alias, input mode
-  requestSchema?: JsonSchema;        // JSON Schema for request body
-  responseSchema?: JsonSchema;       // JSON Schema for response body
+  path: string; // e.g. "/api/v1/content"
+  permissions: string[]; // required scopes
+  studio?: StudioActionMeta; // visibility, surface, label, form hints
+  cli?: CliActionMeta; // visibility, alias, input mode
+  requestSchema?: JsonSchema; // JSON Schema for request body
+  responseSchema?: JsonSchema; // JSON Schema for response body
 };
 ```
 
@@ -119,35 +128,38 @@ The catalog is queryable at runtime:
 Actions support visibility policies that filter the catalog per-request based on the caller's authentication context and permissions.
 
 <Tip>
-The CLI uses the action catalog to dynamically discover available commands. Run `mdcms actions` to see all actions available for your current credentials.
+  The CLI uses the action catalog to dynamically discover available commands.
+  Run `mdcms actions` to see all actions available for your current credentials.
 </Tip>
 
 ## Studio Extensibility Surfaces
 
 The Studio component exposes several extension points that modules can populate:
 
-| Surface | Description |
-| --- | --- |
-| `routes` | Additional React Router routes mounted inside the Studio shell. |
-| `navItems` | Navigation entries added to the Studio sidebar. |
-| `slotWidgets` | Widgets rendered in named layout slots across Studio pages. |
-| `fieldKinds` | Custom form field renderers for schema-driven frontmatter editing. |
-| `editorNodes` | Custom TipTap/ProseMirror nodes for the MDX editor. |
+| Surface           | Description                                                           |
+| ----------------- | --------------------------------------------------------------------- |
+| `routes`          | Additional React Router routes mounted inside the Studio shell.       |
+| `navItems`        | Navigation entries added to the Studio sidebar.                       |
+| `slotWidgets`     | Widgets rendered in named layout slots across Studio pages.           |
+| `fieldKinds`      | Custom form field renderers for schema-driven frontmatter editing.    |
+| `editorNodes`     | Custom TipTap/ProseMirror nodes for the MDX editor.                   |
 | `actionOverrides` | Replace or wrap default action behaviors (e.g., custom publish flow). |
-| `settingsPanels` | Additional panels on the Studio settings page. |
+| `settingsPanels`  | Additional panels on the Studio settings page.                        |
 
 Standard slot IDs used across Studio pages:
 
-| Slot ID | Location |
-| --- | --- |
-| `dashboard.main` | Main content area of the dashboard page. |
-| `content.list.toolbar` | Toolbar above the content list table. |
+| Slot ID                         | Location                                      |
+| ------------------------------- | --------------------------------------------- |
+| `dashboard.main`                | Main content area of the dashboard page.      |
+| `content.list.toolbar`          | Toolbar above the content list table.         |
 | `content.editor.header.actions` | Action buttons in the document editor header. |
-| `content.editor.sidebar` | Sidebar panels in the document editor. |
-| `settings.general` | General settings section. |
+| `content.editor.sidebar`        | Sidebar panels in the document editor.        |
+| `settings.general`              | General settings section.                     |
 
 <Note>
-In v1, Studio extensibility surfaces are defined but only consumed by first-party modules. The contract is stable and documented for future third-party use.
+  In v1, Studio extensibility surfaces are defined but only consumed by
+  first-party modules. The contract is stable and documented for future
+  third-party use.
 </Note>
 
 ## v1 Limitation
@@ -193,5 +205,7 @@ X-MDCMS-Environment: production
 The server's target routing guard validates these headers before the request reaches any route handler. Routes that require project+environment context (content, schema, media, webhooks, search) reject requests missing either header with a `400` error. Routes that require only project context (environments API) require `X-MDCMS-Project` alone.
 
 <Warning>
-API keys include a `contextAllowlist` that restricts which project/environment pairs they can access. A key scoped to `production` cannot be used to read `staging` content, even if it has `content:read` permission.
+  API keys include a `contextAllowlist` that restricts which project/environment
+  pairs they can access. A key scoped to `production` cannot be used to read
+  `staging` content, even if it has `content:read` permission.
 </Warning>

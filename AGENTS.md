@@ -14,16 +14,16 @@ Upcoming work is focused on live preview (real-time content rendering in the con
 
 ## Repository layout
 
-| Path | What it is |
-| --- | --- |
-| `apps/server` | Elysia HTTP server, the backend for everything |
-| `apps/cli` | CLI binary (`mdcms`) for push/pull/sync workflows |
-| `apps/studio-example` | Next.js app that embeds the Studio component |
-| `apps/studio-review` | Internal app for visual PR review of Studio changes |
-| `packages/shared` | Contracts, types, and schema utilities used everywhere |
-| `packages/sdk` | Client SDK for reading content from applications |
-| `packages/studio` | The embeddable React Studio component |
-| `packages/modules` | First-party module registry |
+| Path                  | What it is                                             |
+| --------------------- | ------------------------------------------------------ |
+| `apps/server`         | Elysia HTTP server, the backend for everything         |
+| `apps/cli`            | CLI binary (`mdcms`) for push/pull/sync workflows      |
+| `apps/studio-example` | Next.js app that embeds the Studio component           |
+| `apps/studio-review`  | Internal app for visual PR review of Studio changes    |
+| `packages/shared`     | Contracts, types, and schema utilities used everywhere |
+| `packages/sdk`        | Client SDK for reading content from applications       |
+| `packages/studio`     | The embeddable React Studio component                  |
+| `packages/modules`    | First-party module registry                            |
 
 Bun workspaces, Nx for task orchestration. Run `bun install` at the root.
 
