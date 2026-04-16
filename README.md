@@ -36,6 +36,8 @@ https://github.com/user-attachments/assets/b0778e3f-c062-4e66-bd6d-87f1dcb41789
 
 ## Quick Start
 
+> **Using an AI coding agent?** Run `npx skills add Blazity/mdcms` to install the [MDCMS Skills Pack](skills/README.md) — your agent will walk through the setup below for you. Supports Claude Code, Cursor, Gemini CLI, Codex, Copilot, and 40+ others via [skills.sh](https://skills.sh).
+
 ### 1. Install packages
 
 ```bash
