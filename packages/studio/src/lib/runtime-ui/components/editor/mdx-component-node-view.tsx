@@ -77,7 +77,9 @@ export function MdxComponentNodeFrame(props: {
       {/* Chip row */}
       <div className="flex items-center justify-between py-1.5">
         <span className="text-mono-label select-none text-foreground-muted">
-          {"<"}{props.componentName}{" />"}
+          {"<"}
+          {props.componentName}
+          {" />"}
         </span>
 
         <div
@@ -89,13 +91,9 @@ export function MdxComponentNodeFrame(props: {
           )}
         >
           {props.forbidden ? (
-            <span className="text-xs text-foreground-muted">
-              Unavailable
-            </span>
+            <span className="text-xs text-foreground-muted">Unavailable</span>
           ) : props.readOnly ? (
-            <span className="text-xs text-foreground-muted">
-              Read-only
-            </span>
+            <span className="text-xs text-foreground-muted">Read-only</span>
           ) : null}
           {props.onEditProps ? (
             <button
@@ -125,9 +123,7 @@ export function MdxComponentNodeFrame(props: {
       {/* Content area */}
       <div className="pb-3">
         {/* Preview surface */}
-        <div
-          data-mdcms-mdx-preview-state={props.previewState ?? "empty"}
-        >
+        <div data-mdcms-mdx-preview-state={props.previewState ?? "empty"}>
           {props.previewSurface}
           {props.previewState === "error" ? (
             <p className="text-xs text-destructive">
@@ -140,7 +136,11 @@ export function MdxComponentNodeFrame(props: {
         {props.isVoid ? null : (
           <div
             data-mdcms-mdx-content-label={props.componentName}
-            className={props.previewState === "ready" ? "mt-2 border-t border-border pt-2" : undefined}
+            className={
+              props.previewState === "ready"
+                ? "mt-2 border-t border-border pt-2"
+                : undefined
+            }
           >
             {props.children}
           </div>
