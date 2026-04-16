@@ -1,6 +1,6 @@
 {
   "name": "@mdcms/studio",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Embeddable Studio UI component for MDCMS",
   "type": "module",
   "main": "./dist/index.js",
