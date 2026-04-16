@@ -2225,10 +2225,8 @@ export function createAuthService(
   const baseUrl = resolveAuthBaseUrl(rawEnv);
   const secret = resolveAuthSecret(rawEnv);
   const useSecureCookies = resolveSecureCookiePolicy(rawEnv);
-  // Cookie-mode Studio is allowed to run cross-origin in local loopback dev,
-  // so SameSite must remain None even when Secure is disabled for HTTP.
-  const csrfCookieSameSite = "None" as const;
-  const sessionCookieSameSite = "none" as const;
+  const csrfCookieSameSite = useSecureCookies ? "None" : ("Lax" as const);
+  const sessionCookieSameSite = useSecureCookies ? "none" : ("lax" as const);
   const adminAllowlist = resolveAdminAllowlist(rawEnv);
   const staticSamlProviders = buildStaticSamlProviders(
     baseUrl,

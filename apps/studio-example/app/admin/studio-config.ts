@@ -5,7 +5,7 @@ import {
   studioExampleLocales,
   studioExampleMdxComponents,
   studioExampleProject,
-  studioExampleServerUrl,
+  resolveStudioExampleServerUrl,
 } from "../../lib/studio-example-studio-config";
 
 type PreparedStudioConfig = Awaited<ReturnType<typeof prepareStudioConfig>>;
@@ -50,7 +50,7 @@ export function createClientStudioConfig(
   return {
     project: studioExampleProject,
     environment: studioExampleEnvironment,
-    serverUrl: studioExampleServerUrl,
+    serverUrl: resolveStudioExampleServerUrl(),
     locales: studioExampleLocales,
     // Pre-computed schema hash from the server component where the full
     // config (with Zod types/environments) is available for derivation.

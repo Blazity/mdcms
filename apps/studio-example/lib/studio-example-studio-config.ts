@@ -1,6 +1,17 @@
 export const studioExampleProject = "marketing-site";
 export const studioExampleEnvironment = "staging";
 export const studioExampleServerUrl = "http://localhost:4000";
+
+/**
+ * Derive the server URL from the browser's current hostname so that
+ * loopback access via `127.0.0.1` stays same-site with the API server.
+ * Falls back to the static default for SSR / non-browser contexts.
+ */
+export function resolveStudioExampleServerUrl(): string {
+  if (typeof window === "undefined") return studioExampleServerUrl;
+  const { protocol, hostname } = window.location;
+  return `${protocol}//${hostname}:4000`;
+}
 export const studioExampleLocales = {
   default: "en",
   supported: ["en", "fr"],
