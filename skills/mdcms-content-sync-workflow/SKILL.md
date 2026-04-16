@@ -117,11 +117,14 @@ jobs:
           MDCMS_PROJECT: ${{ vars.MDCMS_PROJECT }}
           MDCMS_ENVIRONMENT: ${{ vars.MDCMS_ENVIRONMENT }}
           MDCMS_API_KEY: ${{ secrets.MDCMS_API_KEY }}
-        run: npx mdcms push --validate
+        run: npx mdcms push --validate --force --sync-schema
 ```
 
 Notes:
 
+- `--force` is required in non-interactive CI. Without it, `push` skips **new** and **deleted** file candidates (they would otherwise be confirmed via an interactive prompt) and only the changed-in-place documents are uploaded — the CI job would look green while the server drifts silently.
+- `--sync-schema` lets push apply schema drift in the same run. Without it, a change to `mdcms.config.ts` causes push to fail closed when the local schema differs from the server.
+- `--validate` checks frontmatter against the local schema before any API write, so CI catches shape errors before contacting the server.
 - Scope the MDCMS API key to the single environment this workflow touches (e.g., `staging`). A separate key pushes to `production` via a manual workflow or a protected environment.
 - `paths` filter avoids noisy runs when only app code changes.
 - Never echo the API key in logs. GitHub masks secrets but logging them explicitly can defeat that.
@@ -134,8 +137,8 @@ Only needed if the repo treats the filesystem as a mirror (e.g., for static-site
 
 - **Manifest is per-machine** — don't commit `.mdcms/manifests/`. It contains server state that's meaningless to other developers.
 - **Hash drift** — if a local file was edited without a `mdcms push`, then someone edited the same document in Studio, both sides diverge. `mdcms pull` classifies this as "both modified" and requires confirmation to overwrite.
-- **Deleting locally doesn't delete on the server** unless the push flow is explicit about deletions — check `mdcms push --help` for the current deletion flag. Double-check before assuming a local `rm` cascaded.
-- **Schema drift blocks push** — if `mdcms.config.ts` changes locally but schema sync didn't run, push fails. Either run `mdcms schema sync` first, or pass `--sync-schema` in the push call.
+- **Deletions need an interactive confirm or `--force`** — `mdcms push` has no dedicated deletion flag. When a tracked file is missing on disk, push treats it as a deletion candidate and prompts before removing it on the server. In non-interactive mode (no TTY, or in CI), deletion candidates are **skipped** unless `--force` is passed. The full push flag surface is `--force`, `--dry-run`, `--validate`, `--published`, `--sync-schema`. Use `--dry-run` first if you want to see the plan without writes; use `--force` only when you're sure a local `rm` should cascade.
+- **Schema drift blocks push** — if `mdcms.config.ts` changes locally but schema sync didn't run, push fails closed. Either run `mdcms schema sync` first, or pass `--sync-schema` so push applies the schema in the same run.
 - **Multi-environment confusion** — the credential store keys by `(server, project, environment)`. Switching between `staging` and `production` with different keys is fine; forgetting which one is active is where accidents happen. Use `--environment` explicitly in CI.
 
 ## Related skills

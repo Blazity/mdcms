@@ -75,6 +75,20 @@ function readInitFlagValue(
   return next;
 }
 
+function readInitInlineFlagValue(token: string, prefix: string): string {
+  const value = token.slice(prefix.length);
+  if (value.length === 0) {
+    const flag = prefix.replace(/=$/, "");
+    throw new RuntimeError({
+      code: "INVALID_INPUT",
+      message: `Flag "${flag}" requires a value.`,
+      statusCode: 400,
+      details: { flag },
+    });
+  }
+  return value;
+}
+
 function splitCsv(raw: string): string[] {
   return raw
     .split(",")
@@ -121,7 +135,7 @@ export function parseInitOptions(args: string[]): InitFlagOptions {
       continue;
     }
     if (token.startsWith("--directory=")) {
-      directories.push(token.slice("--directory=".length));
+      directories.push(readInitInlineFlagValue(token, "--directory="));
       continue;
     }
     if (token === "--directories") {
@@ -132,7 +146,9 @@ export function parseInitOptions(args: string[]): InitFlagOptions {
       continue;
     }
     if (token.startsWith("--directories=")) {
-      directories.push(...splitCsv(token.slice("--directories=".length)));
+      directories.push(
+        ...splitCsv(readInitInlineFlagValue(token, "--directories=")),
+      );
       continue;
     }
     if (token === "--default-locale") {
@@ -141,7 +157,7 @@ export function parseInitOptions(args: string[]): InitFlagOptions {
       continue;
     }
     if (token.startsWith("--default-locale=")) {
-      opts.defaultLocale = token.slice("--default-locale=".length);
+      opts.defaultLocale = readInitInlineFlagValue(token, "--default-locale=");
       continue;
     }
 
@@ -613,9 +629,23 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
       dirGroups.delete(".");
 
       let scaffoldedType: InferredType | null = null;
+      let exampleCreated = false;
 
       if (dirGroups.size === 0) {
         stdout.write("No content files found.\n");
+
+        if (initOpts.directories && initOpts.directories.length > 1) {
+          throw new RuntimeError({
+            code: "INIT_INVALID_DIRECTORY",
+            message: `Multiple --directory values (${initOpts.directories
+              .map((d) => `"${d}"`)
+              .join(
+                ", ",
+              )}) were passed but no content was found on disk. Scaffolding only supports a single starter directory — pass one --directory, or remove the flag to accept the default.`,
+            statusCode: 400,
+            details: { directories: initOpts.directories },
+          });
+        }
 
         const dirName = initOpts.directories?.[0]
           ? initOpts.directories[0]
@@ -664,6 +694,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
             ].join("\n"),
             "utf-8",
           );
+          exampleCreated = true;
         }
       } else if (initOpts.directories && initOpts.directories.length > 0) {
         const known = new Set(dirGroups.keys());
@@ -1074,7 +1105,7 @@ export function createInitCommand(options?: InitCommandOptions): CliCommand {
         }
       }
 
-      if (scaffoldedType) {
+      if (exampleCreated) {
         stdout.write(
           `\nExample post created at ${selectedDirectories[0]}/example.md\n` +
             `Run 'mdcms push' to upload it to the server.\n`,

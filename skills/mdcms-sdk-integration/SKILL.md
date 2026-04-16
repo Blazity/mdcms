@@ -50,25 +50,45 @@ Keep the import path server-only. If the app leaks it into a client bundle, the 
 
 ### 3. Fetch content
 
-Two common shapes:
+The SDK exposes two read methods: `cms.get(type, input)` and `cms.list(type, input)`. Both accept `locale`, optional per-call `project`/`environment` overrides, and an optional `resolve` array for reference expansion.
 
-**Fetch a single document by path**
+**Fetch a single document by id or slug**
+
+`get` requires either `id` (preferred — stable across renames) or `slug`. There is no `path` parameter on the SDK.
 
 ```ts
-const about = await cms.getDocument({ type: "page", path: "about" });
+// By id (preferred when you already have it)
+const about = await cms.get("page", { id: "doc_01HY…", locale: "en" });
+
+// By slug (convenient for marketing/blog routes)
+const post = await cms.get("post", { slug: "hello-world", locale: "en" });
 ```
+
+`get` returns the document directly (unwrapped from the `{ data }` envelope).
 
 **List documents of a type**
 
 ```ts
-const posts = await cms.listDocuments({ type: "post", limit: 20 });
+const response = await cms.list("post", {
+  locale: "en",
+  limit: 20,
+  sort: "createdAt",
+  order: "desc",
+});
+
+// response has shape { data: Document[], pagination: {...} }
+for (const post of response.data) {
+  // ...
+}
 ```
 
-Return values include the frontmatter fields as declared in `mdcms.config.ts` plus the body. Use them directly in React:
+`list` returns the full paginated envelope — iterate `response.data`, and use `response.pagination` for offset/total/hasMore.
+
+Document return values include the frontmatter fields as declared in `mdcms.config.ts` plus the body. Use them directly in React:
 
 ```tsx
 export default async function AboutPage() {
-  const about = await cms.getDocument({ type: "page", path: "about" });
+  const about = await cms.get("page", { slug: "about", locale: "en" });
   return (
     <article>
       <h1>{about.title}</h1>
@@ -83,9 +103,9 @@ export default async function AboutPage() {
 By default the SDK returns **published** content. Preview/draft flows need an explicit opt-in:
 
 ```ts
-const draft = await cms.getDocument({
-  type: "page",
-  path: "about",
+const draft = await cms.get("page", {
+  slug: "about",
+  locale: "en",
   draft: true,
 });
 ```
@@ -118,7 +138,7 @@ const about = parseMarkdown(raw);
 ```tsx
 import { cms } from "@/lib/cms";
 
-const about = await cms.getDocument({ type: "page", path: "pages/about" });
+const about = await cms.get("page", { slug: "about", locale: "en" });
 ```
 
 Delete the old markdown files from disk if they were imported into MDCMS (check `.gitignore` — `mdcms-brownfield-init` likely already added them), or keep them as a local cache if the app's build process benefits from that.
@@ -131,10 +151,10 @@ Generate the route tree from MDCMS. Example for a blog index + detail in Next:
 // app/blog/page.tsx
 import { cms } from "@/lib/cms";
 export default async function BlogIndex() {
-  const posts = await cms.listDocuments({ type: "post", limit: 50 });
+  const response = await cms.list("post", { locale: "en", limit: 50 });
   return (
     <ul>
-      {posts.map((p) => (
+      {response.data.map((p) => (
         <li key={p.id}>
           <a href={`/blog/${p.slug}`}>{p.title}</a>
         </li>
@@ -145,9 +165,9 @@ export default async function BlogIndex() {
 
 // app/blog/[slug]/page.tsx
 export default async function PostPage({ params }) {
-  const post = await cms.getDocument({
-    type: "post",
-    path: `posts/${params.slug}`,
+  const post = await cms.get("post", {
+    slug: params.slug,
+    locale: "en",
   });
   return <article>{/* ... */}</article>;
 }
@@ -162,10 +182,11 @@ export default async function PostPage({ params }) {
 ## Common gotchas
 
 - **API key leaks into the browser** — always import the SDK in server-only modules. In Next, a `"use client"` file or a client component must not import `@/lib/cms`.
-- **Path mismatch** — document paths in MDCMS preserve the full managed directory segment by default (e.g. `pages/about`, not `about`). Check a working call with the actual path the server returns, not an intuition.
+- **`get` needs `id` or `slug`, not `path`** — the SDK does not take a document path. If you only have the local filesystem path, either look up the slug from frontmatter or issue a `list` with a filter. Prefer `id` for stability across rename/slug changes.
+- **`list` returns a paginated envelope** — iterate `response.data`, not `response` itself. The envelope also carries `response.pagination` for offset/total pagination.
 - **Draft leaking to production** — if every page passes `draft: true`, unpublished content goes live. Route preview behind a flag.
 - **Type vs type name** — `mdcms.config.ts` uses a string type name (`"post"`). The SDK call uses the same name; it is case-sensitive.
-- **Locale-aware fetches** — localized types need a `locale` argument on SDK calls. Omit for non-localized types.
+- **Locale-aware fetches** — the SDK takes `locale` as an explicit argument on every `get`/`list` call. Pass it even for non-localized types so the caller stays explicit.
 
 ## Related skills
 

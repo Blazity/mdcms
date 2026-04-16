@@ -38,7 +38,7 @@ cp .env.example .env
 The example defaults are suitable for local evaluation. For staging or production, change:
 
 - Database credentials (`POSTGRES_PASSWORD`, `DATABASE_URL`).
-- S3/MinIO credentials (`MDCMS_S3_*`) if switching to a real S3 bucket.
+- S3/MinIO credentials (`S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`) if switching to a real S3 bucket.
 - Auth provider settings if using OIDC/SAML/email.
 - `MDCMS_STUDIO_ALLOWED_ORIGINS` — the list of origins Studio is allowed to embed from. Add the URL(s) of the host apps that will embed `<Studio />`.
 

@@ -33,15 +33,29 @@ If this fails, fix it before moving on.
 
 ### Phase 2 — Greenfield or brownfield?
 
-Check whether the user's repo already has Markdown or MDX content:
+Check whether the user's repo already has Markdown or MDX content that MDCMS should manage. Exclude the places where markdown commonly appears but is **not** user content — repo-level docs, skill packs (including this one), issue/PR templates, and dependency directories:
 
 ```bash
 find . -type f \( -name '*.md' -o -name '*.mdx' \) \
-  -not -path '*/node_modules/*' -not -path '*/.*' | head
+  -not -path '*/node_modules/*' \
+  -not -path '*/.*' \
+  -not -path './skills/*' \
+  -not -path './docs/*' \
+  -not -path './apps/docs/*' \
+  -not -path './.github/*' \
+  -not -name 'README*' \
+  -not -name 'CHANGELOG*' \
+  -not -name 'LICENSE*' \
+  -not -name 'SKILL.md' \
+  | head
 ```
 
-- **Existing content** → invoke **`mdcms-brownfield-init`**. That skill runs `mdcms init --non-interactive` against the existing files, verifies the inferred schema, and imports content on first push.
-- **No content** → invoke **`mdcms-greenfield-init`**. That skill runs `mdcms init --non-interactive` with a scaffolded starter, pushes the example, and can delegate to `mdcms-schema-refine` for first real content models.
+If this surfaces files, ask the user which of the top-level directories (`content/`, `pages/`, `posts/`, or a project-specific path) are actually editorial content vs. product docs. Only editorial content belongs in MDCMS.
+
+- **Editorial content exists** → invoke **`mdcms-brownfield-init`**. That skill runs `mdcms init --non-interactive` against the existing files, verifies the inferred schema, and imports content on first push.
+- **No editorial content** → invoke **`mdcms-greenfield-init`**. That skill runs `mdcms init --non-interactive` with a scaffolded starter, pushes the example, and can delegate to `mdcms-schema-refine` for first real content models.
+
+When in doubt, ask — don't assume a `README.md` at the repo root or a `docs/guide.md` is editorial content that should move into MDCMS.
 
 After either init path, the user has a working `mdcms.config.ts`, a synced schema on the server, a stored credential, and content reachable from the Studio API.
 
@@ -78,7 +92,7 @@ Before asking the user a phase question, check what you can already see in the r
 | Signal                                                                     | Implication                                                                |
 | -------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | `curl <url>/healthz` returns 200                                           | Skip Phase 1.                                                              |
-| Repo has `.md`/`.mdx` files outside `node_modules`/`.*`                    | Brownfield path in Phase 2.                                                |
+| Repo has `.md`/`.mdx` editorial content (see Phase 2 exclusions)           | Brownfield path in Phase 2.                                                |
 | Repo has `mdcms.config.ts`                                                 | Init already ran. Skip to Phase 3 and confirm schema is good.              |
 | `package.json` lists `@mdcms/studio`                                       | Studio embed probably already done. Confirm before skipping Phase 5.       |
 | `package.json` lists `@mdcms/sdk` or any `from "@mdcms/sdk"` import exists | SDK integration likely in place. Confirm before skipping Phase 4.          |

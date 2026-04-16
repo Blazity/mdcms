@@ -781,6 +781,15 @@ test("parseInitOptions throws when flag value is missing", () => {
   assert.throws(() => parseInitOptions(["--directory"]), /requires a value/);
 });
 
+test("parseInitOptions rejects empty inline flag values", () => {
+  assert.throws(() => parseInitOptions(["--directory="]), /requires a value/);
+  assert.throws(() => parseInitOptions(["--directories="]), /requires a value/);
+  assert.throws(
+    () => parseInitOptions(["--default-locale="]),
+    /requires a value/,
+  );
+});
+
 test("init --non-interactive completes without prompting", async () => {
   await withTempDir(async (cwd) => {
     await mkdir(join(cwd, "content", "posts"), { recursive: true });
@@ -993,6 +1002,7 @@ test("init --non-interactive --no-example-post on empty repo skips example.md", 
       credentialStore: createInMemoryCredentialStore(),
     });
 
+    let stdout = "";
     const exitCode = await runMdcmsCli(
       [
         "init",
@@ -1011,7 +1021,11 @@ test("init --non-interactive --no-example-post on empty repo skips example.md", 
           MDCMS_API_KEY: "test-api-key",
         },
         resolveStoredApiKey: async () => undefined,
-        stdout: { write: () => undefined },
+        stdout: {
+          write: (c) => {
+            stdout += c;
+          },
+        },
         stderr: { write: () => undefined },
         fetcher,
       },
@@ -1027,6 +1041,56 @@ test("init --non-interactive --no-example-post on empty repo skips example.md", 
       existsSync(join(cwd, "mdcms.config.ts")),
       "config should still be written",
     );
+    assert.doesNotMatch(
+      stdout,
+      /Example post created/,
+      "outro should not advertise an example.md that was never written",
+    );
+  });
+});
+
+test("init --non-interactive rejects multiple --directory on empty repo", async () => {
+  await withTempDir(async (cwd) => {
+    const fetcher = createMockFetcher(createDefaultFetchHandlers());
+    const prompter = createMockPrompter({});
+    const command = createInitCommand({
+      prompter,
+      fetcher,
+      credentialStore: createInMemoryCredentialStore(),
+    });
+
+    let stderr = "";
+    const exitCode = await runMdcmsCli(
+      [
+        "init",
+        "--non-interactive",
+        "--directory",
+        "content/posts",
+        "--directory",
+        "content/pages",
+      ],
+      {
+        cwd,
+        commands: [command],
+        env: {
+          MDCMS_SERVER_URL: "http://localhost:4000",
+          MDCMS_PROJECT: "my-project",
+          MDCMS_ENVIRONMENT: "staging",
+          MDCMS_API_KEY: "test-api-key",
+        },
+        resolveStoredApiKey: async () => undefined,
+        stdout: { write: () => undefined },
+        stderr: {
+          write: (c) => {
+            stderr += c;
+          },
+        },
+        fetcher,
+      },
+    );
+
+    assert.equal(exitCode, 1);
+    assert.match(stderr, /Scaffolding only supports a single starter/i);
   });
 });
 

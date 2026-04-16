@@ -64,13 +64,21 @@ npx mdcms init --non-interactive \
 What this does in one shot:
 
 1. Pings `/healthz`.
-2. Creates (or joins) the project and environment on the server.
-3. Stores the API key in the credential store, scoped to `(server, project, environment)`.
-4. Scans each `--directory` for `.md`/`.mdx` files, infers types from frontmatter, detects locale patterns in filenames/folders.
-5. Writes `mdcms.config.ts` to the repo root.
-6. Syncs the inferred schema to the server (`PUT /api/v1/schema`).
-7. Imports every discovered file as a draft document. Files already present on the server are updated in place.
-8. Adds the managed directories to `.gitignore` and untracks any tracked files in them (so the server becomes the source of truth).
+2. Creates the project on the server via `POST /api/v1/projects`. If a project with the same slug already exists, the server returns HTTP 409 and `init` exits with a non-zero status — the wizard does not attach to existing projects. See [Attaching to an existing project](#attaching-to-an-existing-project) below.
+3. Creates the environment if the just-created project does not already have it. If the project-create response reports the environment already exists (common for the auto-created `production`), init skips environment creation.
+4. Stores the API key in the credential store, scoped to `(server, project, environment)`.
+5. Scans each `--directory` for `.md`/`.mdx` files, infers types from frontmatter, detects locale patterns in filenames/folders.
+6. Writes `mdcms.config.ts` to the repo root.
+7. Syncs the inferred schema to the server (`PUT /api/v1/schema`).
+8. Imports every discovered file as a draft document. Documents that already exist at the same `(type, path, locale)` are updated in place (PUT fallback on 409).
+9. Adds the managed directories to `.gitignore` and untracks any tracked files in them (so the server becomes the source of truth).
+
+### Attaching to an existing project
+
+If the target server already has a project with the slug passed to `--project`, `mdcms init` exits with a 409-driven error and does not modify anything. Options:
+
+- **Pick a different slug** — rerun with `--project <new-slug>`; this creates a fresh project.
+- **Use the existing project manually** — hand-author `mdcms.config.ts` pointing at the existing `(project, environment)` tuple, run `mdcms login` to capture a scoped API key, then use `mdcms pull` to fetch the server's state into the repo. `init` is not the right tool for attaching; it's for first-time creation.
 
 ### 4. Verify the inferred schema
 
