@@ -57,7 +57,6 @@ const BlurSelectionPreserver = Extension.create({
   },
 });
 
-
 export function createEditorExtensions(options?: {
   mdxComponent?: Extensions[number];
 }): Extensions {
