@@ -739,6 +739,14 @@ export const MdxComponentExtension = Node.create({
             return true;
           }
 
+          // `editor.commands.setContent(...)` always stamps `preventUpdate` on
+          // its transaction. Programmatic content replacement (e.g. switching
+          // documents, version rollback, autosave restore) is trusted by
+          // definition and must never be blocked by the guard.
+          if (tr.getMeta("preventUpdate") !== undefined) {
+            return true;
+          }
+
           // Void components are self-closing by definition (`<Chart />`), so
           // they must never accumulate child content. If a transaction would
           // leave a void mdxComponent holding children — which is what rapid

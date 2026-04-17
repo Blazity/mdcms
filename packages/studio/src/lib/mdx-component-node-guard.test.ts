@@ -165,6 +165,34 @@ test("typing over a Cmd+A-style text selection that spans an MDX component is bl
   }
 });
 
+test("programmatic setContent is trusted and can replace a doc that contained an MDX component", () => {
+  const editor = createDocumentEditor({
+    content: '<Chart title="A" />',
+  });
+
+  try {
+    // `setContent` marks its transaction with `preventUpdate`, which the
+    // guard treats as a trust signal so document switching / version
+    // restoration still works even when the previous doc had MDX blocks.
+    const succeeded = editor.commands.setContent(
+      "Just a plain paragraph.\n\nAnd another one.",
+      { contentType: "markdown" },
+    );
+
+    assert.equal(succeeded, true);
+    assert.doesNotMatch(
+      serializeDocumentToMarkdown(editor.getJSON()),
+      /<Chart/,
+    );
+    assert.match(
+      serializeDocumentToMarkdown(editor.getJSON()),
+      /Just a plain paragraph/,
+    );
+  } finally {
+    editor.destroy();
+  }
+});
+
 test("Cmd+A followed by Delete clears the document even when an MDX component is present", () => {
   const editor = createDocumentEditor({
     content: [
