@@ -641,20 +641,7 @@ export function resolveShellAppliedTheme(input: {
 }
 
 function useResolvedShellTheme(): ShellAppliedTheme {
-  const [applied, setApplied] = useState<ShellAppliedTheme>(() => {
-    if (typeof window === "undefined") {
-      return "light";
-    }
-
-    const storage = window.localStorage ?? null;
-    const stored = readStoredThemePreference(storage);
-    const systemPrefersDark =
-      typeof window.matchMedia === "function"
-        ? window.matchMedia("(prefers-color-scheme: dark)").matches
-        : false;
-
-    return resolveAppliedTheme(stored ?? "system", systemPrefersDark);
-  });
+  const [applied, setApplied] = useState<ShellAppliedTheme>("light");
 
   useEffect(() => {
     if (
