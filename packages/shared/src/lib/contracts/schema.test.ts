@@ -121,6 +121,32 @@ test("validateSchemaRegistryListResponse accepts payload without project field",
   assert.equal(result.project, undefined);
 });
 
+test("validateSchemaRegistryListResponse rejects empty project string", () => {
+  const payload = {
+    types: [],
+    schemaHash: null,
+    syncedAt: null,
+    project: "",
+  };
+  expectInvalidInput(
+    () => validateSchemaRegistryListResponse("test", payload),
+    "test.project",
+  );
+});
+
+test("validateSchemaRegistryListResponse rejects blank project string", () => {
+  const payload = {
+    types: [],
+    schemaHash: null,
+    syncedAt: null,
+    project: "   ",
+  };
+  expectInvalidInput(
+    () => validateSchemaRegistryListResponse("test", payload),
+    "test.project",
+  );
+});
+
 test("validateSchemaRegistryListResponse rejects non-null non-string hash", () => {
   const payload = { types: [], schemaHash: 123, syncedAt: null };
   expectInvalidInput(

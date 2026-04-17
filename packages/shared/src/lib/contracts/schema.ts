@@ -74,10 +74,17 @@ export function validateSchemaRegistryListResponse(
     });
   }
   const project = payload.project;
-  if (project !== undefined && typeof project !== "string") {
-    invalidInput(`${context}.project`, "must be string or undefined.", {
-      project,
-    });
+  if (
+    project !== undefined &&
+    (typeof project !== "string" || project.trim() === "")
+  ) {
+    invalidInput(
+      `${context}.project`,
+      "must be a non-empty string or undefined.",
+      {
+        project,
+      },
+    );
   }
   types.forEach((entry, index) => {
     assertSchemaRegistryEntry(entry, `${context}.types[${index}]`);
