@@ -303,6 +303,31 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       },
       [],
     );
+
+    // The props-panel publisher is allowed to lag the caret by a frame —
+    // it only drives a side-panel update, never the editor's own DOM —
+    // so defer it off the keystroke's critical path.
+    const auxSelectionFrameRef = useRef<number | null>(null);
+    const scheduleAuxSelectionUpdate = useEffectEvent(
+      (nextEditor: TipTapEditorInstance) => {
+        if (auxSelectionFrameRef.current !== null) {
+          cancelAnimationFrame(auxSelectionFrameRef.current);
+        }
+        auxSelectionFrameRef.current = requestAnimationFrame(() => {
+          auxSelectionFrameRef.current = null;
+          publishSelectedMdxComponent(nextEditor);
+        });
+      },
+    );
+    useEffect(
+      () => () => {
+        if (auxSelectionFrameRef.current !== null) {
+          cancelAnimationFrame(auxSelectionFrameRef.current);
+          auxSelectionFrameRef.current = null;
+        }
+      },
+      [],
+    );
     const syncSlashTrigger = useEffectEvent(
       (nextEditor: TipTapEditorInstance) => {
         const nextTrigger = getMdxComponentSlashTrigger(nextEditor);
@@ -437,13 +462,15 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           },
         },
         onUpdate({ editor }) {
+          // Typing/deleting always moves the caret, so `onSelectionUpdate`
+          // already fires for the same transaction. Running the aux updates
+          // here too just doubles the per-keystroke sync work. Markdown
+          // emission is the only thing unique to content changes.
           scheduleMarkdownEmission(editor);
-          publishSelectedMdxComponent(editor);
-          syncSlashTrigger(editor);
         },
         onSelectionUpdate({ editor }) {
-          publishSelectedMdxComponent(editor);
           syncSlashTrigger(editor);
+          scheduleAuxSelectionUpdate(editor);
         },
         onBlur({ editor }) {
           // Blur is typically the user switching away to save or navigate —
