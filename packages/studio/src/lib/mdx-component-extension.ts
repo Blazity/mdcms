@@ -4,6 +4,9 @@ import {
   type JSONContent,
   type MarkdownToken,
 } from "@tiptap/core";
+import type { Slice } from "@tiptap/pm/model";
+import { NodeSelection, Plugin, PluginKey } from "@tiptap/pm/state";
+import { ReplaceStep } from "@tiptap/pm/transform";
 
 type MdxComponentToken = {
   type: "mdxComponent";
@@ -635,6 +638,25 @@ function hasMeaningfulMdxComponentChildren(
   );
 }
 
+function sliceContainsMdxComponent(slice: Slice): boolean {
+  let found = false;
+
+  slice.content.descendants((node) => {
+    if (found) {
+      return false;
+    }
+
+    if (node.type.name === "mdxComponent") {
+      found = true;
+      return false;
+    }
+
+    return true;
+  });
+
+  return found;
+}
+
 export const MdxComponentExtension = Node.create({
   name: "mdxComponent",
   group: "block",
@@ -644,6 +666,73 @@ export const MdxComponentExtension = Node.create({
   isolating: true,
   selectable: true,
   priority: 1000,
+
+  addProseMirrorPlugins() {
+    // A NodeSelection on this node plus any text input (typing, IME commit,
+    // paste) normally hands ProseMirror a ReplaceStep that wipes the whole
+    // block out. Users only meant to click; the chart / callout disappears.
+    // The plugin guards the node range, and in mounted views it also redirects
+    // the typed characters to land immediately after the node so the typing
+    // still feels responsive.
+    return [
+      new Plugin({
+        key: new PluginKey("mdxComponentNodeGuard"),
+        filterTransaction(tr, state) {
+          const { selection } = state;
+
+          if (
+            !(selection instanceof NodeSelection) ||
+            selection.node.type.name !== "mdxComponent"
+          ) {
+            return true;
+          }
+
+          for (const step of tr.steps) {
+            if (!(step instanceof ReplaceStep)) {
+              continue;
+            }
+
+            const coversSelectedNode =
+              step.from <= selection.from && step.to >= selection.to;
+
+            if (!coversSelectedNode) {
+              continue;
+            }
+
+            if (step.slice.content.size === 0) {
+              // Empty replacement = user pressed Delete/Backspace. Let it through.
+              continue;
+            }
+
+            if (sliceContainsMdxComponent(step.slice)) {
+              // Drag-and-drop / programmatic moves keep the node itself.
+              continue;
+            }
+
+            return false;
+          }
+
+          return true;
+        },
+        props: {
+          handleTextInput(view, _from, _to, text) {
+            const { selection } = view.state;
+
+            if (
+              !(selection instanceof NodeSelection) ||
+              selection.node.type.name !== "mdxComponent"
+            ) {
+              return false;
+            }
+
+            const after = selection.to;
+            view.dispatch(view.state.tr.insertText(text, after, after));
+            return true;
+          },
+        },
+      }),
+    ];
+  },
 
   addAttributes() {
     return {
