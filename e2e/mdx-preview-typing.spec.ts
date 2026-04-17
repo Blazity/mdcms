@@ -149,6 +149,11 @@ test.describe("MDX component survives accidental typing / select-all replacement
     await expect(chartFrame).not.toContainText("ds");
   });
 
+  // Round-trip behavior for trailing hardBreaks is locked down by
+  // `markdown-pipeline.roundtrip.test.ts`. An e2e-level check would need a
+  // clean document and a save/reload cycle; skipping it here keeps the
+  // suite focused on gestures that only surface in a real browser.
+
   test("Shift+click that spans the chart boundary and typing must preserve the chart", async ({
     page,
   }) => {
