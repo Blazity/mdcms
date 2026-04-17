@@ -49,4 +49,7 @@ Thumbs.db
 .mdcms/manifests/
 .worktrees/
 docs/superpowers/
+docs/plans/
+.superpowers/
+blazebot/
 apps/studio-review/.generated/
