@@ -96,6 +96,9 @@ test("upsertProjectEnvironmentTopologySnapshot rejects project mismatches", asyn
           : undefined;
       assert.equal(details?.expected, "docs-site");
       assert.equal(details?.actual, "marketing-site");
+      assert.match(error.message, /marketing-site/);
+      assert.match(error.message, /docs-site/);
+      assert.doesNotMatch(error.message, /^Field "payload/);
       return true;
     },
   );

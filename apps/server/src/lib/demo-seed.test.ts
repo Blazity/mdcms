@@ -281,6 +281,57 @@ testWithDatabase(
 );
 
 testWithDatabase(
+  "ensureDemoScopeProvisioned rejects config whose project does not match seed target",
+  async () => {
+    const connection = createDatabaseConnection({ env });
+
+    try {
+      const target = uniqueProject("demo-seed-mismatch");
+
+      await withTempDir("demo-seed-mismatch-", async (directory) => {
+        const configPath = join(directory, "mdcms.config.ts");
+        await writeFile(
+          configPath,
+          [
+            "export default {",
+            '  project: "wrong-project",',
+            '  serverUrl: "http://localhost:4000",',
+            "  types: [],",
+            "  environments: {",
+            "    production: {},",
+            "    staging: { extends: 'production' },",
+            "  },",
+            "};",
+            "",
+          ].join("\n"),
+          "utf8",
+        );
+
+        await assert.rejects(
+          () =>
+            ensureDemoScopeProvisioned({
+              db: connection.db,
+              project: target,
+              environment: "staging",
+              cwd: directory,
+              configPath: "mdcms.config.ts",
+            }),
+          (error: unknown) => {
+            assert.ok(error instanceof Error);
+            assert.match(error.message, /wrong-project/);
+            assert.match(error.message, /demo-seed-mismatch/);
+            assert.match(error.message, /To fix:/);
+            return true;
+          },
+        );
+      });
+    } finally {
+      await connection.close();
+    }
+  },
+);
+
+testWithDatabase(
   "demo:seed completes successfully for a fresh staging scope",
   async () => {
     const project = uniqueProject("demo-seed-script");
