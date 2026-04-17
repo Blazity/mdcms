@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "bun:test";
 
 import type { Editor } from "@tiptap/core";
-import { NodeSelection, type EditorState } from "@tiptap/pm/state";
+import {
+  NodeSelection,
+  TextSelection,
+  type EditorState,
+} from "@tiptap/pm/state";
 
 import { createDocumentEditor } from "./document-editor.js";
 import { serializeDocumentToMarkdown } from "./markdown-pipeline.js";
@@ -121,6 +125,109 @@ test("updating props on a node-selected MDX component via setNodeMarkup is still
     assert.match(
       serializeDocumentToMarkdown(after.doc.toJSON()),
       /<Chart title="B" \/>/,
+    );
+  } finally {
+    editor.destroy();
+  }
+});
+
+test("typing over a Cmd+A-style text selection that spans an MDX component is blocked", () => {
+  const editor = createDocumentEditor({
+    content: [
+      "Before paragraph",
+      "",
+      '<Chart title="A" />',
+      "",
+      "After paragraph",
+    ].join("\n"),
+  });
+
+  try {
+    const state = createActiveState(editor);
+    const spanning = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(state.doc, 0, state.doc.content.size),
+      ),
+    );
+
+    // Cmd+A then typing a character dispatches a ReplaceStep that covers the
+    // entire document, including the Chart node.
+    const { state: after } = spanning.applyTransaction(
+      spanning.tr.insertText("WIPED", 0, spanning.doc.content.size),
+    );
+
+    assert.match(
+      serializeDocumentToMarkdown(after.doc.toJSON()),
+      /<Chart title="A" \/>/,
+    );
+  } finally {
+    editor.destroy();
+  }
+});
+
+test("a transaction that inserts content inside a void MDX component is rejected", () => {
+  const editor = createDocumentEditor({
+    content: '<Chart title="A" />',
+  });
+
+  try {
+    const state = createActiveState(editor);
+    const chartPos = findMdxComponentPos(state);
+    // Position immediately inside the void chart's (hidden) content hole.
+    const insertionPoint = chartPos + 1;
+
+    const { state: after } = state.applyTransaction(
+      state.tr.insertText("ds", insertionPoint, insertionPoint),
+    );
+
+    // The void chart node must still be void (no children in its content).
+    after.doc.descendants((node) => {
+      if (node.type.name === "mdxComponent" && node.attrs.isVoid === true) {
+        assert.equal(node.content.size, 0);
+        return false;
+      }
+      return true;
+    });
+    // Sanity check: the Chart didn't disappear either.
+    assert.match(
+      serializeDocumentToMarkdown(after.doc.toJSON()),
+      /<Chart title="A" \/>/,
+    );
+  } finally {
+    editor.destroy();
+  }
+});
+
+test("pasting non-MDX content over a text selection that spans an MDX component is blocked", () => {
+  const editor = createDocumentEditor({
+    content: [
+      "Before paragraph",
+      "",
+      '<Chart title="A" />',
+      "",
+      "After paragraph",
+    ].join("\n"),
+  });
+
+  try {
+    const state = createActiveState(editor);
+    const spanning = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(state.doc, 0, state.doc.content.size),
+      ),
+    );
+
+    const { state: after } = spanning.applyTransaction(
+      spanning.tr.replaceWith(
+        0,
+        spanning.doc.content.size,
+        spanning.schema.text("PASTED"),
+      ),
+    );
+
+    assert.match(
+      serializeDocumentToMarkdown(after.doc.toJSON()),
+      /<Chart title="A" \/>/,
     );
   } finally {
     editor.destroy();

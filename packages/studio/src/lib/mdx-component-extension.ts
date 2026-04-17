@@ -4,7 +4,7 @@ import {
   type JSONContent,
   type MarkdownToken,
 } from "@tiptap/core";
-import type { Slice } from "@tiptap/pm/model";
+import type { Node as PmNode, Slice } from "@tiptap/pm/model";
 import { NodeSelection, Plugin, PluginKey } from "@tiptap/pm/state";
 import { ReplaceStep } from "@tiptap/pm/transform";
 
@@ -638,6 +638,43 @@ function hasMeaningfulMdxComponentChildren(
   );
 }
 
+function countMdxComponentNodes(root: PmNode): number {
+  let count = 0;
+
+  root.descendants((node) => {
+    if (node.type.name === "mdxComponent") {
+      count += 1;
+      return false;
+    }
+    return true;
+  });
+
+  return count;
+}
+
+function anyVoidMdxNodeHasContent(root: PmNode): boolean {
+  let found = false;
+
+  root.descendants((node) => {
+    if (found) {
+      return false;
+    }
+
+    if (
+      node.type.name === "mdxComponent" &&
+      node.attrs.isVoid === true &&
+      node.content.size > 0
+    ) {
+      found = true;
+      return false;
+    }
+
+    return true;
+  });
+
+  return found;
+}
+
 function sliceContainsMdxComponent(slice: Slice): boolean {
   let found = false;
 
@@ -668,44 +705,52 @@ export const MdxComponentExtension = Node.create({
   priority: 1000,
 
   addProseMirrorPlugins() {
-    // A NodeSelection on this node plus any text input (typing, IME commit,
-    // paste) normally hands ProseMirror a ReplaceStep that wipes the whole
-    // block out. Users only meant to click; the chart / callout disappears.
-    // The plugin guards the node range, and in mounted views it also redirects
-    // the typed characters to land immediately after the node so the typing
-    // still feels responsive.
+    // MDX components survive clicks cleanly, but the default text-editing path
+    // happily destroys them: a NodeSelection on the block plus a keystroke (or
+    // a TextSelection that spans the block, e.g. from Cmd+A / Shift+Click)
+    // hands ProseMirror a ReplaceStep that wipes the node out and loses the
+    // rendered preview. This plugin refuses any transaction that would make
+    // an mdxComponent disappear from the document, except when the user has
+    // explicitly selected exactly that node (Backspace, Delete, Cut, drag).
     return [
       new Plugin({
         key: new PluginKey("mdxComponentNodeGuard"),
         filterTransaction(tr, state) {
-          const { selection } = state;
-
-          if (
-            !(selection instanceof NodeSelection) ||
-            selection.node.type.name !== "mdxComponent"
-          ) {
+          if (!tr.docChanged) {
             return true;
           }
 
+          // Void components are self-closing by definition (`<Chart />`), so
+          // they must never accumulate child content. If a transaction would
+          // leave a void mdxComponent holding children — which is what rapid
+          // double-click + typing tries to do via the hidden content hole the
+          // schema still exposes — reject it.
+          if (anyVoidMdxNodeHasContent(tr.doc)) {
+            return false;
+          }
+
+          const beforeCount = countMdxComponentNodes(state.doc);
+          const afterCount = countMdxComponentNodes(tr.doc);
+
+          if (afterCount >= beforeCount) {
+            return true;
+          }
+
+          // MDX nodes are disappearing. Distinguish intentional deletions
+          // (Backspace/Delete, Cut, drag move) from accidental destruction
+          // (typing or pasting while a TextSelection spans the node, or
+          // Cmd+A then typing): intentional deletions do not insert any new
+          // non-MDX content, whereas replace-style destruction always does.
           for (const step of tr.steps) {
             if (!(step instanceof ReplaceStep)) {
               continue;
             }
 
-            const coversSelectedNode =
-              step.from <= selection.from && step.to >= selection.to;
-
-            if (!coversSelectedNode) {
-              continue;
-            }
-
             if (step.slice.content.size === 0) {
-              // Empty replacement = user pressed Delete/Backspace. Let it through.
               continue;
             }
 
             if (sliceContainsMdxComponent(step.slice)) {
-              // Drag-and-drop / programmatic moves keep the node itself.
               continue;
             }
 
