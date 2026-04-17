@@ -720,9 +720,7 @@ export function StudioShellFrame({
       className={startupState === "ready" ? undefined : "mdcms-studio-shell"}
       suppressHydrationWarning
     >
-      <script
-        dangerouslySetInnerHTML={{ __html: SHELL_THEME_INLINE_SCRIPT }}
-      />
+      <script dangerouslySetInnerHTML={{ __html: SHELL_THEME_INLINE_SCRIPT }} />
       <div
         ref={containerRef}
         data-mdcms-runtime-container="true"
