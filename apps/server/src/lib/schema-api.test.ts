@@ -409,6 +409,59 @@ test("schema API requires explicit target routing", async () => {
   }
 });
 
+test("schema list response includes the resolved project slug", async () => {
+  const store: SchemaRegistryStore = {
+    async list() {
+      return [];
+    },
+    async getByType() {
+      return undefined;
+    },
+    async getCurrentSync() {
+      return undefined;
+    },
+    async sync() {
+      return {
+        schemaHash: "unused",
+        syncedAt: fixedNow.toISOString(),
+        affectedTypes: [],
+      };
+    },
+  };
+  const handler = createServerRequestHandler({
+    env: baseEnv,
+    logger,
+    now: () => fixedNow,
+    configureApp: (app) => {
+      mountSchemaApiRoutes(app, {
+        store,
+        authorize: async () => undefined,
+        requireCsrf: async () => undefined,
+      });
+    },
+  });
+
+  const response = await handler(
+    new Request("http://localhost/api/v1/schema", {
+      headers: {
+        "x-mdcms-project": "my-project",
+        "x-mdcms-environment": "production",
+      },
+    }),
+  );
+  const body = (await response.json()) as {
+    data: {
+      types: unknown[];
+      schemaHash: string | null;
+      syncedAt: string | null;
+      project: string;
+    };
+  };
+
+  assert.equal(response.status, 200);
+  assert.equal(body.data.project, "my-project");
+});
+
 test("schema API rejects localized schema sync payloads without explicit supported locales", async () => {
   const { handler, getSyncCallCount } = createValidationHandler();
   const response = await handler(

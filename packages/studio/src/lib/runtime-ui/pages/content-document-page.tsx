@@ -720,6 +720,13 @@ function resolveContentDocumentWriteAccess(input: {
     return routeWriteAccess;
   }
 
+  if (schemaState.status === "project-mismatch") {
+    return {
+      canWrite: false,
+      writeMessage: `Studio is configured for project "${schemaState.configProject}" but the server resolved project "${schemaState.serverProject}".`,
+    };
+  }
+
   if (schemaState.status !== "ready") {
     return {
       canWrite: false,
@@ -1772,6 +1779,60 @@ function ContentDocumentPageStatusView(props: {
   );
 }
 
+function renderProjectMismatchBanner(schemaState: StudioSchemaState) {
+  if (schemaState.status !== "project-mismatch") {
+    return null;
+  }
+
+  return (
+    <section
+      data-mdcms-schema-recovery-state="project-mismatch"
+      className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-foreground"
+    >
+      <div className="space-y-2">
+        <p className="font-medium">
+          Studio configuration does not match the connected project
+        </p>
+        <p className="text-foreground-muted">
+          The local configuration is for project{" "}
+          <code className="rounded bg-muted px-1 py-0.5 text-xs">
+            {schemaState.configProject}
+          </code>{" "}
+          but the server resolved project{" "}
+          <code className="rounded bg-muted px-1 py-0.5 text-xs">
+            {schemaState.serverProject}
+          </code>
+          .
+        </p>
+        <div className="space-y-1 text-xs text-foreground-muted">
+          <p className="font-medium text-foreground">To resolve:</p>
+          <ul className="list-disc space-y-0.5 pl-4">
+            <li>
+              Ensure Studio is embedded in the same directory as the{" "}
+              <code className="rounded bg-muted px-1 py-0.5">
+                mdcms.config.ts
+              </code>{" "}
+              for the target project
+            </li>
+            <li>
+              Verify that{" "}
+              <code className="rounded bg-muted px-1 py-0.5">serverUrl</code>{" "}
+              points to the server hosting project{" "}
+              <code className="rounded bg-muted px-1 py-0.5">
+                {schemaState.configProject}
+              </code>
+            </li>
+            <li>
+              Only run schema sync after confirming the project pairing is
+              correct
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function renderSchemaRecoveryBanner(input: {
   state: ContentDocumentPageReadyState;
   onSchemaSync?: () => void;
@@ -2655,12 +2716,14 @@ export function ContentDocumentPageView({
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {hasSchemaRecoveryMismatch(state.schemaState)
-                    ? renderSchemaRecoveryBanner({
-                        state,
-                        onSchemaSync,
-                      })
-                    : null}
+                  {state.schemaState?.status === "project-mismatch"
+                    ? renderProjectMismatchBanner(state.schemaState)
+                    : hasSchemaRecoveryMismatch(state.schemaState)
+                      ? renderSchemaRecoveryBanner({
+                          state,
+                          onSchemaSync,
+                        })
+                      : null}
 
                   {state.mutationError ? (
                     <div
@@ -2673,7 +2736,8 @@ export function ContentDocumentPageView({
 
                   {!state.canWrite &&
                   state.writeMessage &&
-                  !hasSchemaRecoveryMismatch(state.schemaState) ? (
+                  !hasSchemaRecoveryMismatch(state.schemaState) &&
+                  state.schemaState?.status !== "project-mismatch" ? (
                     <div className="rounded-md border border-border bg-background-subtle px-4 py-3 text-sm text-foreground-muted">
                       {state.writeMessage}
                     </div>

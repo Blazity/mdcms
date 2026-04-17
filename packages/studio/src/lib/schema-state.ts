@@ -54,11 +54,19 @@ export type StudioSchemaErrorState = {
   message: string;
 };
 
+export type StudioSchemaProjectMismatchState = {
+  status: "project-mismatch";
+  configProject: string;
+  serverProject: string;
+  environment: string;
+};
+
 export type StudioSchemaState =
   | StudioSchemaLoadingState
   | StudioSchemaReadyState
   | StudioSchemaForbiddenState
-  | StudioSchemaErrorState;
+  | StudioSchemaErrorState
+  | StudioSchemaProjectMismatchState;
 
 export type LoadStudioSchemaStateInput = {
   config: Pick<MdcmsConfig, "project" | "environment" | "serverUrl">;
@@ -240,6 +248,16 @@ export async function loadStudioSchemaState(
 
   try {
     const listResult = await api.list();
+
+    if (listResult.project && listResult.project !== input.config.project) {
+      return {
+        status: "project-mismatch",
+        configProject: input.config.project,
+        serverProject: listResult.project,
+        environment: input.config.environment,
+      };
+    }
+
     const entries = listResult.types;
     const serverSchemaHash = normalizeServerSchemaHash(listResult.schemaHash);
     let capabilities = createEmptyCurrentPrincipalCapabilities();
