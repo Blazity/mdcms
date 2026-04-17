@@ -256,8 +256,21 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
     const lastPublishedSelectionRef =
       useRef<PublishedMdxComponentSelectionSnapshot | null>(null);
     const lastEmittedMarkdownRef = useRef<string | null>(null);
-    const handleEditorUpdate = useEffectEvent(
+    // Serializing the whole doc to markdown on every keystroke was heavy
+    // enough to make the caret visibly lag during fast typing. Keep an
+    // immediate emitter for single-shot user actions (prop edits, component
+    // inserts) and a scheduled variant for the high-frequency `onUpdate`
+    // path that only serializes after typing pauses.
+    const markdownEmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+      null,
+    );
+    const emitMarkdownNow = useEffectEvent(
       (nextEditor: TipTapEditorInstance) => {
+        if (markdownEmitTimerRef.current !== null) {
+          clearTimeout(markdownEmitTimerRef.current);
+          markdownEmitTimerRef.current = null;
+        }
+
         const nextMarkdown = extractMarkdownFromEditor(nextEditor);
 
         if (nextMarkdown === lastEmittedMarkdownRef.current) {
@@ -267,6 +280,28 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
         lastEmittedMarkdownRef.current = nextMarkdown;
         onChange?.(nextMarkdown);
       },
+    );
+    const handleEditorUpdate = emitMarkdownNow;
+    const scheduleMarkdownEmission = useEffectEvent(
+      (nextEditor: TipTapEditorInstance) => {
+        if (markdownEmitTimerRef.current !== null) {
+          clearTimeout(markdownEmitTimerRef.current);
+        }
+
+        markdownEmitTimerRef.current = setTimeout(() => {
+          markdownEmitTimerRef.current = null;
+          emitMarkdownNow(nextEditor);
+        }, 150);
+      },
+    );
+    useEffect(
+      () => () => {
+        if (markdownEmitTimerRef.current !== null) {
+          clearTimeout(markdownEmitTimerRef.current);
+          markdownEmitTimerRef.current = null;
+        }
+      },
+      [],
     );
     const syncSlashTrigger = useEffectEvent(
       (nextEditor: TipTapEditorInstance) => {
@@ -402,13 +437,19 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           },
         },
         onUpdate({ editor }) {
-          handleEditorUpdate(editor);
+          scheduleMarkdownEmission(editor);
           publishSelectedMdxComponent(editor);
           syncSlashTrigger(editor);
         },
         onSelectionUpdate({ editor }) {
           publishSelectedMdxComponent(editor);
           syncSlashTrigger(editor);
+        },
+        onBlur({ editor }) {
+          // Blur is typically the user switching away to save or navigate —
+          // flush any pending debounced markdown emission now so the host app
+          // sees the latest content immediately.
+          emitMarkdownNow(editor);
         },
       },
       createTipTapEditorDependencies({
@@ -448,6 +489,13 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           if (currentMarkdown === markdown) {
             lastEmittedMarkdownRef.current = currentMarkdown;
             return;
+          }
+
+          // Any pending debounced emission from prior typing would fire with
+          // stale content relative to the doc we're about to load — drop it.
+          if (markdownEmitTimerRef.current !== null) {
+            clearTimeout(markdownEmitTimerRef.current);
+            markdownEmitTimerRef.current = null;
           }
 
           // Suppress onUpdate so programmatic syncs (version preview,
