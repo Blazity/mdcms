@@ -831,6 +831,7 @@ export function mountSchemaApiRoutes(
           types,
           schemaHash: currentSync?.schemaHash ?? null,
           syncedAt: currentSync?.syncedAt ?? null,
+          project: scope.project,
         },
       };
     });

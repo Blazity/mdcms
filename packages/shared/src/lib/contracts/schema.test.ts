@@ -104,6 +104,23 @@ test("validateSchemaRegistryListResponse accepts null hash and syncedAt", () => 
   );
 });
 
+test("validateSchemaRegistryListResponse accepts payload with project field", () => {
+  const payload = {
+    types: [],
+    schemaHash: "a".repeat(64),
+    syncedAt: "2026-04-14T12:00:00.000Z",
+    project: "my-project",
+  };
+  const result = validateSchemaRegistryListResponse("test", payload);
+  assert.equal(result.project, "my-project");
+});
+
+test("validateSchemaRegistryListResponse accepts payload without project field", () => {
+  const payload = { types: [], schemaHash: null, syncedAt: null };
+  const result = validateSchemaRegistryListResponse("test", payload);
+  assert.equal(result.project, undefined);
+});
+
 test("validateSchemaRegistryListResponse rejects non-null non-string hash", () => {
   const payload = { types: [], schemaHash: 123, syncedAt: null };
   expectInvalidInput(

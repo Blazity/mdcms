@@ -447,3 +447,104 @@ test("loadStudioSchemaState keeps ready-state data when a sync attempt fails", a
   assert.equal(failedState.canSync, state.canSync);
   assert.equal(failedState.syncError, "Forbidden.");
 });
+
+test("loadStudioSchemaState returns project-mismatch when server project differs from config", async () => {
+  const api = createSchemaRouteApi(
+    async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            types: [],
+            schemaHash: "server-hash",
+            syncedAt: "2026-03-31T12:00:00.000Z",
+            project: "other-project",
+          },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+  );
+
+  const state = await loadStudioSchemaState({
+    config: createConfig(),
+    schemaApi: api,
+    capabilitiesApi: createCapabilitiesApi(),
+  });
+
+  assert.equal(state.status, "project-mismatch");
+  if (state.status !== "project-mismatch") {
+    throw new Error("Expected project-mismatch state.");
+  }
+  assert.equal(state.configProject, "marketing-site");
+  assert.equal(state.serverProject, "other-project");
+  assert.equal(state.environment, "staging");
+});
+
+test("loadStudioSchemaState detects hash mismatch when server project matches config", async () => {
+  const api = createSchemaRouteApi(
+    async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            types: [],
+            schemaHash: "server-hash",
+            syncedAt: "2026-03-31T12:00:00.000Z",
+            project: "marketing-site",
+          },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+  );
+
+  const state = await loadStudioSchemaState({
+    config: createConfig(),
+    schemaApi: api,
+    capabilitiesApi: createCapabilitiesApi({
+      schema: { read: true, write: true },
+    }),
+  });
+
+  assert.equal(state.status, "ready");
+  if (state.status !== "ready") {
+    throw new Error("Expected ready state.");
+  }
+  assert.equal(state.isMismatch, true);
+});
+
+test("loadStudioSchemaState falls through to hash comparison when server omits project", async () => {
+  const api = createSchemaRouteApi(
+    async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            types: [],
+            schemaHash: "server-hash",
+            syncedAt: "2026-03-31T12:00:00.000Z",
+          },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+  );
+
+  const state = await loadStudioSchemaState({
+    config: createConfig(),
+    schemaApi: api,
+    capabilitiesApi: createCapabilitiesApi({
+      schema: { read: true, write: true },
+    }),
+  });
+
+  assert.equal(state.status, "ready");
+  if (state.status !== "ready") {
+    throw new Error("Expected ready state.");
+  }
+  assert.equal(state.isMismatch, true);
+});

@@ -217,7 +217,9 @@ export function SchemaPageView({ state }: { state: StudioSchemaState }) {
   const pageDescription =
     state.status === "loading"
       ? state.message
-      : `Read-only schema browser for ${state.project} / ${state.environment}.`;
+      : state.status === "project-mismatch"
+        ? `Project mismatch: configured "${state.configProject}" but server resolved "${state.serverProject}".`
+        : `Read-only schema browser for ${state.project} / ${state.environment}.`;
   const sharedSyncSummary =
     state.status === "ready" ? getSharedSchemaSyncSummary(state.entries) : null;
 
@@ -296,6 +298,27 @@ export function SchemaPageView({ state }: { state: StudioSchemaState }) {
             <p className="text-sm text-muted-foreground">{state.message}</p>
             <p className="text-xs text-muted-foreground">
               {state.project} / {state.environment}
+            </p>
+          </section>
+        ) : state.status === "project-mismatch" ? (
+          <section
+            data-mdcms-schema-page-state="project-mismatch"
+            className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-6"
+          >
+            <Badge variant="destructive">Configuration mismatch</Badge>
+            <p className="text-sm text-muted-foreground">
+              The local configuration is for project{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-xs">
+                {state.configProject}
+              </code>{" "}
+              but the server resolved project{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-xs">
+                {state.serverProject}
+              </code>
+              .
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {state.configProject} / {state.environment}
             </p>
           </section>
         ) : state.entries.length === 0 ? (

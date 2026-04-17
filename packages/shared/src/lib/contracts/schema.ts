@@ -47,6 +47,7 @@ export type SchemaRegistryListResponse = {
   types: SchemaRegistryEntry[];
   schemaHash: string | null;
   syncedAt: string | null;
+  project?: string;
 };
 
 export function validateSchemaRegistryListResponse(
@@ -70,6 +71,12 @@ export function validateSchemaRegistryListResponse(
   if (syncedAt !== null && typeof syncedAt !== "string") {
     invalidInput(`${context}.syncedAt`, "must be string or null.", {
       syncedAt,
+    });
+  }
+  const project = payload.project;
+  if (project !== undefined && typeof project !== "string") {
+    invalidInput(`${context}.project`, "must be string or undefined.", {
+      project,
     });
   }
   types.forEach((entry, index) => {
