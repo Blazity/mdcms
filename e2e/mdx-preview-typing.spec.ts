@@ -99,6 +99,31 @@ test.describe("MDX component survives accidental typing / select-all replacement
     expect(headingTextAfter).toBe(headingTextBefore);
   });
 
+  test("Cmd/Ctrl+A followed by Delete must be able to remove the embedded chart", async ({
+    page,
+  }) => {
+    await loginAndOpenCampaign(page);
+    await ensureChartPresent(page);
+
+    const chartsBefore = await countChartFrames(page);
+    expect(chartsBefore).toBeGreaterThan(0);
+
+    const editor = page.locator(".ProseMirror").first();
+    await editor.click();
+
+    const selectAllKey = process.platform === "darwin" ? "Meta+a" : "Control+a";
+    await page.keyboard.press(selectAllKey);
+    await page.keyboard.press("Delete");
+    await page.waitForTimeout(400);
+
+    // The guard previously rejected the whole transaction (because the
+    // `block+` placeholder slice carried a paragraph), leaving the chart in
+    // place. Now the intentional delete must go through.
+    await expect(
+      page.locator('[data-mdcms-mdx-component-frame="Chart"]'),
+    ).toHaveCount(0);
+  });
+
   test("rapid double-clicking on the chart and typing must not fill the chart with text", async ({
     page,
   }) => {

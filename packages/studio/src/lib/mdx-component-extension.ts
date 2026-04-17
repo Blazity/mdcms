@@ -675,6 +675,25 @@ function anyVoidMdxNodeHasContent(root: PmNode): boolean {
   return found;
 }
 
+function sliceContainsTextContent(slice: Slice): boolean {
+  let found = false;
+
+  slice.content.descendants((node) => {
+    if (found) {
+      return false;
+    }
+
+    if (node.isText) {
+      found = true;
+      return false;
+    }
+
+    return true;
+  });
+
+  return found;
+}
+
 function sliceContainsMdxComponent(slice: Slice): boolean {
   let found = false;
 
@@ -736,11 +755,14 @@ export const MdxComponentExtension = Node.create({
             return true;
           }
 
-          // MDX nodes are disappearing. Distinguish intentional deletions
-          // (Backspace/Delete, Cut, drag move) from accidental destruction
-          // (typing or pasting while a TextSelection spans the node, or
-          // Cmd+A then typing): intentional deletions do not insert any new
-          // non-MDX content, whereas replace-style destruction always does.
+          // MDX nodes are disappearing. Distinguish intentional clears
+          // (Backspace/Delete, Cut, Cmd+A+Delete, drag move) from accidental
+          // destruction (typing or pasting over the node). Intentional clears
+          // never introduce new inline text where the node used to be — they
+          // either insert nothing, move the node itself, or leave a bare
+          // placeholder paragraph to satisfy `block+`. Replace-style
+          // destruction, on the other hand, always brings typed or pasted
+          // inline content with it.
           for (const step of tr.steps) {
             if (!(step instanceof ReplaceStep)) {
               continue;
@@ -751,6 +773,10 @@ export const MdxComponentExtension = Node.create({
             }
 
             if (sliceContainsMdxComponent(step.slice)) {
+              continue;
+            }
+
+            if (!sliceContainsTextContent(step.slice)) {
               continue;
             }
 

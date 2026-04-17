@@ -165,6 +165,41 @@ test("typing over a Cmd+A-style text selection that spans an MDX component is bl
   }
 });
 
+test("Cmd+A followed by Delete clears the document even when an MDX component is present", () => {
+  const editor = createDocumentEditor({
+    content: [
+      "First paragraph",
+      "",
+      '<Chart title="A" />',
+      "",
+      "Last paragraph",
+    ].join("\n"),
+  });
+
+  try {
+    const state = createActiveState(editor);
+    const spanning = state.apply(
+      state.tr.setSelection(
+        TextSelection.create(state.doc, 0, state.doc.content.size),
+      ),
+    );
+
+    const { state: after } = spanning.applyTransaction(
+      spanning.tr.deleteSelection(),
+    );
+
+    // The Chart must be gone, and the document left with a single empty
+    // paragraph — exactly what every rich-text editor does for "clear all".
+    assert.doesNotMatch(
+      serializeDocumentToMarkdown(after.doc.toJSON()),
+      /<Chart/,
+    );
+    assert.equal(after.doc.textContent, "");
+  } finally {
+    editor.destroy();
+  }
+});
+
 test("a transaction that inserts content inside a void MDX component is rejected", () => {
   const editor = createDocumentEditor({
     content: '<Chart title="A" />',
