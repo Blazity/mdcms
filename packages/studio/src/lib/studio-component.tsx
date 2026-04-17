@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 
 import {
   isRuntimeErrorLike,
@@ -16,7 +22,13 @@ import {
 import {
   readStoredThemePreference,
   resolveAppliedTheme,
+  STUDIO_THEME_STORAGE_KEY,
 } from "./runtime-ui/adapters/next-themes.js";
+
+const useIsomorphicLayoutEffect =
+  typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+export const SHELL_THEME_INLINE_SCRIPT = `(function(){try{var el=document.currentScript&&document.currentScript.parentElement;if(!el)return;var s=null;try{s=window.localStorage&&window.localStorage.getItem(${JSON.stringify(STUDIO_THEME_STORAGE_KEY)});}catch(_){}var p=s==="light"||s==="dark"||s==="system"?s:"system";var r=p==="light"||p==="dark"?p:(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");if(el.getAttribute("data-mdcms-theme")!==r){el.setAttribute("data-mdcms-theme",r);}}catch(_){}})();`;
 
 export type { MdcmsConfig } from "./studio-loader.js";
 
@@ -641,22 +653,9 @@ export function resolveShellAppliedTheme(input: {
 }
 
 function useResolvedShellTheme(): ShellAppliedTheme {
-  const [applied, setApplied] = useState<ShellAppliedTheme>(() => {
-    if (typeof window === "undefined") {
-      return "light";
-    }
+  const [applied, setApplied] = useState<ShellAppliedTheme>("light");
 
-    const storage = window.localStorage ?? null;
-    const stored = readStoredThemePreference(storage);
-    const systemPrefersDark =
-      typeof window.matchMedia === "function"
-        ? window.matchMedia("(prefers-color-scheme: dark)").matches
-        : false;
-
-    return resolveAppliedTheme(stored ?? "system", systemPrefersDark);
-  });
-
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     if (
       typeof window === "undefined" ||
       typeof window.matchMedia !== "function"
@@ -669,7 +668,13 @@ function useResolvedShellTheme(): ShellAppliedTheme {
 
     const recompute = () => {
       const stored = readStoredThemePreference(storage);
-      setApplied(resolveAppliedTheme(stored ?? "system", mediaQuery.matches));
+      setApplied((prev) => {
+        const next = resolveAppliedTheme(
+          stored ?? "system",
+          mediaQuery.matches,
+        );
+        return prev === next ? prev : next;
+      });
     };
 
     recompute();
@@ -713,7 +718,11 @@ export function StudioShellFrame({
       data-mdcms-brand="MDCMS"
       data-mdcms-theme={shellTheme}
       className={startupState === "ready" ? undefined : "mdcms-studio-shell"}
+      suppressHydrationWarning
     >
+      <script
+        dangerouslySetInnerHTML={{ __html: SHELL_THEME_INLINE_SCRIPT }}
+      />
       <div
         ref={containerRef}
         data-mdcms-runtime-container="true"

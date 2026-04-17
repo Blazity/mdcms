@@ -682,6 +682,25 @@ test("StudioShellFrame loading markup embeds a dark-mode palette override", () =
   assert.match(markup, /data-mdcms-theme="dark"/);
 });
 
+test("StudioShellFrame emits a pre-hydration theme script that targets the shell root", () => {
+  const markup = renderToStaticMarkup(
+    StudioShellFrame({
+      config: {
+        project: "marketing-site",
+        environment: "staging",
+        serverUrl: "http://localhost:4000",
+      },
+      basePath: "/admin",
+      startupState: "loading",
+    }),
+  );
+
+  assert.match(markup, /<script>\(function\(\)\{/);
+  assert.match(markup, /mdcms-studio-theme/);
+  assert.match(markup, /prefers-color-scheme: dark/);
+  assert.match(markup, /setAttribute\("data-mdcms-theme"/);
+});
+
 test("resolveShellAppliedTheme returns dark when system prefers dark and no theme is stored", () => {
   assert.equal(
     resolveShellAppliedTheme({
