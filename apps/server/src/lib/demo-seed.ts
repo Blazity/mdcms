@@ -56,6 +56,25 @@ async function loadDemoConfig(
   return loaded;
 }
 
+function assertConfigProjectMatch(
+  loaded: { config: ParsedMdcmsConfig; configPath: string },
+  targetProject: string,
+): void {
+  if (loaded.config.project === targetProject) {
+    return;
+  }
+
+  throw new Error(
+    [
+      `Project mismatch: config at "${loaded.configPath}" declares project "${loaded.config.project}" but the demo seed targets project "${targetProject}".`,
+      "",
+      "To fix:",
+      `  - Update the "project" field in the config to "${targetProject}"`,
+      `  - Or set MDCMS_DEMO_PROJECT="${loaded.config.project}" to match the config`,
+    ].join("\n"),
+  );
+}
+
 export async function ensureDemoScopeProvisioned(
   options: EnsureDemoScopeProvisionedOptions,
 ): Promise<void> {
@@ -78,6 +97,7 @@ export async function ensureDemoScopeProvisioned(
   }
 
   const loaded = await loadDemoConfig(options);
+  assertConfigProjectMatch(loaded, options.project);
 
   const definition = loaded.config.environments[options.environment];
 
@@ -112,6 +132,7 @@ export async function ensureDemoSchemaSynced(
   await ensureDemoScopeProvisioned(options);
 
   const loaded = await loadDemoConfig(options);
+  assertConfigProjectMatch(loaded, options.project);
   const payload = buildSchemaSyncPayload(loaded.config, options.environment);
   const schemaStore = createDatabaseSchemaStore({
     db: options.db,

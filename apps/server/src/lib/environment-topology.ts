@@ -218,7 +218,7 @@ export async function upsertProjectEnvironmentTopologySnapshot(
   if (snapshotProject !== input.project) {
     throw createInvalidInputError(
       "payload.rawConfigSnapshot.project",
-      `Field "payload.rawConfigSnapshot.project" must match project "${input.project}".`,
+      `Config snapshot project "${snapshotProject}" does not match target project "${input.project}". Check that the project field in your mdcms.config.ts matches the project you are syncing to.`,
       {
         path: "payload.rawConfigSnapshot.project",
         expected: input.project,
