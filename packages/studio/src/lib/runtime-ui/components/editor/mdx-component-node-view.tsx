@@ -67,15 +67,24 @@ export function MdxComponentNodeFrame(props: {
           : "border-l-primary/20 hover:border-l-primary/50",
       )}
     >
-      {/* Drag handle */}
-      <div className="absolute -left-7 top-1.5 flex opacity-0 transition-opacity duration-150 group-hover/mdx-block:opacity-100">
+      {/* Drag handle — decorative, must not accept a caret. */}
+      <div
+        className="absolute -left-7 top-1.5 flex opacity-0 transition-opacity duration-150 group-hover/mdx-block:opacity-100"
+        contentEditable={false}
+        suppressContentEditableWarning
+      >
         <span className="cursor-grab rounded p-0.5 text-foreground-muted hover:bg-background-subtle hover:text-foreground">
           <GripVertical className="h-4 w-4" />
         </span>
       </div>
 
-      {/* Chip row */}
-      <div className="flex items-center justify-between py-1.5">
+      {/* Chip row — the `<Name />` label and the action buttons are chrome,
+          never editable document content. */}
+      <div
+        className="flex items-center justify-between py-1.5"
+        contentEditable={false}
+        suppressContentEditableWarning
+      >
         <span className="text-mono-label select-none text-foreground-muted">
           {"<"}
           {props.componentName}
@@ -122,8 +131,15 @@ export function MdxComponentNodeFrame(props: {
 
       {/* Content area */}
       <div className="pb-3">
-        {/* Preview surface */}
-        <div data-mdcms-mdx-preview-state={props.previewState ?? "empty"}>
+        {/* Preview surface — React-rendered component output. Must be
+            contentEditable=false or the browser lets the caret land inside
+            the rendered DOM (headings, labels, table cells) and corrupts the
+            preview on the next keystroke. */}
+        <div
+          data-mdcms-mdx-preview-state={props.previewState ?? "empty"}
+          contentEditable={false}
+          suppressContentEditableWarning
+        >
           {props.previewSurface}
           {props.previewState === "error" ? (
             <p className="text-xs text-destructive">
@@ -132,7 +148,8 @@ export function MdxComponentNodeFrame(props: {
           ) : null}
         </div>
 
-        {/* Wrapper children */}
+        {/* Wrapper children — the inner NodeViewContent is the ONE place
+            inside this frame that must stay editable. */}
         {props.isVoid ? null : (
           <div
             data-mdcms-mdx-content-label={props.componentName}

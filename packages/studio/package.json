@@ -79,8 +79,8 @@
     "test": "bun test ./src"
   },
   "peerDependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   },
   "dependencies": {
     "@elysiajs/eden": "^1.4.8",
@@ -107,7 +107,6 @@
     "@tanstack/react-query": "^5.96.2",
     "@tiptap/core": "^3.7.0",
     "@tiptap/extension-highlight": "^3.7.0",
-    "@tiptap/pm": "^3.7.0",
     "@tiptap/extension-image": "^3.7.0",
     "@tiptap/extension-link": "^3.7.0",
     "@tiptap/extension-placeholder": "^3.7.0",
@@ -116,6 +115,7 @@
     "@tiptap/extension-typography": "^3.7.0",
     "@tiptap/extension-underline": "^3.7.0",
     "@tiptap/markdown": "^3.7.0",
+    "@tiptap/pm": "^3.7.0",
     "@tiptap/react": "^3.7.0",
     "@tiptap/starter-kit": "^3.7.0",
     "class-variance-authority": "^0.7.1",
@@ -134,8 +134,8 @@
     "@types/react": "^19.0.12",
     "@types/react-dom": "^19.0.5",
     "next": "^15.2.2",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   },
   "license": "MIT"
 }

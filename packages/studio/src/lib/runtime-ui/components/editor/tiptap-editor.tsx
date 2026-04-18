@@ -23,8 +23,9 @@ import type { StudioMountContext } from "@mdcms/shared";
 import {
   EditorContent,
   ReactNodeViewRenderer,
-  type ReactNodeViewProps,
   useEditor,
+  useEditorState,
+  type ReactNodeViewProps,
 } from "@tiptap/react";
 
 import {
@@ -255,8 +256,21 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
     const lastPublishedSelectionRef =
       useRef<PublishedMdxComponentSelectionSnapshot | null>(null);
     const lastEmittedMarkdownRef = useRef<string | null>(null);
-    const handleEditorUpdate = useEffectEvent(
+    // Serializing the whole doc to markdown on every keystroke was heavy
+    // enough to make the caret visibly lag during fast typing. Keep an
+    // immediate emitter for single-shot user actions (prop edits, component
+    // inserts) and a scheduled variant for the high-frequency `onUpdate`
+    // path that only serializes after typing pauses.
+    const markdownEmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+      null,
+    );
+    const emitMarkdownNow = useEffectEvent(
       (nextEditor: TipTapEditorInstance) => {
+        if (markdownEmitTimerRef.current !== null) {
+          clearTimeout(markdownEmitTimerRef.current);
+          markdownEmitTimerRef.current = null;
+        }
+
         const nextMarkdown = extractMarkdownFromEditor(nextEditor);
 
         if (nextMarkdown === lastEmittedMarkdownRef.current) {
@@ -266,6 +280,53 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
         lastEmittedMarkdownRef.current = nextMarkdown;
         onChange?.(nextMarkdown);
       },
+    );
+    const handleEditorUpdate = emitMarkdownNow;
+    const scheduleMarkdownEmission = useEffectEvent(
+      (nextEditor: TipTapEditorInstance) => {
+        if (markdownEmitTimerRef.current !== null) {
+          clearTimeout(markdownEmitTimerRef.current);
+        }
+
+        markdownEmitTimerRef.current = setTimeout(() => {
+          markdownEmitTimerRef.current = null;
+          emitMarkdownNow(nextEditor);
+        }, 150);
+      },
+    );
+    useEffect(
+      () => () => {
+        if (markdownEmitTimerRef.current !== null) {
+          clearTimeout(markdownEmitTimerRef.current);
+          markdownEmitTimerRef.current = null;
+        }
+      },
+      [],
+    );
+
+    // The props-panel publisher is allowed to lag the caret by a frame —
+    // it only drives a side-panel update, never the editor's own DOM —
+    // so defer it off the keystroke's critical path.
+    const auxSelectionFrameRef = useRef<number | null>(null);
+    const scheduleAuxSelectionUpdate = useEffectEvent(
+      (nextEditor: TipTapEditorInstance) => {
+        if (auxSelectionFrameRef.current !== null) {
+          cancelAnimationFrame(auxSelectionFrameRef.current);
+        }
+        auxSelectionFrameRef.current = requestAnimationFrame(() => {
+          auxSelectionFrameRef.current = null;
+          publishSelectedMdxComponent(nextEditor);
+        });
+      },
+    );
+    useEffect(
+      () => () => {
+        if (auxSelectionFrameRef.current !== null) {
+          cancelAnimationFrame(auxSelectionFrameRef.current);
+          auxSelectionFrameRef.current = null;
+        }
+      },
+      [],
     );
     const syncSlashTrigger = useEffectEvent(
       (nextEditor: TipTapEditorInstance) => {
@@ -362,7 +423,12 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
         contentType: "markdown",
         editable: !isEditorReadOnly,
         immediatelyRender: false,
-        shouldRerenderOnTransaction: true,
+        // Leaving `shouldRerenderOnTransaction` at its default (`false`) is
+        // essential: every keystroke dispatches a ProseMirror transaction, and
+        // re-rendering the whole React tree on each one caused the caret to
+        // lag behind during fast typing (especially Shift+Enter spam). The
+        // toolbar stays reactive via `useEditorState` below, which subscribes
+        // only to the handful of mark/node-active flags it actually reads.
         extensions: createEditorExtensions({
           mdxComponent: MdxComponentExtension.extend({
             addNodeView() {
@@ -396,13 +462,21 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           },
         },
         onUpdate({ editor }) {
-          handleEditorUpdate(editor);
-          publishSelectedMdxComponent(editor);
-          syncSlashTrigger(editor);
+          // Typing/deleting always moves the caret, so `onSelectionUpdate`
+          // already fires for the same transaction. Running the aux updates
+          // here too just doubles the per-keystroke sync work. Markdown
+          // emission is the only thing unique to content changes.
+          scheduleMarkdownEmission(editor);
         },
         onSelectionUpdate({ editor }) {
-          publishSelectedMdxComponent(editor);
           syncSlashTrigger(editor);
+          scheduleAuxSelectionUpdate(editor);
+        },
+        onBlur({ editor }) {
+          // Blur is typically the user switching away to save or navigate —
+          // flush any pending debounced markdown emission now so the host app
+          // sees the latest content immediately.
+          emitMarkdownNow(editor);
         },
       },
       createTipTapEditorDependencies({
@@ -442,6 +516,13 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           if (currentMarkdown === markdown) {
             lastEmittedMarkdownRef.current = currentMarkdown;
             return;
+          }
+
+          // Any pending debounced emission from prior typing would fire with
+          // stale content relative to the doc we're about to load — drop it.
+          if (markdownEmitTimerRef.current !== null) {
+            clearTimeout(markdownEmitTimerRef.current);
+            markdownEmitTimerRef.current = null;
           }
 
           // Suppress onUpdate so programmatic syncs (version preview,
@@ -508,8 +589,45 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       updateFloating,
     ]);
 
-    const isActive = (name: string, attributes?: Record<string, unknown>) =>
-      editor?.isActive(name, attributes) ?? false;
+    const toolbarActive = useEditorState({
+      editor,
+      selector: ({ editor: ed }) => {
+        if (!ed) {
+          return {
+            bold: false,
+            italic: false,
+            underline: false,
+            strike: false,
+            code: false,
+            highlight: false,
+            heading1: false,
+            heading2: false,
+            bulletList: false,
+            orderedList: false,
+            taskList: false,
+            blockquote: false,
+            codeBlock: false,
+            link: false,
+          };
+        }
+        return {
+          bold: ed.isActive("bold"),
+          italic: ed.isActive("italic"),
+          underline: ed.isActive("underline"),
+          strike: ed.isActive("strike"),
+          code: ed.isActive("code"),
+          highlight: ed.isActive("highlight"),
+          heading1: ed.isActive("heading", { level: 1 }),
+          heading2: ed.isActive("heading", { level: 2 }),
+          bulletList: ed.isActive("bulletList"),
+          orderedList: ed.isActive("orderedList"),
+          taskList: ed.isActive("taskList"),
+          blockquote: ed.isActive("blockquote"),
+          codeBlock: ed.isActive("codeBlock"),
+          link: ed.isActive("link"),
+        };
+      },
+    });
 
     const run = (command: () => boolean) => {
       command();
@@ -651,35 +769,36 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
     };
 
     const isToolbarItemActive = (itemId: string) => {
+      if (!toolbarActive) return false;
       switch (itemId) {
         case "bold":
-          return isActive("bold");
+          return toolbarActive.bold;
         case "italic":
-          return isActive("italic");
+          return toolbarActive.italic;
         case "underline":
-          return isActive("underline");
+          return toolbarActive.underline;
         case "strike":
-          return isActive("strike");
+          return toolbarActive.strike;
         case "code":
-          return isActive("code");
+          return toolbarActive.code;
         case "highlight":
-          return isActive("highlight");
+          return toolbarActive.highlight;
         case "heading1":
-          return isActive("heading", { level: 1 });
+          return toolbarActive.heading1;
         case "heading2":
-          return isActive("heading", { level: 2 });
+          return toolbarActive.heading2;
         case "bulletList":
-          return isActive("bulletList");
+          return toolbarActive.bulletList;
         case "orderedList":
-          return isActive("orderedList");
+          return toolbarActive.orderedList;
         case "taskList":
-          return isActive("taskList");
+          return toolbarActive.taskList;
         case "blockquote":
-          return isActive("blockquote");
+          return toolbarActive.blockquote;
         case "codeBlock":
-          return isActive("codeBlock");
+          return toolbarActive.codeBlock;
         case "link":
-          return isActive("link");
+          return toolbarActive.link;
         default:
           return false;
       }

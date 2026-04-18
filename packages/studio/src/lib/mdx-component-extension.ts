@@ -4,6 +4,9 @@ import {
   type JSONContent,
   type MarkdownToken,
 } from "@tiptap/core";
+import type { Node as PmNode, Slice } from "@tiptap/pm/model";
+import { NodeSelection, Plugin, PluginKey } from "@tiptap/pm/state";
+import { ReplaceStep } from "@tiptap/pm/transform";
 
 type MdxComponentToken = {
   type: "mdxComponent";
@@ -635,6 +638,81 @@ function hasMeaningfulMdxComponentChildren(
   );
 }
 
+function countMdxComponentNodes(root: PmNode): number {
+  let count = 0;
+
+  root.descendants((node) => {
+    if (node.type.name === "mdxComponent") {
+      count += 1;
+      return false;
+    }
+    return true;
+  });
+
+  return count;
+}
+
+function anyVoidMdxNodeHasContent(root: PmNode): boolean {
+  let found = false;
+
+  root.descendants((node) => {
+    if (found) {
+      return false;
+    }
+
+    if (
+      node.type.name === "mdxComponent" &&
+      node.attrs.isVoid === true &&
+      node.content.size > 0
+    ) {
+      found = true;
+      return false;
+    }
+
+    return true;
+  });
+
+  return found;
+}
+
+function sliceContainsTextContent(slice: Slice): boolean {
+  let found = false;
+
+  slice.content.descendants((node) => {
+    if (found) {
+      return false;
+    }
+
+    if (node.isText) {
+      found = true;
+      return false;
+    }
+
+    return true;
+  });
+
+  return found;
+}
+
+function sliceContainsMdxComponent(slice: Slice): boolean {
+  let found = false;
+
+  slice.content.descendants((node) => {
+    if (found) {
+      return false;
+    }
+
+    if (node.type.name === "mdxComponent") {
+      found = true;
+      return false;
+    }
+
+    return true;
+  });
+
+  return found;
+}
+
 export const MdxComponentExtension = Node.create({
   name: "mdxComponent",
   group: "block",
@@ -644,6 +722,96 @@ export const MdxComponentExtension = Node.create({
   isolating: true,
   selectable: true,
   priority: 1000,
+
+  addProseMirrorPlugins() {
+    // MDX components survive clicks cleanly, but the default text-editing path
+    // happily destroys them: a NodeSelection on the block plus a keystroke (or
+    // a TextSelection that spans the block, e.g. from Cmd+A / Shift+Click)
+    // hands ProseMirror a ReplaceStep that wipes the node out and loses the
+    // rendered preview. This plugin refuses any transaction that would make
+    // an mdxComponent disappear from the document, except when the user has
+    // explicitly selected exactly that node (Backspace, Delete, Cut, drag).
+    return [
+      new Plugin({
+        key: new PluginKey("mdxComponentNodeGuard"),
+        filterTransaction(tr, state) {
+          if (!tr.docChanged) {
+            return true;
+          }
+
+          // `editor.commands.setContent(...)` always stamps `preventUpdate` on
+          // its transaction. Programmatic content replacement (e.g. switching
+          // documents, version rollback, autosave restore) is trusted by
+          // definition and must never be blocked by the guard.
+          if (tr.getMeta("preventUpdate") !== undefined) {
+            return true;
+          }
+
+          // Void components are self-closing by definition (`<Chart />`), so
+          // they must never accumulate child content. If a transaction would
+          // leave a void mdxComponent holding children — which is what rapid
+          // double-click + typing tries to do via the hidden content hole the
+          // schema still exposes — reject it.
+          if (anyVoidMdxNodeHasContent(tr.doc)) {
+            return false;
+          }
+
+          const beforeCount = countMdxComponentNodes(state.doc);
+          const afterCount = countMdxComponentNodes(tr.doc);
+
+          if (afterCount >= beforeCount) {
+            return true;
+          }
+
+          // MDX nodes are disappearing. Distinguish intentional clears
+          // (Backspace/Delete, Cut, Cmd+A+Delete, drag move) from accidental
+          // destruction (typing or pasting over the node). Intentional clears
+          // never introduce new inline text where the node used to be — they
+          // either insert nothing, move the node itself, or leave a bare
+          // placeholder paragraph to satisfy `block+`. Replace-style
+          // destruction, on the other hand, always brings typed or pasted
+          // inline content with it.
+          for (const step of tr.steps) {
+            if (!(step instanceof ReplaceStep)) {
+              continue;
+            }
+
+            if (step.slice.content.size === 0) {
+              continue;
+            }
+
+            if (sliceContainsMdxComponent(step.slice)) {
+              continue;
+            }
+
+            if (!sliceContainsTextContent(step.slice)) {
+              continue;
+            }
+
+            return false;
+          }
+
+          return true;
+        },
+        props: {
+          handleTextInput(view, _from, _to, text) {
+            const { selection } = view.state;
+
+            if (
+              !(selection instanceof NodeSelection) ||
+              selection.node.type.name !== "mdxComponent"
+            ) {
+              return false;
+            }
+
+            const after = selection.to;
+            view.dispatch(view.state.tr.insertText(text, after, after));
+            return true;
+          },
+        },
+      }),
+    ];
+  },
 
   addAttributes() {
     return {
