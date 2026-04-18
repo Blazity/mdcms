@@ -14,8 +14,8 @@
     "@mdcms/sdk": "workspace:*",
     "@mdcms/studio": "workspace:*",
     "next": "^15.2.2",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
