@@ -40,10 +40,9 @@ test("getCodeBlockLanguageLabel resolves id, alias, and unknown values", () => {
 });
 
 test("resolveCodeBlockLanguageChange maps sentinel and real ids to attribute patches", () => {
-  assert.deepEqual(
-    resolveCodeBlockLanguageChange(PLAIN_TEXT_LANGUAGE_VALUE),
-    { language: null },
-  );
+  assert.deepEqual(resolveCodeBlockLanguageChange(PLAIN_TEXT_LANGUAGE_VALUE), {
+    language: null,
+  });
   assert.deepEqual(resolveCodeBlockLanguageChange("typescript"), {
     language: "typescript",
   });

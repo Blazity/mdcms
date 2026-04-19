@@ -200,5 +200,8 @@ test("markdown pipeline parses fenced code block with language attribute", () =>
   const firstChild = document.content?.[0];
 
   assert.equal(firstChild?.type, "codeBlock");
-  assert.equal((firstChild?.attrs as { language?: string } | undefined)?.language, "ts");
+  assert.equal(
+    (firstChild?.attrs as { language?: string } | undefined)?.language,
+    "ts",
+  );
 });
