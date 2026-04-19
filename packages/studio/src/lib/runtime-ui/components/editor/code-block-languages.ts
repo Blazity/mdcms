@@ -40,7 +40,7 @@ export const COMMON_CODE_BLOCK_LANGUAGES: readonly CodeBlockLanguageEntry[] = [
   { id: "yaml", label: "YAML", aliases: ["yml"] },
 ];
 
-const LANGUAGE_LOOKUP: ReadonlyMap<string, CodeBlockLanguageEntry> = (() => {
+function buildLanguageLookup(): ReadonlyMap<string, CodeBlockLanguageEntry> {
   const map = new Map<string, CodeBlockLanguageEntry>();
 
   for (const entry of COMMON_CODE_BLOCK_LANGUAGES) {
@@ -51,11 +51,17 @@ const LANGUAGE_LOOKUP: ReadonlyMap<string, CodeBlockLanguageEntry> = (() => {
   }
 
   return map;
-})();
+}
+
+const LANGUAGE_LOOKUP = buildLanguageLookup();
 
 export function getCodeBlockLanguageLabel(
   attrValue: string | null | undefined,
 ): string {
+  // An absent attribute means the fence had no info string (` ``` `) —
+  // display "Plain text". A literal `plaintext` info string is deliberately
+  // labeled differently ("Plain text (tagged)") so authors can distinguish
+  // an untagged fence from one they explicitly tagged as plaintext.
   if (!attrValue) {
     return "Plain text";
   }
