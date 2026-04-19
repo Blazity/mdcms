@@ -170,3 +170,35 @@ test("markdown pipeline throws explicit error when serializer returns non-string
     },
   );
 });
+
+test("markdown pipeline preserves known language info strings on roundtrip", () => {
+  const source = ["```ts", "const value = 42;", "```", ""].join("\n");
+  const { markdown } = roundTripMarkdown(source);
+
+  assert.match(markdown, /^```ts\n/m);
+  assert.match(markdown, /const value = 42;/);
+});
+
+test("markdown pipeline preserves unknown language info strings on roundtrip", () => {
+  const source = ["```brainfuck", "++[>++<-]", "```", ""].join("\n");
+  const { markdown } = roundTripMarkdown(source);
+
+  assert.match(markdown, /^```brainfuck\n/m);
+  assert.match(markdown, /\+\+\[>\+\+<-\]/);
+});
+
+test("markdown pipeline preserves empty fence code blocks on roundtrip", () => {
+  const source = ["```", "let x = 1;", "```", ""].join("\n");
+  const { markdown } = roundTripMarkdown(source);
+
+  assert.match(markdown, /^```\n/m);
+  assert.match(markdown, /let x = 1;/);
+});
+
+test("markdown pipeline parses fenced code block with language attribute", () => {
+  const document = parseMarkdownToDocument("```ts\nconst x = 1;\n```\n");
+  const firstChild = document.content?.[0];
+
+  assert.equal(firstChild?.type, "codeBlock");
+  assert.equal((firstChild?.attrs as { language?: string } | undefined)?.language, "ts");
+});

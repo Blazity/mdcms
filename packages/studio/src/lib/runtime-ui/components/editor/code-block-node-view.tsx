@@ -105,7 +105,7 @@ export function CodeBlockNodeView({ node, updateAttributes, editor }: ReactNodeV
         />
       </div>
       <pre className="overflow-x-auto rounded-md border border-border bg-background-subtle py-3 pl-4 pr-28 font-mono text-[0.85rem] leading-relaxed">
-        <NodeViewContent as="code" className="hljs" />
+        <NodeViewContent<"code"> as="code" className="hljs" />
       </pre>
     </NodeViewWrapper>
   );

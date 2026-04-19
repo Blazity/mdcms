@@ -1,5 +1,6 @@
 import { Extension } from "@tiptap/core";
 import type { Extensions } from "@tiptap/core";
+import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import Highlight from "@tiptap/extension-highlight";
 import Link from "@tiptap/extension-link";
 import TaskItem from "@tiptap/extension-task-item";
@@ -8,9 +9,16 @@ import Underline from "@tiptap/extension-underline";
 import { Markdown } from "@tiptap/markdown";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { ReactNodeViewRenderer } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { common, createLowlight } from "lowlight";
 
 import { MdxComponentExtension } from "./mdx-component-extension.js";
+import { CodeBlockNodeView } from "./runtime-ui/components/editor/code-block-node-view.js";
+
+// Module-scope lowlight instance — language grammars are registered exactly
+// once for the lifetime of the process rather than per editor mount.
+const lowlightInstance = createLowlight(common);
 
 const BlurSelectionPreserver = Extension.create({
   name: "blurSelectionPreserver",
@@ -57,11 +65,20 @@ const BlurSelectionPreserver = Extension.create({
   },
 });
 
+const CodeBlockWithNodeView = CodeBlockLowlight.extend({
+  addNodeView() {
+    return ReactNodeViewRenderer(CodeBlockNodeView);
+  },
+}).configure({
+  lowlight: lowlightInstance,
+  defaultLanguage: null,
+});
+
 export function createEditorExtensions(options?: {
   mdxComponent?: Extensions[number];
 }): Extensions {
   return [
-    StarterKit,
+    StarterKit.configure({ codeBlock: false }),
     Underline,
     Highlight,
     BlurSelectionPreserver,
@@ -75,6 +92,7 @@ export function createEditorExtensions(options?: {
     TaskItem.configure({
       nested: true,
     }),
+    CodeBlockWithNodeView,
     options?.mdxComponent ?? MdxComponentExtension,
     Markdown,
   ];
