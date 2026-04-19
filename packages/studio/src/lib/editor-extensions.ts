@@ -16,9 +16,29 @@ import { common, createLowlight } from "lowlight";
 import { MdxComponentExtension } from "./mdx-component-extension.js";
 import { CodeBlockNodeView } from "./runtime-ui/components/editor/code-block-node-view.js";
 
+// Returns a lowlight instance seeded with the common language set and with
+// `highlightAuto` replaced by a plain-text no-op. CodeBlockLowlight falls
+// back to `highlightAuto` whenever a block has no language attribute; the
+// default guesses at a grammar and renders tokens inside what the user
+// thinks is a plain-text block. Overriding it keeps "Plain text" honest
+// and matches the spec's "no auto-detection" decision.
+export function createStudioLowlight() {
+  const instance = createLowlight(common);
+
+  (instance as { highlightAuto: (value: string) => unknown }).highlightAuto = (
+    value: string,
+  ) => ({
+    type: "root",
+    data: { language: undefined },
+    children: [{ type: "text", value }],
+  });
+
+  return instance;
+}
+
 // Module-scope lowlight instance — language grammars are registered exactly
 // once for the lifetime of the process rather than per editor mount.
-const lowlightInstance = createLowlight(common);
+const lowlightInstance = createStudioLowlight();
 
 const BlurSelectionPreserver = Extension.create({
   name: "blurSelectionPreserver",
