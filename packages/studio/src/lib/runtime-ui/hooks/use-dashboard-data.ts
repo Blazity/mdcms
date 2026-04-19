@@ -10,13 +10,23 @@ import {
 import { createStudioContentListApi } from "../../content-list-api.js";
 import { createStudioContentOverviewApi } from "../../content-overview-api.js";
 import { createStudioSchemaRouteApi } from "../../schema-route-api.js";
+import type { StudioRuntimeAuth } from "../../request-auth.js";
 import { useStudioMountInfo } from "../app/admin/mount-info-context.js";
 
 export function getDashboardDataQueryKey(
   project: string | null | undefined,
   environment: string | null | undefined,
+  apiBaseUrl: string | null | undefined,
+  authMode: StudioRuntimeAuth["mode"] | null | undefined,
 ) {
-  return ["studio", "dashboard", project, environment] as const;
+  return [
+    "studio",
+    "dashboard",
+    project,
+    environment,
+    apiBaseUrl,
+    authMode,
+  ] as const;
 }
 
 export function useDashboardData() {
@@ -37,7 +47,12 @@ export function useDashboardData() {
   }, [project, environment, apiBaseUrl, auth]);
 
   return useQuery<DashboardLoadResult>({
-    queryKey: getDashboardDataQueryKey(project, environment),
+    queryKey: getDashboardDataQueryKey(
+      project,
+      environment,
+      apiBaseUrl,
+      auth.mode,
+    ),
     queryFn: () =>
       loadDashboardData(apis!.schemaApi, apis!.contentApi, apis!.overviewApi),
     enabled: apis !== null,

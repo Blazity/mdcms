@@ -277,9 +277,6 @@ function AdminLayoutInner({
       capabilitiesLoadInput?.config.environment,
       capabilitiesLoadInput?.config.serverUrl,
       capabilitiesLoadInput?.auth.mode,
-      capabilitiesLoadInput?.auth.mode === "token"
-        ? capabilitiesLoadInput.auth.token
-        : null,
     ],
     queryFn: () => {
       const api = createStudioCurrentPrincipalCapabilitiesApi(
@@ -308,9 +305,6 @@ function AdminLayoutInner({
       "session",
       sessionLoadInput.config.serverUrl,
       sessionLoadInput.auth.mode,
-      sessionLoadInput.auth.mode === "token"
-        ? sessionLoadInput.auth.token
-        : null,
     ],
     queryFn: () => {
       const api = createStudioSessionApi(sessionLoadInput.config, {
@@ -380,7 +374,6 @@ function AdminLayoutInner({
       activeEnvironment,
       context.apiBaseUrl,
       context.auth.mode,
-      context.auth.mode === "token" ? context.auth.token : null,
     ],
     queryFn: () => {
       const api = createStudioEnvironmentApi(
