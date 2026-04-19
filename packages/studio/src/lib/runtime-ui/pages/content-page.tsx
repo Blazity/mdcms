@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 
 import type { StudioMountContext } from "@mdcms/shared";
 
@@ -12,6 +12,7 @@ import {
   type StudioContentOverviewState,
 } from "../../content-overview-state.js";
 import { useStudioMountInfo } from "../app/admin/mount-info-context.js";
+import { useStudioContentOverview } from "../hooks/use-content-overview.js";
 import Link from "../adapters/next-link.js";
 import { ChevronRight, FileText, Globe, GlobeOff } from "lucide-react";
 import { Skeleton } from "../components/ui/skeleton.js";
@@ -289,69 +290,26 @@ export default function ContentPage({
   context: StudioMountContext;
   loadState?: typeof loadStudioContentOverviewState;
 }) {
+  void context;
   const mountInfo = useStudioMountInfo();
-  const [state, setState] = useState<StudioContentOverviewState>(() =>
-    createStudioContentOverviewLoadingState(),
-  );
+  const query = useStudioContentOverview(loadState);
 
-  useEffect(() => {
-    if (!mountInfo.project || !mountInfo.environment) {
-      setState(createContentPageMissingRouteState());
-      return;
-    }
-
-    const loadInput: ContentPageLoadInput = {
-      config: {
-        project: mountInfo.project,
-        environment: mountInfo.environment,
-        serverUrl: mountInfo.apiBaseUrl,
-        supportedLocales: mountInfo.supportedLocales,
-      },
-      auth: mountInfo.auth,
-    };
-
-    let active = true;
-
-    const loadingTimer = setTimeout(() => {
-      if (active) setState(createStudioContentOverviewLoadingState());
-    }, 200);
-
-    void loadState(loadInput)
-      .then((nextState) => {
-        if (active) {
-          clearTimeout(loadingTimer);
-          setState(nextState);
-        }
-      })
-      .catch((error: unknown) => {
-        if (!active) {
-          return;
-        }
-
-        clearTimeout(loadingTimer);
-        setState({
+  const state: StudioContentOverviewState = query.data
+    ? query.data
+    : query.isError
+      ? {
           status: "error",
-          project: loadInput.config.project,
-          environment: loadInput.config.environment,
+          project: mountInfo.project ?? "unknown",
+          environment: mountInfo.environment ?? "unknown",
           message:
-            error instanceof Error && error.message.trim().length > 0
-              ? error.message
+            query.error instanceof Error &&
+            query.error.message.trim().length > 0
+              ? query.error.message
               : "Failed to load content overview.",
-        });
-      });
-
-    return () => {
-      active = false;
-      clearTimeout(loadingTimer);
-    };
-  }, [
-    mountInfo.apiBaseUrl,
-    mountInfo.auth,
-    mountInfo.environment,
-    mountInfo.project,
-    mountInfo.supportedLocales,
-    loadState,
-  ]);
+        }
+      : query.fetchStatus === "idle" && !query.isFetched
+        ? createContentPageMissingRouteState()
+        : createStudioContentOverviewLoadingState();
 
   return <ContentPageView state={state} />;
 }

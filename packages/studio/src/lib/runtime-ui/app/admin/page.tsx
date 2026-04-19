@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "../../adapters/next-link.js";
 import {
   FileText,
@@ -23,15 +23,9 @@ import { Badge } from "../../components/ui/badge.js";
 import { Skeleton } from "../../components/ui/skeleton.js";
 import { PageHeader } from "../../components/layout/page-header.js";
 import { useStudioSession } from "./session-context.js";
-import { useStudioMountInfo } from "./mount-info-context.js";
 import { useAdminCapabilities } from "./capabilities-context.js";
-import { createStudioSchemaRouteApi } from "../../../schema-route-api.js";
-import { createStudioContentListApi } from "../../../content-list-api.js";
-import { createStudioContentOverviewApi } from "../../../content-overview-api.js";
-import {
-  loadDashboardData,
-  type DashboardLoadResult,
-} from "../../../dashboard-data.js";
+import type { DashboardLoadResult } from "../../../dashboard-data.js";
+import { useDashboardData } from "../../hooks/use-dashboard-data.js";
 
 type DashboardState =
   | { status: "idle" }
@@ -66,69 +60,44 @@ function deriveUserLabel(email: string): string {
 
 export default function DashboardPage() {
   const session = useStudioSession();
-  const mountInfo = useStudioMountInfo();
   const { canCreateContent } = useAdminCapabilities();
-  const [state, setState] = useState<DashboardState>({ status: "idle" });
+  const query = useDashboardData();
+  const [showLoadingSkeleton, setShowLoadingSkeleton] = useState(false);
 
+  const isFetching = query.isFetching;
+  const hasData = query.data !== undefined || query.isError;
+
+  // Delay showing the skeleton by 200ms — if data arrives faster the user
+  // never sees a loading flash.
   useEffect(() => {
-    const { project, environment, apiBaseUrl, auth } = mountInfo;
-
-    if (!project || !environment || !apiBaseUrl) {
+    if (!isFetching || hasData) {
+      setShowLoadingSkeleton(false);
       return;
     }
-
-    let cancelled = false;
-
-    // Delay showing the skeleton by 200ms — if data arrives faster the
-    // user never sees a loading flash.
-    const loadingTimer = setTimeout(() => {
-      if (!cancelled) setState({ status: "loading" });
-    }, 200);
-
-    const config = { project, environment, serverUrl: apiBaseUrl };
-    const authOpts = { auth };
-
-    const schemaApi = createStudioSchemaRouteApi(config, authOpts);
-    const contentApi = createStudioContentListApi(config, authOpts);
-    const overviewApi = createStudioContentOverviewApi(config, authOpts);
-
-    loadDashboardData(schemaApi, contentApi, overviewApi)
-      .then((result) => {
-        if (!cancelled) {
-          clearTimeout(loadingTimer);
-          setState(result);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          clearTimeout(loadingTimer);
-          setState({
-            status: "error",
-            message:
-              err instanceof Error
-                ? err.message
-                : "Failed to load dashboard data.",
-          });
-        }
-      });
-
-    return () => {
-      cancelled = true;
-      clearTimeout(loadingTimer);
-    };
-  }, [
-    mountInfo.project,
-    mountInfo.environment,
-    mountInfo.apiBaseUrl,
-    mountInfo.auth,
-  ]);
+    const timer = setTimeout(() => setShowLoadingSkeleton(true), 200);
+    return () => clearTimeout(timer);
+  }, [isFetching, hasData]);
 
   const userLabel =
     session.status === "authenticated"
       ? deriveUserLabel(session.session.email)
       : null;
 
-  if (state.status === "idle") {
+  const result: DashboardState = query.isError
+    ? {
+        status: "error",
+        message:
+          query.error instanceof Error
+            ? query.error.message
+            : "Failed to load dashboard data.",
+      }
+    : query.data
+      ? query.data
+      : showLoadingSkeleton
+        ? { status: "loading" }
+        : { status: "idle" };
+
+  if (result.status === "idle") {
     return (
       <div className="min-h-screen">
         <PageHeader breadcrumbs={[{ label: "Dashboard" }]} />
@@ -136,7 +105,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (state.status === "loading") {
+  if (result.status === "loading") {
     return (
       <div className="min-h-screen">
         <PageHeader breadcrumbs={[{ label: "Dashboard" }]} />
@@ -197,7 +166,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (state.status === "forbidden") {
+  if (result.status === "forbidden") {
     return (
       <div className="min-h-screen">
         <PageHeader breadcrumbs={[{ label: "Dashboard" }]} />
@@ -213,7 +182,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (state.status === "error") {
+  if (result.status === "error") {
     return (
       <div className="min-h-screen">
         <PageHeader breadcrumbs={[{ label: "Dashboard" }]} />
@@ -221,14 +190,14 @@ export default function DashboardPage() {
           <AlertCircle className="h-8 w-8 text-destructive" />
           <h2 className="text-lg font-semibold">Something went wrong</h2>
           <p className="text-sm text-foreground-muted max-w-md">
-            {state.message}
+            {result.message}
           </p>
         </div>
       </div>
     );
   }
 
-  const { data } = state;
+  const { data } = result;
 
   const statCards = [
     {
