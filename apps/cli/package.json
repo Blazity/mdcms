@@ -47,10 +47,8 @@
     "dev": "bun --conditions @mdcms/source src/bin/mdcms.ts --help"
   },
   "dependencies": {
-    "@elysiajs/eden": "^1.4.8",
     "@inquirer/prompts": "^7.0.0",
     "@mdcms/shared": "^0.1.4",
-    "elysia": "^1.4.25",
     "ora": "^8.0.0",
     "tslib": "^2.3.0",
     "yaml": "^2.8.2",

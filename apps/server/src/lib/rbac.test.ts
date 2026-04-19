@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "bun:test";
 
 import {
-  assertOwnerInvariant,
   assertOwnerMutationAllowed,
   evaluateEffectiveRole,
   evaluatePermission,
@@ -251,28 +250,6 @@ test("RBAC rejects non-global Owner/Admin grants", () => {
         path: "blog/a",
       },
     ),
-  );
-});
-
-test("owner invariant accepts exactly one active owner", () => {
-  const snapshot = assertOwnerInvariant({
-    activeOwnerCount: 1,
-  });
-
-  assert.equal(snapshot.activeOwnerCount, 1);
-});
-
-test("owner invariant rejects zero or multiple active owners", () => {
-  assert.throws(() =>
-    assertOwnerInvariant({
-      activeOwnerCount: 0,
-    }),
-  );
-
-  assert.throws(() =>
-    assertOwnerInvariant({
-      activeOwnerCount: 2,
-    }),
   );
 });
 

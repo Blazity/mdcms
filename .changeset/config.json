@@ -7,10 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": [
-    "@mdcms/server",
-    "@mdcms/modules",
-    "@mdcms/studio-example",
-    "@mdcms/studio-review"
-  ]
+  "ignore": ["@mdcms/server", "@mdcms/modules", "@mdcms/studio-example"]
 }

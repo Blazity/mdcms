@@ -1,12 +1,5 @@
 import { spawnSync } from "node:child_process";
-import {
-  chmod,
-  mkdir,
-  readFile,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -519,8 +512,4 @@ export function createInMemoryCredentialStore(
       return map.delete(toTupleKey(tuple));
     },
   };
-}
-
-export async function clearCredentialsFile(path: string): Promise<void> {
-  await rm(path, { force: true });
 }

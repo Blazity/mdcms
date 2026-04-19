@@ -27,7 +27,6 @@ graph TD
     cli --> modules
     studioEx["apps/studio-example"] --> studio["packages/studio"]
     studioEx --> sdk["packages/sdk"]
-    studioReview["apps/studio-review"] --> studio
     studio --> shared
     sdk --> shared
     modules --> shared
@@ -85,18 +84,6 @@ Dependencies: `@mdcms/shared`, `@mdcms/modules`.
 A demo Next.js application that embeds the `<Studio />` component from `@mdcms/studio`. Used for local development and testing of the Studio UI. Not published to any registry.
 
 Dependencies: `@mdcms/studio`, `@mdcms/sdk`.
-
-### apps/studio-review
-
-|                 |                            |
-| --------------- | -------------------------- |
-| **Package**     | `@mdcms/studio-review`     |
-| **Port**        | 3000                       |
-| **Dev command** | `bun nx dev studio-review` |
-
-An internal visual review application that renders deterministic scenarios for PR review. Deployed as a standalone Vercel deployment, allowing reviewers to see UI changes across predefined states without needing a full local setup.
-
-Dependencies: `@mdcms/studio`.
 
 ## Shared Packages
 
