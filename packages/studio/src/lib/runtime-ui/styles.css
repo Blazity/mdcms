@@ -469,6 +469,13 @@
     color: inherit;
   }
 
+  /* Reserve right-side gutter on NodeView code blocks so the language
+     dropdown overlay doesn't sit on top of code. Only applies to the
+     NodeView-rendered <pre>, not other fenced blocks. */
+  .mdcms-studio-runtime .tiptap pre.mdcms-editor-code-block {
+    padding-right: 10rem;
+  }
+
   /* Horizontal rule */
   .mdcms-studio-runtime .tiptap hr {
     border: none;
@@ -487,6 +494,71 @@
 
   .mdcms-studio-runtime :is(button, input, textarea, select) {
     font: inherit;
+  }
+
+  /* Code blocks — syntax highlighting token colors.
+     Scoped to the editor so host-app prose is not affected. */
+  .mdcms-studio-runtime .tiptap pre code.hljs {
+    display: block;
+    color: var(--foreground);
+    background: transparent;
+  }
+
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-comment,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-quote {
+    color: var(--foreground-muted);
+    font-style: italic;
+  }
+
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-keyword,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-selector-tag,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-literal,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-section,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-link {
+    color: var(--primary);
+    font-weight: 600;
+  }
+
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-string,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-attr,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-symbol,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-bullet,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-addition {
+    color: var(--success);
+  }
+
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-number,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-regexp,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-meta {
+    color: var(--warning);
+  }
+
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-title,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-built_in,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-type,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-class,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-params {
+    color: var(--secondary);
+    font-weight: 500;
+  }
+
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-variable,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-template-variable,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-name,
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-tag {
+    color: var(--foreground);
+  }
+
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-deletion {
+    color: var(--destructive);
+  }
+
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-emphasis {
+    font-style: italic;
+  }
+
+  .mdcms-studio-runtime .tiptap pre code.hljs .hljs-strong {
+    font-weight: 700;
   }
 }
 

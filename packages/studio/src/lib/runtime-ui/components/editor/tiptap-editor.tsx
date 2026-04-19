@@ -54,6 +54,7 @@ import {
 import { createEditorExtensions } from "../../../editor-extensions.js";
 import { extractMarkdownFromEditor } from "../../../markdown-pipeline.js";
 import { MdxComponentExtension } from "../../../mdx-component-extension.js";
+import { CodeBlockWithNodeView } from "./code-block-node-view.js";
 import { createEditorToolbarLayout } from "./editor-toolbar.js";
 import { MdxComponentNodeView } from "./mdx-component-node-view.js";
 import { createMdxComponentInsertContent } from "./mdx-component-catalog.js";
@@ -430,6 +431,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
         // toolbar stays reactive via `useEditorState` below, which subscribes
         // only to the handful of mark/node-active flags it actually reads.
         extensions: createEditorExtensions({
+          codeBlock: CodeBlockWithNodeView,
           mdxComponent: MdxComponentExtension.extend({
             addNodeView() {
               const NodeView = (props: ReactNodeViewProps) => (
