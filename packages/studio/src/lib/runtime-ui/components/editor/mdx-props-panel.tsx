@@ -7,7 +7,6 @@ import {
   type PropsEditorChangeHandler,
   type PropsEditorValue,
 } from "../../../mdx-props-editor-host.js";
-import { getMdxComponentKind } from "./mdx-component-catalog.js";
 
 type MdxCatalogComponent = NonNullable<
   StudioMountContext["mdx"]
@@ -62,7 +61,6 @@ export function MdxPropsPanel({
   }
 
   const component = selection.component;
-  const kind = selection.isVoid ? "void" : getMdxComponentKind(component);
 
   return (
     <section data-mdcms-mdx-props-panel={component.name} className="space-y-3">
@@ -78,16 +76,6 @@ export function MdxPropsPanel({
         {component.description ? (
           <p className="text-xs text-foreground-muted">
             {component.description}
-          </p>
-        ) : null}
-        {kind === "wrapper" ? (
-          <p
-            data-mdcms-mdx-wrapper-guidance={component.name}
-            className="text-xs text-foreground-muted"
-          >
-            Wrapper content lives in the editor canvas. Use the inner content
-            area in the component block to edit nested markdown; this panel only
-            covers top-level props.
           </p>
         ) : null}
       </div>

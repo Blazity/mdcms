@@ -148,7 +148,7 @@ export function AppSidebar({
         </nav>
 
         {/* Bottom Section */}
-        <div className="border-t border-border p-2">
+        <div className="p-2">
           {/* Collapse Toggle */}
           <Tooltip>
             <TooltipTrigger asChild>
@@ -157,7 +157,7 @@ export function AppSidebar({
                 size="sm"
                 onClick={onToggle}
                 className={cn(
-                  "w-full justify-center text-foreground-muted",
+                  "w-full justify-center border-0 text-foreground-muted",
                   !collapsed && "justify-start gap-3 px-3",
                 )}
               >
