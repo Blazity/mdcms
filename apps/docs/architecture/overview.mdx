@@ -78,7 +78,6 @@ mdcms/
 │   ├── server/           # Elysia HTTP server (the CMS API)
 │   ├── cli/              # `mdcms` CLI tool for push/pull/schema sync/migrate
 │   ├── studio-example/   # Next.js reference app embedding @mdcms/studio
-│   ├── studio-review/    # Scenario-based visual review environment for Studio
 │   └── docs/             # Mintlify documentation site (you are here)
 ├── packages/
 │   ├── shared/           # Runtime utilities, contracts, error types, validation
@@ -105,7 +104,6 @@ graph LR
     server["apps/server"]
     cli["apps/cli"]
     studioExample["apps/studio-example"]
-    studioReview["apps/studio-review"]
 
     sdk --> shared
     studio --> shared
@@ -118,8 +116,6 @@ graph LR
     cli --> sdk
     studioExample --> studio
     studioExample --> sdk
-    studioReview --> studio
-    studioReview --> sdk
 ```
 
 <Tip>

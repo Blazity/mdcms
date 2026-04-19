@@ -222,28 +222,6 @@ export function evaluatePermission(input: {
   };
 }
 
-export type OwnerInvariantSnapshot = {
-  activeOwnerCount: number;
-};
-
-export function assertOwnerInvariant(
-  snapshot: OwnerInvariantSnapshot,
-): OwnerInvariantSnapshot {
-  if (snapshot.activeOwnerCount !== 1) {
-    throw new RuntimeError({
-      code: "OWNER_INVARIANT_VIOLATION",
-      message:
-        "Exactly one non-removable Owner must exist per instance at all times.",
-      statusCode: 409,
-      details: {
-        activeOwnerCount: snapshot.activeOwnerCount,
-      },
-    });
-  }
-
-  return snapshot;
-}
-
 export type OwnerMutationIntent = "remove_owner" | "demote_owner";
 
 export function assertOwnerMutationAllowed(input: {
@@ -262,19 +240,4 @@ export function assertOwnerMutationAllowed(input: {
       },
     });
   }
-}
-
-/**
- * CMS-44 close work (March 4) will replace this with DB-backed checks around
- * membership/grant mutation flows.
- */
-export type OwnerInvariantStore = {
-  countActiveOwners: () => Promise<number>;
-};
-
-export async function assertOwnerInvariantFromStore(
-  store: OwnerInvariantStore,
-): Promise<void> {
-  const activeOwnerCount = await store.countActiveOwners();
-  assertOwnerInvariant({ activeOwnerCount });
 }

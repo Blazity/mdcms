@@ -2,11 +2,11 @@
 
 ## Overview
 
-A comprehensive Mintlify-powered documentation site for MDCMS, living as a standalone app at `apps/docs` in the monorepo. Fresh rewrite using an existing MVP (`~/dev/mintlify-docs/`) as a topic reference, with significantly deeper content, richer component usage, and the MDCMS design system applied.
+A comprehensive Mintlify-powered documentation site for MDCMS, living as a standalone app at `apps/docs` in the monorepo, with the MDCMS design system applied.
 
 ## Design System Mapping
 
-Mintlify `docs.json` configured from `/Users/blazity/dev/mdcms-web/DESIGN_SYSTEM.md`:
+Mintlify `docs.json` is configured to match the MDCMS design tokens:
 
 - **Theme**: Maple (modern, clean — aligns with "airy brutalism" aesthetic)
 - **Colors**: primary `#2F49E5` (Blue 500), light `#4D65FF` (link blue), dark `#1C1B1B`

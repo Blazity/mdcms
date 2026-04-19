@@ -14,12 +14,12 @@ This guide walks you through setting up a local MDCMS development environment fr
 
 Before you begin, install the following tools:
 
-| Tool                        | Version                            | Purpose                                                   |
-| --------------------------- | ---------------------------------- | --------------------------------------------------------- |
-| **Bun**                     | 1.3.11+ (pinned in `.bun-version`) | Package manager, runtime, and test runner                 |
-| **Docker & Docker Compose** | Latest stable                      | Infrastructure services (PostgreSQL, Redis, MinIO)        |
-| **Node.js**                 | 20+                                | Required for Next.js apps (studio-example, studio-review) |
-| **Git**                     | Latest stable                      | Source control                                            |
+| Tool                        | Version                            | Purpose                                            |
+| --------------------------- | ---------------------------------- | -------------------------------------------------- |
+| **Bun**                     | 1.3.11+ (pinned in `.bun-version`) | Package manager, runtime, and test runner          |
+| **Docker & Docker Compose** | Latest stable                      | Infrastructure services (PostgreSQL, Redis, MinIO) |
+| **Node.js**                 | 20+                                | Required for Next.js apps (studio-example)         |
+| **Git**                     | Latest stable                      | Source control                                     |
 
 <Tabs>
   <Tab title="macOS">
@@ -181,7 +181,6 @@ Once running, these services are available:
 | -------------- | ---------------------------------------------- |
 | Server API     | [http://localhost:4000](http://localhost:4000) |
 | Studio Example | [http://localhost:4173](http://localhost:4173) |
-| Studio Review  | [http://localhost:3000](http://localhost:3000) |
 | MinIO Console  | [http://localhost:9001](http://localhost:9001) |
 | Mailhog        | [http://localhost:8025](http://localhost:8025) |
 | PostgreSQL     | `localhost:5432`                               |

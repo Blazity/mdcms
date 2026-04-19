@@ -98,4 +98,3 @@ test("MdxPropsPanel renders an unresolved state when the selected component is m
   assert.match(markup, /data-mdcms-mdx-props-panel="unregistered"/);
   assert.match(markup, /UnknownWidget/);
 });
-
