@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { QueryClientProvider, useQuery } from "@tanstack/react-query";
+import {
+  QueryClientProvider,
+  keepPreviousData,
+  useQuery,
+} from "@tanstack/react-query";
 import type { StudioMountContext } from "@mdcms/shared";
 
 import { createStudioQueryClient } from "../../query-client.js";
@@ -286,6 +290,11 @@ function AdminLayoutInner({
       return api.get();
     },
     enabled: capabilitiesLoadInput !== null,
+    // Preserve the last successful capabilities across environment switches so
+    // the sidebar does not briefly flash to "no permissions" while the new
+    // fetch is in flight. Matches the pre-refactor useEffect behavior that
+    // only updated cap flags on resolution.
+    placeholderData: keepPreviousData,
   });
 
   // Session
@@ -387,6 +396,9 @@ function AdminLayoutInner({
       return api.list();
     },
     enabled: environmentsEnabled,
+    // Same rationale as capabilitiesQuery: keep the last env list during a
+    // refetch so the switcher does not briefly empty out.
+    placeholderData: keepPreviousData,
   });
 
   const capabilities = capabilitiesQuery.data?.capabilities;
