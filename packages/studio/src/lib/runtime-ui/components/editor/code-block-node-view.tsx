@@ -52,7 +52,11 @@ export function CodeBlockLanguageSelect({
           "h-6 w-auto min-w-[8rem] gap-1 border-border/60 bg-background/80 px-2 text-xs font-medium text-foreground-muted shadow-sm",
           isUnknown && "text-warning",
         )}
-        aria-label="Code block language"
+        aria-label={
+          isUnknown
+            ? `Code block language: ${label} (not registered)`
+            : "Code block language"
+        }
       >
         <SelectValue placeholder={label} aria-label={label}>
           {label}
@@ -77,7 +81,10 @@ export function CodeBlockLanguageSelect({
 
 export function CodeBlockNodeView({ node, updateAttributes, editor }: ReactNodeViewProps) {
   const rawLanguage = node.attrs.language;
-  const language = typeof rawLanguage === "string" ? rawLanguage : null;
+  const language =
+    typeof rawLanguage === "string" && rawLanguage.length > 0
+      ? rawLanguage
+      : null;
   const disabled = !editor.isEditable;
 
   return (

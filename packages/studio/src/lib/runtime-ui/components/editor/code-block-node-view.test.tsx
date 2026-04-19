@@ -57,3 +57,16 @@ test("CodeBlockLanguageSelect forwards disabled state to the trigger", () => {
   assert.match(markup, /data-mdcms-code-block-language-select/);
   assert.match(markup, /disabled/);
 });
+
+test("CodeBlockLanguageSelect treats an empty-string language like null", () => {
+  const markup = renderToStaticMarkup(
+    createElement(CodeBlockLanguageSelect, {
+      language: "",
+      onChange: () => {},
+      disabled: false,
+    }),
+  );
+
+  assert.match(markup, /Plain text/);
+  assert.doesNotMatch(markup, /data-unknown-language="true"/);
+});
