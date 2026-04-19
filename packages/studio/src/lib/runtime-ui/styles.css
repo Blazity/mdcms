@@ -469,6 +469,13 @@
     color: inherit;
   }
 
+  /* Reserve right-side gutter on NodeView code blocks so the language
+     dropdown overlay doesn't sit on top of code. Only applies to the
+     NodeView-rendered <pre>, not other fenced blocks. */
+  .mdcms-studio-runtime .tiptap pre.mdcms-editor-code-block {
+    padding-right: 10rem;
+  }
+
   /* Horizontal rule */
   .mdcms-studio-runtime .tiptap hr {
     border: none;

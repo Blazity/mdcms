@@ -79,7 +79,11 @@ export function CodeBlockLanguageSelect({
   );
 }
 
-export function CodeBlockNodeView({ node, updateAttributes, editor }: ReactNodeViewProps) {
+export function CodeBlockNodeView({
+  node,
+  updateAttributes,
+  editor,
+}: ReactNodeViewProps) {
   const rawLanguage = node.attrs.language;
   const language =
     typeof rawLanguage === "string" && rawLanguage.length > 0
@@ -90,7 +94,7 @@ export function CodeBlockNodeView({ node, updateAttributes, editor }: ReactNodeV
   return (
     <NodeViewWrapper
       as="div"
-      className="relative my-4"
+      className="relative"
       data-mdcms-code-block-kind={language ? "tagged" : "plain"}
     >
       <div
@@ -104,7 +108,7 @@ export function CodeBlockNodeView({ node, updateAttributes, editor }: ReactNodeV
           onChange={(patch) => updateAttributes(patch)}
         />
       </div>
-      <pre className="overflow-x-auto rounded-md border border-border bg-background-subtle py-3 pl-4 pr-28 font-mono text-[0.85rem] leading-relaxed">
+      <pre className="mdcms-editor-code-block">
         <NodeViewContent<"code"> as="code" className="hljs" />
       </pre>
     </NodeViewWrapper>
