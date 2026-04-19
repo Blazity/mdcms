@@ -49,7 +49,7 @@ export function CodeBlockLanguageSelect({
         data-mdcms-code-block-language-select=""
         data-unknown-language={isUnknown ? "true" : undefined}
         className={cn(
-          "h-6 w-auto min-w-[7rem] gap-1 rounded-none border-transparent bg-transparent px-1.5 text-xs font-medium text-foreground-muted/60 shadow-none transition-colors hover:bg-background-subtle/70 hover:text-foreground-muted focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent dark:hover:bg-background-subtle/70",
+          "h-6 w-auto min-w-[7rem] gap-1 rounded-none border-transparent bg-transparent px-1.5 text-xs font-medium text-foreground-muted/60 shadow-none transition-colors hover:bg-background-subtle/70 hover:text-foreground-muted",
           isUnknown && "text-warning/70 hover:text-warning",
         )}
         aria-label={
