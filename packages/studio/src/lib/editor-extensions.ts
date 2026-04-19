@@ -9,12 +9,10 @@ import Underline from "@tiptap/extension-underline";
 import { Markdown } from "@tiptap/markdown";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { ReactNodeViewRenderer } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
 
 import { MdxComponentExtension } from "./mdx-component-extension.js";
-import { CodeBlockNodeView } from "./runtime-ui/components/editor/code-block-node-view.js";
 
 // Returns a lowlight instance seeded with the common language set and with
 // `highlightAuto` replaced by a plain-text no-op. CodeBlockLowlight falls
@@ -85,17 +83,18 @@ const BlurSelectionPreserver = Extension.create({
   },
 });
 
-const CodeBlockWithNodeView = CodeBlockLowlight.extend({
-  addNodeView() {
-    return ReactNodeViewRenderer(CodeBlockNodeView);
-  },
-}).configure({
+const HeadlessCodeBlock = CodeBlockLowlight.configure({
   lowlight: lowlightInstance,
   defaultLanguage: null,
 });
 
+// `createEditorExtensions` is safe to import from headless contexts (the
+// markdown pipeline, the CLI, document-editor.ts). The UI layer passes its
+// own React-wrapped `codeBlock` override so `@tiptap/react` only loads when
+// an editor is actually mounting in a browser.
 export function createEditorExtensions(options?: {
   mdxComponent?: Extensions[number];
+  codeBlock?: Extensions[number];
 }): Extensions {
   return [
     StarterKit.configure({ codeBlock: false }),
@@ -112,7 +111,7 @@ export function createEditorExtensions(options?: {
     TaskItem.configure({
       nested: true,
     }),
-    CodeBlockWithNodeView,
+    options?.codeBlock ?? HeadlessCodeBlock,
     options?.mdxComponent ?? MdxComponentExtension,
     Markdown,
   ];

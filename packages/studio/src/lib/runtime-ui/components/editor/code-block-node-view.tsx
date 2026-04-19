@@ -1,8 +1,14 @@
 "use client";
 
+import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import type { ReactNodeViewProps } from "@tiptap/react";
-import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
+import {
+  NodeViewContent,
+  NodeViewWrapper,
+  ReactNodeViewRenderer,
+} from "@tiptap/react";
 
+import { createStudioLowlight } from "../../../editor-extensions.js";
 import {
   Select,
   SelectContent,
@@ -114,3 +120,16 @@ export function CodeBlockNodeView({
     </NodeViewWrapper>
   );
 }
+
+// UI-facing code block: the same lowlight-backed extension but wrapped in a
+// React NodeView that renders the language dropdown. Kept in this file so
+// `@tiptap/react` only loads when Studio UI actually mounts — headless
+// consumers of `createEditorExtensions` get the plain extension instead.
+export const CodeBlockWithNodeView = CodeBlockLowlight.extend({
+  addNodeView() {
+    return ReactNodeViewRenderer(CodeBlockNodeView);
+  },
+}).configure({
+  lowlight: createStudioLowlight(),
+  defaultLanguage: null,
+});
