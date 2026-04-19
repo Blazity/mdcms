@@ -450,7 +450,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
         editorProps: {
           attributes: {
             class:
-              "prose prose-sm max-w-none min-h-[480px] px-4 py-4 focus:outline-none",
+              "prose max-w-none prose-p:leading-relaxed focus:outline-none",
             "data-placeholder": placeholder,
           },
           handleKeyDown: (_view, event) => {
@@ -884,7 +884,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       <div ref={editorWrapperRef} className="relative">
         <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-background">
           <div className="border-b border-border bg-background-subtle">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2.5">
               {toolbar.primaryGroups.map((group, groupIndex) => (
                 <div key={group.id} className="flex items-center gap-1.5">
                   {groupIndex > 0 ? (
@@ -1076,7 +1076,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             ) : null}
           </div>
 
-          <div className="min-h-[480px] bg-transparent">
+          <div className="min-h-[480px] bg-transparent px-8 py-8">
             <EditorContent editor={editor} />
           </div>
         </div>
