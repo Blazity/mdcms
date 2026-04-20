@@ -5,6 +5,7 @@ import {
   QueryClientProvider,
   keepPreviousData,
   useQuery,
+  useQueryClient,
 } from "@tanstack/react-query";
 import type { StudioMountContext } from "@mdcms/shared";
 
@@ -249,6 +250,17 @@ function AdminLayoutInner({
       setSidebarCollapsed(stored === "true");
     }
   }, []);
+
+  // Re-fetch auth-scoped studio queries when the host rotates the bearer
+  // token. The token is intentionally not part of query keys (matches the
+  // pattern in the other CMS-132 TanStack hooks and avoids leaking the
+  // secret into React Query DevTools / telemetry), so we explicitly
+  // invalidate on change to restore the pre-refactor useEffect's
+  // auth.token-dep behavior.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: ["studio"] });
+  }, [queryClient, context.auth.token]);
 
   // Capabilities
   const capabilitiesLoadInput = useMemo(() => {
