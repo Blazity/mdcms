@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   QueryClientProvider,
   keepPreviousData,
@@ -258,7 +258,10 @@ function AdminLayoutInner({
   // invalidate on change to restore the pre-refactor useEffect's
   // auth.token-dep behavior.
   const queryClient = useQueryClient();
+  const previousAuthTokenRef = useRef(context.auth.token);
   useEffect(() => {
+    if (previousAuthTokenRef.current === context.auth.token) return;
+    previousAuthTokenRef.current = context.auth.token;
     void queryClient.invalidateQueries({ queryKey: ["studio"] });
   }, [queryClient, context.auth.token]);
 
