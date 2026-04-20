@@ -1,8 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { QueryClientProvider } from "@tanstack/react-query";
-import type { StudioMountContext, EnvironmentSummary } from "@mdcms/shared";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  QueryClientProvider,
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import type { StudioMountContext } from "@mdcms/shared";
 
 import { createStudioQueryClient } from "../../query-client.js";
 import { ToastProvider } from "../../components/toast.js";
@@ -181,6 +186,18 @@ export function AdminTokenErrorStateView({
   );
 }
 
+function extractStatusCode(error: unknown): number | null {
+  if (
+    error &&
+    typeof error === "object" &&
+    "statusCode" in error &&
+    typeof error.statusCode === "number"
+  ) {
+    return error.statusCode;
+  }
+  return null;
+}
+
 export default function AdminLayout({
   children,
   context,
@@ -189,14 +206,22 @@ export default function AdminLayout({
   context: StudioMountContext;
 }) {
   const [queryClient] = useState(() => createStudioQueryClient());
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AdminLayoutInner context={context}>{children}</AdminLayoutInner>
+    </QueryClientProvider>
+  );
+}
+
+function AdminLayoutInner({
+  children,
+  context,
+}: {
+  children: React.ReactNode;
+  context: StudioMountContext;
+}) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [canReadSchema, setCanReadSchema] = useState(false);
-  const [canCreateContent, setCanCreateContent] = useState(false);
-  const [canPublishContent, setCanPublishContent] = useState(false);
-  const [canUnpublishContent, setCanUnpublishContent] = useState(false);
-  const [canDeleteContent, setCanDeleteContent] = useState(false);
-  const [canManageUsers, setCanManageUsers] = useState(false);
-  const [canManageSettings, setCanManageSettings] = useState(false);
   const [activeEnvironment, setActiveEnvironmentRaw] = useState<string | null>(
     () => {
       if (typeof window !== "undefined") {
@@ -217,10 +242,6 @@ export default function AdminLayout({
       window.history.replaceState(null, "", url.toString());
     }
   }, []);
-  const [sessionState, setSessionState] = useState<StudioSessionState>({
-    status: "loading",
-  });
-  const [environments, setEnvironments] = useState<EnvironmentSummary[]>([]);
 
   // Persist sidebar state
   useEffect(() => {
@@ -230,188 +251,181 @@ export default function AdminLayout({
     }
   }, []);
 
-  // Fetch capabilities
+  // Re-fetch auth-scoped studio queries when the host rotates the bearer
+  // token. The token is intentionally not part of query keys (matches the
+  // pattern in the other CMS-132 TanStack hooks and avoids leaking the
+  // secret into React Query DevTools / telemetry), so we explicitly
+  // invalidate on change to restore the pre-refactor useEffect's
+  // auth.token-dep behavior.
+  const queryClient = useQueryClient();
+  const previousAuthTokenRef = useRef(context.auth.token);
   useEffect(() => {
+    if (previousAuthTokenRef.current === context.auth.token) return;
+    previousAuthTokenRef.current = context.auth.token;
+    void queryClient.invalidateQueries({ queryKey: ["studio"] });
+  }, [queryClient, context.auth.token]);
+
+  // Capabilities
+  const capabilitiesLoadInput = useMemo(() => {
     const baseLoadInput = createAdminLayoutCapabilitiesLoadInput(context);
-    const loadInput =
-      baseLoadInput && activeEnvironment
-        ? {
-            ...baseLoadInput,
-            config: {
-              ...baseLoadInput.config,
-              environment: activeEnvironment,
-            },
-          }
-        : null;
-
-    if (!loadInput) {
-      setCanReadSchema(false);
-      setCanCreateContent(false);
-      setCanPublishContent(false);
-      setCanUnpublishContent(false);
-      setCanDeleteContent(false);
-      setCanManageUsers(false);
-      setCanManageSettings(false);
-      return;
-    }
-
-    let cancelled = false;
-    const capabilitiesApi = createStudioCurrentPrincipalCapabilitiesApi(
-      loadInput.config,
-      { auth: loadInput.auth },
-    );
-
-    void capabilitiesApi
-      .get()
-      .then((response) => {
-        if (!cancelled) {
-          setCanReadSchema(response.capabilities.schema.read);
-          setCanCreateContent(response.capabilities.content.write);
-          setCanPublishContent(response.capabilities.content.publish);
-          setCanUnpublishContent(response.capabilities.content.unpublish);
-          setCanDeleteContent(response.capabilities.content.delete);
-          setCanManageUsers(response.capabilities.users.manage);
-          setCanManageSettings(response.capabilities.settings.manage);
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setCanReadSchema(false);
-          setCanCreateContent(false);
-          setCanPublishContent(false);
-          setCanUnpublishContent(false);
-          setCanDeleteContent(false);
-          setCanManageUsers(false);
-          setCanManageSettings(false);
-
-          // In token mode, a capabilities 401/403 means the token is
-          // invalid, revoked, or not allowed for this project/environment.
-          // Surface a deterministic token-error instead of leaving the UI
-          // in a broken empty state.
-          if (context.auth.mode === "token") {
-            const statusCode =
-              error &&
-              typeof error === "object" &&
-              "statusCode" in error &&
-              typeof error.statusCode === "number"
-                ? error.statusCode
-                : null;
-
-            const nextTokenErrorState =
-              createAdminLayoutTokenErrorState(statusCode);
-
-            if (nextTokenErrorState) {
-              setSessionState(nextTokenErrorState);
-            }
-          }
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    context.apiBaseUrl,
-    context.auth.mode,
-    context.auth.token,
-    activeEnvironment,
-    context.documentRoute?.project,
-  ]);
-
-  // Fetch session
-  useEffect(() => {
-    const tokenSessionState = createAdminLayoutTokenSessionState(context.auth);
-
-    if (tokenSessionState) {
-      setSessionState(tokenSessionState);
-      return;
-    }
-
-    const loadInput = createAdminLayoutSessionLoadInput(context);
-    let cancelled = false;
-
-    const sessionApi = createStudioSessionApi(loadInput.config, {
-      auth: loadInput.auth,
-    });
-
-    void sessionApi
-      .get()
-      .then((response) => {
-        if (!cancelled) {
-          setSessionState({
-            status: "authenticated",
-            session: response.session,
-            csrfToken: response.csrfToken,
-          });
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          const isUnauthorized =
-            error &&
-            typeof error === "object" &&
-            "statusCode" in error &&
-            error.statusCode === 401;
-          setSessionState(
-            isUnauthorized
-              ? { status: "unauthenticated" }
-              : {
-                  status: "error",
-                  message:
-                    error instanceof Error
-                      ? error.message
-                      : "Session fetch failed.",
-                },
-          );
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [context.apiBaseUrl, context.auth.mode, context.auth.token]);
-
-  // Fetch environments
-  useEffect(() => {
-    const project = context.documentRoute?.project;
-    if (!project || !activeEnvironment) {
-      setEnvironments([]);
-      return;
-    }
-
-    let cancelled = false;
-    const envApi = createStudioEnvironmentApi(
-      {
-        project,
+    if (!baseLoadInput || !activeEnvironment) return null;
+    return {
+      ...baseLoadInput,
+      config: {
+        ...baseLoadInput.config,
         environment: activeEnvironment,
-        serverUrl: context.apiBaseUrl,
       },
-      { auth: context.auth },
-    );
-
-    void envApi
-      .list()
-      .then((result) => {
-        if (!cancelled) {
-          setEnvironments(result.data);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setEnvironments([]);
-        }
-      });
-
-    return () => {
-      cancelled = true;
     };
   }, [
     context.apiBaseUrl,
     context.auth.mode,
     context.auth.token,
-    activeEnvironment,
     context.documentRoute?.project,
+    context.documentRoute?.initialEnvironment,
+    activeEnvironment,
+    // createAdminLayoutCapabilitiesLoadInput only reads the fields above
+    // from context, so the stable primitive deps above are sufficient.
+    context,
   ]);
+
+  const capabilitiesQuery = useQuery({
+    queryKey: [
+      "studio",
+      "capabilities",
+      capabilitiesLoadInput?.config.project,
+      capabilitiesLoadInput?.config.environment,
+      capabilitiesLoadInput?.config.serverUrl,
+      capabilitiesLoadInput?.auth.mode,
+    ],
+    queryFn: () => {
+      const api = createStudioCurrentPrincipalCapabilitiesApi(
+        capabilitiesLoadInput!.config,
+        { auth: capabilitiesLoadInput!.auth },
+      );
+      return api.get();
+    },
+    enabled: capabilitiesLoadInput !== null,
+    // Preserve the last successful capabilities across environment switches so
+    // the sidebar does not briefly flash to "no permissions" while the new
+    // fetch is in flight. Matches the pre-refactor useEffect behavior that
+    // only updated cap flags on resolution.
+    placeholderData: keepPreviousData,
+  });
+
+  // Session
+  const tokenSessionState = useMemo(
+    () => createAdminLayoutTokenSessionState(context.auth),
+    [context.auth],
+  );
+  const isTokenMode = context.auth.mode === "token";
+  const sessionLoadInput = useMemo(
+    () => createAdminLayoutSessionLoadInput(context),
+    [context.apiBaseUrl, context.auth.mode, context.auth.token, context],
+  );
+
+  const sessionQuery = useQuery({
+    queryKey: [
+      "studio",
+      "session",
+      sessionLoadInput.config.serverUrl,
+      sessionLoadInput.auth.mode,
+    ],
+    queryFn: () => {
+      const api = createStudioSessionApi(sessionLoadInput.config, {
+        auth: sessionLoadInput.auth,
+      });
+      return api.get();
+    },
+    enabled: !isTokenMode,
+  });
+
+  const sessionState: StudioSessionState = useMemo(() => {
+    if (isTokenMode) {
+      if (tokenSessionState?.status === "token-error") {
+        return tokenSessionState;
+      }
+      const tokenErrorFromCapabilities = capabilitiesQuery.error
+        ? createAdminLayoutTokenErrorState(
+            extractStatusCode(capabilitiesQuery.error),
+          )
+        : null;
+      if (tokenErrorFromCapabilities) {
+        return tokenErrorFromCapabilities;
+      }
+      return tokenSessionState ?? { status: "loading" };
+    }
+
+    if (sessionQuery.isPending) {
+      return { status: "loading" };
+    }
+    if (sessionQuery.error) {
+      const statusCode = extractStatusCode(sessionQuery.error);
+      if (statusCode === 401) {
+        return { status: "unauthenticated" };
+      }
+      return {
+        status: "error",
+        message:
+          sessionQuery.error instanceof Error
+            ? sessionQuery.error.message
+            : "Session fetch failed.",
+      };
+    }
+    const data = sessionQuery.data!;
+    return {
+      status: "authenticated",
+      session: data.session,
+      csrfToken: data.csrfToken,
+    };
+  }, [
+    isTokenMode,
+    tokenSessionState,
+    capabilitiesQuery.error,
+    sessionQuery.isPending,
+    sessionQuery.error,
+    sessionQuery.data,
+  ]);
+
+  // Environments
+  const environmentsEnabled = Boolean(
+    context.documentRoute?.project && activeEnvironment,
+  );
+  const environmentsQuery = useQuery({
+    queryKey: [
+      "studio",
+      "environments",
+      context.documentRoute?.project,
+      activeEnvironment,
+      context.apiBaseUrl,
+      context.auth.mode,
+    ],
+    queryFn: () => {
+      const api = createStudioEnvironmentApi(
+        {
+          project: context.documentRoute!.project,
+          environment: activeEnvironment!,
+          serverUrl: context.apiBaseUrl,
+        },
+        { auth: context.auth },
+      );
+      return api.list();
+    },
+    enabled: environmentsEnabled,
+    // Same rationale as capabilitiesQuery: keep the last env list during a
+    // refetch so the switcher does not briefly empty out.
+    placeholderData: keepPreviousData,
+  });
+
+  const capabilities = capabilitiesQuery.data?.capabilities;
+  const canReadSchema = capabilities?.schema.read ?? false;
+  const canCreateContent = capabilities?.content.write ?? false;
+  const canPublishContent = capabilities?.content.publish ?? false;
+  const canUnpublishContent = capabilities?.content.unpublish ?? false;
+  const canDeleteContent = capabilities?.content.delete ?? false;
+  const canManageUsers = capabilities?.users.manage ?? false;
+  const canManageSettings = capabilities?.settings.manage ?? false;
+
+  const environments = environmentsQuery.data?.data ?? [];
 
   const pathname = usePathname();
   const router = useRouter();
@@ -420,16 +434,13 @@ export default function AdminLayout({
   // Token-mode embeds must never redirect to the login screen — token auth
   // failures are shown inline via the "token-error" session state.
   useEffect(() => {
-    if (
-      sessionState.status === "unauthenticated" &&
-      context.auth.mode !== "token"
-    ) {
+    if (sessionState.status === "unauthenticated" && !isTokenMode) {
       const returnTo = encodeURIComponent(
         pathname.includes("/admin") ? pathname : "/admin",
       );
       router.replace(`/admin/login?returnTo=${returnTo}`);
     }
-  }, [sessionState.status, pathname, router, context.auth.mode]);
+  }, [sessionState.status, pathname, router, isTokenMode]);
 
   if (sessionState.status === "loading" && typeof window !== "undefined") {
     return (
@@ -486,42 +497,40 @@ export default function AdminLayout({
   };
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <div className="min-h-screen overflow-x-hidden bg-background">
-          <AdminCapabilitiesProvider
-            value={{
-              canReadSchema,
-              canCreateContent,
-              canPublishContent,
-              canUnpublishContent,
-              canDeleteContent,
-              canManageUsers,
-              canManageSettings,
-            }}
-          >
-            <StudioSessionProvider value={sessionState}>
-              <StudioMountInfoProvider value={mountInfo}>
-                <AppSidebar
-                  canReadSchema={canReadSchema}
-                  canManageUsers={canManageUsers}
-                  canManageSettings={canManageSettings}
-                  collapsed={sidebarCollapsed}
-                  onToggle={handleToggle}
-                />
-                <main
-                  className={cn(
-                    "min-h-screen min-w-0 overflow-x-hidden transition-all duration-300",
-                    sidebarCollapsed ? "ml-16" : "ml-60",
-                  )}
-                >
-                  {children}
-                </main>
-              </StudioMountInfoProvider>
-            </StudioSessionProvider>
-          </AdminCapabilitiesProvider>
-        </div>
-      </ToastProvider>
-    </QueryClientProvider>
+    <ToastProvider>
+      <div className="min-h-screen overflow-x-hidden bg-background">
+        <AdminCapabilitiesProvider
+          value={{
+            canReadSchema,
+            canCreateContent,
+            canPublishContent,
+            canUnpublishContent,
+            canDeleteContent,
+            canManageUsers,
+            canManageSettings,
+          }}
+        >
+          <StudioSessionProvider value={sessionState}>
+            <StudioMountInfoProvider value={mountInfo}>
+              <AppSidebar
+                canReadSchema={canReadSchema}
+                canManageUsers={canManageUsers}
+                canManageSettings={canManageSettings}
+                collapsed={sidebarCollapsed}
+                onToggle={handleToggle}
+              />
+              <main
+                className={cn(
+                  "min-h-screen min-w-0 overflow-x-hidden transition-all duration-300",
+                  sidebarCollapsed ? "ml-16" : "ml-60",
+                )}
+              >
+                {children}
+              </main>
+            </StudioMountInfoProvider>
+          </StudioSessionProvider>
+        </AdminCapabilitiesProvider>
+      </div>
+    </ToastProvider>
   );
 }
