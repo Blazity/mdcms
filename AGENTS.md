@@ -43,9 +43,8 @@ Bun workspaces, Nx for task orchestration. Run `bun install` at the root.
 - Docs entrypoint: `docs/README.md`
 - Live canonical specs: `docs/specs/README.md`
 - Architecture decisions and rationale: `docs/adrs/README.md`
-- Roadmap and task scope (local-only): `ROADMAP_TASKS.md`
 
-Read these before proposing changes to the areas they cover. The owning spec under `docs/specs/` and the roadmap tasks are the source of truth for scope and acceptance criteria.
+Read these before proposing changes to the areas they cover. The owning spec under `docs/specs/` and the linked issue are the source of truth for scope and acceptance criteria.
 
 ## Architecture patterns
 
@@ -106,7 +105,7 @@ bun --cwd apps/server run start        # Start dev server on port 4000
 
 ## AI agent infrastructure
 
-The `.ai/` directory at the repo root holds the team's shared AI-agent-facing artifacts. It's a team operating environment, not session state — read it for product knowledge and accumulated learnings, not for "what is someone working on right now" (that's Jira / `ROADMAP_TASKS.md`).
+The `.ai/` directory at the repo root holds the team's shared AI-agent-facing artifacts. It's a team operating environment, not session state — read it for product knowledge and accumulated learnings, not for "what is someone working on right now" (that's the issue tracker).
 
 ```
 .ai/
@@ -127,7 +126,7 @@ The `.ai/` directory at the repo root holds the team's shared AI-agent-facing ar
 **Rules for agents working in this repo:**
 
 1. **Use `.ai/LANGUAGE.md` for naming.** Don't invent synonyms for existing terms.
-2. **Read the relevant `.ai/memory/` file before non-trivial work** — `architecture.md` for invariants, `product.md` for product context, `initiatives/` for whether your work fits an active effort. Volatile state ("what's happening right now") lives in Jira and `ROADMAP_TASKS.md`, not here.
+2. **Read the relevant `.ai/memory/` file before non-trivial work** — `architecture.md` for invariants, `product.md` for product context, `initiatives/` for whether your work fits an active effort. Volatile state ("what's happening right now") lives in the issue tracker, not here.
 3. **Append to `.ai/memory/lessons.md` when you hit a non-obvious pitfall.** One short entry; lead with the rule, then `Why:` and `How to apply:` lines.
 4. **Plans live in `.ai/plans/`.** Use the superpowers `writing-plans` and `executing-plans` skills to write and run them. Plans are committed.
 5. **Research goes in `.ai/research/`.** Date-prefixed filename (`YYYY-MM-DD-topic.md`).
@@ -145,16 +144,16 @@ The vendored superpowers in `.ai/skills/` is the canonical copy used by every su
 
 For any implementation task:
 
-1. Fetch the task from `ROADMAP_TASKS.md` and extract scope, acceptance criteria, and dependencies.
-2. Inspect full context from `docs/specs/README.md`, the owning spec under `docs/specs/`, and `ROADMAP_TASKS.md`, not only the single task block, to understand upstream and downstream constraints. Skim `.ai/memory/architecture.md` for invariants and `.ai/memory/initiatives/` for whether the work fits an active effort.
+1. Find the task in the issue tracker and extract scope, acceptance criteria, and dependencies.
+2. Inspect full context from `docs/specs/README.md`, the owning spec under `docs/specs/`, and the linked issue, not only the single task block, to understand upstream and downstream constraints. Skim `.ai/memory/architecture.md` for invariants and `.ai/memory/initiatives/` for whether the work fits an active effort.
 3. Map the task to affected packages and files.
 4. Ship only what is in scope for that task.
-5. While implementing in-scope work, shape code so future roadmap tasks fit cleanly and avoid short-term designs that block planned architecture.
-6. Document new public contracts and operator workflows at point of use, including README updates, inline comments, CLI help, and API docs, as required by roadmap acceptance language.
+5. While implementing in-scope work, shape code so future planned work fits cleanly and avoid short-term designs that block planned architecture.
+6. Document new public contracts and operator workflows at point of use, including README updates, inline comments, CLI help, and API docs, as required by the task's acceptance criteria.
 7. Run validations before finalizing.
 8. If the task touched architecture, the stack, an integration, or an active initiative, update the relevant `.ai/memory/` file in the same change. If you discovered a non-obvious pitfall, append to `.ai/memory/lessons.md`.
 
-If requirements conflict between `ROADMAP_TASKS.md` and the owning spec under `docs/specs/`, call it out explicitly and prefer the stricter interpretation until clarified.
+If requirements conflict between an issue and the owning spec under `docs/specs/`, call it out explicitly and prefer the stricter interpretation until clarified.
 
 ## Spec-first enforcement
 
@@ -166,8 +165,8 @@ For every new implementation request that changes behavior, endpoint contracts, 
    - send a spec-first nudge,
    - resume only after the spec is updated or confirmed.
 3. Do not treat README notes or inferred code behavior as a substitute for spec.
-4. If roadmap and owning spec conflict, call it out and prefer the stricter interpretation until clarified.
-5. Specs under `docs/specs/` must be standalone product documentation. Do not reference roadmap task IDs, task numbers, `ROADMAP_TASKS.md`, or other external planning context inside spec content. If a spec needs rationale, keep it self-contained or use an ADR.
+4. If an issue and owning spec conflict, call it out and prefer the stricter interpretation until clarified.
+5. Specs under `docs/specs/` must be standalone product documentation. Do not reference task IDs, issue numbers, or other external planning context inside spec content. If a spec needs rationale, keep it self-contained or use an ADR.
 
 ### Mandatory spec-first nudge template
 
@@ -199,9 +198,9 @@ For each task, provide a short `spec delta` summary before implementation planni
 Hard rule:
 
 1. Treat every file under `docs/specs/` as standalone canonical product documentation.
-2. Do not write task identifiers like `CMS-40`, `CMS-79`, or any other roadmap or task references inside specs.
-3. Do not refer to `ROADMAP_TASKS.md`, "this task", or similar planning context inside specs.
-4. If implementation planning context matters, keep it in roadmap files, ADRs, or local plans, not in `docs/specs/`.
+2. Do not write task identifiers like `CMS-40`, `CMS-79`, or any other issue/task references inside specs.
+3. Do not refer to issue trackers, "this task", or similar planning context inside specs.
+4. If implementation planning context matters, keep it in ADRs, plans, or the issue tracker, not in `docs/specs/`.
 
 ## Package boundary rules
 
@@ -236,4 +235,4 @@ Before commit, ensure:
 
 1. `bun run format:check` passes.
 2. `bun run check` passes.
-3. Task-specific verification steps from `ROADMAP_TASKS.md` are satisfied.
+3. Task-specific verification steps for the change are satisfied.

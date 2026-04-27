@@ -1,6 +1,6 @@
 # Memory
 
-Persistent team knowledge about MDCMS — the product, the architecture, the integrations, the major efforts in flight, and the lessons we've already learned. Read this when you need _durable_ knowledge. For _volatile_ state (what someone is working on right now, current sprint, blockers), use Jira / `ROADMAP_TASKS.md` / GitHub Issues — those are the right tools for that, and trying to mirror them here causes merge conflicts on every concurrent PR.
+Persistent team knowledge about MDCMS — the product, the architecture, the integrations, the major efforts in flight, and the lessons we've already learned. Read this when you need _durable_ knowledge. For _volatile_ state (what someone is working on right now, current sprint, blockers), use the issue tracker — that's the right tool for it, and trying to mirror that state here causes merge conflicts on every concurrent PR.
 
 ## Layout
 
@@ -54,8 +54,8 @@ Our system trades runtime sophistication (no semantic search yet, no auto-inject
 
 ## What this is _not_
 
-- Not a status report (Jira / GitHub Issues).
-- Not a todo list (`ROADMAP_TASKS.md`).
+- Not a status report (issue tracker).
+- Not a todo list (issue tracker).
 - Not a spec (`docs/specs/`).
 - Not a changelog (git log + PR descriptions).
 - Not a runbook (operator docs go in package READMEs).

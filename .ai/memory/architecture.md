@@ -47,7 +47,7 @@ Every package uses `@mdcms/source` as a custom condition pointing to TypeScript 
 
 ## Standalone specs
 
-Files under `docs/specs/` are **standalone canonical product documentation**. No roadmap task IDs, no `ROADMAP_TASKS.md` references, no "this task" language. Spec rationale either stays self-contained or moves to an ADR.
+Files under `docs/specs/` are **standalone canonical product documentation**. No task IDs, no external planning references, no "this task" language. Spec rationale either stays self-contained or moves to an ADR.
 
 ## Multi-tenant boundaries
 

@@ -1,6 +1,6 @@
 # Initiatives
 
-A file per major team effort — active and completed. Initiatives are bigger than tasks (which live in Jira / `ROADMAP_TASKS.md`) and longer-running than features. Examples: a multi-quarter platform migration, an open-source release, a customer-driven SLA push.
+A file per major team effort — active and completed. Initiatives are bigger than tasks (which live in the issue tracker) and longer-running than features. Examples: a multi-quarter platform migration, an open-source release, a customer-driven SLA push.
 
 ## File format
 
