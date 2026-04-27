@@ -7,7 +7,7 @@ The CLI's file ↔ database reconciliation. The database is canonical (server-si
 - **`mdcms pull`** — fetch documents from the server to local files. Overwrites local with server state for the targeted scope.
 - **`mdcms push`** — upload local file changes back to the server. Conflict-checked against the server's current state via document version headers.
 
-The full CLI command set is `init`, `login`, `logout`, `pull`, `push`, `schema-sync`, `status` (registered in `apps/cli/src/lib/framework.ts`).
+The full CLI command set is `init`, `login`, `logout`, `pull`, `push`, `schema sync`, `status` (registered in `apps/cli/src/lib/framework.ts`).
 
 ## How it works
 

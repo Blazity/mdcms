@@ -19,7 +19,6 @@ Runtime, dependencies, and infrastructure. Update when any of them change.
 
 - **React** for Studio.
 - **TanStack Query** for client-side data fetching.
-- **TanStack Router** for typed routing in the dashboard.
 - **TipTap** for the editor with MDX component support.
 
 ## Validation
@@ -40,8 +39,8 @@ Runtime, dependencies, and infrastructure. Update when any of them change.
 
 - **Bun-only.** Do not introduce Node-only dependencies that don't run on Bun.
 - **No runtime ORM relationships across modules.** First-party modules in `packages/modules/<id>/` use foreign-key IDs only — never direct relations between modules. (Hard rule from architecture.)
-- **Tenant scoping is mandatory.** Every persistable row carries `project_id` (or equivalent boundary key). Queries must filter on it.
-- **Pre-push hook** runs `bun run ci:required` — typecheck + format check + unit tests + integration must all pass.
+- **Tenant scoping is mandatory.** Every tenant-scoped row carries `project_id` (or equivalent boundary key); queries against tenant tables must filter on it. Auth tables (sessions, accounts, users) are user-bound and don't carry `project_id`.
+- **Pre-push procedure (manual):** run `bun run ci:required` locally before pushing — typecheck + format check + unit tests + integration must all pass. CI runs the same gate on the PR.
 - **Pre-commit checks:** `bun run format:check` and `bun run check`.
 
 ## Things that are NOT in the stack (yet)

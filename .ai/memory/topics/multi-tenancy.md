@@ -26,9 +26,9 @@ This is the multi-tenant model — a single MDCMS server hosts arbitrary project
 
 ### Storage layer
 
-- Every persistable row has a `project_id` (foreign key) plus, where relevant, `environment` and `locale` columns.
-- Drizzle queries **must** filter by `project_id`. There's no global query path.
-- Indexes are composite, leading with `project_id`.
+- Every **tenant-scoped** row has a `project_id` (foreign key) plus, where relevant, `environment` and `locale` columns. Auth tables (`authUsers`, `authSessions`, `authAccounts`, `authVerifications`) are user-bound rather than project-bound and don't carry a `project_id`.
+- Drizzle queries against tenant-scoped tables **must** filter by `project_id`. There's no global query path for tenant data.
+- Indexes on tenant-scoped tables are composite, leading with `project_id`.
 
 ## Guarantees / invariants
 

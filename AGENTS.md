@@ -101,7 +101,7 @@ bun --cwd apps/server run start        # Start dev server on port 4000
 
 - Branch from `main`: `feat/`, `fix/`, `chore/`, `refactor/` prefixes
 - Conventional commits: `type(scope): message`
-- Run `bun run ci:required` before pushing. The pre-push hook enforces this.
+- Run `bun run ci:required` locally before pushing — CI will run the same gate on the PR.
 - Full documentation at [docs.mdcms.ai](https://docs.mdcms.ai)
 
 ## AI agent infrastructure
