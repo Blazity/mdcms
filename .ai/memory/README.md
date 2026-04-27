@@ -18,7 +18,7 @@ Vocabulary lives at [`../LANGUAGE.md`](../LANGUAGE.md). Architecture decision ra
 
 ## How an agent should read this
 
-```
+```text
 First-time / onboarding
   └─ product.md → architecture.md → stack.md → skim topics/ index → skim initiatives/ active
 

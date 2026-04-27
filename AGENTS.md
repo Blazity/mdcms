@@ -107,7 +107,7 @@ bun --cwd apps/server run start        # Start dev server on port 4000
 
 The `.ai/` directory at the repo root holds the team's shared AI-agent-facing artifacts. It's a team operating environment, not session state — read it for product knowledge and accumulated learnings, not for "what is someone working on right now" (that's the issue tracker).
 
-```
+```text
 .ai/
 ├── LANGUAGE.md              # Project vocabulary — use these names, don't coin new ones
 ├── plans/                   # Implementation plans (committed; populated as new work happens)
