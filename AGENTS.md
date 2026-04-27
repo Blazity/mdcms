@@ -111,7 +111,7 @@ The `.ai/` directory at the repo root holds the team's shared AI-agent-facing ar
 ```
 .ai/
 ├── LANGUAGE.md              # Project vocabulary — use these names, don't coin new ones
-├── plans/                   # Implementation plans (committed; historical record)
+├── plans/                   # Implementation plans (committed; populated as new work happens)
 ├── research/                # Research artifacts (date-prefixed)
 ├── memory/                  # Team product memory (see .ai/memory/README.md)
 │   ├── product.md           # Vision, audience, scope
