@@ -29,7 +29,7 @@
     "@changesets/cli": "^2.30.0",
     "@nx/js": "22.5.1",
     "@playwright/test": "^1.59.1",
-    "@types/node": "20.19.9",
+    "@types/node": "20.19.39",
     "nx": "22.5.1",
     "prettier": "~3.6.2",
     "tslib": "^2.3.0",
