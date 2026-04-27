@@ -4,7 +4,6 @@ External systems MDCMS depends on or integrates with. One file per system. Docum
 
 ## Index
 
-- [`nx-mcp.md`](nx-mcp.md) — Nx MCP server for codebase navigation, configured in `.codex/config.toml`.
 - [`docker-stack.md`](docker-stack.md) — Local infrastructure (postgres, redis, minio, mailhog) via `docker-compose.yml`.
 - [`github-actions.md`](github-actions.md) — CI gates and workflow files in `.github/workflows/`.
 

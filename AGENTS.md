@@ -119,7 +119,7 @@ The `.ai/` directory at the repo root holds the team's shared AI-agent-facing ar
 │   ├── stack.md             # Runtime, deps, infrastructure
 │   ├── lessons.md           # Append-only dev-time pitfalls
 │   ├── topics/              # Cross-cutting domain knowledge (auth, sync, multi-tenancy, …)
-│   ├── integrations/        # External systems (Jira, Nx-MCP, Docker, CI)
+│   ├── integrations/        # External systems (Docker, CI)
 │   └── initiatives/         # One file per major team effort
 └── skills/                  # Vendored superpowers + project-local skills
 ```

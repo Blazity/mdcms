@@ -11,7 +11,7 @@ Persistent team knowledge about MDCMS — the product, the architecture, the int
 | [`stack.md`](stack.md)               | Runtime, deps, infrastructure, constraints                            | On dependency upgrades or infra changes                  |
 | [`lessons.md`](lessons.md)           | Append-only dev-time pitfalls                                         | Append on discovery                                      |
 | [`topics/`](topics/)                 | Cross-cutting domain knowledge — auth flow, sync, multi-tenancy, etc. | When a topic stabilizes or changes meaningfully          |
-| [`integrations/`](integrations/)     | External systems we depend on (Nx-MCP, Docker, GitHub Actions)        | When config or auth changes                              |
+| [`integrations/`](integrations/)     | External systems we depend on (Docker, GitHub Actions)                | When config or auth changes                              |
 | [`initiatives/`](initiatives/)       | One file per major team effort — active and completed                 | When an initiative kicks off, hits a milestone, or wraps |
 
 Vocabulary lives at [`../LANGUAGE.md`](../LANGUAGE.md). Architecture decision rationale lives at `docs/adrs/` (canonical product docs). Specs live at `docs/specs/`. Per-package guidance lives at `apps/*/AGENTS.md` and `packages/*/AGENTS.md`.
