@@ -131,7 +131,7 @@ The `.ai/` directory at the repo root holds the team's shared AI-agent-facing ar
 4. **Plans live in `.ai/plans/`.** Use the superpowers `writing-plans` and `executing-plans` skills to write and run them. Plans are committed.
 5. **Research goes in `.ai/research/`.** Date-prefixed filename (`YYYY-MM-DD-topic.md`).
 6. **Major efforts get an initiative file** in `.ai/memory/initiatives/` (see that folder's README for the format). Update it on milestones; mark `Status: completed` when wrapping.
-7. **Skills are auto-discovered** by Claude Code, Codex, and Cursor via symlinks (`.claude/skills`, `.agents/skills`, `.cursor/skills` all point to `../.ai/skills`).
+7. **Skills are auto-discovered** by Claude Code, Codex, and Cursor via symlinks (`.claude/skills`, `.agents/skills`, `.cursor/skills` all point to `../.ai/skills`). These are POSIX-style symlinks; on Windows they may not check out correctly without developer mode or `core.symlinks=true`. If skill discovery fails on a Windows clone, replace each symlink with a directory junction or a recursive copy of `.ai/skills/` as a fallback.
 
 The vendored superpowers in `.ai/skills/` is the canonical copy used by every supported agent in this repo. The globally installed `superpowers` plugin is disabled at the project level via `.claude/settings.json` to prevent duplicate skill registration.
 
@@ -204,11 +204,11 @@ Hard rule:
 
 ## Package boundary rules
 
-- Keep shared contracts and cross-cutting types in `@mdcms/shared`.
-- Keep CLI concerns in `@mdcms/cli`.
-- Keep SDK consumer-facing client logic in `@mdcms/sdk`.
-- Keep Studio embedding and runtime-loader concerns in `@mdcms/studio`.
-- Keep backend runtime and API concerns in `@mdcms/server`.
+- Place shared contracts and cross-cutting types in `@mdcms/shared`.
+- CLI concerns live in `@mdcms/cli`.
+- `@mdcms/sdk` houses the consumer-facing read client.
+- Studio embedding and runtime-loader concerns belong to `@mdcms/studio`.
+- Backend runtime and API concerns stay in `@mdcms/server`.
 
 When moving code across packages, preserve clear ownership and avoid circular dependencies.
 

@@ -54,11 +54,10 @@ Our system trades runtime sophistication (no semantic search yet, no auto-inject
 
 ## What this is _not_
 
-- Not a status report (issue tracker).
-- Not a todo list (issue tracker).
-- Not a spec (`docs/specs/`).
-- Not a changelog (git log + PR descriptions).
-- Not a runbook (operator docs go in package READMEs).
-- Not a personal journal (Hermes-style USER.md belongs in user-home, not the repo).
+- Not a substitute for issue tracking or todo lists — both belong in the issue tracker.
+- Specs live at `docs/specs/`, not here.
+- Don't treat this as a changelog — git log and PR descriptions cover that.
+- Operator runbooks belong in package READMEs.
+- Personal journals (Hermes-style `USER.md`) stay in user-home, not in the repo.
 
 This is the **shared mental model** the team and its agents maintain about MDCMS.
