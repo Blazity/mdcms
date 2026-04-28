@@ -1,3 +1,5 @@
+import { brotliCompressSync, gzipSync } from "node:zlib";
+
 import {
   RuntimeError,
   assertActionCatalogItem,
@@ -214,28 +216,191 @@ function createNotFoundResponse(): Response {
 }
 
 const STUDIO_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
+const STUDIO_ASSET_COMPRESS_MIN_BYTES = 1024;
+const STUDIO_ASSET_CACHE_MAX_ENTRIES = 32;
+const STUDIO_ASSET_CACHE_MAX_TOTAL_BYTES = 64 * 1024 * 1024;
+
+type StudioAssetEncoding = "br" | "gzip" | "identity";
+type StudioAssetCompressionEncoding = Exclude<StudioAssetEncoding, "identity">;
+
+type StudioAssetCacheEntry = {
+  buildId: string;
+  encoding: StudioAssetCompressionEncoding;
+  body: Uint8Array;
+};
+
+class StudioAssetEncodingCache {
+  private readonly entries = new Map<string, StudioAssetCacheEntry>();
+  private totalBytes = 0;
+
+  get(key: string): StudioAssetCacheEntry | undefined {
+    const entry = this.entries.get(key);
+    if (!entry) {
+      return undefined;
+    }
+    this.entries.delete(key);
+    this.entries.set(key, entry);
+    return entry;
+  }
+
+  set(key: string, entry: StudioAssetCacheEntry): void {
+    const existing = this.entries.get(key);
+    if (existing) {
+      this.totalBytes -= existing.body.byteLength;
+      this.entries.delete(key);
+    }
+    this.entries.set(key, entry);
+    this.totalBytes += entry.body.byteLength;
+    while (
+      (this.entries.size > STUDIO_ASSET_CACHE_MAX_ENTRIES ||
+        this.totalBytes > STUDIO_ASSET_CACHE_MAX_TOTAL_BYTES) &&
+      this.entries.size > 0
+    ) {
+      const oldestKey = this.entries.keys().next().value;
+      if (oldestKey === undefined) break;
+      const oldest = this.entries.get(oldestKey);
+      if (!oldest) break;
+      this.totalBytes -= oldest.body.byteLength;
+      this.entries.delete(oldestKey);
+    }
+  }
+
+  invalidateBuild(buildId: string): void {
+    for (const [key, entry] of this.entries) {
+      if (entry.buildId === buildId) {
+        this.totalBytes -= entry.body.byteLength;
+        this.entries.delete(key);
+      }
+    }
+  }
+}
+
+const studioAssetEncodingCache = new StudioAssetEncodingCache();
+
+export function invalidateStudioAssetEncodingCacheForBuild(
+  buildId: string,
+): void {
+  studioAssetEncodingCache.invalidateBuild(buildId);
+}
+
+function parseAcceptEncoding(header: string): Map<string, number> {
+  const result = new Map<string, number>();
+  for (const part of header.split(",")) {
+    const [encodingSegment, ...paramSegments] = part.split(";");
+    const encoding = encodingSegment?.trim().toLowerCase();
+    if (!encoding) continue;
+    let q = 1;
+    for (const param of paramSegments) {
+      const match = /^\s*q\s*=\s*(\d+(?:\.\d+)?)\s*$/i.exec(param);
+      if (!match) continue;
+      const parsed = Number.parseFloat(match[1]!);
+      if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) {
+        q = parsed;
+      }
+    }
+    result.set(encoding, q);
+  }
+  return result;
+}
+
+function pickStudioAssetEncoding(
+  request: Request,
+): StudioAssetCompressionEncoding | undefined {
+  const header = request.headers.get("accept-encoding");
+  if (!header) return undefined;
+  const tokens = parseAcceptEncoding(header);
+  // RFC 7231 §5.3.4: q=0 means "not acceptable". Among supported encodings
+  // pick highest q; tie-break br > gzip (better ratio for our JS bundle).
+  const supported: readonly StudioAssetCompressionEncoding[] = ["br", "gzip"];
+  let best:
+    | { encoding: StudioAssetCompressionEncoding; q: number }
+    | undefined;
+  for (const candidate of supported) {
+    const q = tokens.get(candidate);
+    if (q === undefined || q <= 0) continue;
+    if (!best || q > best.q) {
+      best = { encoding: candidate, q };
+    }
+  }
+  return best?.encoding;
+}
+
+function compressStudioAsset(
+  body: Uint8Array,
+  encoding: StudioAssetCompressionEncoding,
+): Uint8Array {
+  return encoding === "br" ? brotliCompressSync(body) : gzipSync(body);
+}
+
+function getOrCacheCompressedStudioAsset(
+  cacheKey: string,
+  buildId: string,
+  body: Uint8Array,
+  encoding: StudioAssetCompressionEncoding,
+): Uint8Array {
+  const hit = studioAssetEncodingCache.get(cacheKey);
+  if (hit && hit.encoding === encoding) {
+    return hit.body;
+  }
+  const compressed = compressStudioAsset(body, encoding);
+  studioAssetEncodingCache.set(cacheKey, {
+    buildId,
+    encoding,
+    body: compressed,
+  });
+  return compressed;
+}
 
 /**
  * Build a response for a Studio runtime asset.
  *
  * Studio runtime asset paths are content-addressed by `buildId`, so the
  * bytes for a given URL never change — we can mark them safe to cache
- * indefinitely. We do **not** compress here on purpose: a fronting reverse
- * proxy or CDN (Fastly via Railway, Cloudflare, Nginx, etc.) is expected to
- * negotiate `Accept-Encoding` with the client and add `Content-Encoding` /
- * `Vary: Accept-Encoding` itself. Self-hosted deployments without a proxy
- * can document a recommended setup (e.g. enable Fastly compression, run
- * behind Nginx with `gzip on; brotli on;`).
+ * indefinitely.
+ *
+ * Compression is on by default because Railway's edge proxy (and many
+ * self-hosting setups) does not auto-compress. Set `MDCMS_HTTP_COMPRESS=false`
+ * when a fronting reverse proxy (Cloudflare, Fastly with compression turned
+ * on, Nginx with `gzip on; brotli on;`, etc.) is already negotiating
+ * `Accept-Encoding` to skip the per-process CPU cost.
  */
 function buildStudioAssetResponse(input: {
+  request: Request;
   body: Uint8Array;
   contentType: string;
+  buildId: string;
+  assetPath: string;
+  compressEnabled: boolean;
 }): Response {
-  return new Response(input.body, {
+  const baseHeaders: Record<string, string> = {
+    "content-type": input.contentType,
+    "cache-control": STUDIO_ASSET_CACHE_CONTROL,
+    vary: "Accept-Encoding",
+  };
+
+  const encoding =
+    input.compressEnabled &&
+    input.body.byteLength >= STUDIO_ASSET_COMPRESS_MIN_BYTES
+      ? pickStudioAssetEncoding(input.request)
+      : undefined;
+
+  if (!encoding) {
+    return new Response(input.body, { status: 200, headers: baseHeaders });
+  }
+
+  const cacheKey = `${input.buildId}:${input.assetPath}:${encoding}`;
+  const compressed = getOrCacheCompressedStudioAsset(
+    cacheKey,
+    input.buildId,
+    input.body,
+    encoding,
+  );
+
+  return new Response(compressed, {
     status: 200,
     headers: {
-      "content-type": input.contentType,
-      "cache-control": STUDIO_ASSET_CACHE_CONTROL,
+      ...baseHeaders,
+      "content-encoding": encoding,
     },
   });
 }
@@ -384,6 +549,7 @@ function createServerApp(options: {
   actions: ActionCatalogItem[];
   studioRuntimePublication?: StudioRuntimePublicationInput;
   studioRuntimeDisabled: boolean;
+  httpCompressEnabled: boolean;
   isActionVisible: ActionCatalogVisibilityPolicy;
   configureApp?: ServerAppConfigurator;
 }) {
@@ -449,7 +615,7 @@ function createServerApp(options: {
 
       return readyResponse;
     })
-    .get("/api/v1/studio/assets/:buildId/*", async ({ params }) => {
+    .get("/api/v1/studio/assets/:buildId/*", async ({ params, request }) => {
       const buildId = params.buildId;
       const assetPath =
         (params as unknown as Record<string, string>)["*"] ?? "";
@@ -477,8 +643,12 @@ function createServerApp(options: {
       }
 
       return buildStudioAssetResponse({
+        request,
         body: asset.body,
         contentType: asset.contentType,
+        buildId,
+        assetPath,
+        compressEnabled: options.httpCompressEnabled,
       });
     });
 
@@ -561,6 +731,7 @@ export function createServerRequestHandler(
     actions,
     studioRuntimePublication: options.studioRuntimePublication,
     studioRuntimeDisabled: env.MDCMS_STUDIO_RUNTIME_DISABLED,
+    httpCompressEnabled: env.MDCMS_HTTP_COMPRESS,
     isActionVisible,
     configureApp: options.configureApp,
   });

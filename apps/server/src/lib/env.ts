@@ -211,6 +211,13 @@ export type ServerEnv = CoreEnv & {
   MDCMS_AUTH_OIDC_PROVIDERS: OidcProviderConfig[];
   MDCMS_AUTH_SAML_PROVIDERS: SamlProviderConfig[];
   MDCMS_STUDIO_ALLOWED_ORIGINS: string[];
+  /**
+   * App-level compression toggle. Defaults to enabled because Railway's edge
+   * proxy (and many self-hosting setups) does not auto-compress; if a fronting
+   * reverse proxy / CDN is already handling compression, set this to "false"
+   * to skip the per-response CPU cost.
+   */
+  MDCMS_HTTP_COMPRESS: boolean;
 };
 
 function normalizeAbsoluteUrl(raw: string): string {
@@ -272,6 +279,31 @@ function createStudioAllowedOriginsInvalidEnvError(
       key: "MDCMS_STUDIO_ALLOWED_ORIGINS",
       value,
       ...details,
+    },
+  });
+}
+
+function parseHttpCompressFlag(rawValue: string | undefined): boolean {
+  if (rawValue === undefined || rawValue.trim().length === 0) {
+    return true;
+  }
+
+  const normalized = rawValue.trim().toLowerCase();
+
+  if (normalized === "true") {
+    return true;
+  }
+
+  if (normalized === "false") {
+    return false;
+  }
+
+  throw new RuntimeError({
+    code: "INVALID_ENV",
+    message: "MDCMS_HTTP_COMPRESS must be true or false.",
+    details: {
+      key: "MDCMS_HTTP_COMPRESS",
+      value: rawValue,
     },
   });
 }
@@ -806,6 +838,7 @@ export function parseServerEnv(rawEnv: NodeJS.ProcessEnv): ServerEnv {
   const studioRuntimeDisabled = parseStudioRuntimeDisabledFlag(
     rawEnv.MDCMS_STUDIO_RUNTIME_DISABLED,
   );
+  const httpCompress = parseHttpCompressFlag(rawEnv.MDCMS_HTTP_COMPRESS);
   assertUniqueSsoProviderIds(oidcProviders, samlProviders);
 
   return extendEnv(core, () => ({
@@ -814,5 +847,6 @@ export function parseServerEnv(rawEnv: NodeJS.ProcessEnv): ServerEnv {
     MDCMS_AUTH_OIDC_PROVIDERS: oidcProviders,
     MDCMS_AUTH_SAML_PROVIDERS: samlProviders,
     MDCMS_STUDIO_ALLOWED_ORIGINS: studioAllowedOrigins,
+    MDCMS_HTTP_COMPRESS: httpCompress,
   }));
 }
