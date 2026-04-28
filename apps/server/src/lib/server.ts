@@ -1,3 +1,5 @@
+import { brotliCompressSync, gzipSync } from "node:zlib";
+
 import {
   RuntimeError,
   assertActionCatalogItem,
@@ -177,6 +179,98 @@ function createNotFoundError(method: string, path: string): RuntimeError {
 
 function createNotFoundResponse(): Response {
   return new Response("Route not found.", { status: 404 });
+}
+
+const STUDIO_ASSET_CACHE_CONTROL =
+  "public, max-age=31536000, immutable";
+const STUDIO_ASSET_COMPRESS_MIN_BYTES = 1024;
+
+type StudioAssetEncoding = "br" | "gzip" | "identity";
+
+type CachedStudioAssetEncoding = {
+  encoding: Exclude<StudioAssetEncoding, "identity">;
+  body: Uint8Array;
+};
+
+const studioAssetEncodingCache = new Map<string, CachedStudioAssetEncoding[]>();
+
+function pickStudioAssetEncoding(
+  request: Request,
+): Exclude<StudioAssetEncoding, "identity"> | undefined {
+  const acceptEncoding = (request.headers.get("accept-encoding") ?? "")
+    .toLowerCase();
+
+  if (acceptEncoding.includes("br")) {
+    return "br";
+  }
+
+  if (acceptEncoding.includes("gzip")) {
+    return "gzip";
+  }
+
+  return undefined;
+}
+
+function compressStudioAsset(
+  body: Uint8Array,
+  encoding: Exclude<StudioAssetEncoding, "identity">,
+): Uint8Array {
+  return encoding === "br" ? brotliCompressSync(body) : gzipSync(body);
+}
+
+function getOrCacheCompressedStudioAsset(
+  cacheKey: string,
+  body: Uint8Array,
+  encoding: Exclude<StudioAssetEncoding, "identity">,
+): Uint8Array {
+  const cached = studioAssetEncodingCache.get(cacheKey);
+  const hit = cached?.find((entry) => entry.encoding === encoding);
+
+  if (hit) {
+    return hit.body;
+  }
+
+  const compressed = compressStudioAsset(body, encoding);
+  const next = cached ?? [];
+  next.push({ encoding, body: compressed });
+  studioAssetEncodingCache.set(cacheKey, next);
+  return compressed;
+}
+
+function buildStudioAssetResponse(input: {
+  request: Request;
+  body: Uint8Array;
+  contentType: string;
+  cacheKey: string;
+}): Response {
+  const baseHeaders: Record<string, string> = {
+    "content-type": input.contentType,
+    "cache-control": STUDIO_ASSET_CACHE_CONTROL,
+    vary: "Accept-Encoding",
+  };
+
+  const encoding =
+    input.body.byteLength >= STUDIO_ASSET_COMPRESS_MIN_BYTES
+      ? pickStudioAssetEncoding(input.request)
+      : undefined;
+
+  if (!encoding) {
+    return new Response(input.body, { status: 200, headers: baseHeaders });
+  }
+
+  const compressed = getOrCacheCompressedStudioAsset(
+    input.cacheKey,
+    input.body,
+    encoding,
+  );
+
+  return new Response(compressed, {
+    status: 200,
+    headers: {
+      ...baseHeaders,
+      "content-encoding": encoding,
+    },
+  });
 }
 
 function createRuntimeErrorResponse(
@@ -388,7 +482,7 @@ function createServerApp(options: {
 
       return readyResponse;
     })
-    .get("/api/v1/studio/assets/:buildId/*", async ({ params }) => {
+    .get("/api/v1/studio/assets/:buildId/*", async ({ params, request }) => {
       const buildId = params.buildId;
       const assetPath =
         (params as unknown as Record<string, string>)["*"] ?? "";
@@ -415,11 +509,11 @@ function createServerApp(options: {
         return createNotFoundResponse();
       }
 
-      return new Response(asset.body, {
-        status: 200,
-        headers: {
-          "content-type": asset.contentType,
-        },
+      return buildStudioAssetResponse({
+        request,
+        body: asset.body,
+        contentType: asset.contentType,
+        cacheKey: `${buildId}:${assetPath}`,
       });
     });
 
