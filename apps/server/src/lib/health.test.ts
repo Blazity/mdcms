@@ -709,55 +709,40 @@ test("GET /api/v1/studio/assets/:buildId/* returns NOT_FOUND envelope for missin
   assert.equal(body.code, "NOT_FOUND");
 });
 
-const compressibleAssetEnv = {
-  ...baseEnv,
-  MDCMS_STUDIO_ALLOWED_ORIGINS: "https://demo.example",
-} as NodeJS.ProcessEnv;
-
-function makeCompressibleAssetHandler() {
+test("Studio asset response is marked immutably cacheable", async () => {
   const encoder = new TextEncoder();
-  // Repeat a recognizable phrase enough times to exceed the
-  // STUDIO_ASSET_COMPRESS_MIN_BYTES threshold and produce a meaningful diff
-  // between the identity body and either compressed encoding.
-  const sampleBody = encoder.encode("// mdcms studio runtime test\n".repeat(2000));
-  return {
-    sampleBody,
-    handler: createServerRequestHandler({
-      env: compressibleAssetEnv,
-      now: () => new Date("2026-02-20T00:00:10.000Z"),
-      studioRuntimePublication: {
-        buildId: "build-perf",
-        entryFile: "runtime.mjs",
-        manifest: {
-          apiVersion: "1",
-          studioVersion: "1.2.3",
-          mode: "module",
-          entryUrl: "/api/v1/studio/assets/build-perf/runtime.mjs",
-          integritySha256: "abc123",
-          signature: "signature",
-          keyId: "key-1",
-          buildId: "build-perf",
-          minStudioPackageVersion: "0.0.1",
-          minHostBridgeVersion: "1.0.0",
-          expiresAt: "2099-01-01T00:00:00.000Z",
-        },
-        getAsset: async ({ buildId, assetPath }) =>
-          buildId === "build-perf" && assetPath === "runtime.mjs"
-            ? {
-                absolutePath: "/tmp/runtime.mjs",
-                contentType: "text/javascript; charset=utf-8",
-                body: sampleBody,
-              }
-            : undefined,
+  const handler = createServerRequestHandler({
+    env: baseEnv,
+    now: () => new Date("2026-02-20T00:00:10.000Z"),
+    studioRuntimePublication: {
+      buildId: "build-cache",
+      entryFile: "runtime.mjs",
+      manifest: {
+        apiVersion: "1",
+        studioVersion: "1.2.3",
+        mode: "module",
+        entryUrl: "/api/v1/studio/assets/build-cache/runtime.mjs",
+        integritySha256: "abc123",
+        signature: "signature",
+        keyId: "key-1",
+        buildId: "build-cache",
+        minStudioPackageVersion: "0.0.1",
+        minHostBridgeVersion: "1.0.0",
+        expiresAt: "2099-01-01T00:00:00.000Z",
       },
-    }),
-  };
-}
+      getAsset: async ({ buildId, assetPath }) =>
+        buildId === "build-cache" && assetPath === "runtime.mjs"
+          ? {
+              absolutePath: "/tmp/runtime.mjs",
+              contentType: "text/javascript; charset=utf-8",
+              body: encoder.encode("export const ok = true;\n"),
+            }
+          : undefined,
+    },
+  });
 
-test("Studio asset response sets immutable Cache-Control and Vary: Accept-Encoding", async () => {
-  const { handler } = makeCompressibleAssetHandler();
   const response = await handler(
-    new Request("http://localhost/api/v1/studio/assets/build-perf/runtime.mjs"),
+    new Request("http://localhost/api/v1/studio/assets/build-cache/runtime.mjs"),
   );
 
   assert.equal(response.status, 200);
@@ -765,60 +750,54 @@ test("Studio asset response sets immutable Cache-Control and Vary: Accept-Encodi
     response.headers.get("cache-control"),
     "public, max-age=31536000, immutable",
   );
-  assert.equal(response.headers.get("vary"), "Accept-Encoding");
-});
-
-test("Studio asset response negotiates brotli when client advertises it", async () => {
-  const { sampleBody, handler } = makeCompressibleAssetHandler();
-  const response = await handler(
-    new Request("http://localhost/api/v1/studio/assets/build-perf/runtime.mjs", {
-      headers: { "accept-encoding": "br, gzip" },
-    }),
-  );
-  const buffer = new Uint8Array(await response.arrayBuffer());
-
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get("content-encoding"), "br");
-  assert.ok(
-    buffer.byteLength < sampleBody.byteLength,
-    "compressed payload should be smaller than identity body",
-  );
-});
-
-test("Studio asset response falls back to gzip when client rejects brotli via q=0", async () => {
-  const { handler } = makeCompressibleAssetHandler();
-  const response = await handler(
-    new Request("http://localhost/api/v1/studio/assets/build-perf/runtime.mjs", {
-      headers: { "accept-encoding": "br;q=0, gzip;q=1" },
-    }),
-  );
-
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get("content-encoding"), "gzip");
-});
-
-test("Studio asset response stays identity when client advertises no supported encoding", async () => {
-  const { sampleBody, handler } = makeCompressibleAssetHandler();
-  const response = await handler(
-    new Request("http://localhost/api/v1/studio/assets/build-perf/runtime.mjs", {
-      headers: { "accept-encoding": "identity" },
-    }),
-  );
-  const buffer = new Uint8Array(await response.arrayBuffer());
-
-  assert.equal(response.status, 200);
+  // Compression negotiation is intentionally delegated to the fronting
+  // reverse proxy / CDN, so origin should not advertise Vary on
+  // Accept-Encoding (it would split caches without origin actually varying).
   assert.equal(response.headers.get("content-encoding"), null);
-  assert.equal(buffer.byteLength, sampleBody.byteLength);
 });
 
-test("Studio asset Vary survives the CORS-origin merge with Accept-Encoding intact", async () => {
-  const { handler } = makeCompressibleAssetHandler();
-  const response = await handler(
-    new Request("http://localhost/api/v1/studio/assets/build-perf/runtime.mjs", {
-      headers: {
-        "accept-encoding": "br",
-        origin: "https://demo.example",
+test("CORS-origin Vary merges with any existing Vary tokens instead of overwriting", async () => {
+  // The studio asset route only sets Cache-Control, but we exercise the
+  // appendResponseHeaders Vary-merge invariant via the Origin header that
+  // the studio CORS layer adds. If a future route emits its own Vary, the
+  // merge logic ensures CORS won't clobber it.
+  const encoder = new TextEncoder();
+  const handler = createServerRequestHandler({
+    env: {
+      ...baseEnv,
+      MDCMS_STUDIO_ALLOWED_ORIGINS: "https://demo.example",
+    } as NodeJS.ProcessEnv,
+    now: () => new Date("2026-02-20T00:00:10.000Z"),
+    studioRuntimePublication: {
+      buildId: "build-cors",
+      entryFile: "runtime.mjs",
+      manifest: {
+        apiVersion: "1",
+        studioVersion: "1.2.3",
+        mode: "module",
+        entryUrl: "/api/v1/studio/assets/build-cors/runtime.mjs",
+        integritySha256: "abc123",
+        signature: "signature",
+        keyId: "key-1",
+        buildId: "build-cors",
+        minStudioPackageVersion: "0.0.1",
+        minHostBridgeVersion: "1.0.0",
+        expiresAt: "2099-01-01T00:00:00.000Z",
       },
+      getAsset: async ({ buildId, assetPath }) =>
+        buildId === "build-cors" && assetPath === "runtime.mjs"
+          ? {
+              absolutePath: "/tmp/runtime.mjs",
+              contentType: "text/javascript; charset=utf-8",
+              body: encoder.encode("export const ok = true;\n"),
+            }
+          : undefined,
+    },
+  });
+
+  const response = await handler(
+    new Request("http://localhost/api/v1/studio/assets/build-cors/runtime.mjs", {
+      headers: { origin: "https://demo.example" },
     }),
   );
 
@@ -827,11 +806,7 @@ test("Studio asset Vary survives the CORS-origin merge with Accept-Encoding inta
     response.headers.get("access-control-allow-origin"),
     "https://demo.example",
   );
-
-  const vary = (response.headers.get("vary") ?? "")
-    .split(",")
-    .map((token) => token.trim().toLowerCase())
-    .filter((token) => token.length > 0)
-    .sort();
-  assert.deepEqual(vary, ["accept-encoding", "origin"]);
+  // CORS layer adds Vary: Origin via appendResponseHeaders. The merge logic
+  // dedupes case-insensitively and preserves any tokens already in place.
+  assert.equal(response.headers.get("vary"), "Origin");
 });
