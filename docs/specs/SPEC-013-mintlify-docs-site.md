@@ -72,7 +72,7 @@ Technical deep-dives for contributors and evaluators.
 **Group: API Layer**
 
 - `architecture/request-flow.mdx` — 8-step middleware chain walkthrough with code snippets
-- `architecture/auth.mdx` — Authentication (API key, session, CLI device flow) and authorization (RBAC, capabilities)
+- `architecture/auth.mdx` — Authentication (API key, session, CLI loopback OAuth flow) and authorization (RBAC, capabilities)
 - `architecture/scopes-and-permissions.mdx` — Operation scopes, role-capability matrix, enforcement points
 
 ### Tab 3: API Reference

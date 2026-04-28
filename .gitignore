@@ -4,6 +4,7 @@
 dist
 tmp
 out-tsc
+*.tsbuildinfo
 
 # dependencies
 node_modules
@@ -49,7 +50,23 @@ Thumbs.db
 .mdcms/manifests/
 .worktrees/
 docs/superpowers/
-docs/plans/
 .superpowers/
 blazebot/
 apps/studio-review/.generated/
+
+# AI agent harness — local-only paths (the rest of .ai/ is committed)
+.claude/settings.local.json
+.ai/skills/audit-ai-patterns/
+.ai/skills/mdcms-working-on-ticket/
+
+# Untracked workbench files
+.vercel/
+output/
+test-results/
+tmp-shot.png
+b_*/
+b_*.zip
+mcp_servers.json
+mcp_servers.*.backup.json
+EXTENSIBILITY_APPROACH_COMPARISON.md
+ROADMAP_TASKS.md

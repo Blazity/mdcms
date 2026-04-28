@@ -4,3 +4,9 @@
 /.nx/workspace-data
 /apps/studio-review/.generated
 /.vercel
+
+# Vendored from obra/superpowers — kept verbatim so bumps stay clean
+/.ai/skills/
+
+# Migrated historical plans — preserve original formatting
+/.ai/plans/

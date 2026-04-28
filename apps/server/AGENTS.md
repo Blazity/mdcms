@@ -2,7 +2,7 @@
 
 ## What this is
 
-The HTTP backend that everything connects to. Elysia on Bun, PostgreSQL for content and auth, Redis for sessions, S3 for media. Every content operation (create, edit, publish, delete) and every auth flow (session, API key, CLI device flow, SSO) runs through here.
+The HTTP backend that everything connects to. Elysia on Bun, PostgreSQL for content, auth, and sessions; Redis is provisioned for caching/queues/rate-limiting; S3 for media. Every content operation (create, edit, publish, delete) and every auth flow (session, API key, CLI loopback OAuth, SSO) runs through here.
 
 The server is organized around a module system. Core modules (`core.system`, `domain.content`) provide the built-in functionality. New capabilities should be added as modules rather than modifying core routes directly.
 
