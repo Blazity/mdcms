@@ -25,6 +25,7 @@ const DEMO_KEY_SCOPES = [
   "content:read:draft",
   "content:write",
   "content:delete",
+  "content:publish",
   "schema:read",
   "schema:write",
 ] as const;
