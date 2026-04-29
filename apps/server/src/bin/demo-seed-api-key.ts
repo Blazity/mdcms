@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { and, eq, isNull } from "drizzle-orm";
 import { RuntimeError } from "@mdcms/shared";
 import { createAuthService } from "../lib/auth.js";
@@ -107,6 +108,86 @@ const DEMO_CONTENT_DOCUMENTS: readonly DemoSeedDocument[] = [
       "- one demo user",
       "- one fixed demo API key",
       "- sample content documents",
+    ].join("\n"),
+    publish: true,
+  },
+  {
+    key: "page:home:en",
+    type: "page",
+    path: "content/pages/home",
+    locale: "en",
+    format: "mdx",
+    frontmatter: {
+      title: "Home",
+      slug: "home",
+    },
+    body: [
+      "<Hero",
+      '  headlineLead="AI-native CMS for"',
+      '  headlineHighlight="modern marketing teams"',
+      '  subtext="MDCMS is an open-source content platform designed to help teams create, manage, and scale content across multiple markets — without relying on developers."',
+      '  primaryCtaLabel="Talk to Head of Product"',
+      '  primaryCtaHref="#contact"',
+      '  secondaryCtaLabel="Explore GitHub"',
+      '  secondaryCtaHref="https://github.com/mdcms-ai/mdcms"',
+      "/>",
+      "",
+      "<FeaturePrompt",
+      '  kicker="Prompt Based Building"',
+      '  headlineLead="Build pages"',
+      '  headlineHighlight="with prompts —"',
+      '  headlineTrail="not tickets"',
+      '  description="Skip the traditional workflow of writing briefs, creating tickets, and waiting for developers. With MDCMS, your marketing team can generate fully structured pages using natural language prompts — ready to review and publish in minutes."',
+      "/>",
+      "",
+      "<FeatureSEO",
+      '  kicker="SEO & AI Oriented Content"',
+      '  headlineLead="Structured content built for"',
+      '  headlineHighlight="SEO and AI"',
+      '  description="MDCMS stores all content in clean, structured Markdown — making it instantly readable by search engines, AI agents, and content pipelines. No proprietary formats, no lock-in, just pure machine-friendly content."',
+      "/>",
+      "",
+      "<FeatureMigration",
+      '  kicker="Faster Migration"',
+      '  headlineLead="Migrate up to"',
+      '  headlineHighlight="3×"',
+      '  headlineTrail="faster"',
+      '  description="Moving to a new CMS shouldn\'t take months. MDCMS streamlines the entire migration process — from schema detection to content transformation — so you can go live in weeks, not quarters."',
+      "/>",
+      "",
+      "<FeatureGrid",
+      '  headingLead="Built for teams that"',
+      '  headingHighlight="move fast"',
+      '  primaryCtaLabel="Talk to Head of Product"',
+      '  primaryCtaHref="#contact"',
+      '  secondaryCtaLabel="Explore GitHub"',
+      '  secondaryCtaHref="https://github.com/mdcms-ai/mdcms"',
+      "/>",
+      "",
+      "<ComparisonTable",
+      '  kicker="Engine Efficiency"',
+      '  headline="Created for what other CMS platforms struggle with"',
+      "/>",
+      "",
+      "<ImplementationOptions",
+      '  headlineLead="Use it"',
+      '  headlineHighlight="your way"',
+      '  selfTitle="Open-source and ready to go"',
+      '  selfDescription="MDCMS is open-source and can be implemented by your internal team."',
+      '  blazityTitle="Work with the team behind MDCMS"',
+      '  blazityDescription="Accelerate your implementation with the engineering team that built MDCMS from the ground up."',
+      "/>",
+      "",
+      "<TrustSection",
+      '  headlineLead="Built by a team trusted by"',
+      '  headlineHighlight="global companies"',
+      "/>",
+      "",
+      "<ContactForm",
+      '  kicker="GET STARTED"',
+      '  headline="Let\'s see if MDCMS fits your setup"',
+      '  description="Book a call to explore how this could work for your team, your content, and your markets."',
+      "/>",
     ].join("\n"),
     publish: true,
   },
@@ -430,7 +511,38 @@ async function ensureDemoContent(input: {
     );
 
     if (existing) {
-      if (template.publish && existing.publishedVersion === null) {
+      const bodyChanged = existing.body !== template.body;
+      // Postgres JSONB does not guarantee key-insertion order on read, so a
+      // string compare against the seed template would flag spurious changes
+      // whenever the driver/database returned the same keys in a different
+      // order. Compare structurally instead.
+      const frontmatterChanged = !isDeepStrictEqual(
+        existing.frontmatter ?? {},
+        template.frontmatter ?? {},
+      );
+
+      if (bodyChanged || frontmatterChanged) {
+        await store.update(
+          {
+            project: input.project,
+            environment: input.environment,
+          },
+          existing.documentId,
+          {
+            frontmatter: template.frontmatter,
+            body: template.body,
+            updatedBy: input.actorId,
+          },
+        );
+      }
+
+      const needsPublish =
+        template.publish &&
+        (existing.publishedVersion === null ||
+          bodyChanged ||
+          frontmatterChanged);
+
+      if (needsPublish) {
         await store.publish(
           {
             project: input.project,

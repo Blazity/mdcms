@@ -708,3 +708,226 @@ test("GET /api/v1/studio/assets/:buildId/* returns NOT_FOUND envelope for missin
   assert.equal(response.status, 404);
   assert.equal(body.code, "NOT_FOUND");
 });
+
+function makeCompressibleAssetHandler(env: NodeJS.ProcessEnv = baseEnv) {
+  const encoder = new TextEncoder();
+  const sampleBody = encoder.encode(
+    "// mdcms studio runtime test\n".repeat(2000),
+  );
+  return {
+    sampleBody,
+    handler: createServerRequestHandler({
+      env,
+      now: () => new Date("2026-02-20T00:00:10.000Z"),
+      studioRuntimePublication: {
+        buildId: "build-perf",
+        entryFile: "runtime.mjs",
+        manifest: {
+          apiVersion: "1",
+          studioVersion: "1.2.3",
+          mode: "module",
+          entryUrl: "/api/v1/studio/assets/build-perf/runtime.mjs",
+          integritySha256: "abc123",
+          signature: "signature",
+          keyId: "key-1",
+          buildId: "build-perf",
+          minStudioPackageVersion: "0.0.1",
+          minHostBridgeVersion: "1.0.0",
+          expiresAt: "2099-01-01T00:00:00.000Z",
+        },
+        getAsset: async ({ buildId, assetPath }) =>
+          buildId === "build-perf" && assetPath === "runtime.mjs"
+            ? {
+                absolutePath: "/tmp/runtime.mjs",
+                contentType: "text/javascript; charset=utf-8",
+                body: sampleBody,
+              }
+            : undefined,
+      },
+    }),
+  };
+}
+
+test("Studio asset response negotiates brotli when MDCMS_HTTP_COMPRESS is on (default)", async () => {
+  const { sampleBody, handler } = makeCompressibleAssetHandler();
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/studio/assets/build-perf/runtime.mjs",
+      { headers: { "accept-encoding": "br, gzip" } },
+    ),
+  );
+  const buffer = new Uint8Array(await response.arrayBuffer());
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-encoding"), "br");
+  assert.equal(response.headers.get("vary"), "Accept-Encoding");
+  assert.ok(
+    buffer.byteLength < sampleBody.byteLength,
+    "compressed payload should be smaller than identity body",
+  );
+});
+
+test("Studio asset response negotiates a supported encoding when client sends Accept-Encoding: *", async () => {
+  const { handler } = makeCompressibleAssetHandler();
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/studio/assets/build-perf/runtime.mjs",
+      { headers: { "accept-encoding": "*" } },
+    ),
+  );
+
+  assert.equal(response.status, 200);
+  // Wildcard should pick the best supported encoding (brotli ahead of gzip).
+  assert.equal(response.headers.get("content-encoding"), "br");
+});
+
+test("Studio asset response respects explicit q=0 over a wildcard fallback", async () => {
+  const { handler } = makeCompressibleAssetHandler();
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/studio/assets/build-perf/runtime.mjs",
+      { headers: { "accept-encoding": "br;q=0, *" } },
+    ),
+  );
+
+  assert.equal(response.status, 200);
+  // br is explicitly disallowed; * still permits gzip.
+  assert.equal(response.headers.get("content-encoding"), "gzip");
+});
+
+test("Studio asset response falls back to gzip when client rejects brotli via q=0", async () => {
+  const { handler } = makeCompressibleAssetHandler();
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/studio/assets/build-perf/runtime.mjs",
+      { headers: { "accept-encoding": "br;q=0, gzip;q=1" } },
+    ),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-encoding"), "gzip");
+});
+
+test("Studio asset response stays identity when MDCMS_HTTP_COMPRESS=false", async () => {
+  const { sampleBody, handler } = makeCompressibleAssetHandler({
+    ...baseEnv,
+    MDCMS_HTTP_COMPRESS: "false",
+  } as NodeJS.ProcessEnv);
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/studio/assets/build-perf/runtime.mjs",
+      { headers: { "accept-encoding": "br, gzip" } },
+    ),
+  );
+  const buffer = new Uint8Array(await response.arrayBuffer());
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-encoding"), null);
+  assert.equal(buffer.byteLength, sampleBody.byteLength);
+});
+
+test("Studio asset response is marked immutably cacheable", async () => {
+  const encoder = new TextEncoder();
+  const handler = createServerRequestHandler({
+    env: baseEnv,
+    now: () => new Date("2026-02-20T00:00:10.000Z"),
+    studioRuntimePublication: {
+      buildId: "build-cache",
+      entryFile: "runtime.mjs",
+      manifest: {
+        apiVersion: "1",
+        studioVersion: "1.2.3",
+        mode: "module",
+        entryUrl: "/api/v1/studio/assets/build-cache/runtime.mjs",
+        integritySha256: "abc123",
+        signature: "signature",
+        keyId: "key-1",
+        buildId: "build-cache",
+        minStudioPackageVersion: "0.0.1",
+        minHostBridgeVersion: "1.0.0",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      },
+      getAsset: async ({ buildId, assetPath }) =>
+        buildId === "build-cache" && assetPath === "runtime.mjs"
+          ? {
+              absolutePath: "/tmp/runtime.mjs",
+              contentType: "text/javascript; charset=utf-8",
+              body: encoder.encode("export const ok = true;\n"),
+            }
+          : undefined,
+    },
+  });
+
+  const response = await handler(
+    new Request("http://localhost/api/v1/studio/assets/build-cache/runtime.mjs"),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(
+    response.headers.get("cache-control"),
+    "public, max-age=31536000, immutable",
+  );
+  // The asset route always advertises Vary: Accept-Encoding so downstream
+  // caches keep encodings separate, even on responses that happen to be
+  // identity (e.g. body below the compression threshold like this 24-byte
+  // body, or no client Accept-Encoding header).
+  assert.equal(response.headers.get("vary"), "Accept-Encoding");
+  assert.equal(response.headers.get("content-encoding"), null);
+});
+
+test("CORS-origin Vary merges with the asset route's Accept-Encoding signal", async () => {
+  // The studio asset route emits Vary: Accept-Encoding; the CORS layer adds
+  // Vary: Origin via appendResponseHeaders. The merge must preserve both
+  // tokens — this is what the appendResponseHeaders Vary-merge fix is for.
+  const encoder = new TextEncoder();
+  const handler = createServerRequestHandler({
+    env: {
+      ...baseEnv,
+      MDCMS_STUDIO_ALLOWED_ORIGINS: "https://demo.example",
+    } as NodeJS.ProcessEnv,
+    now: () => new Date("2026-02-20T00:00:10.000Z"),
+    studioRuntimePublication: {
+      buildId: "build-cors",
+      entryFile: "runtime.mjs",
+      manifest: {
+        apiVersion: "1",
+        studioVersion: "1.2.3",
+        mode: "module",
+        entryUrl: "/api/v1/studio/assets/build-cors/runtime.mjs",
+        integritySha256: "abc123",
+        signature: "signature",
+        keyId: "key-1",
+        buildId: "build-cors",
+        minStudioPackageVersion: "0.0.1",
+        minHostBridgeVersion: "1.0.0",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      },
+      getAsset: async ({ buildId, assetPath }) =>
+        buildId === "build-cors" && assetPath === "runtime.mjs"
+          ? {
+              absolutePath: "/tmp/runtime.mjs",
+              contentType: "text/javascript; charset=utf-8",
+              body: encoder.encode("export const ok = true;\n"),
+            }
+          : undefined,
+    },
+  });
+
+  const response = await handler(
+    new Request("http://localhost/api/v1/studio/assets/build-cors/runtime.mjs", {
+      headers: { origin: "https://demo.example" },
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(
+    response.headers.get("access-control-allow-origin"),
+    "https://demo.example",
+  );
+  const vary = (response.headers.get("vary") ?? "")
+    .split(",")
+    .map((token) => token.trim().toLowerCase())
+    .filter((token) => token.length > 0)
+    .sort();
+  assert.deepEqual(vary, ["accept-encoding", "origin"]);
+});

@@ -150,6 +150,26 @@ const ServerEnvExtensionSchema = z.object({
   SMTP_HOST: z.string().trim().min(1).optional(),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional().default(587),
   SMTP_FROM: z.string().trim().min(1).optional(),
+  MDCMS_HTTP_COMPRESS: z
+    .string()
+    .optional()
+    .transform((value, ctx) => {
+      if (value === undefined || value.trim().length === 0) {
+        return true;
+      }
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "true") {
+        return true;
+      }
+      if (normalized === "false") {
+        return false;
+      }
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "MDCMS_HTTP_COMPRESS must be true or false.",
+      });
+      return z.NEVER;
+    }),
 });
 
 export type OidcProviderId = (typeof OIDC_PROVIDER_IDS)[number];
@@ -211,6 +231,13 @@ export type ServerEnv = CoreEnv & {
   MDCMS_AUTH_OIDC_PROVIDERS: OidcProviderConfig[];
   MDCMS_AUTH_SAML_PROVIDERS: SamlProviderConfig[];
   MDCMS_STUDIO_ALLOWED_ORIGINS: string[];
+  /**
+   * App-level compression toggle. Defaults to enabled because Railway's edge
+   * proxy (and many self-hosting setups) does not auto-compress; if a fronting
+   * reverse proxy / CDN is already handling compression, set this to "false"
+   * to skip the per-response CPU cost.
+   */
+  MDCMS_HTTP_COMPRESS: boolean;
 };
 
 function normalizeAbsoluteUrl(raw: string): string {
