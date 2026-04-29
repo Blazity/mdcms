@@ -1,4 +1,8 @@
-import { brotliCompressSync, gzipSync } from "node:zlib";
+import { brotliCompress, gzip } from "node:zlib";
+import { promisify } from "node:util";
+
+const brotliCompressAsync = promisify(brotliCompress);
+const gzipAsync = promisify(gzip);
 
 import {
   RuntimeError,
@@ -309,14 +313,18 @@ function pickStudioAssetEncoding(
   const header = request.headers.get("accept-encoding");
   if (!header) return undefined;
   const tokens = parseAcceptEncoding(header);
-  // RFC 7231 §5.3.4: q=0 means "not acceptable". Among supported encodings
-  // pick highest q; tie-break br > gzip (better ratio for our JS bundle).
+  // RFC 7231 §5.3.4: q=0 means "not acceptable". A "*" token applies to any
+  // encoding the client did not list explicitly. Explicit tokens (including
+  // q=0) take precedence, so e.g. "gzip;q=0, *" still excludes gzip.
+  // Among acceptable supported encodings, pick the highest q; tie-break
+  // br > gzip (better ratio for our JS bundle).
+  const wildcardQ = tokens.get("*");
   const supported: readonly StudioAssetCompressionEncoding[] = ["br", "gzip"];
   let best:
     | { encoding: StudioAssetCompressionEncoding; q: number }
     | undefined;
   for (const candidate of supported) {
-    const q = tokens.get(candidate);
+    const q = tokens.has(candidate) ? tokens.get(candidate) : wildcardQ;
     if (q === undefined || q <= 0) continue;
     if (!best || q > best.q) {
       best = { encoding: candidate, q };
@@ -325,24 +333,26 @@ function pickStudioAssetEncoding(
   return best?.encoding;
 }
 
-function compressStudioAsset(
+async function compressStudioAsset(
   body: Uint8Array,
   encoding: StudioAssetCompressionEncoding,
-): Uint8Array {
-  return encoding === "br" ? brotliCompressSync(body) : gzipSync(body);
+): Promise<Uint8Array> {
+  return encoding === "br"
+    ? await brotliCompressAsync(body)
+    : await gzipAsync(body);
 }
 
-function getOrCacheCompressedStudioAsset(
+async function getOrCacheCompressedStudioAsset(
   cacheKey: string,
   buildId: string,
   body: Uint8Array,
   encoding: StudioAssetCompressionEncoding,
-): Uint8Array {
+): Promise<Uint8Array> {
   const hit = studioAssetEncodingCache.get(cacheKey);
   if (hit && hit.encoding === encoding) {
     return hit.body;
   }
-  const compressed = compressStudioAsset(body, encoding);
+  const compressed = await compressStudioAsset(body, encoding);
   studioAssetEncodingCache.set(cacheKey, {
     buildId,
     encoding,
@@ -364,14 +374,14 @@ function getOrCacheCompressedStudioAsset(
  * on, Nginx with `gzip on; brotli on;`, etc.) is already negotiating
  * `Accept-Encoding` to skip the per-process CPU cost.
  */
-function buildStudioAssetResponse(input: {
+async function buildStudioAssetResponse(input: {
   request: Request;
   body: Uint8Array;
   contentType: string;
   buildId: string;
   assetPath: string;
   compressEnabled: boolean;
-}): Response {
+}): Promise<Response> {
   const baseHeaders: Record<string, string> = {
     "content-type": input.contentType,
     "cache-control": STUDIO_ASSET_CACHE_CONTROL,
@@ -389,7 +399,7 @@ function buildStudioAssetResponse(input: {
   }
 
   const cacheKey = `${input.buildId}:${input.assetPath}:${encoding}`;
-  const compressed = getOrCacheCompressedStudioAsset(
+  const compressed = await getOrCacheCompressedStudioAsset(
     cacheKey,
     input.buildId,
     input.body,

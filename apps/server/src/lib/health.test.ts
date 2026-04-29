@@ -767,6 +767,34 @@ test("Studio asset response negotiates brotli when MDCMS_HTTP_COMPRESS is on (de
   );
 });
 
+test("Studio asset response negotiates a supported encoding when client sends Accept-Encoding: *", async () => {
+  const { handler } = makeCompressibleAssetHandler();
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/studio/assets/build-perf/runtime.mjs",
+      { headers: { "accept-encoding": "*" } },
+    ),
+  );
+
+  assert.equal(response.status, 200);
+  // Wildcard should pick the best supported encoding (brotli ahead of gzip).
+  assert.equal(response.headers.get("content-encoding"), "br");
+});
+
+test("Studio asset response respects explicit q=0 over a wildcard fallback", async () => {
+  const { handler } = makeCompressibleAssetHandler();
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/studio/assets/build-perf/runtime.mjs",
+      { headers: { "accept-encoding": "br;q=0, *" } },
+    ),
+  );
+
+  assert.equal(response.status, 200);
+  // br is explicitly disallowed; * still permits gzip.
+  assert.equal(response.headers.get("content-encoding"), "gzip");
+});
+
 test("Studio asset response falls back to gzip when client rejects brotli via q=0", async () => {
   const { handler } = makeCompressibleAssetHandler();
   const response = await handler(

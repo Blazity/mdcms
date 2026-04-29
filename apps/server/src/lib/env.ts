@@ -150,6 +150,26 @@ const ServerEnvExtensionSchema = z.object({
   SMTP_HOST: z.string().trim().min(1).optional(),
   SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional().default(587),
   SMTP_FROM: z.string().trim().min(1).optional(),
+  MDCMS_HTTP_COMPRESS: z
+    .string()
+    .optional()
+    .transform((value, ctx) => {
+      if (value === undefined || value.trim().length === 0) {
+        return true;
+      }
+      const normalized = value.trim().toLowerCase();
+      if (normalized === "true") {
+        return true;
+      }
+      if (normalized === "false") {
+        return false;
+      }
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "MDCMS_HTTP_COMPRESS must be true or false.",
+      });
+      return z.NEVER;
+    }),
 });
 
 export type OidcProviderId = (typeof OIDC_PROVIDER_IDS)[number];
@@ -279,31 +299,6 @@ function createStudioAllowedOriginsInvalidEnvError(
       key: "MDCMS_STUDIO_ALLOWED_ORIGINS",
       value,
       ...details,
-    },
-  });
-}
-
-function parseHttpCompressFlag(rawValue: string | undefined): boolean {
-  if (rawValue === undefined || rawValue.trim().length === 0) {
-    return true;
-  }
-
-  const normalized = rawValue.trim().toLowerCase();
-
-  if (normalized === "true") {
-    return true;
-  }
-
-  if (normalized === "false") {
-    return false;
-  }
-
-  throw new RuntimeError({
-    code: "INVALID_ENV",
-    message: "MDCMS_HTTP_COMPRESS must be true or false.",
-    details: {
-      key: "MDCMS_HTTP_COMPRESS",
-      value: rawValue,
     },
   });
 }
@@ -838,7 +833,6 @@ export function parseServerEnv(rawEnv: NodeJS.ProcessEnv): ServerEnv {
   const studioRuntimeDisabled = parseStudioRuntimeDisabledFlag(
     rawEnv.MDCMS_STUDIO_RUNTIME_DISABLED,
   );
-  const httpCompress = parseHttpCompressFlag(rawEnv.MDCMS_HTTP_COMPRESS);
   assertUniqueSsoProviderIds(oidcProviders, samlProviders);
 
   return extendEnv(core, () => ({
@@ -847,6 +841,5 @@ export function parseServerEnv(rawEnv: NodeJS.ProcessEnv): ServerEnv {
     MDCMS_AUTH_OIDC_PROVIDERS: oidcProviders,
     MDCMS_AUTH_SAML_PROVIDERS: samlProviders,
     MDCMS_STUDIO_ALLOWED_ORIGINS: studioAllowedOrigins,
-    MDCMS_HTTP_COMPRESS: httpCompress,
   }));
 }
