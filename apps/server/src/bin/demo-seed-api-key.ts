@@ -6,7 +6,10 @@ import { createAuthService } from "../lib/auth.js";
 import { createDatabaseContentStore } from "../lib/content-api.js";
 import { createDatabaseConnection } from "../lib/db.js";
 import { apiKeys, authUsers, rbacGrants } from "../lib/db/schema.js";
-import { ensureDemoSchemaSynced } from "../lib/demo-seed.js";
+import {
+  ensureDemoSchemaSynced,
+  ensureDemoScopeProvisioned,
+} from "../lib/demo-seed.js";
 
 const API_KEY_PREFIX = "mdcms_key_";
 const DEFAULT_DEMO_API_KEY = "mdcms_key_demo_local_compose_seed_2026_read";
@@ -28,6 +31,22 @@ const DEMO_KEY_SCOPES = [
 const LOCAL_AUTH_ORIGIN = "http://localhost";
 const DEMO_CONTENT_CHANGE_SUMMARY = "compose demo seed";
 
+/**
+ * Each demo doc is tagged with the deployment(s) it makes sense to seed for:
+ * - `compose`  — the long-standing local compose dev set used by the CLI's
+ *   pull/push workflow tests (posts, about, campaigns, …).
+ * - `marketing` — content that powers the public mdcms.io-style demo
+ *   deployment (just the home page MDX today; more later).
+ *
+ * The `MDCMS_DEMO_SEED_SCOPES` env var (comma-separated) selects which scopes
+ * the seed should iterate. Default `compose` keeps existing local compose
+ * behaviour identical. Set to `marketing` for the public-demo Railway
+ * deployment so it doesn't get cluttered with compose-dev sample posts.
+ */
+type DemoSeedScope = "compose" | "marketing";
+
+const DEFAULT_DEMO_SEED_SCOPES: readonly DemoSeedScope[] = ["compose"];
+
 type DemoSeedDocument = {
   key: string;
   type: string;
@@ -38,6 +57,7 @@ type DemoSeedDocument = {
   body: string;
   publish: boolean;
   sourceKey?: string;
+  scopes: readonly DemoSeedScope[];
 };
 
 const DEMO_CONTENT_DOCUMENTS: readonly DemoSeedDocument[] = [
@@ -64,6 +84,7 @@ const DEMO_CONTENT_DOCUMENTS: readonly DemoSeedDocument[] = [
       "Edit this file locally, run `mdcms push`, and refresh `/demo/content`.",
     ].join("\n"),
     publish: true,
+    scopes: ["compose"],
   },
   {
     key: "post:pull-push-demo:en",
@@ -88,6 +109,7 @@ const DEMO_CONTENT_DOCUMENTS: readonly DemoSeedDocument[] = [
       "4. open `/demo/content`",
     ].join("\n"),
     publish: true,
+    scopes: ["compose"],
   },
   {
     key: "page:about:en",
@@ -110,6 +132,7 @@ const DEMO_CONTENT_DOCUMENTS: readonly DemoSeedDocument[] = [
       "- sample content documents",
     ].join("\n"),
     publish: true,
+    scopes: ["compose"],
   },
   {
     key: "page:home:en",
@@ -190,6 +213,7 @@ const DEMO_CONTENT_DOCUMENTS: readonly DemoSeedDocument[] = [
       "/>",
     ].join("\n"),
     publish: true,
+    scopes: ["marketing"],
   },
   {
     key: "campaign:global-launch:en",
@@ -212,6 +236,7 @@ const DEMO_CONTENT_DOCUMENTS: readonly DemoSeedDocument[] = [
       "- created by `demo:seed`",
     ].join("\n"),
     publish: true,
+    scopes: ["compose"],
   },
   {
     key: "campaign:global-launch:fr",
@@ -235,12 +260,62 @@ const DEMO_CONTENT_DOCUMENTS: readonly DemoSeedDocument[] = [
       "- cree par `demo:seed`",
     ].join("\n"),
     publish: true,
+    scopes: ["compose"],
   },
 ];
 
 function resolveEnv(name: string, fallback: string): string {
   const value = process.env[name]?.trim();
   return value && value.length > 0 ? value : fallback;
+}
+
+const KNOWN_DEMO_SEED_SCOPES = new Set<DemoSeedScope>(["compose", "marketing"]);
+
+function parseDemoSeedScopes(raw: string | undefined): ReadonlySet<DemoSeedScope> {
+  const trimmed = raw?.trim();
+  if (!trimmed) {
+    return new Set(DEFAULT_DEMO_SEED_SCOPES);
+  }
+
+  const tokens = trimmed
+    .split(",")
+    .map((token) => token.trim().toLowerCase())
+    .filter((token) => token.length > 0);
+
+  const result = new Set<DemoSeedScope>();
+  for (const token of tokens) {
+    if (!KNOWN_DEMO_SEED_SCOPES.has(token as DemoSeedScope)) {
+      throw new Error(
+        `MDCMS_DEMO_SEED_SCOPES contains unsupported scope "${token}". Supported: ${[
+          ...KNOWN_DEMO_SEED_SCOPES,
+        ].join(", ")}.`,
+      );
+    }
+    result.add(token as DemoSeedScope);
+  }
+
+  if (result.size === 0) {
+    return new Set(DEFAULT_DEMO_SEED_SCOPES);
+  }
+  return result;
+}
+
+function parseBooleanEnv(
+  raw: string | undefined,
+  fallback: boolean,
+  key: string,
+): boolean {
+  const trimmed = raw?.trim().toLowerCase();
+  if (!trimmed) {
+    return fallback;
+  }
+  if (trimmed === "true") {
+    return true;
+  }
+  if (trimmed === "false") {
+    return false;
+  }
+  throw new Error(`${key} must be "true" or "false" (got "${raw}").`);
 }
 
 function hashApiKey(token: string): string {
@@ -481,12 +556,17 @@ async function ensureDemoContent(input: {
   actorId: string;
   project: string;
   environment: string;
+  scopes: ReadonlySet<DemoSeedScope>;
 }): Promise<number> {
   const store = createDatabaseContentStore({ db: input.db });
   const seededDocuments = new Map<string, { documentId: string }>();
   let seededCount = 0;
 
-  for (const template of DEMO_CONTENT_DOCUMENTS) {
+  const documents = DEMO_CONTENT_DOCUMENTS.filter((template) =>
+    template.scopes.some((scope) => input.scopes.has(scope)),
+  );
+
+  for (const template of documents) {
     const listed = await store.list(
       {
         project: input.project,
@@ -637,6 +717,12 @@ async function main(): Promise<void> {
     resolveEnv("MDCMS_DEMO_CONTENT_ACTOR_ID", DEFAULT_DEMO_CONTENT_ACTOR_ID),
     "MDCMS_DEMO_CONTENT_ACTOR_ID",
   );
+  const scopes = parseDemoSeedScopes(process.env.MDCMS_DEMO_SEED_SCOPES);
+  const skipSchemaSync = parseBooleanEnv(
+    process.env.MDCMS_DEMO_SKIP_SCHEMA_SYNC,
+    false,
+    "MDCMS_DEMO_SKIP_SCHEMA_SYNC",
+  );
 
   assertDemoApiKeyFormat(apiKey);
 
@@ -647,11 +733,22 @@ async function main(): Promise<void> {
   });
 
   try {
-    await ensureDemoSchemaSynced({
-      db: connection.db,
-      project,
-      environment,
-    });
+    if (skipSchemaSync) {
+      // Caller is responsible for pushing the schema separately (e.g. via
+      // `mdcms schema sync` from the consumer repo). We still need to
+      // provision the project/environment scope for downstream writes.
+      await ensureDemoScopeProvisioned({
+        db: connection.db,
+        project,
+        environment,
+      });
+    } else {
+      await ensureDemoSchemaSynced({
+        db: connection.db,
+        project,
+        environment,
+      });
+    }
 
     const userId = await ensureDemoUser({
       db: connection.db,
@@ -680,10 +777,11 @@ async function main(): Promise<void> {
       actorId: contentActorId,
       project,
       environment,
+      scopes,
     });
 
     console.info(
-      `[demo-seed] ensured demo login user ${demoUserEmail}, demo API key, and ${seededDocuments} seeded documents for ${project}/${environment} (${toKeyPrefix(apiKey)})`,
+      `[demo-seed] ensured demo login user ${demoUserEmail}, demo API key, and ${seededDocuments} seeded documents for ${project}/${environment} (scopes=${[...scopes].join(",")}, skipSchemaSync=${skipSchemaSync}, ${toKeyPrefix(apiKey)})`,
     );
   } finally {
     await connection.close();
