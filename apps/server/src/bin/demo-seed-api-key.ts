@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { and, eq, isNull } from "drizzle-orm";
 import { RuntimeError } from "@mdcms/shared";
 import { createAuthService } from "../lib/auth.js";
@@ -511,9 +512,14 @@ async function ensureDemoContent(input: {
 
     if (existing) {
       const bodyChanged = existing.body !== template.body;
-      const frontmatterChanged =
-        JSON.stringify(existing.frontmatter ?? {}) !==
-        JSON.stringify(template.frontmatter ?? {});
+      // Postgres JSONB does not guarantee key-insertion order on read, so a
+      // string compare against the seed template would flag spurious changes
+      // whenever the driver/database returned the same keys in a different
+      // order. Compare structurally instead.
+      const frontmatterChanged = !isDeepStrictEqual(
+        existing.frontmatter ?? {},
+        template.frontmatter ?? {},
+      );
 
       if (bodyChanged || frontmatterChanged) {
         await store.update(
