@@ -723,6 +723,11 @@ async function main(): Promise<void> {
     false,
     "MDCMS_DEMO_SKIP_SCHEMA_SYNC",
   );
+  const skipContentSeed = parseBooleanEnv(
+    process.env.MDCMS_DEMO_SKIP_CONTENT_SEED,
+    false,
+    "MDCMS_DEMO_SKIP_CONTENT_SEED",
+  );
 
   assertDemoApiKeyFormat(apiKey);
 
@@ -772,16 +777,18 @@ async function main(): Promise<void> {
       project,
     });
 
-    const seededDocuments = await ensureDemoContent({
-      db: connection.db,
-      actorId: contentActorId,
-      project,
-      environment,
-      scopes,
-    });
+    const seededDocuments = skipContentSeed
+      ? 0
+      : await ensureDemoContent({
+          db: connection.db,
+          actorId: contentActorId,
+          project,
+          environment,
+          scopes,
+        });
 
     console.info(
-      `[demo-seed] ensured demo login user ${demoUserEmail}, demo API key, and ${seededDocuments} seeded documents for ${project}/${environment} (scopes=${[...scopes].join(",")}, skipSchemaSync=${skipSchemaSync}, ${toKeyPrefix(apiKey)})`,
+      `[demo-seed] ensured demo login user ${demoUserEmail}, demo API key, and ${seededDocuments} seeded documents for ${project}/${environment} (scopes=${[...scopes].join(",")}, skipSchemaSync=${skipSchemaSync}, skipContentSeed=${skipContentSeed}, ${toKeyPrefix(apiKey)})`,
     );
   } finally {
     await connection.close();
