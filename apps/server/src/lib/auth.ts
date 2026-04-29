@@ -748,7 +748,6 @@ function serializeCookie(input: {
   secure?: boolean;
   httpOnly?: boolean;
   maxAge?: number;
-  partitioned?: boolean;
 }): string {
   const parts = [`${input.name}=${input.value}`];
 
@@ -770,14 +769,6 @@ function serializeCookie(input: {
 
   if (input.httpOnly) {
     parts.push("HttpOnly");
-  }
-
-  // CHIPS: cross-site embedded contexts (e.g. Studio embedded on a customer
-  // domain talking to the MDCMS server on a different domain) only get the
-  // cookie back on subsequent requests when it's marked Partitioned. Browser
-  // requirement: must also be Secure. Safari 17+, Chrome 114+.
-  if (input.partitioned) {
-    parts.push("Partitioned");
   }
 
   return parts.join("; ");
@@ -2300,7 +2291,6 @@ export function createAuthService(
         path: "/",
         sameSite: csrfCookieSameSite,
         secure: useSecureCookies,
-        partitioned: useSecureCookies,
         maxAge: SESSION_INACTIVITY_TIMEOUT_SECONDS,
       }),
     };
@@ -2313,7 +2303,6 @@ export function createAuthService(
       path: "/",
       sameSite: csrfCookieSameSite,
       secure: useSecureCookies,
-      partitioned: useSecureCookies,
       maxAge: 0,
     });
   }
@@ -2670,11 +2659,6 @@ export function createAuthService(
         httpOnly: true,
         sameSite: sessionCookieSameSite,
         secure: useSecureCookies,
-        // CHIPS: Studio is embedded on a different origin from the MDCMS
-        // server. Without Partitioned, Safari (and increasingly Chrome) drop
-        // the session cookie as third-party. Partitioned requires Secure,
-        // which we already gate behind useSecureCookies.
-        partitioned: useSecureCookies,
       },
     },
     rateLimit: {
