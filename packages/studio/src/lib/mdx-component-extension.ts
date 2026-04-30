@@ -721,6 +721,10 @@ export const MdxComponentExtension = Node.create({
   content: "block*",
   isolating: true,
   selectable: true,
+  // Marks the whole node as a ProseMirror drag source. The node view scopes
+  // the drag to a specific child via `[data-drag-handle]` so clicking inside
+  // the wrapper still places a caret rather than starting a drag.
+  draggable: true,
   priority: 1000,
 
   addProseMirrorPlugins() {

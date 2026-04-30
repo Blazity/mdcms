@@ -67,15 +67,32 @@ export function MdxComponentNodeFrame(props: {
           : "border-l-primary/20 hover:border-l-primary/50",
       )}
     >
-      {/* Drag handle — decorative, must not accept a caret. */}
+      {/* Drag handle. Tiptap recognizes `[data-drag-handle]` inside a
+          `draggable: true` node view and routes pointer-down to ProseMirror's
+          drag-start, so only this element initiates a drag — clicking
+          anywhere else in the wrapper places a caret. The handle is
+          suppressed in read-only / forbidden modes to match how the props
+          and delete affordances are gated. */}
       <div
         className="absolute -left-7 top-1.5 flex opacity-0 transition-opacity duration-150 group-hover/mdx-block:opacity-100"
         contentEditable={false}
         suppressContentEditableWarning
       >
-        <span className="cursor-grab rounded p-0.5 text-foreground-muted hover:bg-background-subtle hover:text-foreground">
-          <GripVertical className="h-4 w-4" />
-        </span>
+        {props.readOnly || props.forbidden ? (
+          <span className="rounded p-0.5 text-foreground-muted/50">
+            <GripVertical className="h-4 w-4" />
+          </span>
+        ) : (
+          <span
+            data-drag-handle
+            draggable={true}
+            aria-label={`Drag to reorder ${props.componentName}`}
+            title="Drag to reorder"
+            className="cursor-grab rounded p-0.5 text-foreground-muted hover:bg-background-subtle hover:text-foreground active:cursor-grabbing"
+          >
+            <GripVertical className="h-4 w-4" />
+          </span>
+        )}
       </div>
 
       {/* Chip row — the `<Name />` label and the action buttons are chrome,
