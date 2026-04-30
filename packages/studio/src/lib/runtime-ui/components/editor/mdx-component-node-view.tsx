@@ -319,7 +319,19 @@ export function MdxComponentNodeView(
           <div
             ref={previewContainerRef}
             data-mdcms-mdx-preview-surface={componentName}
-            className={previewState === "ready" ? "min-h-[3rem]" : "hidden"}
+            // `not-prose` opts the host-rendered component out of the
+            // editor's surrounding `.prose` typography rules. Without this,
+            // selectors like `.prose h1`, `.prose h2`, `.prose p` win on
+            // specificity (0,1,1) over the host component's own utility
+            // classes (0,1,0) — so a marketing component using
+            // `text-dark` on a light section would silently render with
+            // the editor's dark-mode prose heading color (light/white) and
+            // appear white-on-light. Resetting prose at the preview
+            // boundary lets the host component own its own typography.
+            className={cn(
+              "not-prose",
+              previewState === "ready" ? "min-h-[3rem]" : "hidden",
+            )}
           />
         }
         readOnly={props.readOnly}
