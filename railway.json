@@ -5,7 +5,7 @@
     "dockerfilePath": "apps/server/Dockerfile"
   },
   "deploy": {
-    "preDeployCommand": "sh -c 'bun run db:migrate && bun run demo:seed'",
+    "preDeployCommand": "bun run db:migrate",
     "healthcheckPath": "/healthz",
     "healthcheckTimeout": 60,
     "restartPolicyType": "ON_FAILURE",
