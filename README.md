@@ -8,8 +8,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Blazity/mdcms/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Blazity/mdcms" alt="License" /></a>
-  <a href="https://github.com/Blazity/mdcms/stargazers"><img src="https://img.shields.io/github/stars/Blazity/mdcms" alt="Stars" /></a>
+  <a href="https://github.com/mdcms-ai/mdcms/blob/main/LICENSE"><img src="https://img.shields.io/github/license/mdcms-ai/mdcms" alt="License" /></a>
+  <a href="https://github.com/mdcms-ai/mdcms/stargazers"><img src="https://img.shields.io/github/stars/mdcms-ai/mdcms" alt="Stars" /></a>
 </p>
 
 <p align="center">
@@ -36,7 +36,7 @@ https://github.com/user-attachments/assets/b0778e3f-c062-4e66-bd6d-87f1dcb41789
 
 ## Quick Start
 
-> **Using an AI coding agent?** Run `npx skills add Blazity/mdcms` to install the [MDCMS Skills Pack](skills/README.md) — your agent will walk through the setup below for you. Supports Claude Code, Cursor, Gemini CLI, Codex, Copilot, and 40+ others via [skills.sh](https://skills.sh).
+> **Using an AI coding agent?** Run `npx skills add mdcms-ai/mdcms/skills` to install the [MDCMS Skills Pack](skills/README.md) — your agent will walk through the setup below for you. Supports Claude Code, Cursor, Gemini CLI, Codex, Copilot, and 40+ others via [skills.sh](https://skills.sh).
 
 ### 1. Install packages
 
@@ -112,7 +112,7 @@ See the [`@mdcms/studio` README](packages/studio) for embedding instructions.
 Run your own MDCMS server with Docker Compose. The only prerequisites are Docker and Docker Compose.
 
 ```bash
-git clone https://github.com/Blazity/mdcms.git
+git clone https://github.com/mdcms-ai/mdcms.git
 cd mdcms
 cp .env.example .env
 docker compose up -d --build
@@ -184,7 +184,7 @@ For architecture decisions and specs, see the [`docs/`](docs) directory.
 To work on MDCMS itself, clone the repo and use [Bun](https://bun.sh/) as the runtime:
 
 ```bash
-git clone https://github.com/Blazity/mdcms.git
+git clone https://github.com/mdcms-ai/mdcms.git
 cd mdcms
 bun install
 docker compose up -d --build   # Start Postgres, Redis, MinIO, Mailhog

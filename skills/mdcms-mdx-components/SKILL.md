@@ -1,6 +1,6 @@
 ---
 name: mdcms-mdx-components
-description: Use this skill when the user wants to register or author custom MDX components for MDCMS — phrases like "add a Callout component", "register custom MDX components", "my content uses custom React components", "make components available in Studio", or "my MDX renders plain text for <Alert>". Covers the `components` entry in `mdcms.config.ts`, the Studio-side registry, and the host-app MDX runtime that has to render them consistently.
+description: Use when the user wants to register, wire up, or author a React/MDX component for MDCMS — phrases like "add a new component", "register this component with MDCMS", "register a component with the CMS", "add a Callout component", "register custom MDX components", "make my React component available in Studio", "wire a component to MDCMS", "my MDX uses custom components", "my MDX renders plain text for <Alert>", "<Callout> shows as a raw tag in Studio", or "the Studio preview doesn't render my component". Triggers on a generic "add a component" intent inside an MDCMS-aware repo (with `mdcms.config.ts`).
 ---
 
 # MDCMS MDX Components

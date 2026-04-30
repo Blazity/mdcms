@@ -83,7 +83,9 @@ If their content uses (or will use) custom React components in MDX — callouts,
 
 ### Phase 7 — Day-to-day sync + CI
 
-Close the loop: invoke **`mdcms-content-sync-workflow`** so the user understands daily `mdcms pull` / `mdcms push` usage, API key rotation, and CI automation for publishing.
+Close the loop: invoke **`mdcms-content-sync-workflow`** so the user understands daily `mdcms pull` / `mdcms push` usage, API key rotation, login, and CI automation for publishing. That skill owns the login/credential preflight — if the user later asks "why am I getting a 401?" or "I'm not logged in", route there.
+
+If the user is going to be editing content (not just managing the sync flow), also point them at **`mdcms-content-editing`** for the local-vs-Studio editing loop, frontmatter validation, and bulk edits.
 
 ## State-detection cheatsheet
 
@@ -105,6 +107,14 @@ When you decide to invoke a focused skill, hand off cleanly — don't mix your p
 ## If the user only wants one phase
 
 Short-circuit. If they say "I just want to add Studio to an MDCMS-integrated app", skip the diagnosis and invoke `mdcms-studio-embed` directly. The orchestrator is the default path, not a required gate.
+
+Common short-circuit routes:
+
+- "edit my content" / "update a post" / "change this page" → **`mdcms-content-editing`**.
+- "push my changes" / "sync local to server" / "I'm getting 401" → **`mdcms-content-sync-workflow`**.
+- "add a new content type" / "add a field" / "edit mdcms.config.ts" → **`mdcms-schema-refine`**.
+- "register a component with MDCMS" / "add a new component" → **`mdcms-mdx-components`**.
+- "embed Studio" / "mount Studio at /admin" → **`mdcms-studio-embed`**.
 
 ## Out of scope
 

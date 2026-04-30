@@ -34,7 +34,7 @@
   "logo": {
     "light": "/logo/light.svg",
     "dark": "/logo/dark.svg",
-    "href": "https://github.com/Blazity/mdcms"
+    "href": "https://github.com/mdcms-ai/mdcms"
   },
   "navbar": {
     "links": [
@@ -51,7 +51,7 @@
   },
   "footer": {
     "socials": {
-      "github": "https://github.com/Blazity/mdcms"
+      "github": "https://github.com/mdcms-ai/mdcms"
     }
   },
   "navigation": {
@@ -158,7 +158,7 @@
       "anchors": [
         {
           "anchor": "GitHub",
-          "href": "https://github.com/Blazity/mdcms",
+          "href": "https://github.com/mdcms-ai/mdcms",
           "icon": "github"
         }
       ]
