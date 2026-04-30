@@ -455,8 +455,16 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
         }),
         editorProps: {
           attributes: {
+            // Padding lives on `.ProseMirror` itself rather than the outer
+            // wrapper so the entire visible editor surface — including the
+            // gutter above the first block and below the last — emits
+            // dragover events that prosemirror-dropcursor binds to. Without
+            // this, the cursor near the document edges falls in wrapper
+            // dead space and the drop indicator (and the drop itself)
+            // silently no-ops, so users dragging an MDX block to the very
+            // top of the document saw nothing happen.
             class:
-              "prose max-w-none prose-p:leading-relaxed focus:outline-none",
+              "prose max-w-none prose-p:leading-relaxed focus:outline-none px-8 py-8 min-h-[480px]",
             "data-placeholder": placeholder,
           },
           handleKeyDown: (_view, event) => {
@@ -1191,7 +1199,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             ) : null}
           </div>
 
-          <div className="min-h-[480px] bg-transparent px-8 py-8">
+          <div className="bg-transparent">
             <EditorContent editor={editor} />
           </div>
         </div>
