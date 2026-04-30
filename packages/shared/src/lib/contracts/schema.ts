@@ -878,10 +878,18 @@ export function toRawConfigSnapshot(config: ParsedMdcmsConfig): JsonObject {
       ]),
   ) as JsonObject;
 
+  // Deliberately exclude `serverUrl` and `config.environment` (the host's
+  // currently-active environment): both are deployment-time wiring rather
+  // than schema content. Including them made the same `mdcms.config.ts`
+  // hash differently when the CLI synced from a shell with default env vars
+  // vs. when the demo's Docker build computed the hash with the live
+  // Railway URL and `NEXT_PUBLIC_MDCMS_ENVIRONMENT=production` set.
+  // `buildSchemaRegistrySyncPayloadBase` already takes the *target* env as
+  // its second argument; the snapshot stays a function of structural
+  // schema/config only, so a hash for env X is identical regardless of who
+  // is computing it or where they happen to be pointing at the time.
   return {
     project: config.project,
-    serverUrl: config.serverUrl,
-    ...(config.environment ? { environment: config.environment } : {}),
     environments,
     ...(config.contentDirectories.length > 0
       ? { contentDirectories: config.contentDirectories }

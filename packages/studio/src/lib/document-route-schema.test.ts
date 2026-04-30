@@ -114,10 +114,14 @@ test("derived schema details expose the local sync payload pieces", async () => 
   }
 
   assert.equal(details.environment, "staging");
+  // `serverUrl` and the active `environment` are deliberately omitted — they
+  // are deployment-time wiring rather than schema content. Including them
+  // made the same `mdcms.config.ts` hash differently when the CLI synced
+  // from a default shell vs. when the host computed the hash with live
+  // env vars set, so the snapshot now stays a function of structural
+  // schema/config only.
   assert.deepEqual(details.syncPayload.rawConfigSnapshot, {
     project: "marketing-site",
-    serverUrl: "http://localhost:4000",
-    environment: "staging",
     environments: {
       production: {},
       staging: {
