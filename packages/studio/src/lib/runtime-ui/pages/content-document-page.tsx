@@ -3743,8 +3743,7 @@ export default function ContentDocumentPage({
       const versionHistoryRefresh =
         await loadContentDocumentVersionHistoryState({
           api,
-          documentId: currentState.documentId,
-          locale: currentState.document.locale,
+          state: currentState,
         });
 
       const afterRestore = stateRef.current;
