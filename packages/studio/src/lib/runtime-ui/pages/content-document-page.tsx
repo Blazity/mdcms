@@ -170,6 +170,13 @@ export type ContentDocumentPageReadyState = {
   publishChangeSummary: string;
   publishState: "idle" | "publishing";
   publishError?: string;
+  // While a "Restore this version" action is in flight against the
+  // POST /api/v1/content/:documentId/versions/:version/restore endpoint,
+  // surface the in-flight state so the banner can disable the button and
+  // show a spinner. The error is surfaced inline above the editor on
+  // failure (mirrors the publishError convention).
+  restoreVersionState: "idle" | "restoring";
+  restoreVersionError?: string;
   versionHistory: ContentDocumentVersionHistoryState;
   selectedComparison: ContentDocumentVersionComparison;
   versionDiff: ContentDocumentVersionDiffState;
@@ -266,6 +273,7 @@ type ContentDocumentPageViewProps = {
   editorRef?: React.Ref<TipTapEditorHandle>;
   onViewVersion?: (version: number) => void;
   onBackToDraft?: () => void;
+  onRestoreVersion?: (version: number) => void;
   onLocaleSwitch?: (locale: string) => void;
   onCreateVariant?: (prefill: boolean) => void;
   onCancelVariantCreation?: () => void;
@@ -807,6 +815,7 @@ function createReadyState(input: {
     publishDialogOpen: false,
     publishChangeSummary: "",
     publishState: "idle",
+    restoreVersionState: "idle",
     versionHistory: {
       status: "idle",
       versions: [],
@@ -2530,6 +2539,7 @@ export function ContentDocumentPageView({
   editorRef,
   onViewVersion,
   onBackToDraft,
+  onRestoreVersion,
   onLocaleSwitch,
   onCreateVariant,
   onCancelVariantCreation,
@@ -2760,27 +2770,76 @@ export function ContentDocumentPageView({
                   ) : null}
 
                   {state.viewingVersion ? (
-                    <div className="mb-3 flex items-center justify-between rounded-md border border-primary/30 bg-primary/5 px-4 py-2.5">
+                    <div
+                      data-mdcms-viewing-version={state.viewingVersion.version}
+                      className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/5 px-4 py-2.5"
+                    >
                       <p className="text-sm font-medium">
                         Viewing version {state.viewingVersion.version}
                         {state.viewingVersion.status === "loading"
                           ? " — Loading..."
                           : null}
+                        {state.restoreVersionState === "restoring"
+                          ? " — Restoring..."
+                          : null}
                       </p>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-xs"
-                        onClick={() => onBackToDraft?.()}
-                      >
-                        View latest
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        {/* "Restore this version" copies the viewed version's
+                            body + frontmatter back into the document as a
+                            new draft. The edit isn't published until the
+                            user clicks Publish, mirroring the standard
+                            edit-then-publish flow and keeping the
+                            content:write scope sufficient (publish requires
+                            content:publish, which not every editor has). */}
+                        {state.canWrite ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs"
+                            disabled={
+                              state.viewingVersion.status !== "ready" ||
+                              state.restoreVersionState === "restoring"
+                            }
+                            data-mdcms-restore-version={
+                              state.viewingVersion.version
+                            }
+                            onClick={() => {
+                              const v = state.viewingVersion?.version;
+                              if (typeof v === "number") {
+                                onRestoreVersion?.(v);
+                              }
+                            }}
+                          >
+                            {state.restoreVersionState === "restoring"
+                              ? "Restoring..."
+                              : "Restore this version"}
+                          </Button>
+                        ) : null}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs"
+                          disabled={state.restoreVersionState === "restoring"}
+                          onClick={() => onBackToDraft?.()}
+                        >
+                          View latest
+                        </Button>
+                      </div>
                     </div>
                   ) : null}
 
                   {state.viewingVersion?.status === "error" ? (
                     <div className="mb-3 rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
                       {state.viewingVersion.error}
+                    </div>
+                  ) : null}
+
+                  {state.restoreVersionError ? (
+                    <div
+                      data-mdcms-document-restore-version-state="error"
+                      className="mb-3 rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+                    >
+                      {state.restoreVersionError}
                     </div>
                   ) : null}
 
@@ -3631,6 +3690,116 @@ export default function ContentDocumentPage({
     );
   });
 
+  // Restores a historical published version as the current draft. The
+  // server endpoint defaults `targetStatus` to "draft", so the restored
+  // body lands in the draft slot and the user can review + republish via
+  // the normal flow. We exit version-viewing mode on success so the
+  // editor reflects the restored draft, mark the draft as freshly saved
+  // (the server already persisted the new draft revision), and refresh
+  // version history so the new draftRevision shows.
+  const restoreDocumentVersion = useEffectEvent(async (version: number) => {
+    const currentState = stateRef.current;
+    const requestContext = activeContext;
+    const requestRoute = route;
+    const api = createRouteApi({
+      context: requestContext,
+      route: requestRoute,
+    });
+
+    if (
+      !api ||
+      !requestRoute ||
+      currentState.status !== "ready" ||
+      !currentState.canWrite ||
+      currentState.restoreVersionState === "restoring"
+    ) {
+      return;
+    }
+
+    const requestToken = createContentDocumentRouteRequestToken({
+      documentId: currentState.documentId,
+      route: requestRoute,
+    });
+
+    setState((current) =>
+      current.status === "ready"
+        ? {
+            ...current,
+            restoreVersionState: "restoring",
+            restoreVersionError: undefined,
+          }
+        : current,
+    );
+
+    try {
+      const restored = await api.restoreVersion({
+        documentId: currentState.documentId,
+        locale: currentState.document.locale,
+        version,
+      });
+
+      const restoredBody = restored.body ?? "";
+      const restoredFrontmatter = cloneFrontmatter(restored.frontmatter);
+      const versionHistoryRefresh =
+        await loadContentDocumentVersionHistoryState({
+          api,
+          documentId: currentState.documentId,
+          locale: currentState.document.locale,
+        });
+
+      const afterRestore = stateRef.current;
+      if (
+        afterRestore.status !== "ready" ||
+        !matchesContentDocumentRouteRequestToken(requestToken, afterRestore)
+      ) {
+        return;
+      }
+
+      editorRef.current?.setContent(restoredBody);
+
+      setState((current) =>
+        current.status === "ready" &&
+        matchesContentDocumentRouteRequestToken(requestToken, current)
+          ? {
+              ...current,
+              document: {
+                ...current.document,
+                ...restored,
+                body: restoredBody,
+                frontmatter: restoredFrontmatter,
+              },
+              draftBody: restoredBody,
+              draftFrontmatter: restoredFrontmatter,
+              saveState: "saved",
+              mutationError: undefined,
+              fieldErrors: undefined,
+              saveRequestBody: undefined,
+              saveRequestFrontmatter: undefined,
+              viewingVersion: undefined,
+              restoreVersionState: "idle",
+              restoreVersionError: undefined,
+              versionHistory: versionHistoryRefresh.versionHistory,
+            }
+          : current,
+      );
+    } catch (error) {
+      const message = toRouteErrorMessage(
+        error,
+        "Failed to restore document version.",
+      );
+      setState((current) =>
+        current.status === "ready" &&
+        matchesContentDocumentRouteRequestToken(requestToken, current)
+          ? {
+              ...current,
+              restoreVersionState: "idle",
+              restoreVersionError: message,
+            }
+          : current,
+      );
+    }
+  });
+
   useEffect(() => {
     void loadDocument();
   }, [activeContext, documentId, route, typeId, typeLabel]);
@@ -3821,6 +3990,9 @@ export default function ContentDocumentPage({
         void handleViewVersion(version);
       }}
       onBackToDraft={handleBackToDraft}
+      onRestoreVersion={(version) => {
+        void restoreDocumentVersion(version);
+      }}
     />
   );
 }

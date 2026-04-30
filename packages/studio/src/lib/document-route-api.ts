@@ -61,6 +61,18 @@ export type StudioDocumentRouteVersionDetailInput =
     resolve?: string | string[];
   };
 
+export type StudioDocumentRouteRestoreVersionInput =
+  StudioDocumentRouteMutationInput & {
+    version: number;
+    // The server defaults this to "draft" (see parseRestoreTargetStatus in
+    // apps/server/src/lib/content-api/parsing.ts), which is the conservative
+    // choice — restoring a published version straight to a new published
+    // version requires `content:publish` rather than `content:write`.
+    targetStatus?: "draft" | "published";
+    changeSummary?: string;
+    actorId?: string;
+  };
+
 export type StudioDocumentRouteCreateInput = {
   type: string;
   path: string;
@@ -133,6 +145,9 @@ export type StudioDocumentRouteApi = {
   ) => Promise<ContentDocumentResponse>;
   restore: (
     input: StudioDocumentRouteRestoreInput,
+  ) => Promise<ContentDocumentResponse>;
+  restoreVersion: (
+    input: StudioDocumentRouteRestoreVersionInput,
   ) => Promise<ContentDocumentResponse>;
   listVariants: (input: {
     documentId: string;
@@ -944,6 +959,31 @@ export function createStudioDocumentRouteApi(
         "POST /api/v1/content/:documentId/restore",
         payload,
         "Failed to restore document.",
+      );
+    },
+    async restoreVersion(input) {
+      const payload = await requestContentMutation(config, options, {
+        method: "POST",
+        path: `/api/v1/content/${encodeURIComponent(
+          input.documentId,
+        )}/versions/${encodeURIComponent(String(input.version))}/restore`,
+        locale: input.locale,
+        signal: input.signal,
+        payload: {
+          ...(input.targetStatus !== undefined
+            ? { targetStatus: input.targetStatus }
+            : {}),
+          ...(input.changeSummary !== undefined
+            ? { changeSummary: input.changeSummary }
+            : {}),
+          ...(input.actorId !== undefined ? { actorId: input.actorId } : {}),
+        },
+      });
+
+      return toContentDocumentResponse(
+        "POST /api/v1/content/:documentId/versions/:version/restore",
+        payload,
+        "Failed to restore document version.",
       );
     },
     async listVariants(input) {
