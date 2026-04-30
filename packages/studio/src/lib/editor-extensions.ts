@@ -97,7 +97,18 @@ export function createEditorExtensions(options?: {
   codeBlock?: Extensions[number];
 }): Extensions {
   return [
-    StarterKit.configure({ codeBlock: false }),
+    StarterKit.configure({
+      codeBlock: false,
+      // The default dropcursor is a 1px `currentColor` line, which is
+      // almost invisible on the editor's typical white background and
+      // makes it hard to tell where a dragged MDX block will land. Use
+      // a thicker bar in the theme's primary accent so the drop target
+      // reads at a glance during reorder.
+      dropcursor: {
+        width: 4,
+        color: "var(--color-primary, #2563eb)",
+      },
+    }),
     Underline,
     Highlight,
     BlurSelectionPreserver,
