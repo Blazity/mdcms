@@ -378,11 +378,12 @@ test("serializeResolvedEnvironmentSchema rejects unsupported executable validato
   );
 });
 
-test("toRawConfigSnapshot includes project, serverUrl and omits implicit locales", () => {
+test("toRawConfigSnapshot includes project, omits deployment context, and omits implicit locales", () => {
   const parsed = parseMdcmsConfig(
     defineConfig({
       project: "my-site",
       serverUrl: "http://localhost:4000",
+      environment: "production",
       contentDirectories: ["content"],
       types: [
         defineType("Post", {
@@ -397,12 +398,67 @@ test("toRawConfigSnapshot includes project, serverUrl and omits implicit locales
   const snapshot = toRawConfigSnapshot(parsed);
 
   assert.equal(snapshot.project, "my-site");
-  assert.equal(snapshot.serverUrl, "http://localhost:4000");
+  // `serverUrl` and the active `environment` are deployment-time wiring,
+  // not schema content; they must not appear in the snapshot or the schema
+  // hash starts depending on whoever happens to be computing it.
+  assert.equal(snapshot.serverUrl, undefined);
+  assert.equal(snapshot.environment, undefined);
   assert.deepEqual(snapshot.contentDirectories, ["content"]);
   assert.deepEqual(snapshot.environments, {
     production: {},
   });
   assert.equal(snapshot.locales, undefined);
+});
+
+test("toRawConfigSnapshot is identical for configs differing only in serverUrl", () => {
+  const buildParsed = (serverUrl: string) =>
+    parseMdcmsConfig(
+      defineConfig({
+        project: "my-site",
+        serverUrl,
+        environment: "production",
+        contentDirectories: ["content"],
+        types: [
+          defineType("Post", {
+            directory: "content/posts",
+            fields: { title: z.string() },
+          }),
+        ],
+        environments: { production: {} },
+      }),
+    );
+
+  const local = toRawConfigSnapshot(buildParsed("http://localhost:4000"));
+  const railway = toRawConfigSnapshot(buildParsed("https://api.example.com"));
+
+  assert.deepEqual(local, railway);
+});
+
+test("toRawConfigSnapshot is identical for configs differing only in active environment", () => {
+  const buildParsed = (environment: string) =>
+    parseMdcmsConfig(
+      defineConfig({
+        project: "my-site",
+        serverUrl: "http://localhost:4000",
+        environment,
+        contentDirectories: ["content"],
+        types: [
+          defineType("Post", {
+            directory: "content/posts",
+            fields: { title: z.string() },
+          }),
+        ],
+        environments: {
+          production: {},
+          staging: { extends: "production" },
+        },
+      }),
+    );
+
+  const fromStagingShell = toRawConfigSnapshot(buildParsed("staging"));
+  const fromProductionShell = toRawConfigSnapshot(buildParsed("production"));
+
+  assert.deepEqual(fromStagingShell, fromProductionShell);
 });
 
 test("toRawConfigSnapshot includes environment topology definitions", () => {
@@ -589,6 +645,52 @@ test("buildSchemaSyncPayload produces the same hash for the same inputs", () => 
   const second = buildSchemaSyncPayload(parsed, "production");
 
   assert.equal(first.schemaHash, second.schemaHash);
+});
+
+test("buildSchemaSyncPayload hash for env X is independent of serverUrl and active environment", () => {
+  // Regression for CMS-218: same target environment + same schema content
+  // must hash identically regardless of which server the local config
+  // happens to point at, or which environment the host process happens to
+  // have selected as the "active" one. Otherwise the CLI sync (often run
+  // from a default shell with localhost / staging defaults) and a deployed
+  // host (production-tuned env vars baked at build time) compute different
+  // hashes for the same target env and the editor goes read-only forever.
+  const buildParsed = (input: { serverUrl: string; environment: string }) =>
+    parseMdcmsConfig(
+      defineConfig({
+        project: "marketing-site",
+        serverUrl: input.serverUrl,
+        environment: input.environment,
+        contentDirectories: ["content"],
+        types: [
+          defineType("Post", {
+            directory: "content/posts",
+            fields: { title: z.string() },
+          }),
+        ],
+        environments: {
+          production: {},
+          staging: { extends: "production" },
+        },
+      }),
+    );
+
+  const cliShell = buildSchemaSyncPayload(
+    buildParsed({
+      serverUrl: "http://localhost:4000",
+      environment: "staging",
+    }),
+    "production",
+  );
+  const buildShell = buildSchemaSyncPayload(
+    buildParsed({
+      serverUrl: "https://api.example.com",
+      environment: "production",
+    }),
+    "production",
+  );
+
+  assert.equal(cliShell.schemaHash, buildShell.schemaHash);
 });
 
 test("buildSchemaSyncPayload produces different hashes for different environments", () => {
