@@ -611,6 +611,54 @@ test("restore sends POST /api/v1/content/:documentId/restore with CSRF token", a
   assert.equal(readHeader(restoreCall?.init, "x-mdcms-csrf-token"), "csrf-abc");
 });
 
+test("restoreVersion sends POST /api/v1/content/:documentId/versions/:version/restore", async () => {
+  const { fetcher, calls } = createMockFetcher([
+    sessionResponse("csrf-abc"),
+    new Response(JSON.stringify(validDocumentResponse), { status: 200 }),
+  ]);
+  const api = createNewMethodsApi({ auth: { mode: "cookie" }, fetcher });
+
+  const result = await api.restoreVersion({ documentId: "doc-1", version: 3 });
+
+  assert.equal(result.documentId, "doc-1");
+  const restoreCall = calls[1];
+  assert.ok(
+    String(restoreCall?.input).endsWith(
+      "/api/v1/content/doc-1/versions/3/restore",
+    ),
+  );
+  assert.equal(restoreCall?.init?.method, "POST");
+  assert.equal(readHeader(restoreCall?.init, "x-mdcms-csrf-token"), "csrf-abc");
+  // Default body is empty — server defaults targetStatus to "draft", so the
+  // client deliberately sends no targetStatus when the caller doesn't
+  // override (avoids accidentally re-publishing under content:write).
+  const body = restoreCall?.init?.body;
+  assert.ok(typeof body === "string");
+  assert.deepEqual(JSON.parse(body), {});
+});
+
+test("restoreVersion forwards targetStatus + changeSummary when provided", async () => {
+  const { fetcher, calls } = createMockFetcher([
+    sessionResponse("csrf-abc"),
+    new Response(JSON.stringify(validDocumentResponse), { status: 200 }),
+  ]);
+  const api = createNewMethodsApi({ auth: { mode: "cookie" }, fetcher });
+
+  await api.restoreVersion({
+    documentId: "doc-1",
+    version: 5,
+    targetStatus: "published",
+    changeSummary: "rolled back the broken FeatureGrid copy",
+  });
+
+  const body = calls[1]?.init?.body;
+  assert.ok(typeof body === "string");
+  assert.deepEqual(JSON.parse(body), {
+    targetStatus: "published",
+    changeSummary: "rolled back the broken FeatureGrid copy",
+  });
+});
+
 test("version detail helper validates required fields and rejects malformed payloads", async () => {
   const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
     [];
