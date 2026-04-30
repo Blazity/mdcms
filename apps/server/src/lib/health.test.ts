@@ -859,7 +859,9 @@ test("Studio asset response is marked immutably cacheable", async () => {
   });
 
   const response = await handler(
-    new Request("http://localhost/api/v1/studio/assets/build-cache/runtime.mjs"),
+    new Request(
+      "http://localhost/api/v1/studio/assets/build-cache/runtime.mjs",
+    ),
   );
 
   assert.equal(response.status, 200);
@@ -914,9 +916,12 @@ test("CORS-origin Vary merges with the asset route's Accept-Encoding signal", as
   });
 
   const response = await handler(
-    new Request("http://localhost/api/v1/studio/assets/build-cors/runtime.mjs", {
-      headers: { origin: "https://demo.example" },
-    }),
+    new Request(
+      "http://localhost/api/v1/studio/assets/build-cors/runtime.mjs",
+      {
+        headers: { origin: "https://demo.example" },
+      },
+    ),
   );
 
   assert.equal(response.status, 200);

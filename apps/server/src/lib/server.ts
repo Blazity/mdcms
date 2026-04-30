@@ -118,7 +118,9 @@ function createStudioCorsHeaders(origin: string): Record<string, string> {
   };
 }
 
-function mergeVaryHeaderValues(...values: ReadonlyArray<string | null>): string {
+function mergeVaryHeaderValues(
+  ...values: ReadonlyArray<string | null>
+): string {
   const seen = new Set<string>();
   const tokens: string[] = [];
 
@@ -320,9 +322,7 @@ function pickStudioAssetEncoding(
   // br > gzip (better ratio for our JS bundle).
   const wildcardQ = tokens.get("*");
   const supported: readonly StudioAssetCompressionEncoding[] = ["br", "gzip"];
-  let best:
-    | { encoding: StudioAssetCompressionEncoding; q: number }
-    | undefined;
+  let best: { encoding: StudioAssetCompressionEncoding; q: number } | undefined;
   for (const candidate of supported) {
     const q = tokens.has(candidate) ? tokens.get(candidate) : wildcardQ;
     if (q === undefined || q <= 0) continue;
