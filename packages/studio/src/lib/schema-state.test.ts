@@ -516,6 +516,94 @@ test("loadStudioSchemaState detects hash mismatch when server project matches co
   assert.equal(state.isMismatch, true);
 });
 
+test("loadStudioSchemaState uses precomputedLocalSchemaHash so mismatch is detected on first paint", async () => {
+  // Browser-side derivation cannot run on a stripped config (no types), so
+  // localSchemaHash would normally be undefined and the recovery banner
+  // would only appear after an autosave failed server-side. Forwarding the
+  // host-precomputed hash detects mismatch immediately.
+  const api = createSchemaRouteApi(
+    async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            types: [],
+            schemaHash: "server-hash",
+            syncedAt: "2026-03-31T12:00:00.000Z",
+            project: "marketing-site",
+          },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+  );
+
+  const state = await loadStudioSchemaState({
+    config: {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+    },
+    schemaApi: api,
+    capabilitiesApi: createCapabilitiesApi({
+      schema: { read: true, write: true },
+    }),
+    precomputedLocalSchemaHash: "host-precomputed-hash",
+  });
+
+  assert.equal(state.status, "ready");
+  if (state.status !== "ready") {
+    throw new Error("Expected ready state.");
+  }
+  assert.equal(state.localSchemaHash, "host-precomputed-hash");
+  assert.equal(state.serverSchemaHash, "server-hash");
+  assert.equal(state.isMismatch, true);
+  // No browser-side syncPayload available — sync must remain disabled even
+  // when capabilities allow it, since the precomputed hash alone is not
+  // enough to push a sync from the browser.
+  assert.equal(state.canSync, false);
+});
+
+test("loadStudioSchemaState ignores precomputedLocalSchemaHash when it matches the server", async () => {
+  const api = createSchemaRouteApi(
+    async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            types: [],
+            schemaHash: "matching-hash",
+            syncedAt: "2026-03-31T12:00:00.000Z",
+            project: "marketing-site",
+          },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+  );
+
+  const state = await loadStudioSchemaState({
+    config: {
+      project: "marketing-site",
+      environment: "staging",
+      serverUrl: "http://localhost:4000",
+    },
+    schemaApi: api,
+    capabilitiesApi: createCapabilitiesApi({
+      schema: { read: true, write: true },
+    }),
+    precomputedLocalSchemaHash: "matching-hash",
+  });
+
+  assert.equal(state.status, "ready");
+  if (state.status !== "ready") {
+    throw new Error("Expected ready state.");
+  }
+  assert.equal(state.isMismatch, false);
+});
+
 test("loadStudioSchemaState falls through to hash comparison when server omits project", async () => {
   const api = createSchemaRouteApi(
     async () =>
