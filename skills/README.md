@@ -6,24 +6,26 @@ The pack is designed to be installed into any agent environment supported by [sk
 
 ## Install
 
+The install URL ends in `/skills` so skills.sh only sees the public MDCMS pack — internal repo skills under `.ai/skills/` are not surfaced to consumers.
+
 ```bash
 # Browse available skills
-npx skills add Blazity/mdcms --list
+npx skills add mdcms-ai/mdcms/skills --list
 
-# Install all nine skills into the current project
-npx skills add Blazity/mdcms
+# Install all skills into the current project
+npx skills add mdcms-ai/mdcms/skills
 
 # Target a specific agent (default: prompt for agent)
-npx skills add Blazity/mdcms -a claude-code
+npx skills add mdcms-ai/mdcms/skills -a claude-code
 
 # Install globally (~/.<agent>/skills) so every project sees them
-npx skills add Blazity/mdcms -g
+npx skills add mdcms-ai/mdcms/skills -g
 
 # Non-interactive (CI / scripted install)
-npx skills add Blazity/mdcms -y
+npx skills add mdcms-ai/mdcms/skills -y
 ```
 
-The pack is installed into whichever agent directories the user selects (`~/.claude/skills/`, `~/.cursor/skills/`, etc.). All nine skills work best together because the master skill delegates to each of the focused skills by slug. Installing the whole pack is recommended.
+The pack is installed into whichever agent directories the user selects (`~/.claude/skills/`, `~/.cursor/skills/`, etc.). All skills work best together because the master skill delegates to each of the focused skills by slug. Installing the whole pack is recommended.
 
 See the [skills.sh CLI reference](https://github.com/vercel-labs/skills) for more options (`--copy`, `--skill`, `--agent`, update/remove commands).
 
@@ -39,11 +41,17 @@ See the [skills.sh CLI reference](https://github.com/vercel-labs/skills) for mor
 | [`mdcms-studio-embed`](./mdcms-studio-embed/SKILL.md)                   | Mount `<Studio />` at a catch-all route inside the user's host app.                                           |
 | [`mdcms-sdk-integration`](./mdcms-sdk-integration/SKILL.md)             | Fetch content in the host app via `@mdcms/sdk`; drafts vs published; SSR.                                     |
 | [`mdcms-mdx-components`](./mdcms-mdx-components/SKILL.md)               | Register custom MDX components so Studio preview and host SSR match.                                          |
-| [`mdcms-content-sync-workflow`](./mdcms-content-sync-workflow/SKILL.md) | Day-to-day `pull`/`push`; key rotation; CI automation for publishing.                                         |
+| [`mdcms-content-editing`](./mdcms-content-editing/SKILL.md)             | Edit, author, translate, and bulk-modify documents. Local vs Studio; validation; new docs; renames.           |
+| [`mdcms-content-sync-workflow`](./mdcms-content-sync-workflow/SKILL.md) | Day-to-day `pull`/`push`/login; key rotation; CI automation for publishing.                                   |
 
 ## How the skills flow
 
-The master skill (`mdcms-setup`) walks through these phases and delegates at each branch:
+`mdcms-setup` orchestrates first-time onboarding (the flowchart below). After setup, two skills handle ongoing day-to-day work and trigger directly from common phrasings:
+
+- **`mdcms-content-editing`** — "edit my content", "update a post", "add a page", "translate this", "bulk-edit the tags".
+- **`mdcms-content-sync-workflow`** — "push my changes", "pull from MDCMS", "I'm getting 401", "rotate the API key", "add MDCMS to CI".
+
+### Setup flow
 
 ```mermaid
 flowchart TD

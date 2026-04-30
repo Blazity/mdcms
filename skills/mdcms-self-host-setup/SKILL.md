@@ -23,7 +23,7 @@ The user has decided to run MDCMS themselves (local development, staging, or pro
 ### 1. Clone the MDCMS source
 
 ```bash
-git clone https://github.com/Blazity/mdcms.git
+git clone https://github.com/mdcms-ai/mdcms.git
 cd mdcms
 ```
 

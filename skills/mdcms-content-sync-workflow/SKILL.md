@@ -1,6 +1,6 @@
 ---
 name: mdcms-content-sync-workflow
-description: Use this skill for day-to-day MDCMS CLI usage — `mdcms pull`, `mdcms push`, `mdcms login`, API key rotation, CI automation for publishing, or when the user asks things like "how do I keep my local markdown in sync with MDCMS", "add MDCMS to CI", "rotate the API key", "what's the draft vs publish flow", or "how do I push changes from a GitHub Action". Not about initial setup — this covers operational usage after init.
+description: Use when the user runs day-to-day MDCMS CLI operations — `mdcms pull`, `mdcms push`, `mdcms status`, `mdcms login`, `mdcms logout` — or asks "how do I keep my local markdown in sync with MDCMS", "how do I push changes", "how do I publish from the CLI", "rotate the API key", "what's the draft vs publish flow", "add MDCMS to CI / GitHub Actions". Also triggers on auth-failure symptoms — "I'm getting 401 / unauthorized / 'not logged in' from the CLI", "MDCMS_API_KEY isn't working", "credentials missing", "mdcms login first". Operational usage after init — not for first-time setup.
 ---
 
 # MDCMS Content Sync Workflow
@@ -16,6 +16,27 @@ Anything operational: syncing content, managing credentials, automating publishi
 - **Drafts** live on the server and in local working copies. Editing locally + `mdcms push` updates the draft on the server. Editing in Studio writes directly to the server draft. Drafts are visible only to authenticated consumers (Studio, preview renders, SDK with `draft: true`).
 - **Publishing** is a separate explicit action (via Studio or the CLI's publish surface when applicable). Published documents are what unauthenticated readers of the host app see.
 - **Manifest** — MDCMS tracks per-`(project, environment)` document state in `.mdcms/manifests/<project>.<environment>.json`. The CLI uses it for hash-based change detection. It's not committed; each developer has their own.
+
+## Step 0 — make sure the user is logged in
+
+**Always preflight authentication before any pull/push/status/publish.** Every authenticated CLI command resolves credentials in this order: `--api-key` flag → `MDCMS_API_KEY` env var → stored credential keyed by `(serverUrl, project, environment)`. The first non-empty wins. If none resolves, the CLI exits with an auth error and the user needs to log in.
+
+Quick check:
+
+```bash
+npx mdcms status
+```
+
+- Exit 0 with a normal status report → credentials are fine, proceed.
+- Exit non-zero with `401`, `unauthorized`, `Not logged in`, `No credential found`, or a prompt for an API key → not logged in for this `(serverUrl, project, environment)` tuple.
+
+If the user is not logged in, route based on context:
+
+- **Interactive dev (a real terminal)** — run `npx mdcms login`. It opens a browser, completes an OAuth-style login, and persists an API key in the OS credential store (keychain / libsecret / credential manager). After login, retry the original command.
+- **Non-interactive (CI, container, no TTY)** — `mdcms login` will fail with no browser. Get an API key from Studio → Settings → API Keys (scope it to the target `(project, environment)`), then export `MDCMS_API_KEY` (and `MDCMS_SERVER_URL` / `MDCMS_PROJECT` / `MDCMS_ENVIRONMENT` if not already set) before running the CLI.
+- **Wrong project/environment selected** — credentials are scoped to a tuple. Logging in for `staging` won't authorize a command targeting `production`. Check `mdcms.config.ts` and the `--project` / `--environment` flags or env vars; log in again with the right tuple if needed.
+
+Don't paper over an auth failure with `--force`, `--yes`, or retry loops. Fix credentials first.
 
 ## Daily loop
 

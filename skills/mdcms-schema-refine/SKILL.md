@@ -1,6 +1,6 @@
 ---
 name: mdcms-schema-refine
-description: Use this skill whenever the user wants to add, edit, extend, or fix MDCMS content types, fields, or references — phrases like "make me a new content type", "add an author type", "add a tags field to posts", "link blog posts to authors", "the inferred schema is wrong", "change the schema", or "author the content model". Covers editing `mdcms.config.ts` with `defineType` + Zod validators, adding `reference()` links, and running `mdcms schema sync` to publish the change.
+description: Use when the user wants to add, edit, extend, or fix MDCMS content types, fields, or references — phrases like "add a new content type", "register a new type with MDCMS", "create a content model", "make me an author type", "add a tags field to posts", "add a new field to my CMS", "link blog posts to authors", "edit mdcms.config.ts", "the inferred schema is wrong", "the schema is missing X", "change the schema", or "author the content model". Triggers on any intent to evolve the content schema, including localizing a type or adding a `reference()` between types.
 ---
 
 # MDCMS Schema Refine
@@ -18,7 +18,7 @@ Not for importing content, embedding Studio, or editing individual documents —
 ## Prerequisites
 
 - A working `mdcms.config.ts` and a reachable MDCMS server (run **`mdcms-brownfield-init`** or **`mdcms-greenfield-init`** first if not).
-- Credential for the target `(server, project, environment)` resolvable by the CLI — already true if init ran on this machine.
+- The user must be logged in for the target `(server, project, environment)`. `mdcms schema sync` writes to the server and fails with `401`/`unauthorized` otherwise. If `mdcms status` prints an auth error, run `mdcms login` (interactive) or set `MDCMS_API_KEY` (non-interactive) before continuing — see **`mdcms-content-sync-workflow`** Step 0 for full guidance.
 - Read the current config before editing so you understand the shape you're changing.
 
 ## Core concepts

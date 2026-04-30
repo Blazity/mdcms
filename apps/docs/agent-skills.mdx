@@ -10,17 +10,17 @@ If you use Claude Code, Cursor, Gemini CLI, Codex, Copilot, OpenCode, or any of 
 ## Install
 
 ```bash
-# Install all nine skills into the current project
-npx skills add Blazity/mdcms
+# Install all skills into the current project
+npx skills add mdcms-ai/mdcms/skills
 
 # Install globally so every project sees them
-npx skills add Blazity/mdcms -g
+npx skills add mdcms-ai/mdcms/skills -g
 
 # Non-interactive (CI / scripted install)
-npx skills add Blazity/mdcms -y
+npx skills add mdcms-ai/mdcms/skills -y
 ```
 
-Installing the whole pack is recommended — the master skill delegates to the focused skills by slug.
+The install URL ends in `/skills` so skills.sh only sees the public MDCMS pack (internal repo skills are skipped). Installing the whole pack is recommended — the master skill delegates to the focused skills by slug.
 
 See the [skills.sh CLI reference](https://github.com/vercel-labs/skills) for `--copy`, `--skill`, `--agent`, and update/remove commands.
 
@@ -36,13 +36,14 @@ See the [skills.sh CLI reference](https://github.com/vercel-labs/skills) for `--
 | `mdcms-studio-embed`          | Mount `<Studio />` at a catch-all route inside the host app.                                   |
 | `mdcms-sdk-integration`       | Fetch content with `@mdcms/sdk`; drafts vs published; SSR.                                     |
 | `mdcms-mdx-components`        | Register custom MDX components so Studio preview and host SSR match.                           |
-| `mdcms-content-sync-workflow` | Day-to-day `pull`/`push`; key rotation; CI automation.                                         |
+| `mdcms-content-editing`       | Edit, author, translate, and bulk-modify documents. Local vs Studio; validation; new docs.     |
+| `mdcms-content-sync-workflow` | Day-to-day `pull`/`push`/login; key rotation; CI automation.                                   |
 
 ## How to use it
 
 Once installed, start any conversation with your agent with an intent like "set up MDCMS in this project" or "add MDCMS here." The master skill (`mdcms-setup`) activates, detects whether you have a running server, existing content, and a host app, then delegates to each focused skill at the right phase.
 
-The full flow diagram and per-skill details live in the [pack's README on GitHub](https://github.com/Blazity/mdcms/blob/main/skills/README.md).
+The full flow diagram and per-skill details live in the [pack's README on GitHub](https://github.com/mdcms-ai/mdcms/blob/main/skills/README.md).
 
 ## When to use skills vs. copy-paste prompts
 
