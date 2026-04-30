@@ -208,6 +208,12 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       useState<SlashTriggerCoords | null>(null);
     const [linkPopoverOpen, setLinkPopoverOpen] = useState(false);
     const [linkInputValue, setLinkInputValue] = useState("");
+    // While the user drags an MDX component handle, the browser's default
+    // pointer behavior would let the cursor paint a text selection over
+    // sibling block content as it sweeps across the editor. Track the drag
+    // explicitly so we can pin `user-select: none` on the editor and run an
+    // auto-scroll loop while the canvas pane is the scrollable ancestor.
+    const [isMdxDragging, setIsMdxDragging] = useState(false);
     const editorWrapperRef = useRef<HTMLDivElement | null>(null);
     const pickerSourceRef = useRef(pickerSource);
     pickerSourceRef.current = pickerSource;
@@ -555,6 +561,105 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       syncSlashTrigger(editor);
     }, [catalogComponents, editor, forbidden, isEditorReadOnly, readOnly]);
 
+    // Drag lifecycle for MDX component handles. Listening at the wrapper
+    // catches dragstart only when it originates from a `[data-drag-handle]`
+    // inside an MDX node view (Tiptap routes pointer-down on the handle into
+    // a ProseMirror node drag). dragend / drop are listened on the document
+    // because the events fire wherever the pointer lands, which can be
+    // outside the editor wrapper for cancelled drags.
+    useEffect(() => {
+      const wrapper = editorWrapperRef.current;
+      if (!wrapper) {
+        return;
+      }
+
+      const onDragStart = (event: DragEvent) => {
+        const target = event.target as HTMLElement | null;
+        if (!target?.closest("[data-drag-handle]")) {
+          return;
+        }
+        setIsMdxDragging(true);
+      };
+
+      const stopDragging = () => setIsMdxDragging(false);
+
+      wrapper.addEventListener("dragstart", onDragStart);
+      document.addEventListener("dragend", stopDragging);
+      document.addEventListener("drop", stopDragging);
+
+      return () => {
+        wrapper.removeEventListener("dragstart", onDragStart);
+        document.removeEventListener("dragend", stopDragging);
+        document.removeEventListener("drop", stopDragging);
+      };
+    }, []);
+
+    // Auto-scroll the canvas pane while a drag is in flight so the user can
+    // reorder past the visible viewport. The scroll target is the nearest
+    // `[data-mdcms-editor-pane="canvas"]` ancestor; if there is none (e.g.
+    // tests, embedded preview) the effect no-ops. dragover fires
+    // continuously while the pointer moves, so we record the latest Y and
+    // let a rAF loop convert proximity-to-edge into scroll velocity.
+    useEffect(() => {
+      if (!isMdxDragging) {
+        return;
+      }
+
+      const wrapper = editorWrapperRef.current;
+      if (!wrapper) {
+        return;
+      }
+
+      const scrollContainer = wrapper.closest(
+        '[data-mdcms-editor-pane="canvas"]',
+      ) as HTMLElement | null;
+
+      if (!scrollContainer) {
+        return;
+      }
+
+      const SCROLL_ZONE_PX = 72;
+      const MAX_SCROLL_PER_FRAME = 18;
+      let pointerY: number | null = null;
+      let rafId: number | null = null;
+
+      const onDragOver = (event: DragEvent) => {
+        pointerY = event.clientY;
+      };
+
+      const tick = () => {
+        if (pointerY !== null) {
+          const rect = scrollContainer.getBoundingClientRect();
+          const distanceFromTop = pointerY - rect.top;
+          const distanceFromBottom = rect.bottom - pointerY;
+
+          if (distanceFromTop >= 0 && distanceFromTop < SCROLL_ZONE_PX) {
+            const speed =
+              MAX_SCROLL_PER_FRAME * (1 - distanceFromTop / SCROLL_ZONE_PX);
+            scrollContainer.scrollTop -= speed;
+          } else if (
+            distanceFromBottom >= 0 &&
+            distanceFromBottom < SCROLL_ZONE_PX
+          ) {
+            const speed =
+              MAX_SCROLL_PER_FRAME * (1 - distanceFromBottom / SCROLL_ZONE_PX);
+            scrollContainer.scrollTop += speed;
+          }
+        }
+        rafId = requestAnimationFrame(tick);
+      };
+
+      document.addEventListener("dragover", onDragOver);
+      rafId = requestAnimationFrame(tick);
+
+      return () => {
+        document.removeEventListener("dragover", onDragOver);
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+        }
+      };
+    }, [isMdxDragging]);
+
     useEffect(() => {
       if (!slashPickerOpen || !slashPickerCoords || !editor || !slashTrigger) {
         floatingRefs.setReference(null);
@@ -881,7 +986,17 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
     ) : null;
 
     return (
-      <div ref={editorWrapperRef} className="relative">
+      <div
+        ref={editorWrapperRef}
+        // While a drag is in flight, pin selection off across the editor and
+        // its descendants so the pointer doesn't paint a text selection over
+        // sibling block content as it sweeps over them. `pointer-events`
+        // stays on so dragover continues to fire and auto-scroll works.
+        className={cn(
+          "relative",
+          isMdxDragging && "select-none [&_*]:select-none",
+        )}
+      >
         <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-background">
           <div className="border-b border-border bg-background-subtle">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2.5">

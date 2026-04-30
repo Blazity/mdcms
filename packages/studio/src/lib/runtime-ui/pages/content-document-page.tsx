@@ -1254,6 +1254,13 @@ export async function loadContentDocumentPageState(input: {
       serverUrl: input.context.apiBaseUrl,
     },
     auth: input.context.auth,
+    // Forward the host-precomputed hash so initial-load mismatch detection
+    // matches the autosave guard's view. Without this the schema-recovery
+    // banner only appears after the first save round-trips through the
+    // server and comes back as SCHEMA_HASH_MISMATCH.
+    ...(route.write.canWrite
+      ? { precomputedLocalSchemaHash: route.write.schemaHash }
+      : {}),
   });
   const readyState = applySchemaStateToReadyState({
     state: nextState,

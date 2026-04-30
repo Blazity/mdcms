@@ -74,6 +74,15 @@ export type LoadStudioSchemaStateInput = {
   fetcher?: typeof fetch;
   schemaApi?: StudioSchemaRouteApi;
   capabilitiesApi?: StudioCurrentPrincipalCapabilitiesApi;
+  // Optional host-precomputed local schema hash. The host (Next.js page,
+  // bundler script, etc.) typically computes the schema hash server-side
+  // where the full authored config (with Zod types) is available. The
+  // browser-side load is given a stripped config and cannot recompute the
+  // hash itself, so without this hint the initial schema-state load reports
+  // `localSchemaHash: undefined` and a real mismatch is only surfaced after
+  // a write fails server-side. Pass the host hash here to detect mismatch
+  // on first paint.
+  precomputedLocalSchemaHash?: string;
 };
 
 function createSchemaRouteApi(
@@ -269,15 +278,40 @@ export async function loadStudioSchemaState(
       capabilities = createEmptyCurrentPrincipalCapabilities();
     }
 
+    // Prefer the host-derived hash (full config with types is available
+    // server-side / at build time) over a stripped browser-side recompute.
+    // If no host value was supplied and the browser-side derivation
+    // succeeded, fall back to that. The syncPayload is only ever the
+    // browser-side derivation — a precomputed hash without a payload is
+    // enough to *detect* mismatch but not to *resolve* it via a sync from
+    // the browser, which matches reality (sync requires the full authored
+    // config and is owned by the host / CLI anyway).
+    //
+    // Trim before length-checking so a whitespace-only precomputed value
+    // does not override a valid browser-derived hash. This mirrors the
+    // normalization applied to `serverSchemaHash` so the two sides stay
+    // comparable; intentionally not adding `toLowerCase()` or strict hex
+    // validation here because those would be asymmetric with the server
+    // path and would mask producer bugs rather than expose them.
+    const precomputedLocalSchemaHashRaw = input.precomputedLocalSchemaHash;
+    const precomputedLocalSchemaHash =
+      typeof precomputedLocalSchemaHashRaw === "string" &&
+      precomputedLocalSchemaHashRaw.trim().length > 0
+        ? precomputedLocalSchemaHashRaw.trim()
+        : undefined;
+    const browserDerivedLocalSchemaHash = localDetails.canWrite
+      ? localDetails.syncPayload.schemaHash
+      : undefined;
+    const localSchemaHash =
+      precomputedLocalSchemaHash ?? browserDerivedLocalSchemaHash;
+
     return createReadyState({
       project: input.config.project,
       environment: input.config.environment,
       capabilities,
+      ...(localSchemaHash ? { localSchemaHash } : {}),
       ...(localDetails.canWrite
-        ? {
-            localSchemaHash: localDetails.syncPayload.schemaHash,
-            syncPayload: localDetails.syncPayload,
-          }
+        ? { syncPayload: localDetails.syncPayload }
         : {}),
       ...(serverSchemaHash ? { serverSchemaHash } : {}),
       entries,
