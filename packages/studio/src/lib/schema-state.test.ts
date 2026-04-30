@@ -565,6 +565,46 @@ test("loadStudioSchemaState uses precomputedLocalSchemaHash so mismatch is detec
   assert.equal(state.canSync, false);
 });
 
+test("loadStudioSchemaState ignores whitespace-only precomputedLocalSchemaHash and falls back to browser-derived", async () => {
+  const api = createSchemaRouteApi(
+    async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            types: [],
+            schemaHash: "server-hash",
+            syncedAt: "2026-03-31T12:00:00.000Z",
+            project: "marketing-site",
+          },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+  );
+
+  const state = await loadStudioSchemaState({
+    config: createConfig(),
+    schemaApi: api,
+    capabilitiesApi: createCapabilitiesApi({
+      schema: { read: true, write: true },
+    }),
+    precomputedLocalSchemaHash: "   ",
+  });
+
+  assert.equal(state.status, "ready");
+  if (state.status !== "ready") {
+    throw new Error("Expected ready state.");
+  }
+  // Whitespace-only host value must not override the valid browser-derived
+  // hash, so the state still reports a real local hash and mismatch
+  // detection works against the server hash.
+  assert.notEqual(state.localSchemaHash, undefined);
+  assert.notEqual(state.localSchemaHash, "   ");
+  assert.equal(state.serverSchemaHash, "server-hash");
+});
+
 test("loadStudioSchemaState ignores precomputedLocalSchemaHash when it matches the server", async () => {
   const api = createSchemaRouteApi(
     async () =>

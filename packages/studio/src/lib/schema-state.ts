@@ -286,10 +286,18 @@ export async function loadStudioSchemaState(
     // enough to *detect* mismatch but not to *resolve* it via a sync from
     // the browser, which matches reality (sync requires the full authored
     // config and is owned by the host / CLI anyway).
+    //
+    // Trim before length-checking so a whitespace-only precomputed value
+    // does not override a valid browser-derived hash. This mirrors the
+    // normalization applied to `serverSchemaHash` so the two sides stay
+    // comparable; intentionally not adding `toLowerCase()` or strict hex
+    // validation here because those would be asymmetric with the server
+    // path and would mask producer bugs rather than expose them.
+    const precomputedLocalSchemaHashRaw = input.precomputedLocalSchemaHash;
     const precomputedLocalSchemaHash =
-      typeof input.precomputedLocalSchemaHash === "string" &&
-      input.precomputedLocalSchemaHash.length > 0
-        ? input.precomputedLocalSchemaHash
+      typeof precomputedLocalSchemaHashRaw === "string" &&
+      precomputedLocalSchemaHashRaw.trim().length > 0
+        ? precomputedLocalSchemaHashRaw.trim()
         : undefined;
     const browserDerivedLocalSchemaHash = localDetails.canWrite
       ? localDetails.syncPayload.schemaHash
