@@ -38,6 +38,7 @@ type BunBuildRuntime = {
     sourcemap: "none";
     minify: boolean;
     write: false;
+    define?: Record<string, string>;
   }) => Promise<BunBuildResult>;
 };
 
@@ -183,8 +184,11 @@ async function bundleRuntimeEntry(input: {
         target: "browser",
         splitting: false,
         sourcemap: "none",
-        minify: false,
+        minify: true,
         write: false,
+        define: {
+          "process.env.NODE_ENV": JSON.stringify("production"),
+        },
       }),
   );
 

@@ -196,6 +196,57 @@ test("buildStudioRuntimeArtifacts writes bundled JavaScript runtime entry", asyn
   });
 });
 
+test("buildStudioRuntimeArtifacts inlines production runtime environment", async () => {
+  await withTempDir("studio-runtime-", async (directory) => {
+    const sourceFile = join(directory, "app.ts");
+    const outDir = join(directory, "dist");
+
+    await writeFile(
+      sourceFile,
+      [
+        "export function mount(): string {",
+        "  if (process.env.NODE_ENV !== 'production') {",
+        "    return 'development-runtime';",
+        "  }",
+        "",
+        "  return 'production-runtime';",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const build = await buildStudioRuntimeArtifacts({
+      sourceFile,
+      outDir,
+      studioVersion: "1.2.3",
+      mode: "module",
+    });
+
+    const emittedSource = await readFile(build.entryPath, "utf8");
+
+    assert.equal(emittedSource.includes("process.env.NODE_ENV"), false);
+    assert.equal(emittedSource.includes("development-runtime"), false);
+    assert.equal(emittedSource.includes("production-runtime"), true);
+  });
+});
+
+test("buildStudioRuntimeArtifacts keeps the default browser runtime below the first-load size target", async () => {
+  await withTempDir("studio-runtime-real-", async (directory) => {
+    const build = await buildStudioRuntimeArtifacts({
+      outDir: join(directory, "dist"),
+      studioVersion: "1.2.3",
+      mode: "module",
+    });
+
+    const emittedSource = await readFile(build.entryPath, "utf8");
+
+    assert.equal(emittedSource.includes("typescript.js"), false);
+    assert.equal(emittedSource.includes("createProgram"), false);
+    assert.equal(Buffer.byteLength(emittedSource, "utf8") < 2_000_000, true);
+  });
+});
+
 test("buildStudioRuntimeArtifacts forces the bootstrap manifest to module mode", async () => {
   await withTempDir("studio-runtime-", async (directory) => {
     const sourceFile = join(directory, "app.ts");
