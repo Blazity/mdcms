@@ -521,6 +521,17 @@ Since the Studio is embedded in the user's app, the **actual React component** i
   that node; any accepted prop change updates node attrs immediately and
   re-renders the inline preview from the same local document state.
 
+**Collapse / expand:**
+
+Inline previews are full-fidelity renders of the host component, which can be tall (hero blocks, full-bleed sections, large tables). The editor exposes a collapse affordance so editors can fold blocks down to a one-line chip while keeping document context navigable.
+
+- Each MDX component node view chip exposes a collapse toggle alongside the existing chrome (drag handle, props, delete). Toggling collapses or expands only that block.
+- The editor toolbar exposes a single document-wide toggle that broadcasts a `collapsed` or `expanded` mode to every MDX component in the document; the toggle's label and icon reflect the most recent broadcast (`Collapse all` / `Expand all`). Per-block toggles continue to work after a broadcast and override it for the blocks they touch.
+- A collapsed node view hides the inline preview and the nested children editor, but does not unmount them. The editable region underneath stays mounted so the document model is unaffected and re-expanding restores the prior content unchanged.
+- A collapsed chip surfaces an inline summary of the block's props (e.g. `<Hero title="Welcome" tone="dark" />`) so editors can identify the block without expanding it. The collapsed chip omits the props summary when no props are set.
+- Collapse state is **ephemeral UI state**. It is held only in the editor's local state, never persists across reloads, never round-trips through the document model, and never appears in the serialized markdown/MDX. Two saves of the same document must produce byte-identical body output regardless of which blocks were collapsed at save time.
+- Collapse and expand remain available in read-only and forbidden modes. The toggle does not modify the document — only its local presentation — so it is not gated by write permission.
+
 **Serialization:**
 When the document is saved, the `MdxComponent` extension's `markdown.render` handler (§10.1.1) serializes each component node back to MDX syntax. Props are serialized as JSX attributes. Children (the content hole) are recursively serialized as markdown within the opening/closing tags. This MDX string is what gets stored in the `body` column of the database.
 
