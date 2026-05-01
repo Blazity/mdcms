@@ -19,4 +19,5 @@ test("installedModules includes seed modules", () => {
 
   assert.equal(ids.has("core.system"), true);
   assert.equal(ids.has("domain.content"), true);
+  assert.equal(ids.has("core.ai"), true);
 });

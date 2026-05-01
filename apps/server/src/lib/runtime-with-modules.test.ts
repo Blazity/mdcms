@@ -147,6 +147,7 @@ test("createServerRequestHandlerWithModules loads bundled modules when APP_VERSI
 
   try {
     assert.deepEqual(moduleLoadReport.loadedModuleIds, [
+      "core.ai",
       "core.system",
       "domain.content",
     ]);

@@ -1,5 +1,6 @@
 import type { MdcmsModulePackage } from "@mdcms/shared";
 
+import { coreAiModule } from "../core.ai/src/index.js";
 import { coreSystemModule } from "../core.system/src/index.js";
 import { domainContentModule } from "../domain.content/src/index.js";
 
@@ -8,6 +9,7 @@ type LocalModulePackage = MdcmsModulePackage<unknown, Record<string, unknown>>;
 const localModules: LocalModulePackage[] = [
   domainContentModule,
   coreSystemModule,
+  coreAiModule,
 ];
 
 /**
