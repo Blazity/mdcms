@@ -166,3 +166,85 @@ test("MdxComponentNodeFrame applies unselected styles when not selected", () => 
   assert.match(markup, /border-l-primary\/20/);
   assert.doesNotMatch(markup, /bg-accent-subtle/);
 });
+
+test("MdxComponentNodeFrame renders collapse toggle when handler is provided", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MdxComponentNodeFrame, {
+      componentName: "Hero",
+      isVoid: true,
+      propsSummary: 'title="Welcome"',
+      previewState: "ready",
+      onToggleCollapsed: () => {},
+    }),
+  );
+
+  assert.match(markup, /aria-label="Collapse Hero"/);
+  assert.match(markup, /aria-expanded="true"/);
+  assert.match(markup, /data-mdcms-mdx-component-collapsed="false"/);
+});
+
+test("MdxComponentNodeFrame omits collapse toggle when handler is not provided", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MdxComponentNodeFrame, {
+      componentName: "Hero",
+      isVoid: true,
+      propsSummary: "",
+      previewState: "ready",
+    }),
+  );
+
+  assert.doesNotMatch(markup, /aria-label="Collapse Hero"/);
+  assert.doesNotMatch(markup, /aria-label="Expand Hero"/);
+});
+
+test("MdxComponentNodeFrame collapsed wrapper hides preview and content but keeps them mounted", () => {
+  const markup = renderToStaticMarkup(
+    createElement(
+      MdxComponentNodeFrame,
+      {
+        componentName: "Hero",
+        isVoid: false,
+        propsSummary: 'title="Welcome"',
+        previewState: "ready",
+        collapsed: true,
+        onToggleCollapsed: () => {},
+        previewSurface: createElement("div", { "data-test-preview": "ready" }),
+      },
+      createElement("div", { "data-test-slot": "children" }, "Body"),
+    ),
+  );
+
+  assert.match(markup, /data-mdcms-mdx-component-collapsed="true"/);
+  assert.match(markup, /aria-label="Expand Hero"/);
+  assert.match(markup, /aria-expanded="false"/);
+
+  // The preview surface and the editable child slot remain in the DOM —
+  // ProseMirror tracks the editable region through the live node, so
+  // unmounting it on collapse would break re-expansion. Hiding via a
+  // `hidden` Tailwind utility on the wrapper is what we expect instead.
+  assert.match(markup, /data-test-preview="ready"/);
+  assert.match(markup, /data-test-slot="children"/);
+  assert.match(markup, /class="hidden"/);
+
+  // The collapsed chip surfaces the props summary inline so users can
+  // identify the block without expanding it.
+  assert.match(markup, /data-mdcms-mdx-collapsed-props="Hero"/);
+  assert.match(markup, /title=&quot;Welcome&quot;/);
+});
+
+test("MdxComponentNodeFrame collapsed chip omits props summary when no props are set", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MdxComponentNodeFrame, {
+      componentName: "Spacer",
+      isVoid: true,
+      propsSummary: "No props set yet",
+      previewState: "empty",
+      collapsed: true,
+      onToggleCollapsed: () => {},
+    }),
+  );
+
+  assert.match(markup, /data-mdcms-mdx-component-collapsed="true"/);
+  assert.doesNotMatch(markup, /data-mdcms-mdx-collapsed-props/);
+  assert.doesNotMatch(markup, /No props set yet/);
+});
