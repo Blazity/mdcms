@@ -7,9 +7,17 @@ import { z } from "zod";
 export interface PublishedPackage {
   name: string;
   root: string;
+  // Path prefixes (relative to the package root, e.g. `src/lib/runtime-ui`)
+  // that ship inside the package's `dist/` but are not reachable through
+  // any of its published `exports`. Edits to these paths don't affect what
+  // npm consumers can import, so they don't require a changeset. Sourced
+  // from the package's own `mdcms.changesetGate.unpublishedSources`.
+  unpublishedSources: string[];
 }
 
-export interface ChangedPackage extends PublishedPackage {
+export interface ChangedPackage {
+  name: string;
+  root: string;
   files: string[];
 }
 
@@ -37,6 +45,12 @@ const packageJsonSchema = z
   })
   .passthrough();
 
+const changesetGateConfigSchema = z
+  .object({
+    unpublishedSources: z.array(z.string()).optional(),
+  })
+  .passthrough();
+
 const changesetConfigSchema = z
   .object({
     ignore: z.array(z.string()).optional(),
@@ -45,6 +59,9 @@ const changesetConfigSchema = z
 
 type PackageJson = z.infer<typeof packageJsonSchema>;
 type ChangesetConfig = z.infer<typeof changesetConfigSchema>;
+type ChangesetGateConfig = z.infer<typeof changesetGateConfigSchema>;
+
+const CHANGESET_GATE_CONFIG_FILENAME = ".changeset-gate.json";
 
 interface CliOptions {
   base: string;
@@ -80,18 +97,49 @@ export function discoverPublishedPackages(rootDir: string): PublishedPackage[] {
         return [];
       }
 
-      return [{ name: packageJson.name, root: packageRoot }];
+      const unpublishedSources = readUnpublishedSources(rootDir, packageRoot);
+
+      return [
+        {
+          name: packageJson.name,
+          root: packageRoot,
+          unpublishedSources,
+        },
+      ];
     })
     .sort((left, right) => left.root.localeCompare(right.root));
+}
+
+function readUnpublishedSources(
+  rootDir: string,
+  packageRoot: string,
+): string[] {
+  const configPath = join(rootDir, packageRoot, CHANGESET_GATE_CONFIG_FILENAME);
+
+  if (!existsSync(configPath)) {
+    return [];
+  }
+
+  const config = readChangesetGateConfig(
+    configPath,
+    `${packageRoot}/${CHANGESET_GATE_CONFIG_FILENAME}`,
+  );
+
+  return (config.unpublishedSources ?? []).map(normalizePath);
 }
 
 export function evaluateChangesetGate(input: GateInput): GateResult {
   const changedFiles = input.changedFiles.map(normalizePath).filter(Boolean);
   const changedPackages = input.packages
     .map((publishedPackage) => ({
-      ...publishedPackage,
+      name: publishedPackage.name,
+      root: publishedPackage.root,
       files: changedFiles.filter((file) =>
-        isPublishedSourceChange(file, publishedPackage.root),
+        isPublishedSourceChange(
+          file,
+          publishedPackage.root,
+          publishedPackage.unpublishedSources,
+        ),
       ),
     }))
     .filter((publishedPackage) => publishedPackage.files.length > 0);
@@ -156,11 +204,28 @@ function packageRootExists(rootDir: string, packageRoot: string): boolean {
   return existsSync(join(rootDir, packageRoot, "package.json"));
 }
 
-function isPublishedSourceChange(file: string, packageRoot: string): boolean {
-  return (
-    file === `${packageRoot}/package.json` ||
-    file.startsWith(`${packageRoot}/src/`)
-  );
+function isPublishedSourceChange(
+  file: string,
+  packageRoot: string,
+  unpublishedSources: string[],
+): boolean {
+  if (file === `${packageRoot}/package.json`) {
+    return true;
+  }
+
+  if (!file.startsWith(`${packageRoot}/src/`)) {
+    return false;
+  }
+
+  const relative = file.slice(packageRoot.length + 1);
+
+  for (const exclusion of unpublishedSources) {
+    if (relative === exclusion || relative.startsWith(`${exclusion}/`)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function isChangesetFile(file: string): boolean {
@@ -177,6 +242,13 @@ function readPackageJson(path: string, label: string): PackageJson {
 
 function readChangesetConfig(path: string, label: string): ChangesetConfig {
   return readValidatedJson(path, label, changesetConfigSchema);
+}
+
+function readChangesetGateConfig(
+  path: string,
+  label: string,
+): ChangesetGateConfig {
+  return readValidatedJson(path, label, changesetGateConfigSchema);
 }
 
 function readValidatedJson<T>(
@@ -268,6 +340,10 @@ function formatFailure(changedPackages: ChangedPackage[]): string {
     details,
     "",
     "Add a changeset with `bun run changeset` before merging this PR.",
+    "If the changed paths are runtime-only and never reach npm consumers,",
+    "list them under `unpublishedSources` in the package's",
+    `${CHANGESET_GATE_CONFIG_FILENAME} (sibling to package.json) instead of`,
+    "cutting a release.",
   ].join("\n");
 }
 

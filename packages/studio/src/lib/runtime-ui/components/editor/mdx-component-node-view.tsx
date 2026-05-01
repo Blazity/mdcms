@@ -12,10 +12,17 @@ import type { StudioMountContext } from "@mdcms/shared";
 import type { ReactNodeViewProps } from "@tiptap/react";
 import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
 
-import { GripVertical, Settings, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  GripVertical,
+  Settings,
+  Trash2,
+} from "lucide-react";
 
 import { isMdxExpressionValue } from "../../../mdx-component-extension.js";
 import { cn } from "../../lib/utils.js";
+import { useMdxComponentCollapseSnapshot } from "./mdx-component-collapse.js";
 
 export function formatMdxComponentPropsSummary(
   props: Record<string, unknown> | undefined,
@@ -52,14 +59,20 @@ export function MdxComponentNodeFrame(props: {
   previewSurface?: ReactNode;
   readOnly?: boolean;
   forbidden?: boolean;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
   onEditProps?: () => void;
   onDelete?: () => void;
   children?: ReactNode;
 }) {
+  const collapsed = props.collapsed === true;
+  const hasProps = props.propsSummary !== "No props set yet";
+
   return (
     <div
       data-mdcms-mdx-component-frame={props.componentName}
       data-mdcms-mdx-component-kind={props.isVoid ? "void" : "wrapper"}
+      data-mdcms-mdx-component-collapsed={collapsed ? "true" : "false"}
       className={cn(
         "group/mdx-block relative my-4 rounded-md border-l-[3px] pl-3 transition-colors duration-150",
         props.selected
@@ -98,19 +111,78 @@ export function MdxComponentNodeFrame(props: {
       {/* Chip row — the `<Name />` label and the action buttons are chrome,
           never editable document content. */}
       <div
-        className="flex items-center justify-between py-1.5"
+        className={cn(
+          "flex items-center justify-between gap-3 py-1.5",
+          collapsed ? "min-w-0" : undefined,
+        )}
         contentEditable={false}
         suppressContentEditableWarning
       >
-        <span className="text-mono-label select-none text-foreground-muted">
-          {"<"}
-          {props.componentName}
-          {" />"}
-        </span>
+        <div className="flex min-w-0 items-center gap-1.5 text-mono-label select-none text-foreground-muted">
+          {/* Collapse toggle is the primary affordance for "show less" on
+              tall components. We always show it when the block is collapsed
+              (otherwise the user has no visible way back) and on
+              hover/selection when expanded, matching the other chrome
+              actions. */}
+          {props.onToggleCollapsed ? (
+            <button
+              type="button"
+              onClick={props.onToggleCollapsed}
+              aria-label={
+                collapsed
+                  ? `Expand ${props.componentName}`
+                  : `Collapse ${props.componentName}`
+              }
+              aria-expanded={!collapsed}
+              title={collapsed ? "Expand component" : "Collapse component"}
+              className={cn(
+                "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-foreground-muted hover:bg-background-subtle hover:text-foreground",
+                "transition-opacity duration-150",
+                collapsed || props.selected
+                  ? "opacity-100"
+                  : "opacity-60 group-hover/mdx-block:opacity-100",
+              )}
+            >
+              {collapsed ? (
+                <ChevronRight className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5" />
+              )}
+            </button>
+          ) : null}
+          {/* When expanded, the chip reads as a contiguous `<Name />` token.
+              When collapsed, an inline props summary slots in between the
+              tag name and its self-closing `/>` so the chip mirrors the
+              underlying MDX (e.g. `<Hero title="Welcome" />`) and gives
+              the user enough context to identify the block without having
+              to expand it. */}
+          {collapsed && hasProps ? (
+            <span className="flex min-w-0 items-baseline gap-1.5">
+              <span className="shrink-0">
+                {"<"}
+                {props.componentName}
+              </span>
+              <span
+                data-mdcms-mdx-collapsed-props={props.componentName}
+                className="truncate text-foreground-muted/70"
+                title={props.propsSummary}
+              >
+                {props.propsSummary}
+              </span>
+              <span className="shrink-0">{" />"}</span>
+            </span>
+          ) : (
+            <span>
+              {"<"}
+              {props.componentName}
+              {" />"}
+            </span>
+          )}
+        </div>
 
         <div
           className={cn(
-            "flex items-center gap-1 transition-opacity duration-150",
+            "flex shrink-0 items-center gap-1 transition-opacity duration-150",
             props.selected
               ? "opacity-100"
               : "opacity-0 group-hover/mdx-block:opacity-100",
@@ -146,8 +218,12 @@ export function MdxComponentNodeFrame(props: {
         </div>
       </div>
 
-      {/* Content area */}
-      <div className="pb-3">
+      {/* Content area. When collapsed we hide the preview + children via
+          `display: none` rather than unmounting them: ProseMirror tracks the
+          editable region through the live DOM node, and unmounting the
+          NodeViewContent slot would break that link the moment the user
+          expands again. */}
+      <div className={collapsed ? "hidden" : "pb-3"}>
         {/* Preview surface — React-rendered component output. Must be
             contentEditable=false or the browser lets the caret land inside
             the rendered DOM (headings, labels, table cells) and corrupts the
@@ -240,6 +316,34 @@ export function MdxComponentNodeView(
   const [previewState, setPreviewState] = useState<"ready" | "empty" | "error">(
     "empty",
   );
+  const collapseSnapshot = useMdxComponentCollapseSnapshot();
+  // Seed `collapsed` from the snapshot so node views mounted *after* a
+  // global broadcast (e.g. inserting a new component while everything is
+  // already collapsed) start in the announced mode. Pairing that with
+  // `lastSyncedGenerationRef` initialized to the current generation makes
+  // the post-mount effect a no-op for the same generation, so it only
+  // fires on subsequent broadcasts.
+  const [collapsed, setCollapsed] = useState(
+    () => collapseSnapshot.globalState === "collapsed",
+  );
+  const lastSyncedGenerationRef = useRef(collapseSnapshot.generation);
+
+  // The toolbar's collapse-all/expand-all toggle bumps `generation` on the
+  // shared snapshot. Each node view watches the bump and snaps its local
+  // state to the new global mode, which means individual blocks the user
+  // already toggled get reset to whatever the global broadcast says.
+  useEffect(() => {
+    if (collapseSnapshot.generation === lastSyncedGenerationRef.current) {
+      return;
+    }
+    lastSyncedGenerationRef.current = collapseSnapshot.generation;
+    if (collapseSnapshot.globalState === "collapsed") {
+      setCollapsed(true);
+    } else if (collapseSnapshot.globalState === "expanded") {
+      setCollapsed(false);
+    }
+  }, [collapseSnapshot.generation, collapseSnapshot.globalState]);
+
   const mdxProps =
     (props.node.attrs.props as Record<string, unknown> | undefined) ?? {};
   const serializedPreviewProps = JSON.stringify(mdxProps);
@@ -303,6 +407,10 @@ export function MdxComponentNodeView(
     props.deleteNode();
   };
 
+  const handleToggleCollapsed = () => {
+    setCollapsed((current) => !current);
+  };
+
   const isEditable = !props.readOnly && !props.forbidden;
 
   return (
@@ -313,6 +421,8 @@ export function MdxComponentNodeView(
         propsSummary={propsSummary}
         previewState={previewState}
         selected={props.selected}
+        collapsed={collapsed}
+        onToggleCollapsed={handleToggleCollapsed}
         onEditProps={isEditable ? handleEditProps : undefined}
         onDelete={isEditable ? handleDelete : undefined}
         previewSurface={

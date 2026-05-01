@@ -30,6 +30,8 @@ import {
 
 import {
   Bold,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Code,
   CornerDownLeft,
   ExternalLink,
@@ -55,6 +57,10 @@ import { createEditorExtensions } from "../../../editor-extensions.js";
 import { extractMarkdownFromEditor } from "../../../markdown-pipeline.js";
 import { MdxComponentExtension } from "../../../mdx-component-extension.js";
 import { CodeBlockWithNodeView } from "./code-block-node-view.js";
+import {
+  MdxComponentCollapseProvider,
+  useMdxComponentCollapseController,
+} from "./mdx-component-collapse.js";
 import { createEditorToolbarLayout } from "./editor-toolbar.js";
 import { MdxComponentNodeView } from "./mdx-component-node-view.js";
 import { createMdxComponentInsertContent } from "./mdx-component-catalog.js";
@@ -199,6 +205,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
     const toolbar = createEditorToolbarLayout();
     const catalogComponents = context?.mdx?.catalog.components ?? [];
     const isEditorReadOnly = readOnly || forbidden;
+    const collapseController = useMdxComponentCollapseController();
     const [pickerSource, setPickerSource] = useState<
       "toolbar" | "slash" | null
     >(null);
@@ -1181,6 +1188,38 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
                     {renderToolbarItem(item.id)}
                   </Button>
                 ))}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  data-mdcms-mdx-collapse-all={
+                    collapseController.snapshot.globalState ?? "expanded"
+                  }
+                  onClick={() => collapseController.toggleGlobalCollapse()}
+                  title={
+                    collapseController.snapshot.globalState === "collapsed"
+                      ? "Expand all components"
+                      : "Collapse all components"
+                  }
+                  aria-label={
+                    collapseController.snapshot.globalState === "collapsed"
+                      ? "Expand all components"
+                      : "Collapse all components"
+                  }
+                  className="ml-auto text-foreground-muted hover:text-foreground"
+                >
+                  {collapseController.snapshot.globalState === "collapsed" ? (
+                    <>
+                      <ChevronsUpDown className="h-4 w-4" />
+                      <span>Expand all</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronsDownUp className="h-4 w-4" />
+                      <span>Collapse all</span>
+                    </>
+                  )}
+                </Button>
               </div>
             ) : null}
 
@@ -1200,7 +1239,11 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           </div>
 
           <div className="bg-transparent">
-            <EditorContent editor={editor} />
+            <MdxComponentCollapseProvider
+              snapshot={collapseController.snapshot}
+            >
+              <EditorContent editor={editor} />
+            </MdxComponentCollapseProvider>
           </div>
         </div>
 
