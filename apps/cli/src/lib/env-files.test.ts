@@ -6,6 +6,7 @@ import { test } from "node:test";
 
 import { createConsoleLogger, type CliPreflightHook } from "@mdcms/shared";
 
+import { loadCliEnvFiles } from "./env-files.js";
 import { runMdcmsCli, type CliCommand } from "./framework.js";
 import type { CliRuntimeContextWithModules } from "./runtime-with-modules.js";
 
@@ -355,5 +356,34 @@ test("runMdcmsCli warns and continues when an env file cannot be loaded", async 
   } finally {
     await cleanup();
     restoreEnv(snapshot);
+  }
+});
+
+test("loadCliEnvFiles accepts dotenv-compatible multiline quoted values", async () => {
+  const { projectRoot, cleanup } = await createProject();
+  try {
+    await writeFile(
+      join(projectRoot, ".env"),
+      [
+        'TEST_MDCMS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----',
+        "line-2",
+        '-----END PRIVATE KEY-----"',
+        "TEST_MDCMS_PROJECT=multiline-project",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const env: NodeJS.ProcessEnv = {};
+    const result = await loadCliEnvFiles({ cwd: projectRoot, env });
+
+    assert.deepEqual(result.warnings, []);
+    assert.equal(
+      env.TEST_MDCMS_PRIVATE_KEY,
+      "-----BEGIN PRIVATE KEY-----\nline-2\n-----END PRIVATE KEY-----",
+    );
+    assert.equal(env.TEST_MDCMS_PROJECT, "multiline-project");
+  } finally {
+    await cleanup();
   }
 });

@@ -45,25 +45,6 @@ function formatUnknownError(error: unknown): string {
   return "Unknown error";
 }
 
-function validateEnvFileSyntax(filePath: string, content: string): void {
-  const lines = content.split(/\r?\n/);
-
-  lines.forEach((line, index) => {
-    const trimmed = line.trim();
-    if (trimmed.length === 0 || trimmed.startsWith("#")) {
-      return;
-    }
-
-    const candidate = trimmed.startsWith("export ")
-      ? trimmed.slice("export ".length).trimStart()
-      : trimmed;
-
-    if (!/^[A-Za-z_][A-Za-z0-9_.-]*\s*=/.test(candidate)) {
-      throw new Error(`Invalid env assignment at ${filePath}:${index + 1}.`);
-    }
-  });
-}
-
 export async function loadCliEnvFiles(
   options: LoadCliEnvFilesOptions,
 ): Promise<LoadCliEnvFilesResult> {
@@ -109,7 +90,6 @@ export async function loadCliEnvFiles(
     }
 
     try {
-      validateEnvFileSyntax(filePath, content);
       const parsed = parseDotenv(content);
       for (const [key, value] of Object.entries(parsed)) {
         if (!protectedKeys.has(key)) {
