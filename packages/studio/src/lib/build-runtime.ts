@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -29,6 +30,28 @@ type BunBuildOutput = {
   text: () => Promise<string>;
 };
 
+type BunBuildOnResolveArgs = {
+  path: string;
+};
+
+type BunBuildOnResolveResult = {
+  path: string;
+};
+
+type BunBuildPluginBuilder = {
+  onResolve: (
+    options: { filter: RegExp },
+    callback: (
+      args: BunBuildOnResolveArgs,
+    ) => BunBuildOnResolveResult | undefined,
+  ) => void;
+};
+
+type BunBuildPlugin = {
+  name: string;
+  setup: (build: BunBuildPluginBuilder) => void;
+};
+
 type BunBuildRuntime = {
   build: (options: {
     entrypoints: string[];
@@ -39,6 +62,7 @@ type BunBuildRuntime = {
     minify: boolean;
     write: false;
     define?: Record<string, string>;
+    plugins?: BunBuildPlugin[];
   }) => Promise<BunBuildResult>;
 };
 
@@ -152,6 +176,43 @@ function formatBuildErrorDetails(logs: readonly unknown[] | undefined): string {
     .join("; ");
 }
 
+function createWorkspaceSourceAliasPlugin(input: {
+  projectRoot: string;
+}): BunBuildPlugin {
+  const sharedPackageRoot = resolve(input.projectRoot, "../shared");
+  const sharedSourceExports = new Map([
+    ["@mdcms/shared", join(sharedPackageRoot, "src/index.ts")],
+    ["@mdcms/shared/mdx", join(sharedPackageRoot, "src/lib/mdx/index.ts")],
+    [
+      "@mdcms/shared/mdx/auto-form",
+      join(sharedPackageRoot, "src/lib/mdx/auto-form.ts"),
+    ],
+    [
+      "@mdcms/shared/action-catalog-contract",
+      join(sharedPackageRoot, "src/lib/contracts/action-catalog-contract.ts"),
+    ],
+    [
+      "@mdcms/shared/server",
+      join(sharedPackageRoot, "src/lib/contracts/schema-hash.ts"),
+    ],
+  ]);
+
+  return {
+    name: "mdcms-workspace-source-aliases",
+    setup(build) {
+      build.onResolve({ filter: /^@mdcms\/shared(?:\/.*)?$/ }, (args) => {
+        const sourcePath = sharedSourceExports.get(args.path);
+
+        if (!sourcePath || !existsSync(sourcePath)) {
+          return undefined;
+        }
+
+        return { path: sourcePath };
+      });
+    },
+  };
+}
+
 async function bundleRuntimeEntry(input: {
   sourceFile: string;
   projectRoot: string;
@@ -167,6 +228,13 @@ async function bundleRuntimeEntry(input: {
     define: {
       "process.env.NODE_ENV": JSON.stringify("production"),
     },
+    // Bun.build does not always resolve workspace packages from CI's
+    // node_modules layout, so use local first-party sources when available.
+    plugins: [
+      createWorkspaceSourceAliasPlugin({
+        projectRoot: input.projectRoot,
+      }),
+    ],
   });
 
   if (!buildResult.success) {

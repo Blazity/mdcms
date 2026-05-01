@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -28,23 +28,6 @@ async function withTempDir<T>(
   run: (directory: string) => Promise<T>,
 ): Promise<T> {
   const directory = await mkdtemp(join(tmpdir(), prefix));
-
-  try {
-    return await run(directory);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-}
-
-async function withStudioPackageTempDir<T>(
-  prefix: string,
-  run: (directory: string) => Promise<T>,
-): Promise<T> {
-  // Bun anchors workspace package resolution to the spawned script location in
-  // CI, so default-runtime bundle checks need a script inside this package.
-  const parentDirectory = join(studioPackageRoot, "tmp");
-  await mkdir(parentDirectory, { recursive: true });
-  const directory = await mkdtemp(join(parentDirectory, prefix));
 
   try {
     return await run(directory);
@@ -296,45 +279,43 @@ test("buildStudioRuntimeArtifacts inlines production runtime environment", async
 test("buildStudioRuntimeArtifacts keeps the default browser runtime below the first-load size target", async () => {
   await withTempDir("studio-runtime-real-", async (directory) => {
     const outDir = join(directory, "dist");
-    await withStudioPackageTempDir("runtime-size-", async (scriptDirectory) => {
-      const scriptFile = join(scriptDirectory, "default-runtime-size-check.ts");
+    const scriptFile = join(directory, "default-runtime-size-check.ts");
 
-      await writeFile(
-        scriptFile,
-        [
-          `import { readFile } from "node:fs/promises";`,
-          `import { buildStudioRuntimeArtifacts } from ${JSON.stringify(
-            buildRuntimeModuleUrl,
-          )};`,
-          "",
-          "const build = await buildStudioRuntimeArtifacts({",
-          `  outDir: ${JSON.stringify(outDir)},`,
-          `  studioVersion: "1.2.3",`,
-          `  mode: "module",`,
-          "});",
-          "",
-          `const emittedSource = await readFile(build.entryPath, "utf8");`,
-          "console.log(JSON.stringify({",
-          `  hasTypeScriptRuntime: emittedSource.includes("typescript.js"),`,
-          `  hasCreateProgram: emittedSource.includes("createProgram"),`,
-          '  underSizeTarget: Buffer.byteLength(emittedSource, "utf8") < 2_000_000,',
-          "}));",
-          "",
-        ].join("\n"),
-        "utf8",
-      );
+    await writeFile(
+      scriptFile,
+      [
+        `import { readFile } from "node:fs/promises";`,
+        `import { buildStudioRuntimeArtifacts } from ${JSON.stringify(
+          buildRuntimeModuleUrl,
+        )};`,
+        "",
+        "const build = await buildStudioRuntimeArtifacts({",
+        `  outDir: ${JSON.stringify(outDir)},`,
+        `  studioVersion: "1.2.3",`,
+        `  mode: "module",`,
+        "});",
+        "",
+        `const emittedSource = await readFile(build.entryPath, "utf8");`,
+        "console.log(JSON.stringify({",
+        `  hasTypeScriptRuntime: emittedSource.includes("typescript.js"),`,
+        `  hasCreateProgram: emittedSource.includes("createProgram"),`,
+        '  underSizeTarget: Buffer.byteLength(emittedSource, "utf8") < 2_000_000,',
+        "}));",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
 
-      const result = await runBunJsonScript<{
-        hasTypeScriptRuntime?: boolean;
-        hasCreateProgram?: boolean;
-        underSizeTarget?: boolean;
-      }>({ scriptFile, cwd: workspaceRoot });
+    const result = await runBunJsonScript<{
+      hasTypeScriptRuntime?: boolean;
+      hasCreateProgram?: boolean;
+      underSizeTarget?: boolean;
+    }>({ scriptFile, cwd: workspaceRoot });
 
-      assert.deepEqual(result, {
-        hasTypeScriptRuntime: false,
-        hasCreateProgram: false,
-        underSizeTarget: true,
-      });
+    assert.deepEqual(result, {
+      hasTypeScriptRuntime: false,
+      hasCreateProgram: false,
+      underSizeTarget: true,
     });
   });
 });
