@@ -11,6 +11,7 @@
     "integration:content": "bash scripts/content-api-integration-check.sh",
     "ci:required": "bun run quality && bun run unit && bun run integration",
     "check": "bun nx run-many -t build typecheck",
+    "changeset:check": "bun scripts/check-published-package-changeset.ts",
     "dev": "bun nx run-many -t dev --projects studio,server,studio-example",
     "compose:dev": "docker compose -f docker-compose.dev.yml up",
     "compose:dev:down": "docker compose -f docker-compose.dev.yml down",
@@ -33,7 +34,8 @@
     "nx": "22.5.1",
     "prettier": "~3.6.2",
     "tslib": "^2.3.0",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "zod": "^4.3.6"
   },
   "workspaces": [
     "apps/*",
