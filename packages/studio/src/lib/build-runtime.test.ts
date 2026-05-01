@@ -20,31 +20,7 @@ const studioPackageRoot = resolve(
 const buildRuntimeModuleUrl = pathToFileURL(
   join(studioPackageRoot, "src/lib/build-runtime.ts"),
 ).href;
-const defaultRuntimeEntry = join(studioPackageRoot, "src/lib/remote-module.ts");
 const execFileAsync = promisify(execFile);
-
-type BunBuildResult = {
-  success: boolean;
-  outputs?: readonly {
-    kind: string;
-    text: () => Promise<string>;
-  }[];
-  logs?: readonly unknown[];
-};
-
-declare const Bun: {
-  build(options: {
-    entrypoints: string[];
-    format: "esm";
-    target: "browser";
-    splitting: boolean;
-    sourcemap: "none";
-    minify: boolean;
-    write: false;
-    conditions?: string[];
-    define?: Record<string, string>;
-  }): Promise<BunBuildResult>;
-};
 
 async function withTempDir<T>(
   prefix: string,
@@ -57,6 +33,20 @@ async function withTempDir<T>(
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+}
+
+async function runBunJsonScript<T>(input: {
+  scriptFile: string;
+  cwd: string;
+}): Promise<T> {
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    ["--conditions", "@mdcms/source", input.scriptFile],
+    { cwd: input.cwd },
+  );
+  const [lastLine] = stdout.trim().split(/\r?\n/).slice(-1);
+  assert.ok(lastLine, `Expected JSON output from ${input.scriptFile}.`);
+  return JSON.parse(lastLine) as T;
 }
 
 test("buildStudioRuntimeArtifacts is deterministic for identical source bytes", async () => {
@@ -181,17 +171,11 @@ test("buildStudioRuntimeArtifacts resolves the default project root from the pac
       "utf8",
     );
 
-    const { stdout } = await execFileAsync(
-      process.execPath,
-      ["--conditions", "@mdcms/source", scriptFile],
-      { cwd: directory },
-    );
-    const [lastLine] = stdout.trim().split(/\r?\n/).slice(-1);
-    const result = JSON.parse(lastLine ?? "{}") as {
+    const result = await runBunJsonScript<{
       entryInOutDir?: boolean;
       entryHasContent?: boolean;
       cssHasBackground?: boolean;
-    };
+    }>({ scriptFile, cwd: directory });
 
     assert.deepEqual(result, {
       entryInOutDir: true,
@@ -292,35 +276,47 @@ test("buildStudioRuntimeArtifacts inlines production runtime environment", async
 });
 
 test("buildStudioRuntimeArtifacts keeps the default browser runtime below the first-load size target", async () => {
-  const result = await Bun.build({
-    entrypoints: [defaultRuntimeEntry],
-    format: "esm",
-    target: "browser",
-    splitting: false,
-    sourcemap: "none",
-    minify: true,
-    write: false,
-    conditions: ["@mdcms/source"],
-    define: {
-      "process.env.NODE_ENV": JSON.stringify("production"),
-    },
+  await withTempDir("studio-runtime-real-", async (directory) => {
+    const outDir = join(directory, "dist");
+    const scriptFile = join(directory, "default-runtime-size-check.ts");
+
+    await writeFile(
+      scriptFile,
+      [
+        `import { readFile } from "node:fs/promises";`,
+        `import { buildStudioRuntimeArtifacts } from ${JSON.stringify(
+          buildRuntimeModuleUrl,
+        )};`,
+        "",
+        "const build = await buildStudioRuntimeArtifacts({",
+        `  outDir: ${JSON.stringify(outDir)},`,
+        `  studioVersion: "1.2.3",`,
+        `  mode: "module",`,
+        "});",
+        "",
+        `const emittedSource = await readFile(build.entryPath, "utf8");`,
+        "console.log(JSON.stringify({",
+        `  hasTypeScriptRuntime: emittedSource.includes("typescript.js"),`,
+        `  hasCreateProgram: emittedSource.includes("createProgram"),`,
+        '  underSizeTarget: Buffer.byteLength(emittedSource, "utf8") < 2_000_000,',
+        "}));",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await runBunJsonScript<{
+      hasTypeScriptRuntime?: boolean;
+      hasCreateProgram?: boolean;
+      underSizeTarget?: boolean;
+    }>({ scriptFile, cwd: directory });
+
+    assert.deepEqual(result, {
+      hasTypeScriptRuntime: false,
+      hasCreateProgram: false,
+      underSizeTarget: true,
+    });
   });
-  const entryOutput =
-    result.outputs?.find((output) => output.kind === "entry-point") ??
-    result.outputs?.[0];
-
-  assert.equal(
-    result.success,
-    true,
-    JSON.stringify(result.logs ?? [], null, 2),
-  );
-  assert.ok(entryOutput);
-
-  const emittedSource = await entryOutput.text();
-
-  assert.equal(emittedSource.includes("typescript.js"), false);
-  assert.equal(emittedSource.includes("createProgram"), false);
-  assert.equal(Buffer.byteLength(emittedSource, "utf8") < 2_000_000, true);
 });
 
 test("buildStudioRuntimeArtifacts forces the bootstrap manifest to module mode", async () => {
