@@ -38,6 +38,7 @@ type BunBuildRuntime = {
     sourcemap: "none";
     minify: boolean;
     write: false;
+    root?: string;
     define?: Record<string, string>;
   }) => Promise<BunBuildResult>;
 };
@@ -127,25 +128,6 @@ function resolveDefaultStudioProjectRoot(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 }
 
-async function withCurrentWorkingDirectory<T>(
-  cwd: string,
-  run: () => Promise<T>,
-): Promise<T> {
-  const originalCwd = process.cwd();
-
-  if (originalCwd === cwd) {
-    return await run();
-  }
-
-  process.chdir(cwd);
-
-  try {
-    return await run();
-  } finally {
-    process.chdir(originalCwd);
-  }
-}
-
 function formatBuildErrorDetails(logs: readonly unknown[] | undefined): string {
   if (!logs || logs.length === 0) {
     return "Unknown build error.";
@@ -175,22 +157,19 @@ async function bundleRuntimeEntry(input: {
   sourceFile: string;
   projectRoot: string;
 }): Promise<string> {
-  const buildResult = await withCurrentWorkingDirectory(
-    input.projectRoot,
-    async () =>
-      await Bun.build({
-        entrypoints: [input.sourceFile],
-        format: "esm",
-        target: "browser",
-        splitting: false,
-        sourcemap: "none",
-        minify: true,
-        write: false,
-        define: {
-          "process.env.NODE_ENV": JSON.stringify("production"),
-        },
-      }),
-  );
+  const buildResult = await Bun.build({
+    entrypoints: [input.sourceFile],
+    format: "esm",
+    target: "browser",
+    splitting: false,
+    sourcemap: "none",
+    minify: true,
+    write: false,
+    root: input.projectRoot,
+    define: {
+      "process.env.NODE_ENV": JSON.stringify("production"),
+    },
+  });
 
   if (!buildResult.success) {
     throw new Error(
