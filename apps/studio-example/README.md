@@ -58,6 +58,8 @@ CLI env-file order, highest precedence first:
 3. `.env.{NODE_ENV}`
 4. `.env`
 
+`NODE_ENV` is only the dotenv file selector here. It controls names such as `.env.production`; it does not select the MDCMS content environment. Use `MDCMS_ENVIRONMENT` or the config `environment` field for that.
+
 Use `--no-env-file` or `MDCMS_DOTENV=0` when CI should rely only on explicitly exported environment variables.
 
 ## Documentation

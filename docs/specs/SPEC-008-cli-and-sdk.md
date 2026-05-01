@@ -117,7 +117,7 @@ At process startup, the CLI auto-loads `.env*` files before importing `mdcms.con
 
 The env root is the directory containing the resolved `mdcms.config.{ts,js,mjs}` file. With `--config <path>`, the explicit config file path defines the env root. Without `--config`, the CLI searches upward from the current working directory for the nearest `mdcms.config.ts`, `mdcms.config.js`, or `mdcms.config.mjs`; if none exists, it falls back to the current working directory so config-optional commands still get local env defaults.
 
-The CLI uses `NODE_ENV` as the mode and defaults it to `development` when unset. Higher-precedence files override lower-precedence files, but variables that already exist in the shell environment always win over file values:
+The CLI uses `NODE_ENV` only as the dotenv file selector, sometimes called the dotenv mode, and defaults it to `development` when unset. This is separate from the MDCMS `environment` target such as `staging` or `production`; `MDCMS_ENVIRONMENT` selects CMS content, while `NODE_ENV` selects files like `.env.production`. Higher-precedence files override lower-precedence files, but variables that already exist in the shell environment always win over file values:
 
 | Precedence | File                    | Loaded when            |
 | ---------- | ----------------------- | ---------------------- |

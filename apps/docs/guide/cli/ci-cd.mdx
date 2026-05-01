@@ -16,6 +16,14 @@ Set these in your CI provider's secret management:
 | `MDCMS_ENVIRONMENT` | Target environment name                             |
 | `MDCMS_SERVER_URL`  | MDCMS server URL (overrides `mdcms.config.ts`)      |
 
+The CLI also auto-loads `.env*` files before reading `mdcms.config.ts`. In CI, shell-exported variables from the `env:` block override values from files. Add `--no-env-file` to CLI commands, or set `MDCMS_DOTENV=0`, when the pipeline should rely only on CI-provided variables.
+
+<Note>
+  `NODE_ENV` only selects dotenv filenames such as `.env.production`. It is
+  separate from `MDCMS_ENVIRONMENT`, which selects the MDCMS content environment
+  targeted by schema sync, push, pull, and status commands.
+</Note>
+
 <Tip>
   Create a dedicated API key with minimal scopes for CI use. Schema sync
   requires `schema:read` and `schema:write`. Content push requires

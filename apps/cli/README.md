@@ -55,7 +55,9 @@ export default defineConfig({
 
 ### Environment files
 
-The CLI loads `.env*` files from the directory containing the nearest `mdcms.config.ts`, `mdcms.config.js`, or `mdcms.config.mjs` before it imports the config. Put local developer values in `.env.local` next to `mdcms.config.ts`:
+The CLI loads `.env*` files from the directory containing the nearest `mdcms.config.ts`, `mdcms.config.js`, or `mdcms.config.mjs` before it imports the config. This lets `mdcms.config.ts` read values from `process.env`.
+
+Put local developer values in `.env.local` next to `mdcms.config.ts`:
 
 ```bash
 MDCMS_SERVER_URL=http://localhost:4000
@@ -73,7 +75,9 @@ Loading order, highest precedence first:
 | 3     | `.env.{NODE_ENV}`       | Always                      |
 | 4     | `.env`                  | Always                      |
 
-`NODE_ENV` defaults to `development` for CLI runs. Shell-exported variables override all file values. Use `--no-env-file` or `MDCMS_DOTENV=0` to disable auto-loading for a run.
+`NODE_ENV` defaults to `development` for CLI runs. In this table, `NODE_ENV` is only the dotenv file selector; it is not the same thing as the MDCMS `environment` field or `MDCMS_ENVIRONMENT`. For example, `NODE_ENV=production` makes the CLI look for `.env.production` and `.env.production.local`, while `MDCMS_ENVIRONMENT=staging` tells MDCMS which content environment to target.
+
+Shell-exported variables override all file values. Use `--no-env-file` or `MDCMS_DOTENV=0` to disable auto-loading for a run.
 
 ## Commands
 

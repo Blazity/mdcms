@@ -99,6 +99,50 @@ Each `defineType(name, options)` accepts:
 
 ---
 
+## Environment files
+
+The CLI loads `.env*` files before importing `mdcms.config.ts`, so config files can read values from `process.env`:
+
+```typescript mdcms.config.ts
+export default defineConfig({
+  serverUrl: process.env.MDCMS_SERVER_URL,
+  project: process.env.MDCMS_PROJECT,
+  environment: process.env.MDCMS_ENVIRONMENT ?? "development",
+  types: [BlogPost],
+});
+```
+
+Env files are read from the directory that contains the resolved `mdcms.config.ts`, `mdcms.config.js`, or `mdcms.config.mjs`. If you pass `--config ./config/mdcms.config.ts`, the CLI looks for env files in `./config`. Without `--config`, the CLI searches upward from the current directory for the nearest config file.
+
+Put local developer values in `.env.local` next to `mdcms.config.ts`:
+
+```bash .env.local
+MDCMS_SERVER_URL=http://localhost:4000
+MDCMS_PROJECT=marketing-site
+MDCMS_ENVIRONMENT=staging
+MDCMS_API_KEY=mdcms_key_local
+```
+
+Loading order, highest precedence first:
+
+| Order | File                    | When loaded                 |
+| ----- | ----------------------- | --------------------------- |
+| 1     | `.env.{NODE_ENV}.local` | Always                      |
+| 2     | `.env.local`            | Except when `NODE_ENV=test` |
+| 3     | `.env.{NODE_ENV}`       | Always                      |
+| 4     | `.env`                  | Always                      |
+
+<Note>
+  `NODE_ENV` is only the dotenv file selector. It controls names such as
+  `.env.production`; it does not select the MDCMS content environment. Use
+  `MDCMS_ENVIRONMENT` or the config `environment` field to choose an MDCMS
+  environment such as `staging` or `production`.
+</Note>
+
+`NODE_ENV` defaults to `development` when unset. Shell-exported variables override all file values, so CI secrets and one-off command exports always win. Use `--no-env-file` or `MDCMS_DOTENV=0` to disable automatic env file loading for a run.
+
+---
+
 ## Manifest file
 
 The manifest tracks the mapping between server documents and local files. It is stored at `.mdcms.manifest.json` in the project root, scoped to the current project and environment.
