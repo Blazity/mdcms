@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "bun:test";
+import { createElement, useState } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import {
+  MdxComponentCollapseProvider,
   nextMdxComponentCollapseSnapshot,
   toggleMdxComponentCollapseSnapshot,
+  useMdxComponentCollapseSnapshot,
   type MdxComponentCollapseSnapshot,
 } from "./mdx-component-collapse.js";
 
@@ -56,4 +60,68 @@ test("toggleMdxComponentCollapseSnapshot flips between collapsed and expanded", 
   assert.equal(collapsed.generation, 1);
   assert.equal(expanded.generation, 2);
   assert.equal(collapsedAgain.generation, 3);
+});
+
+// Mirrors the seeding pattern used by `MdxComponentNodeView` so the
+// "consumer mounts after a global broadcast" path is covered without
+// having to spin up a full Tiptap editor.
+function CollapseConsumerStub(props: { name: string }) {
+  const snapshot = useMdxComponentCollapseSnapshot();
+  const [collapsed] = useState(() => snapshot.globalState === "collapsed");
+
+  return createElement(
+    "div",
+    {
+      "data-test-consumer": props.name,
+      "data-test-collapsed": collapsed ? "true" : "false",
+    },
+    null,
+  );
+}
+
+test("a consumer mounted after a 'collapsed' broadcast initializes as collapsed", () => {
+  // Reproduces the regression: a brand-new MDX component is inserted while
+  // the document is already in "collapse all" mode. The new node view must
+  // mount collapsed, not expanded.
+  const snapshot: MdxComponentCollapseSnapshot = {
+    globalState: "collapsed",
+    generation: 1,
+  };
+
+  const markup = renderToStaticMarkup(
+    createElement(MdxComponentCollapseProvider, {
+      snapshot,
+      children: createElement(CollapseConsumerStub, { name: "late-mount" }),
+    }),
+  );
+
+  assert.match(markup, /data-test-consumer="late-mount"/);
+  assert.match(markup, /data-test-collapsed="true"/);
+});
+
+test("a consumer mounted with no prior broadcast initializes as expanded", () => {
+  const markup = renderToStaticMarkup(
+    createElement(MdxComponentCollapseProvider, {
+      snapshot: initialSnapshot,
+      children: createElement(CollapseConsumerStub, { name: "fresh-mount" }),
+    }),
+  );
+
+  assert.match(markup, /data-test-collapsed="false"/);
+});
+
+test("a consumer mounted after an 'expanded' broadcast initializes as expanded", () => {
+  const snapshot: MdxComponentCollapseSnapshot = {
+    globalState: "expanded",
+    generation: 4,
+  };
+
+  const markup = renderToStaticMarkup(
+    createElement(MdxComponentCollapseProvider, {
+      snapshot,
+      children: createElement(CollapseConsumerStub, { name: "after-expand" }),
+    }),
+  );
+
+  assert.match(markup, /data-test-collapsed="false"/);
 });

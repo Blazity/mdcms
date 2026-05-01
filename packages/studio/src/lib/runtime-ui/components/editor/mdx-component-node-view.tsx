@@ -316,8 +316,16 @@ export function MdxComponentNodeView(
   const [previewState, setPreviewState] = useState<"ready" | "empty" | "error">(
     "empty",
   );
-  const [collapsed, setCollapsed] = useState(false);
   const collapseSnapshot = useMdxComponentCollapseSnapshot();
+  // Seed `collapsed` from the snapshot so node views mounted *after* a
+  // global broadcast (e.g. inserting a new component while everything is
+  // already collapsed) start in the announced mode. Pairing that with
+  // `lastSyncedGenerationRef` initialized to the current generation makes
+  // the post-mount effect a no-op for the same generation, so it only
+  // fires on subsequent broadcasts.
+  const [collapsed, setCollapsed] = useState(
+    () => collapseSnapshot.globalState === "collapsed",
+  );
   const lastSyncedGenerationRef = useRef(collapseSnapshot.generation);
 
   // The toolbar's collapse-all/expand-all toggle bumps `generation` on the
