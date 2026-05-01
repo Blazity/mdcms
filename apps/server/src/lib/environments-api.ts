@@ -1,9 +1,15 @@
 import {
   RuntimeError,
+  assertEnvironmentCloneInput,
   assertEnvironmentCreateInput,
+  assertEnvironmentPromoteInput,
+  type EnvironmentCloneInput,
+  type EnvironmentCloneResult,
   type EnvironmentCreateInput,
   type EnvironmentDefinitionsMeta,
   type EnvironmentListResponse,
+  type EnvironmentPromoteInput,
+  type EnvironmentPromoteResult,
   type EnvironmentSummary,
   resolveRequestTargetRouting,
 } from "@mdcms/shared";
@@ -18,6 +24,10 @@ import {
   schemaRegistryEntries,
   schemaSyncs,
 } from "./db/schema.js";
+import {
+  cloneEnvironment as cloneEnvironmentImpl,
+  promoteDocuments as promoteDocumentsImpl,
+} from "./environments-clone-promote.js";
 import {
   loadProjectEnvironmentTopologySnapshot,
   type PersistedEnvironmentDefinition,
@@ -50,6 +60,16 @@ export type EnvironmentStore = {
     project: string,
     environmentId: string,
   ) => Promise<{ deleted: true; id: string }>;
+  clone: (
+    project: string,
+    targetEnvironmentId: string,
+    input: EnvironmentCloneInput,
+  ) => Promise<EnvironmentCloneResult>;
+  promote: (
+    project: string,
+    targetEnvironmentId: string,
+    input: EnvironmentPromoteInput,
+  ) => Promise<EnvironmentPromoteResult>;
 };
 
 export type EnvironmentAdminAuthorizer = (
@@ -64,10 +84,21 @@ export type EnvironmentSessionAuthorizer = (
   request: Request,
 ) => Promise<StudioSession | void>;
 
+// Clone and promote use `session_or_api_key` auth (SPEC-009 §Environment
+// Management Endpoints) and require a specific operation scope. The runtime
+// wires this to `authService.authorizeRequest({ requiredScope, project })`
+// so the same gate applies to API-key callers (CLI, agents) and Studio
+// session users.
+export type EnvironmentScopedAuthorizer = (
+  request: Request,
+  scope: "environments:clone" | "environments:promote",
+) => Promise<void>;
+
 export type MountEnvironmentApiRoutesOptions = {
   store: EnvironmentStore;
   authorizeSession: EnvironmentSessionAuthorizer;
   authorizeAdmin: EnvironmentAdminAuthorizer;
+  authorizeScoped: EnvironmentScopedAuthorizer;
   requireCsrf: EnvironmentRequestCsrfProtector;
 };
 
@@ -503,6 +534,34 @@ export function createDatabaseEnvironmentStore(
         id: environmentRow.id,
       };
     },
+
+    async clone(project, targetEnvironmentId, input) {
+      const normalizedProject = assertRequiredString(project, "project");
+      const normalizedTargetId = assertRequiredString(
+        targetEnvironmentId,
+        "targetEnvironmentId",
+      );
+
+      return cloneEnvironmentImpl(db, {
+        ...input,
+        project: normalizedProject,
+        targetEnvironmentId: normalizedTargetId,
+      });
+    },
+
+    async promote(project, targetEnvironmentId, input) {
+      const normalizedProject = assertRequiredString(project, "project");
+      const normalizedTargetId = assertRequiredString(
+        targetEnvironmentId,
+        "targetEnvironmentId",
+      );
+
+      return promoteDocumentsImpl(db, {
+        ...input,
+        project: normalizedProject,
+        targetEnvironmentId: normalizedTargetId,
+      });
+    },
   };
 }
 
@@ -547,6 +606,55 @@ export function mountEnvironmentApiRoutes(
 
         return {
           data: await options.store.delete(project, environmentId),
+        };
+      });
+    },
+  );
+
+  environmentApp.post?.(
+    "/api/v1/environments/:id/clone",
+    ({ request, params, body }: any) => {
+      return executeWithRuntimeErrorsHandled(request, async () => {
+        const project = pickProject(request);
+        await options.requireCsrf(request);
+        await options.authorizeScoped(request, "environments:clone");
+        const targetEnvironmentId = assertRequiredString(params.id, "id");
+        const payload = (body ?? {}) as unknown;
+        assertEnvironmentCloneInput(payload);
+
+        return {
+          data: await options.store.clone(
+            project,
+            targetEnvironmentId,
+            payload,
+          ),
+        };
+      });
+    },
+  );
+
+  // SPEC-009 documents the path parameter as `:targetId` for clarity, but
+  // the underlying router cannot have two different parameter names at the
+  // same path slot (clone uses `:id` already). The path parameter still
+  // identifies the target environment id; the spec documentation name is
+  // for readability only.
+  environmentApp.post?.(
+    "/api/v1/environments/:id/promote",
+    ({ request, params, body }: any) => {
+      return executeWithRuntimeErrorsHandled(request, async () => {
+        const project = pickProject(request);
+        await options.requireCsrf(request);
+        await options.authorizeScoped(request, "environments:promote");
+        const targetEnvironmentId = assertRequiredString(params.id, "id");
+        const payload = (body ?? {}) as unknown;
+        assertEnvironmentPromoteInput(payload);
+
+        return {
+          data: await options.store.promote(
+            project,
+            targetEnvironmentId,
+            payload,
+          ),
         };
       });
     },

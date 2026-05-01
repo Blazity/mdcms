@@ -30,7 +30,63 @@ export type EnvironmentCreateInput = {
   extends?: string;
 };
 
+export type EnvironmentClonePayloadInclude = {
+  content?: boolean;
+  settings?: boolean;
+};
+
+export type EnvironmentCloneInput = {
+  sourceEnvironmentId: string;
+  // Spec defaults: include={content:true,settings:false}, includeDrafts=true,
+  // preservePaths=true. The runtime validator applies these defaults before
+  // dispatch — TS callers may omit them to inherit those defaults.
+  include?: EnvironmentClonePayloadInclude;
+  includeDrafts?: boolean;
+  preservePaths?: boolean;
+};
+
+export type EnvironmentCloneResult = {
+  targetEnvironmentId: string;
+  documentsCloned: number;
+};
+
+export type DocumentPromotionStatus =
+  | "overwrote"
+  | "created"
+  | "skipped_unpublished";
+
+export type DocumentPromotionResult = {
+  sourceDocumentId: string;
+  targetDocumentId: string | null;
+  status: DocumentPromotionStatus;
+  path: string;
+  locale: string;
+  type: string;
+  publishedVersion: number | null;
+  remappedReferences: number;
+};
+
+export type EnvironmentPromoteInput = {
+  sourceEnvironmentId: string;
+  documentIds: string[];
+  // Defaults: includeUnpublished=false (only published source rows promote),
+  // dryRun=false (real run). The runtime validator fills these in.
+  includeUnpublished?: boolean;
+  dryRun?: boolean;
+  // Optional. Caller-supplied map keyed by source documentId → target
+  // documentId. The orchestrator uses these instead of generating fresh
+  // UUIDs for would-be-created target rows so a dry-run plan can be
+  // replayed deterministically: read `promoted[].targetDocumentId` from a
+  // dryRun response, pass it back here on the real run.
+  preallocatedTargetIds?: Record<string, string>;
+};
+
+export type EnvironmentPromoteResult = {
+  promoted: DocumentPromotionResult[];
+};
+
 const NonEmptyStringSchema = z.string().trim().min(1);
+const UuidSchema = z.string().trim().uuid();
 const EnvironmentDefinitionsMetaSchema = z.discriminatedUnion(
   "definitionsStatus",
   [
@@ -131,4 +187,176 @@ export function assertEnvironmentListResponse(
   path = "value",
 ): asserts value is EnvironmentListResponse {
   assertWithSchema(EnvironmentListResponseSchema, value, path);
+}
+
+// Clone / promote payloads have richer shapes (booleans, arrays of UUIDs)
+// than the simple `name`/`extends` create payload, so we surface specific
+// error messages per offending field rather than the generic "must be a
+// non-empty string" the legacy create-input assertion uses.
+function assertCloneOrPromotePayload(
+  value: unknown,
+  path: string,
+): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    invalidInput(path, "must be an object.");
+  }
+  return value as Record<string, unknown>;
+}
+
+function assertUuid(value: unknown, path: string): string {
+  if (typeof value !== "string" || !UuidSchema.safeParse(value).success) {
+    invalidInput(path, "must be a UUID string.");
+  }
+  return value.trim();
+}
+
+function assertBoolean(value: unknown, path: string): boolean {
+  if (typeof value !== "boolean") {
+    invalidInput(path, "must be a boolean.");
+  }
+  return value;
+}
+
+function assertOptionalBoolean(
+  value: unknown,
+  path: string,
+  fallback: boolean,
+): boolean {
+  if (value === undefined) {
+    return fallback;
+  }
+  return assertBoolean(value, path);
+}
+
+export function assertEnvironmentCloneInput(
+  value: unknown,
+  path = "value",
+): asserts value is EnvironmentCloneInput {
+  const obj = assertCloneOrPromotePayload(value, path);
+  const sourceEnvironmentId = assertUuid(
+    obj.sourceEnvironmentId,
+    `${path}.sourceEnvironmentId`,
+  );
+
+  // Spec defaults: include.content=true, include.settings=false (settings copy
+  // is opt-in because it overwrites synced schema state in the target).
+  const includeRaw =
+    obj.include === undefined
+      ? { content: true, settings: false }
+      : obj.include;
+  if (
+    typeof includeRaw !== "object" ||
+    includeRaw === null ||
+    Array.isArray(includeRaw)
+  ) {
+    invalidInput(`${path}.include`, "must be an object.");
+  }
+  const includeRecord = includeRaw as Record<string, unknown>;
+  if ("media" in includeRecord) {
+    invalidInput(
+      `${path}.include.media`,
+      "is not supported in MVP — media inclusion is deferred (SPEC-009 #Cloning).",
+      { deferred: true },
+    );
+  }
+  const include: EnvironmentClonePayloadInclude = {
+    content: assertOptionalBoolean(
+      includeRecord.content,
+      `${path}.include.content`,
+      true,
+    ),
+    settings: assertOptionalBoolean(
+      includeRecord.settings,
+      `${path}.include.settings`,
+      false,
+    ),
+  };
+
+  // Spec defaults: includeDrafts=true, preservePaths=true.
+  const includeDrafts = assertOptionalBoolean(
+    obj.includeDrafts,
+    `${path}.includeDrafts`,
+    true,
+  );
+  const preservePaths = assertOptionalBoolean(
+    obj.preservePaths,
+    `${path}.preservePaths`,
+    true,
+  );
+
+  Object.assign(obj, {
+    sourceEnvironmentId,
+    include,
+    includeDrafts,
+    preservePaths,
+  });
+}
+
+export function assertEnvironmentPromoteInput(
+  value: unknown,
+  path = "value",
+): asserts value is EnvironmentPromoteInput {
+  const obj = assertCloneOrPromotePayload(value, path);
+  const sourceEnvironmentId = assertUuid(
+    obj.sourceEnvironmentId,
+    `${path}.sourceEnvironmentId`,
+  );
+  if (!Array.isArray(obj.documentIds) || obj.documentIds.length === 0) {
+    invalidInput(
+      `${path}.documentIds`,
+      "must be a non-empty array of UUID strings.",
+    );
+  }
+  const documentIds = obj.documentIds.map((entry, index) =>
+    assertUuid(entry, `${path}.documentIds[${index}]`),
+  );
+  // includeUnpublished defaults to false — promote is "publish source-of-truth"
+  // by default; promoting drafts is opt-in.
+  const includeUnpublished = assertOptionalBoolean(
+    obj.includeUnpublished,
+    `${path}.includeUnpublished`,
+    false,
+  );
+  // dryRun defaults to false — explicit opt-in for plan-only mode.
+  const dryRun = assertOptionalBoolean(obj.dryRun, `${path}.dryRun`, false);
+
+  // Optional `preallocatedTargetIds`: keys are source document UUIDs that the
+  // operation will create in the target; values are the target document UUIDs
+  // to use instead of fresh randomUUID()s. Lets a real run replay the exact
+  // plan a prior dry-run returned.
+  let preallocatedTargetIds: Record<string, string> | undefined;
+  if (obj.preallocatedTargetIds !== undefined) {
+    if (
+      typeof obj.preallocatedTargetIds !== "object" ||
+      obj.preallocatedTargetIds === null ||
+      Array.isArray(obj.preallocatedTargetIds)
+    ) {
+      invalidInput(
+        `${path}.preallocatedTargetIds`,
+        "must be an object mapping source documentId UUIDs to target documentId UUIDs.",
+      );
+    }
+    preallocatedTargetIds = {};
+    for (const [sourceId, targetId] of Object.entries(
+      obj.preallocatedTargetIds as Record<string, unknown>,
+    )) {
+      const normalizedSource = assertUuid(
+        sourceId,
+        `${path}.preallocatedTargetIds[key]`,
+      );
+      const normalizedTarget = assertUuid(
+        targetId,
+        `${path}.preallocatedTargetIds[${sourceId}]`,
+      );
+      preallocatedTargetIds[normalizedSource] = normalizedTarget;
+    }
+  }
+
+  Object.assign(obj, {
+    sourceEnvironmentId,
+    documentIds,
+    includeUnpublished,
+    dryRun,
+    ...(preallocatedTargetIds !== undefined ? { preallocatedTargetIds } : {}),
+  });
 }

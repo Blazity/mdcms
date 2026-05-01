@@ -103,7 +103,7 @@ test("EnvironmentManagementPageView renders loading and empty states determinist
   assert.match(emptyMarkup, /New Environment/);
 });
 
-test("EnvironmentManagementPageView renders live environment summaries and only allows deleting non-default environments", () => {
+test("EnvironmentManagementPageView renders live environment summaries and exposes per-environment action menus", () => {
   const markup = renderMarkup({
     status: "ready",
     project: "marketing-site",
@@ -129,9 +129,13 @@ test("EnvironmentManagementPageView renders live environment summaries and only 
   assert.match(markup, /Extends production/);
   assert.match(markup, /2026-03-19T10:00:00.000Z/);
   assert.match(markup, /2026-03-20T11:30:45.000Z/);
-  assert.match(markup, /Delete staging/);
-  assert.doesNotMatch(markup, /Delete production/);
-  assert.doesNotMatch(markup, /promot/i);
+  // Both default and non-default rows now expose an action menu (clone into
+  // any environment is allowed; delete is gated to non-default at the menu
+  // item level — exercised in the e2e flow / route tests).
+  assert.match(markup, /data-mdcms-environment-actions="production"/);
+  assert.match(markup, /data-mdcms-environment-actions="staging"/);
+  assert.match(markup, /Actions for staging/);
+  assert.match(markup, /Actions for production/);
   assert.doesNotMatch(markup, /document count/i);
 });
 

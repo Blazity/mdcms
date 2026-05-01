@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   FileText,
   GitBranch,
+  Send,
   Upload,
   Users,
   Settings,
@@ -42,6 +43,7 @@ const mainNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/admin" },
   { icon: FileText, label: "Content", href: "/admin/content" },
   { icon: GitBranch, label: "Environments", href: "/admin/environments" },
+  { icon: Send, label: "Promote", href: "/admin/promote" },
   { icon: Upload, label: "Media", href: "/admin/media" },
   { icon: FolderInput, label: "Schema", href: "/admin/schema" },
   { icon: Users, label: "Users", href: "/admin/users" },
@@ -61,6 +63,9 @@ function getMainNavItems(filters: {
 
   return mainNavItems.filter((item) => {
     if (item.href === "/admin/environments") return canManageAdminSurfaces;
+    // Promote requires the same admin gate as Environments — both are
+    // operations the spec documents as session-or-API-key with admin scope.
+    if (item.href === "/admin/promote") return canManageAdminSurfaces;
     if (item.href === "/admin/schema") return filters.canReadSchema;
     if (item.href === "/admin/users") return filters.canManageUsers;
     if (item.href === "/admin/settings") return filters.canManageSettings;

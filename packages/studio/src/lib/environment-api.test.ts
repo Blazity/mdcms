@@ -272,3 +272,123 @@ test("list throws on 401 response", async () => {
       error instanceof RuntimeError && error.statusCode === 401,
   );
 });
+
+test("clone posts the clone payload with csrf header and parses result", async () => {
+  const calls: Array<{ input: string | URL | Request; init?: RequestInit }> =
+    [];
+  const api = createApi({
+    auth: { mode: "cookie" },
+    csrfToken: "csrf-token",
+    fetcher: async (input, init) => {
+      calls.push({ input, init });
+      return new Response(
+        JSON.stringify({
+          data: { targetEnvironmentId: "env-target", documentsCloned: 4 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    },
+  });
+
+  const result = await api.clone("env-target", {
+    sourceEnvironmentId: "0bdf6f3a-f3a0-4a8f-9fef-8d8ec0c64a1a",
+    include: { content: true, settings: false },
+    includeDrafts: true,
+    preservePaths: true,
+  });
+
+  assert.equal(
+    String(calls[0]?.input),
+    "http://localhost:4000/api/v1/environments/env-target/clone",
+  );
+  assert.equal(calls[0]?.init?.method, "POST");
+  assert.equal(readHeader(calls[0]?.init, "x-mdcms-csrf-token"), "csrf-token");
+  assert.deepEqual(result, {
+    targetEnvironmentId: "env-target",
+    documentsCloned: 4,
+  });
+});
+
+test("clone rejects payloads with media inclusion (deferred MVP)", async () => {
+  const api = createApi({
+    auth: { mode: "cookie" },
+    csrfToken: "csrf-token",
+    fetcher: async () => new Response(null, { status: 200 }),
+  });
+
+  await assert.rejects(
+    () =>
+      api.clone("env-target", {
+        sourceEnvironmentId: "0bdf6f3a-f3a0-4a8f-9fef-8d8ec0c64a1a",
+        include: {
+          content: true,
+          settings: false,
+          // @ts-expect-error — media is intentionally not part of the type;
+          // runtime guard rejects it as INVALID_INPUT.
+          media: true,
+        },
+        includeDrafts: true,
+        preservePaths: true,
+      }),
+    (error: unknown) =>
+      error instanceof RuntimeError && error.code === "INVALID_INPUT",
+  );
+});
+
+test("promote validates documentIds before calling the network", async () => {
+  let fetcherCalled = false;
+  const api = createApi({
+    auth: { mode: "cookie" },
+    csrfToken: "csrf-token",
+    fetcher: async () => {
+      fetcherCalled = true;
+      throw new Error("should not be called");
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      api.promote("env-target", {
+        sourceEnvironmentId: "0bdf6f3a-f3a0-4a8f-9fef-8d8ec0c64a1a",
+        documentIds: [],
+        includeUnpublished: false,
+        dryRun: false,
+      }),
+    (error: unknown) =>
+      error instanceof RuntimeError && error.code === "INVALID_INPUT",
+  );
+  assert.equal(fetcherCalled, false);
+});
+
+test("promote returns the promoted result envelope", async () => {
+  const promoteResults = [
+    {
+      sourceDocumentId: "0bdf6f3a-f3a0-4a8f-9fef-8d8ec0c64a1b",
+      targetDocumentId: "1bdf6f3a-f3a0-4a8f-9fef-8d8ec0c64a1c",
+      status: "created",
+      path: "blog/hello",
+      locale: "en-US",
+      type: "BlogPost",
+      publishedVersion: 1,
+      remappedReferences: 0,
+    },
+  ];
+  const api = createApi({
+    auth: { mode: "cookie" },
+    csrfToken: "csrf-token",
+    fetcher: async () =>
+      new Response(JSON.stringify({ data: { promoted: promoteResults } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+  });
+
+  const result = await api.promote("env-target", {
+    sourceEnvironmentId: "0bdf6f3a-f3a0-4a8f-9fef-8d8ec0c64a1a",
+    documentIds: ["0bdf6f3a-f3a0-4a8f-9fef-8d8ec0c64a1b"],
+    includeUnpublished: false,
+    dryRun: true,
+  });
+
+  assert.deepEqual(result.promoted, promoteResults);
+});
