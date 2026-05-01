@@ -17,6 +17,7 @@ const studioPackageRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../..",
 );
+const workspaceRoot = resolve(studioPackageRoot, "../..");
 const buildRuntimeModuleUrl = pathToFileURL(
   join(studioPackageRoot, "src/lib/build-runtime.ts"),
 ).href;
@@ -309,7 +310,7 @@ test("buildStudioRuntimeArtifacts keeps the default browser runtime below the fi
       hasTypeScriptRuntime?: boolean;
       hasCreateProgram?: boolean;
       underSizeTarget?: boolean;
-    }>({ scriptFile, cwd: directory });
+    }>({ scriptFile, cwd: workspaceRoot });
 
     assert.deepEqual(result, {
       hasTypeScriptRuntime: false,
