@@ -1,0 +1,17 @@
+{
+  "$comment": "Path prefixes (relative to this package root) that ship inside dist/ but are not reachable through any of @mdcms/studio's published exports. Edits to these paths land in the backend-served runtime bundle assembled by build-runtime.ts and don't affect what npm consumers can import, so they don't require a changeset. See CMS-219.",
+  "unpublishedSources": [
+    "src/lib/remote-module.ts",
+    "src/lib/remote-studio-app.tsx",
+    "src/lib/runtime-ui/app",
+    "src/lib/runtime-ui/components",
+    "src/lib/runtime-ui/hooks",
+    "src/lib/runtime-ui/lib",
+    "src/lib/runtime-ui/navigation.tsx",
+    "src/lib/runtime-ui/pages",
+    "src/lib/runtime-ui/portal-border-theme.ts",
+    "src/lib/runtime-ui/query-client.ts",
+    "src/lib/runtime-ui/style-installer.ts",
+    "src/lib/runtime-ui/styles.css"
+  ]
+}

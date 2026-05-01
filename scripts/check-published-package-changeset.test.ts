@@ -47,10 +47,14 @@ function writePackage(
   rootDir: string,
   packageRoot: string,
   packageJson: Record<string, unknown>,
+  options?: { changesetGate?: Record<string, unknown> },
 ) {
   const fullRoot = join(rootDir, packageRoot);
   mkdirSync(join(fullRoot, "src"), { recursive: true });
   writeJson(join(fullRoot, "package.json"), packageJson);
+  if (options?.changesetGate) {
+    writeJson(join(fullRoot, ".changeset-gate.json"), options.changesetGate);
+  }
 }
 
 function writeJson(path: string, value: unknown) {
@@ -76,9 +80,60 @@ describe("discoverPublishedPackages", () => {
   test("loads publishable workspaces and excludes private or ignored packages", () => {
     withWorkspace((rootDir) => {
       expect(discoverPublishedPackages(rootDir)).toEqual([
-        { name: "@mdcms/cli", root: "apps/cli" },
-        { name: "@mdcms/sdk", root: "packages/sdk" },
+        { name: "@mdcms/cli", root: "apps/cli", unpublishedSources: [] },
+        { name: "@mdcms/sdk", root: "packages/sdk", unpublishedSources: [] },
       ]);
+    });
+  });
+
+  test("reads unpublishedSources from each package's .changeset-gate.json", () => {
+    withWorkspace((rootDir) => {
+      writePackage(
+        rootDir,
+        "packages/studio",
+        { name: "@mdcms/studio", version: "0.1.0" },
+        {
+          changesetGate: {
+            unpublishedSources: [
+              "src/lib/runtime-ui/components",
+              "./src/lib/remote-module.ts",
+            ],
+          },
+        },
+      );
+
+      expect(discoverPublishedPackages(rootDir)).toEqual([
+        { name: "@mdcms/cli", root: "apps/cli", unpublishedSources: [] },
+        { name: "@mdcms/sdk", root: "packages/sdk", unpublishedSources: [] },
+        {
+          name: "@mdcms/studio",
+          root: "packages/studio",
+          // Paths are normalized so config authors can write either form.
+          unpublishedSources: [
+            "src/lib/runtime-ui/components",
+            "src/lib/remote-module.ts",
+          ],
+        },
+      ]);
+    });
+  });
+
+  test("fails explicitly when a package's .changeset-gate.json is malformed", () => {
+    withWorkspace((rootDir) => {
+      writePackage(
+        rootDir,
+        "packages/studio",
+        { name: "@mdcms/studio", version: "0.1.0" },
+        {
+          changesetGate: {
+            unpublishedSources: "src/lib/runtime-ui/components",
+          },
+        },
+      );
+
+      expect(() => discoverPublishedPackages(rootDir)).toThrow(
+        /Invalid JSON shape in packages\/studio\/\.changeset-gate\.json/,
+      );
     });
   });
 
@@ -200,6 +255,97 @@ describe("evaluateChangesetGate", () => {
           name: "@mdcms/cli",
           root: "apps/cli",
           files: ["apps/cli/package.json"],
+        },
+      ]);
+    });
+  });
+
+  test("ignores files under a package's declared unpublishedSources", () => {
+    withWorkspace((rootDir) => {
+      writePackage(
+        rootDir,
+        "packages/studio",
+        { name: "@mdcms/studio", version: "0.1.0" },
+        {
+          changesetGate: {
+            unpublishedSources: ["src/lib/runtime-ui/components"],
+          },
+        },
+      );
+
+      const result = evaluateChangesetGate({
+        changedFiles: [
+          "packages/studio/src/lib/runtime-ui/components/editor/editor.tsx",
+          "packages/studio/src/lib/runtime-ui/components/editor/editor.test.tsx",
+        ],
+        packages: discoverPublishedPackages(rootDir),
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.changedPackages).toEqual([]);
+    });
+  });
+
+  test("still requires a changeset for sibling published source files", () => {
+    // A change inside the unpublished prefix is fine; a change just outside
+    // it must still trip the gate so the exclusion stays narrow rather
+    // than swallowing edits to genuinely-published code under the same
+    // package.
+    withWorkspace((rootDir) => {
+      writePackage(
+        rootDir,
+        "packages/studio",
+        { name: "@mdcms/studio", version: "0.1.0" },
+        {
+          changesetGate: {
+            unpublishedSources: ["src/lib/runtime-ui/components"],
+          },
+        },
+      );
+
+      const result = evaluateChangesetGate({
+        changedFiles: [
+          "packages/studio/src/lib/runtime-ui/adapters/next-themes.tsx",
+        ],
+        packages: discoverPublishedPackages(rootDir),
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.changedPackages).toEqual([
+        {
+          name: "@mdcms/studio",
+          root: "packages/studio",
+          files: [
+            "packages/studio/src/lib/runtime-ui/adapters/next-themes.tsx",
+          ],
+        },
+      ]);
+    });
+  });
+
+  test("never excludes the published package manifest, even with unpublished overlap", () => {
+    // The package.json itself controls exports/version/dependencies, so it
+    // must always require a changeset regardless of any path-prefix
+    // exclusions configured inside the package.
+    withWorkspace((rootDir) => {
+      writePackage(
+        rootDir,
+        "packages/studio",
+        { name: "@mdcms/studio", version: "0.1.0" },
+        { changesetGate: { unpublishedSources: ["src"] } },
+      );
+
+      const result = evaluateChangesetGate({
+        changedFiles: ["packages/studio/package.json"],
+        packages: discoverPublishedPackages(rootDir),
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.changedPackages).toEqual([
+        {
+          name: "@mdcms/studio",
+          root: "packages/studio",
+          files: ["packages/studio/package.json"],
         },
       ]);
     });
