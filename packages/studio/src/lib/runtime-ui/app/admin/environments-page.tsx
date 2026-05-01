@@ -9,6 +9,7 @@ import type {
 import {
   ArrowRightLeft,
   Clock,
+  Copy,
   GitBranch,
   MoreHorizontal,
   Plus,
@@ -50,6 +51,7 @@ import {
 } from "../../components/ui/dropdown-menu.js";
 import { Input } from "../../components/ui/input.js";
 import { Label } from "../../components/ui/label.js";
+import { Switch } from "../../components/ui/switch.js";
 import { cn } from "../../lib/utils.js";
 
 export type EnvironmentManagementState =
@@ -75,6 +77,14 @@ export type EnvironmentManagementState =
       definitionsMeta: EnvironmentDefinitionsMeta;
     };
 
+export type EnvironmentCloneFormState = {
+  sourceEnvironmentId: string;
+  includeContent: boolean;
+  includeSettings: boolean;
+  includeDrafts: boolean;
+  preservePaths: boolean;
+};
+
 type EnvironmentManagementPageViewProps = {
   state: EnvironmentManagementState;
   activeEnvironment?: string | null;
@@ -86,12 +96,21 @@ type EnvironmentManagementPageViewProps = {
   pendingDeleteId?: string | null;
   deleteTarget?: EnvironmentSummary | null;
   isCreateDialogOpen?: boolean;
+  cloneTarget?: EnvironmentSummary | null;
+  cloneForm?: EnvironmentCloneFormState;
+  cloneError?: string | null;
+  cloneSuccess?: string | null;
+  pendingCloneId?: string | null;
   onCreateDialogChange?: (open: boolean) => void;
   onCreateNameChange?: (value: string) => void;
   onCreateSubmit?: () => void;
   onDeleteDialogChange?: (open: boolean) => void;
   onRequestDelete?: (environment: EnvironmentSummary) => void;
   onDeleteConfirm?: () => void;
+  onRequestClone?: (environment: EnvironmentSummary) => void;
+  onCloneDialogChange?: (open: boolean) => void;
+  onCloneFormChange?: (state: EnvironmentCloneFormState) => void;
+  onCloneSubmit?: () => void;
   onSwitchEnvironment?: (environment: string) => void;
   onRetry?: () => void;
 };
@@ -238,6 +257,14 @@ function renderRetryButton(onRetry?: () => void) {
   );
 }
 
+const CLONE_DEFAULT_FORM: EnvironmentCloneFormState = {
+  sourceEnvironmentId: "",
+  includeContent: true,
+  includeSettings: false,
+  includeDrafts: true,
+  preservePaths: true,
+};
+
 export function EnvironmentManagementPageView({
   state,
   activeEnvironment = null,
@@ -249,15 +276,30 @@ export function EnvironmentManagementPageView({
   pendingDeleteId = null,
   deleteTarget = null,
   isCreateDialogOpen = false,
+  cloneTarget = null,
+  cloneForm = CLONE_DEFAULT_FORM,
+  cloneError = null,
+  cloneSuccess = null,
+  pendingCloneId = null,
   onCreateDialogChange,
   onCreateNameChange,
   onCreateSubmit,
   onDeleteDialogChange,
   onRequestDelete,
   onDeleteConfirm,
+  onRequestClone,
+  onCloneDialogChange,
+  onCloneFormChange,
+  onCloneSubmit,
   onSwitchEnvironment,
   onRetry,
 }: EnvironmentManagementPageViewProps) {
+  const cloneSourceCandidates =
+    state.status === "ready"
+      ? state.environments.filter(
+          (entry) => entry.id !== (cloneTarget?.id ?? ""),
+        )
+      : [];
   const canManage = state.status === "ready";
   const canCreate =
     state.status === "ready" &&
@@ -439,22 +481,32 @@ export function EnvironmentManagementPageView({
                           : "No parent environment"}
                       </CardDescription>
                     </div>
-                    {!environment.isDefault ? (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label={`Actions for ${environment.name}`}
-                            data-mdcms-environment-actions={environment.name}
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                            <span className="sr-only">
-                              Delete {environment.name}
-                            </span>
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Actions for ${environment.name}`}
+                          data-mdcms-environment-actions={environment.name}
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                          <span className="sr-only">
+                            Actions for {environment.name}
+                          </span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          disabled={pendingCloneId === environment.id}
+                          onClick={() => onRequestClone?.(environment)}
+                          data-mdcms-environment-clone-action={environment.name}
+                        >
+                          <Copy className="mr-2 h-4 w-4" />
+                          {pendingCloneId === environment.id
+                            ? `Cloning into ${environment.name}...`
+                            : `Clone into ${environment.name}...`}
+                        </DropdownMenuItem>
+                        {!environment.isDefault ? (
                           <DropdownMenuItem
                             className="text-destructive"
                             disabled={pendingDeleteId === environment.id}
@@ -465,9 +517,9 @@ export function EnvironmentManagementPageView({
                               ? `Deleting ${environment.name}...`
                               : `Delete ${environment.name}`}
                           </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ) : null}
+                        ) : null}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </CardHeader>
                 <CardContent className="mt-auto space-y-3">
@@ -493,6 +545,133 @@ export function EnvironmentManagementPageView({
             ))}
           </section>
         )}
+
+        <Dialog
+          open={cloneTarget !== null}
+          onOpenChange={(open) => onCloneDialogChange?.(open)}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Clone into {cloneTarget?.name ?? ""}</DialogTitle>
+              <DialogDescription>
+                Copy content and/or settings from a source environment into{" "}
+                <span className="font-mono">{cloneTarget?.name ?? ""}</span>.
+                Document IDs in the target are new; translation_group_id and
+                locale linkage are preserved. Media inclusion is deferred and
+                will be added in a follow-up release.
+              </DialogDescription>
+            </DialogHeader>
+            <div
+              className="grid gap-4 py-3"
+              data-mdcms-environment-clone-dialog={cloneTarget?.name ?? ""}
+            >
+              <div className="grid gap-2">
+                <Label htmlFor="clone-source-env">Source environment</Label>
+                <select
+                  id="clone-source-env"
+                  className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+                  value={cloneForm.sourceEnvironmentId}
+                  onChange={(event) =>
+                    onCloneFormChange?.({
+                      ...cloneForm,
+                      sourceEnvironmentId: event.target.value,
+                    })
+                  }
+                >
+                  <option value="">Select source environment...</option>
+                  {cloneSourceCandidates.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <label className="flex items-center justify-between gap-2 rounded-md border p-2">
+                  <span>Include content</span>
+                  <Switch
+                    checked={cloneForm.includeContent}
+                    onCheckedChange={(checked) =>
+                      onCloneFormChange?.({
+                        ...cloneForm,
+                        includeContent: checked,
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-2 rounded-md border p-2">
+                  <span>Include settings</span>
+                  <Switch
+                    checked={cloneForm.includeSettings}
+                    onCheckedChange={(checked) =>
+                      onCloneFormChange?.({
+                        ...cloneForm,
+                        includeSettings: checked,
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-2 rounded-md border p-2">
+                  <span>Include drafts</span>
+                  <Switch
+                    checked={cloneForm.includeDrafts}
+                    onCheckedChange={(checked) =>
+                      onCloneFormChange?.({
+                        ...cloneForm,
+                        includeDrafts: checked,
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-2 rounded-md border p-2">
+                  <span>Preserve paths</span>
+                  <Switch
+                    checked={cloneForm.preservePaths}
+                    onCheckedChange={(checked) =>
+                      onCloneFormChange?.({
+                        ...cloneForm,
+                        preservePaths: checked,
+                      })
+                    }
+                  />
+                </label>
+              </div>
+              {cloneError ? (
+                <p
+                  data-mdcms-clone-error
+                  className="rounded-md border border-destructive/30 bg-destructive/5 p-2 text-sm text-destructive"
+                >
+                  {cloneError}
+                </p>
+              ) : null}
+              {cloneSuccess ? (
+                <p
+                  data-mdcms-clone-success
+                  className="rounded-md border border-emerald-300 bg-emerald-50 p-2 text-sm text-emerald-700"
+                >
+                  {cloneSuccess}
+                </p>
+              ) : null}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                onClick={() => onCloneDialogChange?.(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={
+                  !cloneForm.sourceEnvironmentId ||
+                  pendingCloneId === cloneTarget?.id
+                }
+                onClick={() => onCloneSubmit?.()}
+              >
+                {pendingCloneId === cloneTarget?.id ? "Cloning..." : "Clone"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog
           open={deleteTarget !== null}
@@ -556,6 +735,14 @@ export default function EnvironmentsPage() {
   const [deleteTarget, setDeleteTarget] = useState<EnvironmentSummary | null>(
     null,
   );
+  const [cloneTarget, setCloneTarget] = useState<EnvironmentSummary | null>(
+    null,
+  );
+  const [cloneForm, setCloneForm] =
+    useState<EnvironmentCloneFormState>(CLONE_DEFAULT_FORM);
+  const [cloneError, setCloneError] = useState<string | null>(null);
+  const [cloneSuccess, setCloneSuccess] = useState<string | null>(null);
+  const [pendingCloneId, setPendingCloneId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!project || !environment) {
@@ -669,6 +856,62 @@ export default function EnvironmentsPage() {
     }
   }
 
+  async function handleCloneSubmit() {
+    if (!project || !environment || !cloneTarget) {
+      setCloneError("Clone requires an active project and target.");
+      return;
+    }
+    if (sessionState.status !== "authenticated") {
+      setCloneError("Session could not be verified.");
+      return;
+    }
+    if (!cloneForm.sourceEnvironmentId) {
+      setCloneError("Pick a source environment to clone from.");
+      return;
+    }
+    if (cloneForm.sourceEnvironmentId === cloneTarget.id) {
+      setCloneError("Source and target environment must differ.");
+      return;
+    }
+
+    setPendingCloneId(cloneTarget.id);
+    setCloneError(null);
+    setCloneSuccess(null);
+
+    try {
+      const environmentApi = createStudioEnvironmentApi(
+        {
+          project,
+          environment,
+          serverUrl: apiBaseUrl,
+        },
+        {
+          auth,
+          csrfToken: sessionState.csrfToken,
+        },
+      );
+      const result = await environmentApi.clone(cloneTarget.id, {
+        sourceEnvironmentId: cloneForm.sourceEnvironmentId,
+        include: {
+          content: cloneForm.includeContent,
+          settings: cloneForm.includeSettings,
+        },
+        includeDrafts: cloneForm.includeDrafts,
+        preservePaths: cloneForm.preservePaths,
+      });
+      setCloneSuccess(
+        `Cloned ${result.documentsCloned} document${result.documentsCloned === 1 ? "" : "s"} into ${cloneTarget.name}.`,
+      );
+      setReloadVersion((current) => current + 1);
+    } catch (error) {
+      setCloneError(
+        readRuntimeErrorMessage(error, "Environment clone failed."),
+      );
+    } finally {
+      setPendingCloneId(null);
+    }
+  }
+
   async function handleDeleteConfirm() {
     if (!project || !environment || !deleteTarget) {
       setActionError("Environment deletion requires an active target.");
@@ -729,6 +972,37 @@ export default function EnvironmentsPage() {
       pendingCreate={pendingCreate}
       pendingDeleteId={pendingDeleteId}
       deleteTarget={deleteTarget}
+      cloneTarget={cloneTarget}
+      cloneForm={cloneForm}
+      cloneError={cloneError}
+      cloneSuccess={cloneSuccess}
+      pendingCloneId={pendingCloneId}
+      onRequestClone={(target) => {
+        setCloneTarget(target);
+        setCloneError(null);
+        setCloneSuccess(null);
+        // Default the source picker to the currently-active environment so
+        // operators have a sensible starting point. Skip if it's the target.
+        const defaultSource =
+          state.status === "ready"
+            ? state.environments.find(
+                (entry) => entry.id !== target.id && entry.name === environment,
+              )
+            : undefined;
+        setCloneForm({
+          ...CLONE_DEFAULT_FORM,
+          sourceEnvironmentId: defaultSource?.id ?? "",
+        });
+      }}
+      onCloneDialogChange={(open) => {
+        if (!open) {
+          setCloneTarget(null);
+          setCloneError(null);
+          setCloneSuccess(null);
+        }
+      }}
+      onCloneFormChange={setCloneForm}
+      onCloneSubmit={handleCloneSubmit}
       isCreateDialogOpen={isCreateDialogOpen}
       onCreateDialogChange={(open) => {
         setIsCreateDialogOpen(open);

@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "bun:test";
 
 import { createServerRequestHandler } from "./server.js";
-import { mountEnvironmentApiRoutes } from "./environments-api.js";
+import {
+  mountEnvironmentApiRoutes,
+  type EnvironmentStore,
+  type MountEnvironmentApiRoutesOptions,
+} from "./environments-api.js";
 
 const baseEnv = {
   NODE_ENV: "test",
@@ -11,6 +15,37 @@ const baseEnv = {
   PORT: "4000",
   SERVICE_NAME: "mdcms-server",
 } as NodeJS.ProcessEnv;
+
+function createStubStore(
+  overrides: Partial<EnvironmentStore> = {},
+): EnvironmentStore {
+  const fail = (label: string) => async (): Promise<never> => {
+    throw new Error(`stub ${label} not configured for this test`);
+  };
+  return {
+    list: overrides.list ?? (fail("list") as EnvironmentStore["list"]),
+    create: overrides.create ?? (fail("create") as EnvironmentStore["create"]),
+    delete: overrides.delete ?? (fail("delete") as EnvironmentStore["delete"]),
+    clone: overrides.clone ?? (fail("clone") as EnvironmentStore["clone"]),
+    promote:
+      overrides.promote ?? (fail("promote") as EnvironmentStore["promote"]),
+  };
+}
+
+function createTestRoutes(options: Partial<MountEnvironmentApiRoutesOptions>) {
+  return createServerRequestHandler({
+    env: baseEnv,
+    configureApp: (app) => {
+      mountEnvironmentApiRoutes(app, {
+        store: options.store ?? createStubStore(),
+        authorizeSession: options.authorizeSession ?? (async () => undefined),
+        authorizeAdmin: options.authorizeAdmin ?? (async () => undefined),
+        authorizeScoped: options.authorizeScoped ?? (async () => undefined),
+        requireCsrf: options.requireCsrf ?? (async () => undefined),
+      });
+    },
+  });
+}
 
 test("environment routes list project-scoped environments for admin sessions", async () => {
   const handler = createServerRequestHandler({
@@ -44,9 +79,16 @@ test("environment routes list project-scoped environments for admin sessions", a
           async delete() {
             throw new Error("not used");
           },
+          async clone() {
+            throw new Error("not used");
+          },
+          async promote() {
+            throw new Error("not used");
+          },
         },
         authorizeSession: async () => undefined,
         authorizeAdmin: async () => undefined,
+        authorizeScoped: async () => undefined,
         requireCsrf: async () => undefined,
       });
     },
@@ -88,6 +130,12 @@ test("environment routes reject create requests without admin privileges", async
           async delete() {
             throw new Error("not used");
           },
+          async clone() {
+            throw new Error("not used");
+          },
+          async promote() {
+            throw new Error("not used");
+          },
         },
         authorizeSession: async () => undefined,
         authorizeAdmin: async () => {
@@ -97,6 +145,7 @@ test("environment routes reject create requests without admin privileges", async
             message: "Admin privileges are required to manage environments.",
           });
         },
+        authorizeScoped: async () => undefined,
         requireCsrf: async () => undefined,
       });
     },
@@ -118,4 +167,160 @@ test("environment routes reject create requests without admin privileges", async
 
   assert.equal(response.status, 403);
   assert.equal(body.code, "FORBIDDEN");
+});
+
+test("clone route validates payload and rejects unknown include keys", async () => {
+  let cloneCalls = 0;
+  const handler = createTestRoutes({
+    store: createStubStore({
+      async clone() {
+        cloneCalls += 1;
+        return { targetEnvironmentId: "target", documentsCloned: 0 };
+      },
+    }),
+  });
+
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/environments/target-id/clone?project=marketing-site",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sourceEnvironmentId: "0bdf6f3a-f3a0-4a8f-9fef-8d8ec0c64a1a",
+          include: { content: true, settings: false, media: true },
+        }),
+      },
+    ),
+  );
+  const body = (await response.json()) as { code: string };
+  assert.equal(response.status, 400);
+  assert.equal(body.code, "INVALID_INPUT");
+  assert.equal(cloneCalls, 0);
+});
+
+test("clone route requires environments:clone scope", async () => {
+  let scopedAttempts: string[] = [];
+  const handler = createTestRoutes({
+    store: createStubStore({
+      async clone() {
+        return { targetEnvironmentId: "target", documentsCloned: 0 };
+      },
+    }),
+    authorizeScoped: async (_request, scope) => {
+      scopedAttempts.push(scope);
+      throw Object.assign(new Error("forbidden"), {
+        code: "FORBIDDEN",
+        statusCode: 403,
+        message: `Missing scope ${scope}`,
+      });
+    },
+  });
+
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/environments/target-id/clone?project=marketing-site",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sourceEnvironmentId: "0bdf6f3a-f3a0-4a8f-9fef-8d8ec0c64a1a",
+        }),
+      },
+    ),
+  );
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(scopedAttempts, ["environments:clone"]);
+});
+
+test("promote route requires environments:promote scope and CSRF", async () => {
+  let scopedAttempts: string[] = [];
+  let csrfCalls = 0;
+  const handler = createTestRoutes({
+    store: createStubStore({
+      async promote() {
+        return { promoted: [] };
+      },
+    }),
+    authorizeScoped: async (_request, scope) => {
+      scopedAttempts.push(scope);
+    },
+    requireCsrf: async () => {
+      csrfCalls += 1;
+    },
+  });
+
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/environments/target-id/promote?project=marketing-site",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sourceEnvironmentId: "0bdf6f3a-f3a0-4a8f-9fef-8d8ec0c64a1a",
+          documentIds: ["1f3b6f3a-f3a0-4a8f-9fef-8d8ec0c64a1a"],
+        }),
+      },
+    ),
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(scopedAttempts, ["environments:promote"]);
+  assert.equal(csrfCalls, 1);
+});
+
+test("promote route requires non-empty documentIds", async () => {
+  const handler = createTestRoutes({
+    store: createStubStore({
+      async promote() {
+        return { promoted: [] };
+      },
+    }),
+  });
+
+  const response = await handler(
+    new Request(
+      "http://localhost/api/v1/environments/target-id/promote?project=marketing-site",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sourceEnvironmentId: "0bdf6f3a-f3a0-4a8f-9fef-8d8ec0c64a1a",
+          documentIds: [],
+        }),
+      },
+    ),
+  );
+  const body = (await response.json()) as {
+    code: string;
+    details?: Record<string, unknown>;
+  };
+  assert.equal(response.status, 400);
+  assert.equal(body.code, "INVALID_INPUT");
+});
+
+test("clone and promote routes require target routing project", async () => {
+  const handler = createTestRoutes({
+    store: createStubStore(),
+  });
+
+  for (const path of [
+    "/api/v1/environments/target-id/clone",
+    "/api/v1/environments/target-id/promote",
+  ]) {
+    const response = await handler(
+      new Request(`http://localhost${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sourceEnvironmentId: "0bdf6f3a-f3a0-4a8f-9fef-8d8ec0c64a1a",
+          documentIds: ["1f3b6f3a-f3a0-4a8f-9fef-8d8ec0c64a1a"],
+        }),
+      }),
+    );
+    const body = (await response.json()) as { code: string };
+    assert.equal(response.status, 400, `${path} should require routing`);
+    assert.equal(body.code, "MISSING_TARGET_ROUTING");
+  }
 });

@@ -199,6 +199,14 @@ export function createServerRequestHandlerWithModules(
           return session;
         },
         authorizeAdmin: (request) => authService.requireAdminSession(request),
+        authorizeScoped: async (request, requiredScope) => {
+          const routing = resolveRequestTargetRouting(request);
+          await authService.authorizeRequest(request, {
+            requiredScope,
+            project: routing.project,
+            environment: routing.environment,
+          });
+        },
         requireCsrf: (request) => authService.requireCsrfProtection(request),
       });
       mountProjectApiRoutes(app, {

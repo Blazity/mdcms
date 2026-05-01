@@ -1,10 +1,16 @@
 import {
   RuntimeError,
+  assertEnvironmentCloneInput,
   assertEnvironmentCreateInput,
   assertEnvironmentListResponse,
+  assertEnvironmentPromoteInput,
   assertEnvironmentSummary,
+  type EnvironmentCloneInput,
+  type EnvironmentCloneResult,
   type EnvironmentCreateInput,
   type EnvironmentListResponse,
+  type EnvironmentPromoteInput,
+  type EnvironmentPromoteResult,
   type EnvironmentSummary,
 } from "@mdcms/shared";
 
@@ -30,6 +36,14 @@ export type StudioEnvironmentApi = {
   list: () => Promise<EnvironmentListResponse>;
   create: (input: EnvironmentCreateInput) => Promise<EnvironmentSummary>;
   delete: (environmentId: string) => Promise<void>;
+  clone: (
+    targetEnvironmentId: string,
+    input: EnvironmentCloneInput,
+  ) => Promise<EnvironmentCloneResult>;
+  promote: (
+    targetEnvironmentId: string,
+    input: EnvironmentPromoteInput,
+  ) => Promise<EnvironmentPromoteResult>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -224,6 +238,124 @@ export function createStudioEnvironmentApi(
           "Environment deletion failed.",
         );
       }
+    },
+
+    async clone(targetEnvironmentId, input) {
+      if (!isNonEmptyString(targetEnvironmentId)) {
+        throw new RuntimeError({
+          code: "INVALID_INPUT",
+          message: "Target environment id is required.",
+          statusCode: 400,
+          details: { field: "targetEnvironmentId" },
+        });
+      }
+      assertEnvironmentCloneInput(input, "input");
+
+      const url = resolveRouteUrl(
+        config,
+        `/api/v1/environments/${encodeURIComponent(targetEnvironmentId)}/clone`,
+      );
+      const response = await fetcher(
+        url,
+        applyStudioAuthToRequestInit(options.auth, {
+          method: "POST",
+          headers: {
+            ...scopedHeaders,
+            "content-type": "application/json",
+            "x-mdcms-csrf-token": requireCsrfToken(
+              options.csrfToken,
+              "Environment clone",
+            ),
+          },
+          body: JSON.stringify(input),
+        }),
+      );
+      const payload = await readResponsePayload(response);
+
+      if (!response.ok) {
+        throw toRouteFailureError(
+          response,
+          payload,
+          "ENVIRONMENT_CLONE_FAILED",
+          "Environment clone failed.",
+        );
+      }
+
+      const data =
+        isRecord(payload) && "data" in payload ? payload.data : undefined;
+      if (
+        !isRecord(data) ||
+        typeof data.targetEnvironmentId !== "string" ||
+        typeof data.documentsCloned !== "number"
+      ) {
+        throw new RuntimeError({
+          code: "ENVIRONMENT_CLONE_RESPONSE_INVALID",
+          message: "Clone response is invalid.",
+          statusCode: 500,
+          details: { payload },
+        });
+      }
+      return {
+        targetEnvironmentId: data.targetEnvironmentId,
+        documentsCloned: data.documentsCloned,
+      };
+    },
+
+    async promote(targetEnvironmentId, input) {
+      if (!isNonEmptyString(targetEnvironmentId)) {
+        throw new RuntimeError({
+          code: "INVALID_INPUT",
+          message: "Target environment id is required.",
+          statusCode: 400,
+          details: { field: "targetEnvironmentId" },
+        });
+      }
+      assertEnvironmentPromoteInput(input, "input");
+
+      const url = resolveRouteUrl(
+        config,
+        `/api/v1/environments/${encodeURIComponent(targetEnvironmentId)}/promote`,
+      );
+      const response = await fetcher(
+        url,
+        applyStudioAuthToRequestInit(options.auth, {
+          method: "POST",
+          headers: {
+            ...scopedHeaders,
+            "content-type": "application/json",
+            "x-mdcms-csrf-token": requireCsrfToken(
+              options.csrfToken,
+              "Environment promote",
+            ),
+          },
+          body: JSON.stringify(input),
+        }),
+      );
+      const payload = await readResponsePayload(response);
+
+      if (!response.ok) {
+        throw toRouteFailureError(
+          response,
+          payload,
+          "ENVIRONMENT_PROMOTE_FAILED",
+          "Environment promote failed.",
+        );
+      }
+
+      const data =
+        isRecord(payload) && "data" in payload ? payload.data : undefined;
+      if (
+        !isRecord(data) ||
+        !Array.isArray((data as { promoted?: unknown }).promoted)
+      ) {
+        throw new RuntimeError({
+          code: "ENVIRONMENT_PROMOTE_RESPONSE_INVALID",
+          message: "Promote response is invalid.",
+          statusCode: 500,
+          details: { payload },
+        });
+      }
+      return data as EnvironmentPromoteResult;
     },
   };
 }
