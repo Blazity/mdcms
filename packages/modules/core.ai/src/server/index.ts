@@ -18,7 +18,7 @@ export type CreateAiOrchestratorFromEnvDeps = AiProviderFactoryDeps &
 export function createAiOrchestratorFromEnv(
   deps: CreateAiOrchestratorFromEnvDeps,
 ): AiOrchestrator {
-  const provider = resolveAiProvider({ env: deps.env, fetch: deps.fetch });
+  const provider = resolveAiProvider({ env: deps.env });
 
   return createAiOrchestrator({
     provider,

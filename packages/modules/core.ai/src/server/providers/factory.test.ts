@@ -46,18 +46,16 @@ describe("resolveAiProvider", () => {
     );
   });
 
-  test("null provider throws AI_DISABLED on use", async () => {
+  test("null provider exposes a null language model", () => {
     const provider = resolveAiProvider({ env: {} });
+    assert.equal(provider.languageModel, null);
+  });
 
-    await assert.rejects(
-      () =>
-        provider.complete({
-          taskKind: "copy_improvement",
-          promptTemplateId: "copy_improvement.v1",
-          system: "x",
-          user: "y",
-        }),
-      (error) => error instanceof RuntimeError && error.code === "AI_DISABLED",
-    );
+  test("echo provider exposes a non-null language model", () => {
+    const provider = resolveAiProvider({
+      env: { [AI_PROVIDER_ENV_KEY]: "echo" },
+    });
+    assert.notEqual(provider.languageModel, null);
+    assert.equal(provider.languageModel?.modelId, "echo-1");
   });
 });

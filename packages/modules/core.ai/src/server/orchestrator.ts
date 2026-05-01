@@ -1,3 +1,4 @@
+import { generateObject } from "ai";
 import {
   RuntimeError,
   type AiErrorCode,
@@ -11,7 +12,7 @@ import {
   buildProposalsFromOutput,
   type AiProposalEnvelope,
 } from "./proposal-builder.js";
-import type { AiProvider, AiProviderResponse } from "./provider.js";
+import type { AiProvider, AiProviderUsage } from "./provider.js";
 import {
   AI_TASK_DEFINITIONS,
   type AiTaskDefinition,
@@ -59,62 +60,51 @@ export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
     async runTask(call) {
       const definition = resolveTaskDefinition(call.taskKind);
       const occurredAt = clock();
+      const baseContext: ErrorAuditContext = {
+        taskKind: definition.kind,
+        providerId: deps.provider.id,
+        promptTemplateId: definition.promptTemplateId,
+        occurredAt,
+      };
 
-      const parsedInput = parseTaskInput(definition, call.input);
-      const providerResponse = await callProvider(
+      const parsedInput = parseTaskInput(definition, call.input, baseContext);
+
+      const generation = await generateForTask(
         deps.provider,
         definition,
         parsedInput,
         call.maxOutputTokens,
-        {
-          taskKind: definition.kind,
-          providerId: deps.provider.id,
-          promptTemplateId: definition.promptTemplateId,
-          occurredAt,
-        },
+        baseContext,
       );
 
-      const parsedOutput = parseTaskOutput(
-        definition,
-        providerResponse.output,
-        {
-          taskKind: definition.kind,
-          providerId: deps.provider.id,
-          model: providerResponse.model,
-          promptTemplateId: definition.promptTemplateId,
-          occurredAt,
-          usage: providerResponse.usage,
-        },
-      );
+      const enrichedContext: ErrorAuditContext = {
+        ...baseContext,
+        model: generation.model,
+        usage: generation.usage,
+      };
 
       const proposals = buildProposals(
         definition,
-        parsedOutput,
-        providerResponse,
+        generation.output,
+        deps.provider.id,
+        generation.model,
         call.envelope,
         idFactory,
         clock,
         ttlMs,
-        {
-          taskKind: definition.kind,
-          providerId: deps.provider.id,
-          model: providerResponse.model,
-          promptTemplateId: definition.promptTemplateId,
-          occurredAt,
-          usage: providerResponse.usage,
-        },
+        enrichedContext,
       );
 
       const audit = buildAuditRecord({
         taskKind: definition.kind,
         providerId: deps.provider.id,
-        model: providerResponse.model,
+        model: generation.model,
         promptTemplateId: definition.promptTemplateId,
         occurredAt,
         outcome: "succeeded",
         validation: { status: "valid" },
         proposals,
-        usage: providerResponse.usage,
+        usage: generation.usage,
       });
 
       return { proposals, audit };
@@ -139,13 +129,17 @@ function resolveTaskDefinition(taskKind: AiTaskKind): AiTaskDefinition {
 function parseTaskInput(
   definition: AiTaskDefinition,
   raw: AiTaskInput,
+  context: ErrorAuditContext,
 ): AiTaskInput {
   const parsed = definition.inputSchema.safeParse(raw);
 
-  if (!parsed.success) {
-    const [first] = parsed.error.issues;
+  if (parsed.success) {
+    return parsed.data;
+  }
 
-    throw aiError(
+  const [first] = parsed.error.issues;
+  throw new OrchestratorFailure(
+    aiError(
       "AI_OUTPUT_INVALID",
       first?.message ?? "Invalid task input.",
       {
@@ -153,10 +147,23 @@ function parseTaskInput(
         issues: parsed.error.issues,
       },
       400,
-    );
-  }
-
-  return parsed.data;
+    ),
+    buildAuditRecord({
+      ...context,
+      outcome: "invalid_output",
+      validation: {
+        status: "invalid",
+        errors: [
+          {
+            code: "AI_OUTPUT_INVALID",
+            message: first?.message ?? "Invalid task input.",
+          },
+        ],
+      },
+      errorCode: "AI_OUTPUT_INVALID",
+      errorMessage: first?.message ?? "Invalid task input.",
+    }),
+  );
 }
 
 type ErrorAuditContext = {
@@ -165,32 +172,71 @@ type ErrorAuditContext = {
   promptTemplateId: string;
   occurredAt: Date;
   model?: string;
-  usage?: AiProviderResponse["usage"];
+  usage?: AiProviderUsage;
 };
 
-async function callProvider(
+type GenerationResult = {
+  output: AiTaskOutput;
+  model: string;
+  usage?: AiProviderUsage;
+};
+
+async function generateForTask(
   provider: AiProvider,
   definition: AiTaskDefinition,
   input: AiTaskInput,
   maxOutputTokens: number | undefined,
   context: ErrorAuditContext,
-): Promise<AiProviderResponse> {
-  try {
-    return await provider.complete({
-      taskKind: definition.kind,
-      promptTemplateId: definition.promptTemplateId,
-      system: definition.system,
-      user: definition.buildUserPrompt(input),
-      maxOutputTokens,
-    });
-  } catch (error) {
-    const mapped = mapProviderError(error);
+): Promise<GenerationResult> {
+  if (provider.languageModel === null) {
     throw new OrchestratorFailure(
-      mapped,
+      aiError(
+        "AI_DISABLED",
+        "AI provider is not configured for this deployment.",
+      ),
       buildAuditRecord({
         ...context,
         outcome: "provider_error",
         validation: { status: "valid" },
+        errorCode: "AI_DISABLED",
+        errorMessage: "AI provider is not configured for this deployment.",
+      }),
+    );
+  }
+
+  try {
+    const result = await generateObject({
+      model: provider.languageModel,
+      schema: definition.outputSchema,
+      schemaName: `Ai${pascalCase(definition.kind)}Output`,
+      system: definition.system,
+      prompt: definition.buildUserPrompt(input),
+      maxOutputTokens,
+    });
+
+    return {
+      output: result.object as AiTaskOutput,
+      model: provider.languageModel.modelId,
+      usage: normalizeUsage(result.usage),
+    };
+  } catch (error) {
+    const mapped = mapProviderError(error);
+    const outcome: "invalid_output" | "provider_error" =
+      mapped.code === "AI_OUTPUT_INVALID" ? "invalid_output" : "provider_error";
+
+    throw new OrchestratorFailure(
+      mapped,
+      buildAuditRecord({
+        ...context,
+        model: provider.languageModel.modelId,
+        outcome,
+        validation:
+          outcome === "invalid_output"
+            ? {
+                status: "invalid",
+                errors: [{ code: mapped.code, message: mapped.message }],
+              }
+            : { status: "valid" },
         errorCode: isAiErrorCode(mapped.code)
           ? (mapped.code as AiErrorCode)
           : "AI_PROVIDER_UNAVAILABLE",
@@ -200,43 +246,11 @@ async function callProvider(
   }
 }
 
-function parseTaskOutput(
-  definition: AiTaskDefinition,
-  rawOutput: string,
-  context: ErrorAuditContext,
-): AiTaskOutput {
-  const json = tryParseJson(rawOutput);
-
-  if (json.kind === "error") {
-    throw invalidOutputFailure(
-      "Task output was not valid JSON.",
-      { reason: json.message },
-      context,
-    );
-  }
-
-  const parsed = definition.outputSchema.safeParse(json.value);
-
-  if (!parsed.success) {
-    const [first] = parsed.error.issues;
-
-    throw invalidOutputFailure(
-      first?.message ?? "Task output failed schema validation.",
-      {
-        path: first?.path?.join(".") || undefined,
-        issues: parsed.error.issues,
-      },
-      context,
-    );
-  }
-
-  return parsed.data;
-}
-
 function buildProposals(
   definition: AiTaskDefinition,
   output: AiTaskOutput,
-  providerResponse: AiProviderResponse,
+  providerId: string,
+  model: string,
   envelope: AiProposalEnvelope,
   idFactory: AiOrchestratorIdFactory,
   clock: AiOrchestratorClock,
@@ -248,10 +262,8 @@ function buildProposals(
       {
         taskKind: definition.kind,
         promptTemplateId: definition.promptTemplateId,
-        providerId: providerResponse.model
-          ? context.providerId
-          : context.providerId,
-        model: providerResponse.model,
+        providerId,
+        model,
         envelope,
         output,
       },
@@ -263,56 +275,66 @@ function buildProposals(
       isAiErrorCode(error.code) &&
       error.code === "AI_OUTPUT_INVALID"
     ) {
-      throw invalidOutputFailure(error.message, error.details, {
-        ...context,
-        model: providerResponse.model,
-        usage: providerResponse.usage,
-      });
+      throw new OrchestratorFailure(
+        error,
+        buildAuditRecord({
+          ...context,
+          outcome: "invalid_output",
+          validation: {
+            status: "invalid",
+            errors: [{ code: "AI_OUTPUT_INVALID", message: error.message }],
+          },
+          errorCode: "AI_OUTPUT_INVALID",
+          errorMessage: error.message,
+        }),
+      );
     }
 
     throw error;
   }
 }
 
-function invalidOutputFailure(
-  message: string,
-  details: Record<string, unknown> | undefined,
-  context: ErrorAuditContext,
-): OrchestratorFailure {
-  const error = aiError("AI_OUTPUT_INVALID", message, details);
+/**
+ * Map AI SDK's LanguageModelUsage shape onto our internal AiProviderUsage,
+ * dropping undefined fields so audit records stay tidy.
+ */
+function normalizeUsage(
+  usage:
+    | {
+        inputTokens?: number;
+        outputTokens?: number;
+        totalTokens?: number;
+      }
+    | undefined,
+): AiProviderUsage | undefined {
+  if (!usage) {
+    return undefined;
+  }
 
-  return new OrchestratorFailure(
-    error,
-    buildAuditRecord({
-      ...context,
-      outcome: "invalid_output",
-      validation: {
-        status: "invalid",
-        errors: [
-          {
-            code: "AI_OUTPUT_INVALID",
-            message,
-          },
-        ],
-      },
-      errorCode: "AI_OUTPUT_INVALID",
-      errorMessage: message,
-    }),
-  );
+  const result: AiProviderUsage = {};
+
+  if (typeof usage.inputTokens === "number") {
+    result.inputTokens = usage.inputTokens;
+  }
+
+  if (typeof usage.outputTokens === "number") {
+    result.outputTokens = usage.outputTokens;
+  }
+
+  if (typeof usage.totalTokens === "number") {
+    result.totalTokens = usage.totalTokens;
+  }
+
+  return Object.keys(result).length === 0 ? undefined : result;
 }
 
-type ParseJsonResult =
-  | { kind: "ok"; value: unknown }
-  | { kind: "error"; message: string };
-
-function tryParseJson(raw: string): ParseJsonResult {
-  try {
-    return { kind: "ok", value: JSON.parse(raw) };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "JSON parse error";
-
-    return { kind: "error", message };
-  }
+function pascalCase(value: string): string {
+  return value
+    .split(/[_\-\s]+/)
+    .map((segment) =>
+      segment.length === 0 ? "" : segment[0].toUpperCase() + segment.slice(1),
+    )
+    .join("");
 }
 
 /**

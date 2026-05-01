@@ -43,7 +43,12 @@ describe("buildAuditRecord", () => {
       outcome: "succeeded",
       validation: { status: "valid" },
       proposals: [proposal],
-      usage: { promptTokens: 12, completionTokens: 7, costUsd: 0.0001 },
+      usage: {
+        inputTokens: 12,
+        outputTokens: 7,
+        totalTokens: 19,
+        costUsd: 0.0001,
+      },
     });
 
     assert.equal(record.outcome, "succeeded");
@@ -52,8 +57,9 @@ describe("buildAuditRecord", () => {
     assert.equal(record.promptTemplateId, "copy_improvement.v1");
     assert.deepEqual(record.proposalIds, ["p_1"]);
     assert.deepEqual(record.usage, {
-      promptTokens: 12,
-      completionTokens: 7,
+      inputTokens: 12,
+      outputTokens: 7,
+      totalTokens: 19,
       costUsd: 0.0001,
     });
     assert.equal(record.occurredAt, "2026-05-01T00:00:00.000Z");

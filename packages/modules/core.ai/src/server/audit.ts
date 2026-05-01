@@ -85,12 +85,16 @@ export function buildAuditRecord(input: BuildAuditRecordInput): AiAuditRecord {
 function sanitizeUsage(usage: AiProviderUsage): AiProviderUsage | undefined {
   const result: AiProviderUsage = {};
 
-  if (typeof usage.promptTokens === "number") {
-    result.promptTokens = usage.promptTokens;
+  if (typeof usage.inputTokens === "number") {
+    result.inputTokens = usage.inputTokens;
   }
 
-  if (typeof usage.completionTokens === "number") {
-    result.completionTokens = usage.completionTokens;
+  if (typeof usage.outputTokens === "number") {
+    result.outputTokens = usage.outputTokens;
+  }
+
+  if (typeof usage.totalTokens === "number") {
+    result.totalTokens = usage.totalTokens;
   }
 
   if (typeof usage.costUsd === "number") {

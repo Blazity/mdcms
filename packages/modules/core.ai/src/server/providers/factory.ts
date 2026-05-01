@@ -9,11 +9,14 @@ export const AI_PROVIDER_ENV_KEY = "AI_PROVIDER" as const;
  * Resolve an AiProvider from environment configuration.
  *
  * Behavior:
- * - Missing or "disabled" → null provider (returns AI_DISABLED on use).
- * - "echo" → in-memory echo provider for tests/local dev.
+ * - Missing or "disabled" → null provider (orchestrator surfaces
+ *   AI_DISABLED).
+ * - "echo" → in-memory Vercel AI SDK mock model for tests and local
+ *   dev.
  * - Any other id (e.g. "anthropic", "openai") is reserved for future
- *   adapters. This ticket throws AI_PROVIDER_UNAVAILABLE so callers
- *   surface a stable error instead of silently degrading.
+ *   AI SDK provider package adapters. This ticket throws
+ *   AI_PROVIDER_UNAVAILABLE so callers surface a stable error
+ *   instead of silently degrading.
  */
 export function resolveAiProvider(deps: AiProviderFactoryDeps): AiProvider {
   const raw = deps.env[AI_PROVIDER_ENV_KEY];

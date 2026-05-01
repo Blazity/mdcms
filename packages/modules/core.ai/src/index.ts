@@ -65,7 +65,5 @@ export type {
   AiProvider,
   AiProviderEnv,
   AiProviderFactoryDeps,
-  AiProviderRequest,
-  AiProviderResponse,
   AiProviderUsage,
 } from "./server/provider.js";

@@ -65,7 +65,7 @@ describe("createAiOrchestrator", () => {
     resetIds();
     const provider = createEchoAiProvider({
       respond: () => buildEchoOutput(),
-      usage: { promptTokens: 12, completionTokens: 6 },
+      usage: { inputTokens: 12, outputTokens: 6 },
     });
     const orchestrator = createAiOrchestrator({
       provider,
@@ -89,14 +89,15 @@ describe("createAiOrchestrator", () => {
     assert.equal(result.audit.model, ECHO_PROVIDER_DEFAULT_MODEL);
     assert.deepEqual(result.audit.proposalIds, ["prop_1"]);
     assert.deepEqual(result.audit.usage, {
-      promptTokens: 12,
-      completionTokens: 6,
+      inputTokens: 12,
+      outputTokens: 6,
+      totalTokens: 18,
     });
   });
 
   test("provider failure → AI_PROVIDER_UNAVAILABLE with provider_error audit", async () => {
     const provider = createEchoAiProvider({
-      throwOnComplete: new Error("network down"),
+      throwOnGenerate: new Error("network down"),
     });
     const orchestrator = createAiOrchestrator({
       provider,

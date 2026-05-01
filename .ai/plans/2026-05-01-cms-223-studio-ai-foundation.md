@@ -24,12 +24,20 @@ Affected acceptance criteria from the issue:
 
 ## Architecture
 
-A new first-party module: `packages/modules/core.ai/`. Module surface
-exposes the orchestrator factory through future server actions; for this
-ticket the surface mounts no routes — only the foundation is in place.
-Cross-module contract types live in `@mdcms/shared` so callers (Studio
-clients via SDK, future endpoints in apps/server) can import the same
-shape without depending on the module's runtime.
+A new first-party module: `packages/modules/core.ai/`. The provider
+seam wraps an AI SDK `LanguageModelV3` so any Vercel AI SDK provider
+package (`@ai-sdk/anthropic`, `@ai-sdk/openai`, …) plugs in via the
+factory without changes to the orchestrator. The orchestrator drives
+generation through `generateObject({ model, schema })` so structured
+output validation, JSON parsing, and provider error normalization
+come from the SDK rather than hand-rolled code.
+
+Module surface exposes the orchestrator factory through future server
+actions; for this ticket the surface mounts no routes — only the
+foundation is in place. Cross-module contract types live in
+`@mdcms/shared` so callers (Studio clients via SDK, future endpoints
+in apps/server) can import the same shape without depending on the
+module's runtime.
 
 Why a module and not `apps/server/src/lib/ai/`:
 
@@ -39,6 +47,18 @@ Why a module and not `apps/server/src/lib/ai/`:
   module's `server.actions[]` list once endpoints land.
 - Provider credentials/state are server-only; modules' `server.mount()`
   receives the same `AppDeps` (logger, env) the rest of the server uses.
+
+Why Vercel AI SDK as the underlying mechanism:
+
+- Single seam for OpenAI / Anthropic / Google / Gateway provider
+  packages — adding a real adapter is a one-liner once the API key
+  env handling is wired in a follow-up ticket.
+- `generateObject` does JSON parsing and Zod-schema validation against
+  task output contracts in one call; we map its error classes
+  (`NoObjectGeneratedError`, `JSONParseError`, `TypeValidationError`,
+  `APICallError`) onto our `AI_*` codes.
+- `MockLanguageModelV3` from `ai/test` gives us a deterministic test
+  provider without our own bespoke fake.
 
 ## Files
 
