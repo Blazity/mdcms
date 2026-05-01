@@ -415,7 +415,8 @@ Machine-to-machine access (SDK, CI/CD) uses API keys:
   - `webhooks:write`
   - `environments:clone`
   - `environments:promote`
-- `migrations:run`
+  - `ai:use`
+  - `migrations:run`
 - Scopes are deny-by-default: a key without an operation scope cannot perform that action.
 - Public routes and session-only routes may specify required scope `none`; operation scopes apply only to API-key-capable routes.
 - Keys are hashed at rest and never retrievable after creation.
