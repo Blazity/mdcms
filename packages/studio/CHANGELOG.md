@@ -1,5 +1,13 @@
 # @mdcms/studio
 
+## 0.1.6
+
+### Patch Changes
+
+- 82b5fbd: Reduce the Studio runtime bundle size by keeping Node-side MDX prop extraction out of the browser runtime and emitting optimized production runtime assets.
+- Updated dependencies [82b5fbd]
+  - @mdcms/shared@0.1.5
+
 ## 0.1.5
 
 ### Patch Changes
