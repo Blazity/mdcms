@@ -7,6 +7,7 @@ import { RuntimeError, type CliPreflightHook } from "@mdcms/shared";
 import { formatCliErrorEnvelope } from "./cli.js";
 import { loadCliConfig, type CliConfig } from "./config.js";
 import { createCredentialStore, type CredentialStore } from "./credentials.js";
+import { loadCliEnvFiles } from "./env-files.js";
 import { createInitCommand } from "./init.js";
 import { createLoginCommand } from "./login.js";
 import { createLogoutCommand } from "./logout.js";
@@ -39,6 +40,7 @@ export type CliGlobalOptions = {
   apiKey?: string;
   configPath?: string;
   serverUrl?: string;
+  noEnvFile?: boolean;
 };
 
 export type ParsedCliInvocation = {
@@ -152,6 +154,7 @@ export function parseCliInvocation(argv: string[]): ParsedCliInvocation {
     help: false,
     verbose: false,
     version: false,
+    noEnvFile: false,
   };
   const commandTokens: string[] = [];
 
@@ -170,6 +173,11 @@ export function parseCliInvocation(argv: string[]): ParsedCliInvocation {
 
     if (token === "-V" || token === "--version") {
       global.version = true;
+      continue;
+    }
+
+    if (token === "--no-env-file") {
+      global.noEnvFile = true;
       continue;
     }
 
@@ -373,6 +381,7 @@ function renderHelp(commands: readonly CliCommand[]): string {
     "  --api-key <token>      API key for headless/CI auth",
     "  --config <path>        Config file path (default: mdcms.config.ts)",
     "  --server-url <url>     Override server URL",
+    "  --no-env-file          Disable automatic .env* file loading",
     "  -v, --verbose          Show internal runtime diagnostics",
     "  -V, --version          Show version",
     "  -h, --help             Show help",
@@ -460,22 +469,6 @@ export async function runMdcmsCli(
   const multiSelect = options.multiSelect ?? defaultMultiSelectPrompt;
   const registry = createCommandRegistry(commands);
   const invocation = parseCliInvocation(argv);
-  const runtimeWithModules =
-    options.runtimeWithModules ??
-    createCliRuntimeContextWithModules(env, {
-      verbose: invocation.global.verbose,
-    });
-  const credentialStore =
-    options.credentialStore ??
-    createCredentialStore({
-      env,
-    });
-  const resolveStoredApiKey =
-    options.resolveStoredApiKey ??
-    (async (input) => {
-      const profile = await credentialStore.getProfile(input);
-      return profile?.apiKey;
-    });
 
   if (invocation.global.version) {
     stdout.write(`mdcms/${options.version ?? "0.0.0"}\n`);
@@ -518,6 +511,37 @@ export async function runMdcmsCli(
   }
 
   try {
+    const envFiles = await loadCliEnvFiles({
+      cwd,
+      configPath: invocation.global.configPath,
+      env,
+      disabled:
+        invocation.global.noEnvFile ||
+        env.MDCMS_DOTENV?.trim().toLowerCase() === "0",
+    });
+
+    for (const warning of envFiles.warnings) {
+      stderr.write(
+        `Warning: Failed to load env file "${warning.filePath}": ${warning.message}\n`,
+      );
+    }
+
+    const runtimeWithModules =
+      options.runtimeWithModules ??
+      createCliRuntimeContextWithModules(env, {
+        verbose: invocation.global.verbose,
+      });
+    const credentialStore =
+      options.credentialStore ??
+      createCredentialStore({
+        env,
+      });
+    const resolveStoredApiKey =
+      options.resolveStoredApiKey ??
+      (async (input) => {
+        const profile = await credentialStore.getProfile(input);
+        return profile?.apiKey;
+      });
     const loadConfig = options.loadConfig ?? loadCliConfig;
     let config: CliConfig = {
       serverUrl: "",

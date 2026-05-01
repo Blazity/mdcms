@@ -49,6 +49,19 @@ Default demo credentials (seeded automatically in `compose:dev`):
 | `DATABASE_URL`              | `postgresql://mdcms:mdcms@localhost:5432/mdcms` | For `server:dev`               |
 | `MDCMS_DEMO_API_KEY`        | Seeded in compose                               | API key for demo content pages |
 
+For local CLI workflows in this demo, put developer-specific values in `apps/studio-example/.env.local` next to `mdcms.config.ts`. The `mdcms` CLI loads `.env*` files from that config directory before importing the config, with shell exports taking precedence over file values.
+
+CLI env-file order, highest precedence first:
+
+1. `.env.{NODE_ENV}.local`
+2. `.env.local` (skipped when `NODE_ENV=test`)
+3. `.env.{NODE_ENV}`
+4. `.env`
+
+`NODE_ENV` is only the dotenv file selector here. It controls names such as `.env.production`; it does not select the MDCMS content environment. Use `MDCMS_ENVIRONMENT` or the config `environment` field for that.
+
+Use `--no-env-file` or `MDCMS_DOTENV=0` when CI should rely only on explicitly exported environment variables.
+
 ## Documentation
 
 See [docs.mdcms.ai](https://docs.mdcms.ai/) for the full Studio embedding guide.
