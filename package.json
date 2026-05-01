@@ -11,6 +11,7 @@
     "integration:content": "bash scripts/content-api-integration-check.sh",
     "ci:required": "bun run quality && bun run unit && bun run integration",
     "check": "bun nx run-many -t build typecheck",
+    "changeset:check": "bun scripts/check-published-package-changeset.ts",
     "dev": "bun nx run-many -t dev --projects studio,server,studio-example",
     "compose:dev": "docker compose -f docker-compose.dev.yml up",
     "compose:dev:down": "docker compose -f docker-compose.dev.yml down",

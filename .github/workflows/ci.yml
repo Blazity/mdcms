@@ -16,6 +16,24 @@ env:
   NX_CACHE_DIRECTORY: ".nx/cache"
 
 jobs:
+  changeset-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: tree:0
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - run: bun test ./scripts/check-published-package-changeset.test.ts
+      - run: bun run changeset:check
+        env:
+          CHANGESET_CHECK_BASE: ${{ github.event.pull_request.base.sha }}
+
   quality:
     runs-on: ubuntu-latest
     steps:
