@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -8,6 +7,8 @@ import {
   type ParsedMdcmsConfig,
   type ParsedMdcmsTypeDefinition,
 } from "@mdcms/shared";
+
+import { resolveCliConfigPath } from "./config-path.js";
 
 export type CliContentTypeConfig = Pick<
   ParsedMdcmsTypeDefinition,
@@ -43,10 +44,7 @@ export async function loadCliConfig(options: {
   cwd: string;
   configPath?: string;
 }): Promise<{ config: LoadedCliConfig; configPath: string }> {
-  const configPath = resolve(
-    options.cwd,
-    options.configPath ?? "mdcms.config.ts",
-  );
+  const configPath = await resolveCliConfigPath(options);
 
   if (!existsSync(configPath)) {
     throw new RuntimeError({

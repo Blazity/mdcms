@@ -105,10 +105,28 @@ All commands that interact with server content resolve a target `(project, envir
 | `--api-key <token>`    | API key for headless/CI auth                             | No                   |
 | `--config <path>`      | Config file path (default: `mdcms.config.ts`)            | No                   |
 | `--server-url <url>`   | Override server URL                                      | No                   |
+| `--no-env-file`        | Disable automatic `.env*` file loading for this run      | No                   |
 | `-V`, `--version`      | Print installed CLI version (`mdcms/<version>`) and exit | No                   |
 | `-h`, `--help`         | Show help and exit                                       | No                   |
 
 `--version` exits immediately with code 0 and does not require a config file, authentication, or server connectivity. Output format is `mdcms/<semver>` (e.g. `mdcms/0.1.4`), suitable for scripting and troubleshooting.
+
+### Environment File Loading
+
+At process startup, the CLI auto-loads `.env*` files before importing `mdcms.config.ts` so config files may read `process.env` directly. Auto-loading is enabled by default for every command, including `cms login`, and may be disabled with `--no-env-file` or `MDCMS_DOTENV=0`.
+
+The env root is the directory containing the resolved `mdcms.config.{ts,js,mjs}` file. With `--config <path>`, the explicit config file path defines the env root. Without `--config`, the CLI searches upward from the current working directory for the nearest `mdcms.config.ts`, `mdcms.config.js`, or `mdcms.config.mjs`; if none exists, it falls back to the current working directory so config-optional commands still get local env defaults.
+
+The CLI uses `NODE_ENV` as the mode and defaults it to `development` when unset. Higher-precedence files override lower-precedence files, but variables that already exist in the shell environment always win over file values:
+
+| Precedence | File                    | Loaded when            |
+| ---------- | ----------------------- | ---------------------- |
+| 1          | `.env.{NODE_ENV}.local` | Always, if present     |
+| 2          | `.env.local`            | Unless `NODE_ENV=test` |
+| 3          | `.env.{NODE_ENV}`       | Always, if present     |
+| 4          | `.env`                  | Always, if present     |
+
+Malformed or unreadable env files are non-fatal. The CLI writes a warning to stderr and continues using shell-only environment values.
 
 CLI extensibility in v1 is intentionally action-based: aliases, formatters, and preflight hooks are allowed; arbitrary command-tree injection is out of scope.
 
