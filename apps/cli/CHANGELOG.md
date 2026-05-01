@@ -1,5 +1,11 @@
 # @mdcms/cli
 
+## 0.2.1
+
+### Patch Changes
+
+- 4ec96d6: Auto-load dotenv files before CLI config import, with config-root lookup, shell env precedence, and opt-out controls.
+
 ## 0.2.0
 
 ### Minor Changes
