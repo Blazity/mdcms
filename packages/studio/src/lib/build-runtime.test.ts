@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { test } from "bun:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -15,7 +17,11 @@ const studioPackageRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../..",
 );
+const buildRuntimeModuleUrl = pathToFileURL(
+  join(studioPackageRoot, "src/lib/build-runtime.ts"),
+).href;
 const defaultRuntimeEntry = join(studioPackageRoot, "src/lib/remote-module.ts");
+const execFileAsync = promisify(execFile);
 
 type BunBuildResult = {
   success: boolean;
@@ -140,33 +146,58 @@ test("buildStudioRuntimeArtifacts resolves the default project root from the pac
   await withTempDir("studio-runtime-cwd-", async (directory) => {
     const sourceFile = join(directory, "app.ts");
     const outDir = join(directory, "dist");
-    const originalCwd = process.cwd();
+    const scriptFile = join(directory, "build-runtime-cwd-check.ts");
 
     await writeFile(
       sourceFile,
       "export const mount = () => () => {};\n",
       "utf8",
     );
+    await writeFile(
+      scriptFile,
+      [
+        `import { readFile } from "node:fs/promises";`,
+        `import { buildStudioRuntimeArtifacts } from ${JSON.stringify(
+          buildRuntimeModuleUrl,
+        )};`,
+        "",
+        `const outDir = ${JSON.stringify(outDir)};`,
+        "const build = await buildStudioRuntimeArtifacts({",
+        `  sourceFile: ${JSON.stringify(sourceFile)},`,
+        "  outDir,",
+        `  studioVersion: "1.2.3",`,
+        `  mode: "module",`,
+        "});",
+        "",
+        `const entrySource = await readFile(build.entryPath, "utf8");`,
+        `const cssSource = await readFile(build.cssPath, "utf8");`,
+        "console.log(JSON.stringify({",
+        "  entryInOutDir: build.entryPath.startsWith(`${outDir}/`),",
+        "  entryHasContent: entrySource.length > 0,",
+        `  cssHasBackground: cssSource.includes(".bg-background"),`,
+        "}));",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
 
-    process.chdir(directory);
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      ["--conditions", "@mdcms/source", scriptFile],
+      { cwd: directory },
+    );
+    const [lastLine] = stdout.trim().split(/\r?\n/).slice(-1);
+    const result = JSON.parse(lastLine ?? "{}") as {
+      entryInOutDir?: boolean;
+      entryHasContent?: boolean;
+      cssHasBackground?: boolean;
+    };
 
-    try {
-      const build = await buildStudioRuntimeArtifacts({
-        sourceFile,
-        outDir,
-        studioVersion: "1.2.3",
-        mode: "module",
-      });
-
-      assert.equal(build.entryPath.startsWith(`${outDir}/`), true);
-      assert.equal((await readFile(build.entryPath, "utf8")).length > 0, true);
-      assert.equal(
-        (await readFile(build.cssPath, "utf8")).includes(".bg-background"),
-        true,
-      );
-    } finally {
-      process.chdir(originalCwd);
-    }
+    assert.deepEqual(result, {
+      entryInOutDir: true,
+      entryHasContent: true,
+      cssHasBackground: true,
+    });
   });
 });
 
