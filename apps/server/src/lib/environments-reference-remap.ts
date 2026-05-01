@@ -179,7 +179,22 @@ function remapFieldValue(input: {
       return input.value;
     }
     if (!isRecord(input.value)) {
-      return input.value;
+      // Schema declares an object that contains references but the stored
+      // value is not an object. Silently passing the value through would
+      // commit unremapped reference IDs into the target — instead fail
+      // fast so the surrounding transaction rolls back.
+      throw new RuntimeError({
+        code: "REFERENCE_REMAP_FAILED",
+        message: `Field "${input.fieldPath}" must be an object because its schema contains reference fields.`,
+        statusCode: 409,
+        details: {
+          sourceDocumentId: input.sourceDocumentId,
+          fieldPath: input.fieldPath,
+          reason: "container_shape_mismatch",
+          expectedKind: "object",
+          actualType: Array.isArray(input.value) ? "array" : typeof input.value,
+        },
+      });
     }
     const next: Record<string, unknown> = { ...input.value };
     for (const [fieldName, field] of Object.entries(input.field.fields)) {
@@ -197,8 +212,25 @@ function remapFieldValue(input: {
   }
 
   if (input.field.kind === "array" && input.field.item) {
-    if (!containsReference(input.field) || !Array.isArray(input.value)) {
+    if (!containsReference(input.field)) {
       return input.value;
+    }
+    if (!Array.isArray(input.value)) {
+      // Same reasoning as the object branch above — if the schema says
+      // "array of references" but the stored value isn't an array, refuse
+      // rather than commit unremapped ids.
+      throw new RuntimeError({
+        code: "REFERENCE_REMAP_FAILED",
+        message: `Field "${input.fieldPath}" must be an array because its schema contains reference fields.`,
+        statusCode: 409,
+        details: {
+          sourceDocumentId: input.sourceDocumentId,
+          fieldPath: input.fieldPath,
+          reason: "container_shape_mismatch",
+          expectedKind: "array",
+          actualType: isRecord(input.value) ? "object" : typeof input.value,
+        },
+      });
     }
     return input.value.map((entry, index) =>
       remapFieldValue({

@@ -14,7 +14,7 @@ Owning spec is `docs/specs/SPEC-009-i18n-and-environments.md`. The clone and pro
 - `apps/server/src/lib/environments-reference-remap.ts` (new) — atomic reference remap walker (CMS-96).
 - `apps/server/src/lib/environments-api.test.ts` — extend with clone/promote routes + scope/CSRF coverage.
 - `apps/server/src/lib/environments-clone-promote.integration.test.ts` (new) — full DB integration matrix for CMS-97.
-- `apps/server/src/lib/runtime-with-modules.ts` — wire `authorizeWriteScope` + scope gates for the new routes.
+- `apps/server/src/lib/runtime-with-modules.ts` — wire `authorizeScoped` (the route option name) so the new routes go through `authService.authorizeRequest({ requiredScope, project, environment })`.
 - `packages/shared/src/lib/contracts/environments.ts` — request/response types + Zod schemas for clone/promote.
 - `packages/studio/src/lib/environment-api.ts` — client methods `clone` and `promote`.
 - `packages/studio/src/lib/runtime-ui/app/admin/environments-page.tsx` — "Clone" action per env card with payload-options dialog.

@@ -58,12 +58,27 @@ export type PromotePageState =
       environments: EnvironmentSummary[];
     };
 
+// `PromotePreviewSnapshot` freezes the inputs that produced a successful
+// dry-run. A real run uses these — not the live form state — so an operator
+// who tweaks the selection after previewing has to re-preview before
+// executing, never accidentally promoting a different set of documents than
+// the confirmation dialog showed.
+export type PromotePreviewSnapshot = {
+  sourceEnvId: string;
+  sourceEnvName: string;
+  targetEnvId: string;
+  targetEnvName: string;
+  documentIds: string[];
+  includeUnpublished: boolean;
+};
+
 export type PromotePreviewState =
   | { status: "idle" }
   | { status: "loading" }
   | {
       status: "ready";
       results: DocumentPromotionResult[];
+      snapshot: PromotePreviewSnapshot;
     }
   | {
       status: "error";
@@ -136,10 +151,14 @@ export default function PromotePage() {
   const { project, environment, apiBaseUrl, auth } = useStudioMountInfo();
   const sessionState = useStudioSession();
 
-  const [state, setState] = useState<PromotePageState>({
-    status: "loading",
-    message: "Loading environments.",
-  });
+  // Initial state reflects routing synchronously so SSR markup matches the
+  // hydrated state — missing routing renders the missing-route panel,
+  // present routing renders the loading panel until the env list arrives.
+  const [state, setState] = useState<PromotePageState>(() =>
+    !project || !environment
+      ? { status: "missing-route" }
+      : { status: "loading", message: "Loading environments." },
+  );
   const [sourceEnvId, setSourceEnvId] = useState<string>("");
   const [targetEnvId, setTargetEnvId] = useState<string>("");
   const [documents, setDocuments] = useState<ContentDocumentResponse[]>([]);
@@ -258,6 +277,16 @@ export default function PromotePage() {
     [state, targetEnvId],
   );
 
+  // Invalidate any prior preview when the user changes inputs that drive it.
+  // Combined with the snapshot recorded inside the preview result, this means
+  // the operator must re-preview after editing source/target/selection
+  // before the "Confirm & Promote" button works again.
+  useEffect(() => {
+    setPreview((current) =>
+      current.status === "ready" ? { status: "idle" } : current,
+    );
+  }, [sourceEnvId, targetEnvId, selectedIds, includeUnpublished]);
+
   async function handlePreview() {
     if (!project || !targetEnv || !sourceEnv) return;
     if (sessionState.status !== "authenticated") {
@@ -274,23 +303,34 @@ export default function PromotePage() {
       });
       return;
     }
+    // Snapshot inputs at preview time. The real run uses *these*, not the
+    // live form state, so the confirmation dialog never lies about what
+    // will execute.
+    const snapshot: PromotePreviewSnapshot = {
+      sourceEnvId: sourceEnv.id,
+      sourceEnvName: sourceEnv.name,
+      targetEnvId: targetEnv.id,
+      targetEnvName: targetEnv.name,
+      documentIds: [...selectedIds],
+      includeUnpublished,
+    };
     setPreview({ status: "loading" });
     try {
       const environmentApi = createStudioEnvironmentApi(
         {
           project,
-          environment: sourceEnv.name,
+          environment: snapshot.sourceEnvName,
           serverUrl: apiBaseUrl,
         },
         { auth, csrfToken: sessionState.csrfToken },
       );
-      const result = await environmentApi.promote(targetEnv.id, {
-        sourceEnvironmentId: sourceEnv.id,
-        documentIds: selectedIds,
-        includeUnpublished,
+      const result = await environmentApi.promote(snapshot.targetEnvId, {
+        sourceEnvironmentId: snapshot.sourceEnvId,
+        documentIds: snapshot.documentIds,
+        includeUnpublished: snapshot.includeUnpublished,
         dryRun: true,
       });
-      setPreview({ status: "ready", results: result.promoted });
+      setPreview({ status: "ready", results: result.promoted, snapshot });
     } catch (error) {
       setPreview({
         status: "error",
@@ -301,11 +341,16 @@ export default function PromotePage() {
   }
 
   async function handleConfirmExecute() {
-    if (!project || !targetEnv || !sourceEnv) return;
+    if (!project) return;
+    if (preview.status !== "ready") {
+      setExecuteError("Re-run preview before promoting.");
+      return;
+    }
     if (sessionState.status !== "authenticated") {
       setExecuteError("Session could not be verified.");
       return;
     }
+    const snapshot = preview.snapshot;
     setExecuting(true);
     setExecuteError(null);
     setExecuteResult(null);
@@ -313,16 +358,29 @@ export default function PromotePage() {
       const environmentApi = createStudioEnvironmentApi(
         {
           project,
-          environment: sourceEnv.name,
+          environment: snapshot.sourceEnvName,
           serverUrl: apiBaseUrl,
         },
         { auth, csrfToken: sessionState.csrfToken },
       );
-      const result = await environmentApi.promote(targetEnv.id, {
-        sourceEnvironmentId: sourceEnv.id,
-        documentIds: selectedIds,
-        includeUnpublished,
+      // Replay the dry-run plan: send back the target ids the preview
+      // returned so the real run uses identical UUIDs (and identical
+      // overwrite/create classification).
+      const preallocatedTargetIds: Record<string, string> = {};
+      for (const entry of preview.results) {
+        if (entry.status === "created" && entry.targetDocumentId) {
+          preallocatedTargetIds[entry.sourceDocumentId] =
+            entry.targetDocumentId;
+        }
+      }
+      const result = await environmentApi.promote(snapshot.targetEnvId, {
+        sourceEnvironmentId: snapshot.sourceEnvId,
+        documentIds: snapshot.documentIds,
+        includeUnpublished: snapshot.includeUnpublished,
         dryRun: false,
+        ...(Object.keys(preallocatedTargetIds).length > 0
+          ? { preallocatedTargetIds }
+          : {}),
       });
       setExecuteResult(result);
       setConfirmOpen(false);

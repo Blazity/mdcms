@@ -75,8 +75,10 @@ test("PromotePage renders without an active project as missing-route", () => {
     ),
   );
 
-  // SSR initial state runs the loading effect synchronously; without a
-  // project we surface a missing-route message rather than rendering the
-  // selector.
-  assert.match(markup, /requires an active project|Loading environments/i);
+  // Without a project the page must show the missing-route message —
+  // not the loading state, which only happens *after* the route check
+  // passes. A loose regex would let a regression that breaks the
+  // missing-route branch quietly pass.
+  assert.match(markup, /requires an active project/i);
+  assert.doesNotMatch(markup, /Loading environments/i);
 });

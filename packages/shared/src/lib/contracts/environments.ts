@@ -31,15 +31,18 @@ export type EnvironmentCreateInput = {
 };
 
 export type EnvironmentClonePayloadInclude = {
-  content: boolean;
-  settings: boolean;
+  content?: boolean;
+  settings?: boolean;
 };
 
 export type EnvironmentCloneInput = {
   sourceEnvironmentId: string;
-  include: EnvironmentClonePayloadInclude;
-  includeDrafts: boolean;
-  preservePaths: boolean;
+  // Spec defaults: include={content:true,settings:false}, includeDrafts=true,
+  // preservePaths=true. The runtime validator applies these defaults before
+  // dispatch — TS callers may omit them to inherit those defaults.
+  include?: EnvironmentClonePayloadInclude;
+  includeDrafts?: boolean;
+  preservePaths?: boolean;
 };
 
 export type EnvironmentCloneResult = {
@@ -66,8 +69,16 @@ export type DocumentPromotionResult = {
 export type EnvironmentPromoteInput = {
   sourceEnvironmentId: string;
   documentIds: string[];
-  includeUnpublished: boolean;
-  dryRun: boolean;
+  // Defaults: includeUnpublished=false (only published source rows promote),
+  // dryRun=false (real run). The runtime validator fills these in.
+  includeUnpublished?: boolean;
+  dryRun?: boolean;
+  // Optional. Caller-supplied map keyed by source documentId → target
+  // documentId. The orchestrator uses these instead of generating fresh
+  // UUIDs for would-be-created target rows so a dry-run plan can be
+  // replayed deterministically: read `promoted[].targetDocumentId` from a
+  // dryRun response, pass it back here on the real run.
+  preallocatedTargetIds?: Record<string, string>;
 };
 
 export type EnvironmentPromoteResult = {
@@ -309,10 +320,43 @@ export function assertEnvironmentPromoteInput(
   // dryRun defaults to false — explicit opt-in for plan-only mode.
   const dryRun = assertOptionalBoolean(obj.dryRun, `${path}.dryRun`, false);
 
+  // Optional `preallocatedTargetIds`: keys are source document UUIDs that the
+  // operation will create in the target; values are the target document UUIDs
+  // to use instead of fresh randomUUID()s. Lets a real run replay the exact
+  // plan a prior dry-run returned.
+  let preallocatedTargetIds: Record<string, string> | undefined;
+  if (obj.preallocatedTargetIds !== undefined) {
+    if (
+      typeof obj.preallocatedTargetIds !== "object" ||
+      obj.preallocatedTargetIds === null ||
+      Array.isArray(obj.preallocatedTargetIds)
+    ) {
+      invalidInput(
+        `${path}.preallocatedTargetIds`,
+        "must be an object mapping source documentId UUIDs to target documentId UUIDs.",
+      );
+    }
+    preallocatedTargetIds = {};
+    for (const [sourceId, targetId] of Object.entries(
+      obj.preallocatedTargetIds as Record<string, unknown>,
+    )) {
+      const normalizedSource = assertUuid(
+        sourceId,
+        `${path}.preallocatedTargetIds[key]`,
+      );
+      const normalizedTarget = assertUuid(
+        targetId,
+        `${path}.preallocatedTargetIds[${sourceId}]`,
+      );
+      preallocatedTargetIds[normalizedSource] = normalizedTarget;
+    }
+  }
+
   Object.assign(obj, {
     sourceEnvironmentId,
     documentIds,
     includeUnpublished,
     dryRun,
+    ...(preallocatedTargetIds !== undefined ? { preallocatedTargetIds } : {}),
   });
 }

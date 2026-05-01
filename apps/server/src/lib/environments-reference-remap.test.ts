@@ -217,3 +217,51 @@ test("remapFrontmatterReferences passes through frontmatter when schema undefine
   assert.equal(result.remappedReferences, 0);
   assert.equal(result.frontmatter.author, SOURCE_AUTHOR);
 });
+
+test("remapFrontmatterReferences throws when an object reference container is wrong shape", () => {
+  let thrown: unknown;
+  try {
+    remapFrontmatterReferences({
+      schema,
+      frontmatter: {
+        // schema declares `block` as an object containing a reference
+        // (`block.cover`); supplying an array breaks the shape contract.
+        block: [SOURCE_ASSET],
+      } as unknown as Record<string, unknown>,
+      sourceLookup: baseSourceLookup,
+      targetResolver: baseTargetResolver,
+      sourceDocumentId: "src-doc",
+    });
+  } catch (error) {
+    thrown = error;
+  }
+  assert.ok(isRuntimeErrorLike(thrown));
+  const error = thrown as { code: string; details?: Record<string, unknown> };
+  assert.equal(error.code, "REFERENCE_REMAP_FAILED");
+  assert.equal(error.details?.reason, "container_shape_mismatch");
+  assert.equal(error.details?.expectedKind, "object");
+});
+
+test("remapFrontmatterReferences throws when an array reference container is wrong shape", () => {
+  let thrown: unknown;
+  try {
+    remapFrontmatterReferences({
+      schema,
+      frontmatter: {
+        // `related` is declared as an array of references — passing an
+        // object should fail fast rather than silently keep unremapped ids.
+        related: { 0: SOURCE_BLOG_A },
+      } as unknown as Record<string, unknown>,
+      sourceLookup: baseSourceLookup,
+      targetResolver: baseTargetResolver,
+      sourceDocumentId: "src-doc",
+    });
+  } catch (error) {
+    thrown = error;
+  }
+  assert.ok(isRuntimeErrorLike(thrown));
+  const error = thrown as { code: string; details?: Record<string, unknown> };
+  assert.equal(error.code, "REFERENCE_REMAP_FAILED");
+  assert.equal(error.details?.reason, "container_shape_mismatch");
+  assert.equal(error.details?.expectedKind, "array");
+});

@@ -852,5 +852,193 @@ integrationTest(
   },
 );
 
+integrationTest(
+  "clone with includeDrafts:false copies the published payload, not the draft state",
+  async () => {
+    const { dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+      config: cloneTestConfig,
+    });
+    const slug = uniqueProjectSlug("clone-published-payload");
+    let projectId: string | undefined;
+    try {
+      const fixture = await provisionTwoEnvironments(dbConnection.db, slug);
+      projectId = fixture.projectId;
+
+      // The fixture leaves source docs published at v1 with body "Hello body".
+      // Mutate the documents head row to simulate post-publish draft edits.
+      await dbConnection.db
+        .update(documents)
+        .set({
+          body: "DRAFT body — should not leak into published clone",
+          frontmatter: {
+            title: "DRAFT title",
+            author: fixture.authorDocumentId,
+          },
+          hasUnpublishedChanges: true,
+        })
+        .where(eq(documents.documentId, fixture.blogDocumentId));
+
+      const result = await cloneEnvironment(dbConnection.db, {
+        project: slug,
+        targetEnvironmentId: fixture.productionEnvId,
+        sourceEnvironmentId: fixture.stagingEnvId,
+        include: { content: true, settings: false },
+        includeDrafts: false,
+        preservePaths: true,
+      });
+      assert.equal(result.documentsCloned, 2);
+
+      const targetBlog = await dbConnection.db.query.documents.findFirst({
+        where: and(
+          eq(documents.projectId, fixture.projectId),
+          eq(documents.environmentId, fixture.productionEnvId),
+          eq(documents.schemaType, "BlogPost"),
+        ),
+      });
+      assert.ok(targetBlog);
+      // Head and version-1 must both reflect the *published* payload, not
+      // the draft body that was mutated above.
+      assert.equal(targetBlog.body, "Hello body");
+      assert.equal(
+        (targetBlog.frontmatter as { title: string }).title,
+        "Hello",
+      );
+      assert.equal(targetBlog.publishedVersion, 1);
+      assert.equal(targetBlog.hasUnpublishedChanges, false);
+
+      const targetVersionRow =
+        await dbConnection.db.query.documentVersions.findFirst({
+          where: and(
+            eq(documentVersions.documentId, targetBlog.documentId),
+            eq(documentVersions.version, 1),
+          ),
+        });
+      assert.ok(targetVersionRow);
+      assert.equal(targetVersionRow.body, "Hello body");
+    } finally {
+      if (projectId) {
+        await teardownProject(dbConnection.db, projectId);
+      }
+      await dbConnection.close();
+    }
+  },
+);
+
+integrationTest(
+  "clone with preservePaths:false places target rows on suffix-derived paths",
+  async () => {
+    const { dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+      config: cloneTestConfig,
+    });
+    const slug = uniqueProjectSlug("clone-preserve-paths-false");
+    let projectId: string | undefined;
+    try {
+      const fixture = await provisionTwoEnvironments(dbConnection.db, slug);
+      projectId = fixture.projectId;
+
+      const result = await cloneEnvironment(dbConnection.db, {
+        project: slug,
+        targetEnvironmentId: fixture.productionEnvId,
+        sourceEnvironmentId: fixture.stagingEnvId,
+        include: { content: true, settings: false },
+        includeDrafts: true,
+        preservePaths: false,
+      });
+      assert.equal(result.documentsCloned, 2);
+
+      const targetRows = await dbConnection.db
+        .select()
+        .from(documents)
+        .where(
+          and(
+            eq(documents.projectId, fixture.projectId),
+            eq(documents.environmentId, fixture.productionEnvId),
+          ),
+        );
+      // Every target row's path should differ from its source path because
+      // preservePaths is false; a deterministic suffix is appended.
+      for (const row of targetRows) {
+        assert.ok(
+          row.path.includes(".cloned-"),
+          `target path should be suffixed when preservePaths:false (got ${row.path})`,
+        );
+      }
+    } finally {
+      if (projectId) {
+        await teardownProject(dbConnection.db, projectId);
+      }
+      await dbConnection.close();
+    }
+  },
+);
+
+integrationTest(
+  "promote dryRun → real run replays preallocatedTargetIds deterministically",
+  async () => {
+    const { dbConnection } = createServerRequestHandlerWithModules({
+      env,
+      logger,
+      config: cloneTestConfig,
+    });
+    const slug = uniqueProjectSlug("promote-replay");
+    let projectId: string | undefined;
+    try {
+      const fixture = await provisionTwoEnvironments(dbConnection.db, slug);
+      projectId = fixture.projectId;
+
+      const dryRun = await promoteDocuments(dbConnection.db, {
+        project: slug,
+        targetEnvironmentId: fixture.productionEnvId,
+        sourceEnvironmentId: fixture.stagingEnvId,
+        documentIds: [fixture.authorDocumentId, fixture.blogDocumentId],
+        includeUnpublished: false,
+        dryRun: true,
+      });
+
+      const preallocatedTargetIds: Record<string, string> = {};
+      for (const entry of dryRun.promoted) {
+        if (entry.status === "created" && entry.targetDocumentId) {
+          preallocatedTargetIds[entry.sourceDocumentId] =
+            entry.targetDocumentId;
+        }
+      }
+
+      const real = await promoteDocuments(dbConnection.db, {
+        project: slug,
+        targetEnvironmentId: fixture.productionEnvId,
+        sourceEnvironmentId: fixture.stagingEnvId,
+        documentIds: [fixture.authorDocumentId, fixture.blogDocumentId],
+        includeUnpublished: false,
+        dryRun: false,
+        preallocatedTargetIds,
+      });
+
+      // The real run must use the exact target ids the dryRun returned, so
+      // the operator's confirmation dialog (built from dryRun) doesn't lie.
+      const dryRunIds = new Map(
+        dryRun.promoted.map((entry) => [
+          entry.sourceDocumentId,
+          entry.targetDocumentId,
+        ]),
+      );
+      for (const entry of real.promoted) {
+        assert.equal(
+          entry.targetDocumentId,
+          dryRunIds.get(entry.sourceDocumentId),
+        );
+      }
+    } finally {
+      if (projectId) {
+        await teardownProject(dbConnection.db, projectId);
+      }
+      await dbConnection.close();
+    }
+  },
+);
+
 // Suppress unused warning on rbacGrants (only imported for future tests).
 void rbacGrants;

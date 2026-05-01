@@ -49,11 +49,27 @@ type ScopeRow = {
 
 type SourceDocumentRow = typeof documents.$inferSelect;
 
+// The published payload is what `documentVersions` holds for the row's
+// current `publishedVersion`. It is intentionally distinct from the
+// `documents` row, which always holds the most recent (possibly draft)
+// state. Clone uses the published payload when `includeDrafts: false` and
+// when copying the version-1 snapshot into the target.
+type PublishedPayload = {
+  body: string;
+  frontmatter: Record<string, unknown>;
+  path: string;
+  contentFormat: SourceDocumentRow["contentFormat"];
+  schemaType: string;
+  locale: string;
+  version: number;
+};
+
 type SourceContext = {
   scope: ScopeRow;
   rows: SourceDocumentRow[];
   sourceLookup: ReferenceSourceLookup;
   schemaByType: Map<string, SchemaRegistryTypeSnapshot>;
+  publishedByDocumentId: Map<string, PublishedPayload>;
 };
 
 function buildScopeError(message: string, details: Record<string, unknown>) {
@@ -208,11 +224,67 @@ async function loadSourceContext(
     );
   }
 
+  // Pull the published payload (body, frontmatter, path) for any source row
+  // that has a non-null publishedVersion. The `documents` row by itself can
+  // contain unsaved-draft content even when `publishedVersion` is set, so
+  // clone with `includeDrafts: false` and the version-1 snapshot copy must
+  // honor the version's payload to avoid leaking drafts into the target.
+  const publishedByDocumentId = new Map<string, PublishedPayload>();
+  const documentIdsWithPublished = rows
+    .filter((row) => row.publishedVersion !== null)
+    .map((row) => row.documentId);
+
+  if (documentIdsWithPublished.length > 0) {
+    const versionRows = await db
+      .select({
+        documentId: documentVersions.documentId,
+        version: documentVersions.version,
+        body: documentVersions.body,
+        frontmatter: documentVersions.frontmatter,
+        path: documentVersions.path,
+        contentFormat: documentVersions.contentFormat,
+        schemaType: documentVersions.schemaType,
+        locale: documentVersions.locale,
+      })
+      .from(documentVersions)
+      .where(
+        and(
+          eq(documentVersions.projectId, scope.projectId),
+          eq(documentVersions.environmentId, scope.sourceEnvId),
+          inArray(documentVersions.documentId, documentIdsWithPublished),
+        ),
+      );
+
+    // Each documentId may have many versions in the table — keep only the
+    // one matching the documents row's `publishedVersion`.
+    const expectedVersion = new Map(
+      rows
+        .filter((row) => row.publishedVersion !== null)
+        .map((row) => [row.documentId, row.publishedVersion as number]),
+    );
+    for (const versionRow of versionRows) {
+      if (expectedVersion.get(versionRow.documentId) !== versionRow.version) {
+        continue;
+      }
+      publishedByDocumentId.set(versionRow.documentId, {
+        body: versionRow.body,
+        frontmatter: versionRow.frontmatter as Record<string, unknown>,
+        path: versionRow.path,
+        contentFormat:
+          versionRow.contentFormat as SourceDocumentRow["contentFormat"],
+        schemaType: versionRow.schemaType,
+        locale: versionRow.locale,
+        version: versionRow.version,
+      });
+    }
+  }
+
   return {
     scope,
     rows,
     sourceLookup: (id) => sourceMap.get(id),
     schemaByType,
+    publishedByDocumentId,
   };
 }
 
@@ -257,10 +329,42 @@ export type CloneEnvironmentInput = EnvironmentCloneInput & {
   targetEnvironmentId: string;
 };
 
+// Spec defaults applied here so the orchestrator can run with a partial
+// `EnvironmentCloneInput` (e.g. internal callers, tests) without going
+// through the route's Zod assertion.
+function resolveCloneDefaults(input: CloneEnvironmentInput) {
+  return {
+    includeContent: input.include?.content ?? true,
+    includeSettings: input.include?.settings ?? false,
+    includeDrafts: input.includeDrafts ?? true,
+    preservePaths: input.preservePaths ?? true,
+  };
+}
+
+// `preservePaths: false` keeps the cloned document distinct from the source
+// path so the new environment can hold both copies side by side. We append a
+// short suffix derived from the new target documentId — deterministic per
+// run and short enough to stay within `text` column limits, and uniquely
+// salts the path so the (project, env, locale, path) unique index never
+// collides with whatever else lives in the target.
+function deriveTargetPath(input: {
+  sourcePath: string;
+  preservePaths: boolean;
+  targetDocumentId: string;
+}): string {
+  if (input.preservePaths) {
+    return input.sourcePath;
+  }
+  const suffix = input.targetDocumentId.slice(0, 8);
+  return `${input.sourcePath}.cloned-${suffix}`;
+}
+
 export async function cloneEnvironment(
   db: DrizzleDatabase,
   input: CloneEnvironmentInput,
 ): Promise<EnvironmentCloneResult> {
+  const defaults = resolveCloneDefaults(input);
+
   return db.transaction(async (tx) => {
     const txDb = tx as unknown as DrizzleDatabase;
     const scope = await loadProjectScope(txDb, {
@@ -269,11 +373,11 @@ export async function cloneEnvironment(
       targetEnvId: input.targetEnvironmentId,
     });
 
-    if (input.include.settings) {
+    if (defaults.includeSettings) {
       await copyEnvironmentSettings(txDb, scope);
     }
 
-    if (!input.include.content) {
+    if (!defaults.includeContent) {
       return {
         targetEnvironmentId: scope.targetEnvId,
         documentsCloned: 0,
@@ -281,7 +385,7 @@ export async function cloneEnvironment(
     }
 
     const sourceContext = await loadSourceContext(txDb, scope, {
-      includeDrafts: input.includeDrafts,
+      includeDrafts: defaults.includeDrafts,
     });
 
     if (sourceContext.rows.length === 0) {
@@ -328,22 +432,48 @@ export async function cloneEnvironment(
     let documentsCloned = 0;
 
     for (const row of sourceContext.rows) {
-      const schema = sourceContext.schemaByType.get(row.schemaType);
-      const remap = remapFrontmatterReferences({
-        schema,
-        frontmatter: row.frontmatter as Record<string, unknown>,
-        sourceLookup: sourceContext.sourceLookup,
-        targetResolver,
-        sourceDocumentId: row.documentId,
-      });
-
       const targetDocumentId = targetIdByKey.get(
         targetMapKey({
           translationGroupId: row.translationGroupId,
           locale: row.locale,
         }),
       )!;
-      const hasPublishedSnapshot = row.publishedVersion !== null;
+      const publishedPayload = sourceContext.publishedByDocumentId.get(
+        row.documentId,
+      );
+      const hasPublishedSnapshot = publishedPayload !== undefined;
+
+      // When `includeDrafts: false` the operator wants the published source
+      // state in the target. When `includeDrafts: true` the operator wants
+      // the live (possibly draft) state — which is what the documents row
+      // holds. The published payload is still used for the version-1 row
+      // snapshot below, so a published source row produces target content
+      // whose draft and published states accurately mirror the source.
+      const headPayload =
+        !defaults.includeDrafts && publishedPayload
+          ? publishedPayload
+          : {
+              body: row.body,
+              frontmatter: row.frontmatter as Record<string, unknown>,
+              path: row.path,
+              contentFormat: row.contentFormat,
+              schemaType: row.schemaType,
+              locale: row.locale,
+            };
+
+      const headRemap = remapFrontmatterReferences({
+        schema: sourceContext.schemaByType.get(headPayload.schemaType),
+        frontmatter: headPayload.frontmatter,
+        sourceLookup: sourceContext.sourceLookup,
+        targetResolver,
+        sourceDocumentId: row.documentId,
+      });
+
+      const targetPath = deriveTargetPath({
+        sourcePath: headPayload.path,
+        preservePaths: defaults.preservePaths,
+        targetDocumentId,
+      });
 
       try {
         await txDb.insert(documents).values({
@@ -351,12 +481,12 @@ export async function cloneEnvironment(
           translationGroupId: row.translationGroupId,
           projectId: scope.projectId,
           environmentId: scope.targetEnvId,
-          path: row.path,
-          schemaType: row.schemaType,
-          locale: row.locale,
-          contentFormat: row.contentFormat,
-          body: row.body,
-          frontmatter: remap.frontmatter,
+          path: targetPath,
+          schemaType: headPayload.schemaType,
+          locale: headPayload.locale,
+          contentFormat: headPayload.contentFormat,
+          body: headPayload.body,
+          frontmatter: headRemap.frontmatter,
           isDeleted: false,
           hasUnpublishedChanges: !hasPublishedSnapshot,
           publishedVersion: null,
@@ -370,38 +500,63 @@ export async function cloneEnvironment(
             "Target environment already contains content that conflicts with the clone payload.",
             {
               targetEnvironmentId: scope.targetEnvId,
-              path: row.path,
+              path: targetPath,
               locale: row.locale,
               translationGroupId: row.translationGroupId,
-              preservePaths: input.preservePaths,
+              preservePaths: defaults.preservePaths,
             },
           );
         }
         throw error;
       }
 
-      if (hasPublishedSnapshot) {
-        // Copy the latest published snapshot as version 1 in the target so
-        // the target row can be served as published immediately. Full version
-        // history is intentionally not copied (SPEC-009 #Cloning).
+      if (hasPublishedSnapshot && publishedPayload) {
+        // Version-1 in the target carries the *published* source state, even
+        // when `includeDrafts: true` and the head row reflects the draft —
+        // so consumers querying the target as "published" see exactly what
+        // was published on the source side. Full version history is
+        // intentionally not copied (SPEC-009 #Cloning).
+        const publishedRemap = remapFrontmatterReferences({
+          schema: sourceContext.schemaByType.get(publishedPayload.schemaType),
+          frontmatter: publishedPayload.frontmatter,
+          sourceLookup: sourceContext.sourceLookup,
+          targetResolver,
+          sourceDocumentId: row.documentId,
+        });
+        const publishedPath = deriveTargetPath({
+          sourcePath: publishedPayload.path,
+          preservePaths: defaults.preservePaths,
+          targetDocumentId,
+        });
         await txDb.insert(documentVersions).values({
           documentId: targetDocumentId,
           translationGroupId: row.translationGroupId,
           projectId: scope.projectId,
           environmentId: scope.targetEnvId,
-          schemaType: row.schemaType,
-          locale: row.locale,
-          contentFormat: row.contentFormat,
-          path: row.path,
-          body: row.body,
-          frontmatter: remap.frontmatter,
+          schemaType: publishedPayload.schemaType,
+          locale: publishedPayload.locale,
+          contentFormat: publishedPayload.contentFormat,
+          path: publishedPath,
+          body: publishedPayload.body,
+          frontmatter: publishedRemap.frontmatter,
           version: 1,
           publishedBy: cloneActor,
           changeSummary: "Cloned from source environment.",
         });
         await txDb
           .update(documents)
-          .set({ publishedVersion: 1, hasUnpublishedChanges: false })
+          .set({
+            publishedVersion: 1,
+            hasUnpublishedChanges: !defaults.includeDrafts
+              ? false
+              : // If includeDrafts is true and the head and published payloads
+                // differ, the target row holds draft content distinct from its
+                // published v1 — so `hasUnpublishedChanges` is true.
+                headPayload.body !== publishedPayload.body ||
+                JSON.stringify(headPayload.frontmatter) !==
+                  JSON.stringify(publishedPayload.frontmatter) ||
+                headPayload.path !== publishedPayload.path,
+          })
           .where(eq(documents.documentId, targetDocumentId));
       }
 
@@ -495,6 +650,12 @@ export async function promoteDocuments(
   db: DrizzleDatabase,
   input: PromoteEnvironmentInput,
 ): Promise<EnvironmentPromoteResult> {
+  // Apply spec defaults so internal callers (and tests) can pass a partial
+  // input without round-tripping through the route validator.
+  const includeUnpublished = input.includeUnpublished ?? false;
+  const dryRun = input.dryRun ?? false;
+  const callerPreallocations = input.preallocatedTargetIds ?? {};
+
   return db.transaction(async (tx) => {
     const txDb = tx as unknown as DrizzleDatabase;
     const scope = await loadProjectScope(txDb, {
@@ -532,9 +693,14 @@ export async function promoteDocuments(
     // dry-run (no writes) and during the real run (in-progress creations).
     // The pre-allocated id matches the id used by `createTargetDraft` when
     // the row is actually written.
+    //
+    // When the caller supplied `preallocatedTargetIds` (typically the
+    // dry-run result replayed back into a real run), we reuse those ids
+    // for deterministic replay. Anything not in the caller map falls back
+    // to a fresh UUID.
     const preallocatedTargetIds = new Map<string, string>();
     for (const row of sourceContext.rows) {
-      if (!input.includeUnpublished && row.publishedVersion === null) {
+      if (!includeUnpublished && row.publishedVersion === null) {
         continue;
       }
       const key = targetMapKey({
@@ -542,7 +708,7 @@ export async function promoteDocuments(
         locale: row.locale,
       });
       if (!targetMap.has(key)) {
-        const allocated = randomUUID();
+        const allocated = callerPreallocations[row.documentId] ?? randomUUID();
         targetMap.set(key, allocated);
         preallocatedTargetIds.set(key, allocated);
       }
@@ -555,7 +721,7 @@ export async function promoteDocuments(
     const promoteActor = DEFAULT_ACTOR;
 
     for (const row of sourceContext.rows) {
-      if (!input.includeUnpublished && row.publishedVersion === null) {
+      if (!includeUnpublished && row.publishedVersion === null) {
         promoted.push({
           sourceDocumentId: row.documentId,
           targetDocumentId:
@@ -594,7 +760,7 @@ export async function promoteDocuments(
       // to create within this same batch.
       const existingTargetId = preallocatedId ? undefined : targetMap.get(key);
 
-      if (input.dryRun) {
+      if (dryRun) {
         promoted.push({
           sourceDocumentId: row.documentId,
           targetDocumentId: existingTargetId ?? preallocatedId ?? null,
@@ -720,28 +886,49 @@ async function overwriteTargetDraft(
     actor: string;
   },
 ): Promise<void> {
-  await db
-    .update(documents)
-    .set({
-      schemaType: input.source.schemaType,
-      contentFormat: input.source.contentFormat,
-      body: input.source.body,
-      frontmatter: input.remappedFrontmatter,
-      path: input.source.path,
-      locale: input.source.locale,
-      isDeleted: false,
-      hasUnpublishedChanges: true,
-      draftRevision: sql`${documents.draftRevision} + 1`,
-      updatedBy: input.actor,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(documents.projectId, input.scope.projectId),
-        eq(documents.environmentId, input.scope.targetEnvId),
-        eq(documents.documentId, input.targetDocumentId),
-      ),
-    );
+  // Updates can hit the same `(projectId, environmentId, locale, path)`
+  // unique index that creates do — for example when the source row's path
+  // already belongs to a different active target document. Surface this as
+  // the same 409 conflict shape `createTargetDraft` produces so the caller
+  // never sees a raw 23505 bubbled into a 500.
+  try {
+    await db
+      .update(documents)
+      .set({
+        schemaType: input.source.schemaType,
+        contentFormat: input.source.contentFormat,
+        body: input.source.body,
+        frontmatter: input.remappedFrontmatter,
+        path: input.source.path,
+        locale: input.source.locale,
+        isDeleted: false,
+        hasUnpublishedChanges: true,
+        draftRevision: sql`${documents.draftRevision} + 1`,
+        updatedBy: input.actor,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(documents.projectId, input.scope.projectId),
+          eq(documents.environmentId, input.scope.targetEnvId),
+          eq(documents.documentId, input.targetDocumentId),
+        ),
+      );
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw buildConflictError(
+        "Promote target conflicts with existing content (path or translation pair).",
+        {
+          targetEnvironmentId: input.scope.targetEnvId,
+          targetDocumentId: input.targetDocumentId,
+          path: input.source.path,
+          locale: input.source.locale,
+          translationGroupId: input.source.translationGroupId,
+        },
+      );
+    }
+    throw error;
+  }
 }
 
 async function publishTargetDocument(
