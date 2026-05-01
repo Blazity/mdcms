@@ -1,15 +1,44 @@
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { test } from "bun:test";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   STUDIO_RUNTIME_ASSETS_DIRNAME,
   STUDIO_RUNTIME_BOOTSTRAP_DIRNAME,
   buildStudioRuntimeArtifacts,
 } from "./build-runtime.js";
+
+const studioPackageRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
+const defaultRuntimeEntry = join(studioPackageRoot, "src/lib/remote-module.ts");
+
+type BunBuildResult = {
+  success: boolean;
+  outputs?: readonly {
+    kind: string;
+    text: () => Promise<string>;
+  }[];
+  logs?: readonly unknown[];
+};
+
+declare const Bun: {
+  build(options: {
+    entrypoints: string[];
+    format: "esm";
+    target: "browser";
+    splitting: boolean;
+    sourcemap: "none";
+    minify: boolean;
+    write: false;
+    conditions?: string[];
+    define?: Record<string, string>;
+  }): Promise<BunBuildResult>;
+};
 
 async function withTempDir<T>(
   prefix: string,
@@ -232,19 +261,35 @@ test("buildStudioRuntimeArtifacts inlines production runtime environment", async
 });
 
 test("buildStudioRuntimeArtifacts keeps the default browser runtime below the first-load size target", async () => {
-  await withTempDir("studio-runtime-real-", async (directory) => {
-    const build = await buildStudioRuntimeArtifacts({
-      outDir: join(directory, "dist"),
-      studioVersion: "1.2.3",
-      mode: "module",
-    });
-
-    const emittedSource = await readFile(build.entryPath, "utf8");
-
-    assert.equal(emittedSource.includes("typescript.js"), false);
-    assert.equal(emittedSource.includes("createProgram"), false);
-    assert.equal(Buffer.byteLength(emittedSource, "utf8") < 2_000_000, true);
+  const result = await Bun.build({
+    entrypoints: [defaultRuntimeEntry],
+    format: "esm",
+    target: "browser",
+    splitting: false,
+    sourcemap: "none",
+    minify: true,
+    write: false,
+    conditions: ["@mdcms/source"],
+    define: {
+      "process.env.NODE_ENV": JSON.stringify("production"),
+    },
   });
+  const entryOutput =
+    result.outputs?.find((output) => output.kind === "entry-point") ??
+    result.outputs?.[0];
+
+  assert.equal(
+    result.success,
+    true,
+    JSON.stringify(result.logs ?? [], null, 2),
+  );
+  assert.ok(entryOutput);
+
+  const emittedSource = await entryOutput.text();
+
+  assert.equal(emittedSource.includes("typescript.js"), false);
+  assert.equal(emittedSource.includes("createProgram"), false);
+  assert.equal(Buffer.byteLength(emittedSource, "utf8") < 2_000_000, true);
 });
 
 test("buildStudioRuntimeArtifacts forces the bootstrap manifest to module mode", async () => {
