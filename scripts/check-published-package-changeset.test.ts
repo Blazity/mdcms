@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +7,7 @@ import { describe, expect, test } from "bun:test";
 import {
   discoverPublishedPackages,
   evaluateChangesetGate,
+  readChangedFiles,
 } from "./check-published-package-changeset.js";
 
 function withWorkspace(callback: (rootDir: string) => void) {
@@ -55,12 +57,76 @@ function writeJson(path: string, value: unknown) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+function runGit(rootDir: string, args: string[]) {
+  const result = spawnSync("git", args, {
+    cwd: rootDir,
+    encoding: "utf8",
+  });
+
+  if (result.status !== 0) {
+    throw new Error(
+      `git ${args.join(" ")} failed: ${result.stderr || result.stdout}`,
+    );
+  }
+
+  return result.stdout.trim();
+}
+
 describe("discoverPublishedPackages", () => {
   test("loads publishable workspaces and excludes private or ignored packages", () => {
     withWorkspace((rootDir) => {
       expect(discoverPublishedPackages(rootDir)).toEqual([
         { name: "@mdcms/cli", root: "apps/cli" },
         { name: "@mdcms/sdk", root: "packages/sdk" },
+      ]);
+    });
+  });
+
+  test("fails explicitly when root package.json workspaces are malformed", () => {
+    withWorkspace((rootDir) => {
+      writeJson(join(rootDir, "package.json"), {
+        private: true,
+        workspaces: [42],
+      });
+
+      expect(() => discoverPublishedPackages(rootDir)).toThrow(
+        /Invalid JSON shape in package\.json/,
+      );
+    });
+  });
+
+  test("fails explicitly when changeset ignore config is malformed", () => {
+    withWorkspace((rootDir) => {
+      writeJson(join(rootDir, ".changeset/config.json"), {
+        ignore: "@mdcms/server",
+      });
+
+      expect(() => discoverPublishedPackages(rootDir)).toThrow(
+        /Invalid JSON shape in \.changeset\/config\.json/,
+      );
+    });
+  });
+});
+
+describe("readChangedFiles", () => {
+  test("includes deleted files in the diff result", () => {
+    withWorkspace((rootDir) => {
+      runGit(rootDir, ["init"]);
+      runGit(rootDir, ["config", "user.email", "test@example.com"]);
+      runGit(rootDir, ["config", "user.name", "Test User"]);
+
+      const sourcePath = join(rootDir, "packages/sdk/src/index.ts");
+      writeFileSync(sourcePath, "export const value = 1;\n", "utf8");
+      runGit(rootDir, ["add", "."]);
+      runGit(rootDir, ["commit", "-m", "initial"]);
+      const base = runGit(rootDir, ["rev-parse", "HEAD"]);
+
+      rmSync(sourcePath);
+      runGit(rootDir, ["add", "-A"]);
+      runGit(rootDir, ["commit", "-m", "delete source"]);
+
+      expect(readChangedFiles(rootDir, base, "HEAD")).toEqual([
+        "packages/sdk/src/index.ts",
       ]);
     });
   });

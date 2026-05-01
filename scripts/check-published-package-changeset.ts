@@ -2,6 +2,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
+import { z } from "zod";
 
 export interface PublishedPackage {
   name: string;
@@ -23,15 +24,27 @@ export interface GateResult {
   hasChangeset: boolean;
 }
 
-interface PackageJson {
-  name?: unknown;
-  private?: unknown;
-  workspaces?: unknown;
-}
+const packageJsonSchema = z
+  .object({
+    name: z.string().optional(),
+    private: z.boolean().optional(),
+    workspaces: z
+      .union([
+        z.array(z.string()),
+        z.object({ packages: z.array(z.string()) }).passthrough(),
+      ])
+      .optional(),
+  })
+  .passthrough();
 
-interface ChangesetConfig {
-  ignore?: unknown;
-}
+const changesetConfigSchema = z
+  .object({
+    ignore: z.array(z.string()).optional(),
+  })
+  .passthrough();
+
+type PackageJson = z.infer<typeof packageJsonSchema>;
+type ChangesetConfig = z.infer<typeof changesetConfigSchema>;
 
 interface CliOptions {
   base: string;
@@ -39,7 +52,10 @@ interface CliOptions {
 }
 
 export function discoverPublishedPackages(rootDir: string): PublishedPackage[] {
-  const rootPackage = readJson<PackageJson>(join(rootDir, "package.json"));
+  const rootPackage = readPackageJson(
+    join(rootDir, "package.json"),
+    "package.json",
+  );
   const ignoredPackages = readIgnoredPackages(rootDir);
 
   return readWorkspacePatterns(rootPackage)
@@ -51,7 +67,10 @@ export function discoverPublishedPackages(rootDir: string): PublishedPackage[] {
         return [];
       }
 
-      const packageJson = readJson<PackageJson>(packageJsonPath);
+      const packageJson = readPackageJson(
+        packageJsonPath,
+        `${packageRoot}/package.json`,
+      );
 
       if (
         typeof packageJson.name !== "string" ||
@@ -87,23 +106,11 @@ export function evaluateChangesetGate(input: GateInput): GateResult {
 
 function readWorkspacePatterns(packageJson: PackageJson): string[] {
   if (Array.isArray(packageJson.workspaces)) {
-    return packageJson.workspaces.filter(
-      (workspace): workspace is string => typeof workspace === "string",
-    );
+    return packageJson.workspaces;
   }
 
-  if (
-    packageJson.workspaces &&
-    typeof packageJson.workspaces === "object" &&
-    "packages" in packageJson.workspaces
-  ) {
-    const packages = packageJson.workspaces.packages;
-
-    if (Array.isArray(packages)) {
-      return packages.filter(
-        (workspace): workspace is string => typeof workspace === "string",
-      );
-    }
+  if (packageJson.workspaces) {
+    return packageJson.workspaces.packages;
   }
 
   return [];
@@ -116,17 +123,9 @@ function readIgnoredPackages(rootDir: string): Set<string> {
     return new Set();
   }
 
-  const config = readJson<ChangesetConfig>(configPath);
+  const config = readChangesetConfig(configPath, ".changeset/config.json");
 
-  if (!Array.isArray(config.ignore)) {
-    return new Set();
-  }
-
-  return new Set(
-    config.ignore.filter(
-      (packageName): packageName is string => typeof packageName === "string",
-    ),
-  );
+  return new Set(config.ignore ?? []);
 }
 
 function expandWorkspacePattern(rootDir: string, pattern: string): string[] {
@@ -172,22 +171,48 @@ function isChangesetFile(file: string): boolean {
   );
 }
 
-function readJson<T>(path: string): T {
-  return JSON.parse(readFileSync(path, "utf8")) as T;
+function readPackageJson(path: string, label: string): PackageJson {
+  return readValidatedJson(path, label, packageJsonSchema);
+}
+
+function readChangesetConfig(path: string, label: string): ChangesetConfig {
+  return readValidatedJson(path, label, changesetConfigSchema);
+}
+
+function readValidatedJson<T>(
+  path: string,
+  label: string,
+  schema: z.ZodType<T>,
+): T {
+  const parsed = schema.safeParse(JSON.parse(readFileSync(path, "utf8")));
+
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .map((issue) => {
+        const issuePath = issue.path.join(".") || "(root)";
+
+        return `${issuePath}: ${issue.message}`;
+      })
+      .join("; ");
+
+    throw new Error(`Invalid JSON shape in ${label}: ${issues}`);
+  }
+
+  return parsed.data;
 }
 
 function normalizePath(path: string): string {
   return path.replaceAll("\\", "/").replace(/^\.?\//, "");
 }
 
-function readChangedFiles(
+export function readChangedFiles(
   rootDir: string,
   base: string,
   head: string,
 ): string[] {
   const result = spawnSync(
     "git",
-    ["diff", "--name-only", "--diff-filter=ACMR", `${base}...${head}`, "--"],
+    ["diff", "--name-only", "--diff-filter=ACMRD", `${base}...${head}`, "--"],
     {
       cwd: rootDir,
       encoding: "utf8",
