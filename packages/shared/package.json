@@ -25,6 +25,13 @@
       "import": "./dist/lib/mdx/index.js",
       "default": "./dist/lib/mdx/index.js"
     },
+    "./mdx/auto-form": {
+      "@mdcms/source": "./src/lib/mdx/auto-form.ts",
+      "bun": "./src/lib/mdx/auto-form.ts",
+      "types": "./dist/lib/mdx/auto-form.d.ts",
+      "import": "./dist/lib/mdx/auto-form.js",
+      "default": "./dist/lib/mdx/auto-form.js"
+    },
     "./action-catalog-contract": {
       "@mdcms/source": "./src/lib/contracts/action-catalog-contract.ts",
       "bun": "./src/lib/contracts/action-catalog-contract.ts",

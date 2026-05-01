@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { ActionCatalogItem, StudioMountContext } from "@mdcms/shared";
-import { createMdxAutoFormFields } from "@mdcms/shared/mdx";
+import { createMdxAutoFormFields } from "@mdcms/shared/mdx/auto-form";
 
 import {
   createStudioActionCatalogAdapter,

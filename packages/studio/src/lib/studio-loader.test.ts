@@ -109,7 +109,14 @@ async function createRuntimeFixture(directory: string) {
 
   await writeFile(
     sourceFile,
-    "export const mount = (_container, _ctx) => () => {};\n",
+    [
+      `export const fixtureMarker = ${JSON.stringify(directory)};`,
+      "export const mount = (_container, _ctx) => {",
+      "  void fixtureMarker;",
+      "  return () => {};",
+      "};",
+      "",
+    ].join("\n"),
     "utf8",
   );
 

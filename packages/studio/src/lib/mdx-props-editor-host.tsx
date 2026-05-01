@@ -10,7 +10,7 @@ import type { StudioMountContext } from "@mdcms/shared";
 import {
   createMdxAutoFormFields,
   type MdxAutoFormField,
-} from "@mdcms/shared/mdx";
+} from "@mdcms/shared/mdx/auto-form";
 
 type MdxCatalogComponent = NonNullable<
   StudioMountContext["mdx"]

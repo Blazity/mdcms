@@ -1,15 +1,27 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { test } from "bun:test";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   STUDIO_RUNTIME_ASSETS_DIRNAME,
   STUDIO_RUNTIME_BOOTSTRAP_DIRNAME,
   buildStudioRuntimeArtifacts,
 } from "./build-runtime.js";
+
+const studioPackageRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
+const workspaceRoot = resolve(studioPackageRoot, "../..");
+const buildRuntimeModuleUrl = pathToFileURL(
+  join(studioPackageRoot, "src/lib/build-runtime.ts"),
+).href;
+const execFileAsync = promisify(execFile);
 
 async function withTempDir<T>(
   prefix: string,
@@ -22,6 +34,20 @@ async function withTempDir<T>(
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+}
+
+async function runBunJsonScript<T>(input: {
+  scriptFile: string;
+  cwd: string;
+}): Promise<T> {
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    ["--conditions", "@mdcms/source", input.scriptFile],
+    { cwd: input.cwd },
+  );
+  const [lastLine] = stdout.trim().split(/\r?\n/).slice(-1);
+  assert.ok(lastLine, `Expected JSON output from ${input.scriptFile}.`);
+  return JSON.parse(lastLine) as T;
 }
 
 test("buildStudioRuntimeArtifacts is deterministic for identical source bytes", async () => {
@@ -111,33 +137,52 @@ test("buildStudioRuntimeArtifacts resolves the default project root from the pac
   await withTempDir("studio-runtime-cwd-", async (directory) => {
     const sourceFile = join(directory, "app.ts");
     const outDir = join(directory, "dist");
-    const originalCwd = process.cwd();
+    const scriptFile = join(directory, "build-runtime-cwd-check.ts");
 
     await writeFile(
       sourceFile,
       "export const mount = () => () => {};\n",
       "utf8",
     );
+    await writeFile(
+      scriptFile,
+      [
+        `import { readFile } from "node:fs/promises";`,
+        `import { buildStudioRuntimeArtifacts } from ${JSON.stringify(
+          buildRuntimeModuleUrl,
+        )};`,
+        "",
+        `const outDir = ${JSON.stringify(outDir)};`,
+        "const build = await buildStudioRuntimeArtifacts({",
+        `  sourceFile: ${JSON.stringify(sourceFile)},`,
+        "  outDir,",
+        `  studioVersion: "1.2.3",`,
+        `  mode: "module",`,
+        "});",
+        "",
+        `const entrySource = await readFile(build.entryPath, "utf8");`,
+        `const cssSource = await readFile(build.cssPath, "utf8");`,
+        "console.log(JSON.stringify({",
+        "  entryInOutDir: build.entryPath.startsWith(`${outDir}/`),",
+        "  entryHasContent: entrySource.length > 0,",
+        `  cssHasBackground: cssSource.includes(".bg-background"),`,
+        "}));",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
 
-    process.chdir(directory);
+    const result = await runBunJsonScript<{
+      entryInOutDir?: boolean;
+      entryHasContent?: boolean;
+      cssHasBackground?: boolean;
+    }>({ scriptFile, cwd: directory });
 
-    try {
-      const build = await buildStudioRuntimeArtifacts({
-        sourceFile,
-        outDir,
-        studioVersion: "1.2.3",
-        mode: "module",
-      });
-
-      assert.equal(build.entryPath.startsWith(`${outDir}/`), true);
-      assert.equal((await readFile(build.entryPath, "utf8")).length > 0, true);
-      assert.equal(
-        (await readFile(build.cssPath, "utf8")).includes(".bg-background"),
-        true,
-      );
-    } finally {
-      process.chdir(originalCwd);
-    }
+    assert.deepEqual(result, {
+      entryInOutDir: true,
+      entryHasContent: true,
+      cssHasBackground: true,
+    });
   });
 });
 
@@ -193,6 +238,85 @@ test("buildStudioRuntimeArtifacts writes bundled JavaScript runtime entry", asyn
       runtimeModule.mount(null, { apiBaseUrl: "http://example.test" }),
       "http://example.test-bundled-helper",
     );
+  });
+});
+
+test("buildStudioRuntimeArtifacts inlines production runtime environment", async () => {
+  await withTempDir("studio-runtime-", async (directory) => {
+    const sourceFile = join(directory, "app.ts");
+    const outDir = join(directory, "dist");
+
+    await writeFile(
+      sourceFile,
+      [
+        "export function mount(): string {",
+        "  if (process.env.NODE_ENV !== 'production') {",
+        "    return 'development-runtime';",
+        "  }",
+        "",
+        "  return 'production-runtime';",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const build = await buildStudioRuntimeArtifacts({
+      sourceFile,
+      outDir,
+      studioVersion: "1.2.3",
+      mode: "module",
+    });
+
+    const emittedSource = await readFile(build.entryPath, "utf8");
+
+    assert.equal(emittedSource.includes("process.env.NODE_ENV"), false);
+    assert.equal(emittedSource.includes("development-runtime"), false);
+    assert.equal(emittedSource.includes("production-runtime"), true);
+  });
+});
+
+test("buildStudioRuntimeArtifacts keeps the default browser runtime below the first-load size target", async () => {
+  await withTempDir("studio-runtime-real-", async (directory) => {
+    const outDir = join(directory, "dist");
+    const scriptFile = join(directory, "default-runtime-size-check.ts");
+
+    await writeFile(
+      scriptFile,
+      [
+        `import { readFile } from "node:fs/promises";`,
+        `import { buildStudioRuntimeArtifacts } from ${JSON.stringify(
+          buildRuntimeModuleUrl,
+        )};`,
+        "",
+        "const build = await buildStudioRuntimeArtifacts({",
+        `  outDir: ${JSON.stringify(outDir)},`,
+        `  studioVersion: "1.2.3",`,
+        `  mode: "module",`,
+        "});",
+        "",
+        `const emittedSource = await readFile(build.entryPath, "utf8");`,
+        "console.log(JSON.stringify({",
+        `  hasTypeScriptRuntime: emittedSource.includes("typescript.js"),`,
+        `  hasCreateProgram: emittedSource.includes("createProgram"),`,
+        '  underSizeTarget: Buffer.byteLength(emittedSource, "utf8") < 2_000_000,',
+        "}));",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await runBunJsonScript<{
+      hasTypeScriptRuntime?: boolean;
+      hasCreateProgram?: boolean;
+      underSizeTarget?: boolean;
+    }>({ scriptFile, cwd: workspaceRoot });
+
+    assert.deepEqual(result, {
+      hasTypeScriptRuntime: false,
+      hasCreateProgram: false,
+      underSizeTarget: true,
+    });
   });
 });
 
