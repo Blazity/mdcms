@@ -132,6 +132,7 @@ The `.ai/` directory at the repo root holds the team's shared AI-agent-facing ar
 5. **Research goes in `.ai/research/`.** Date-prefixed filename (`YYYY-MM-DD-topic.md`).
 6. **Major efforts get an initiative file** in `.ai/memory/initiatives/` (see that folder's README for the format). Update it on milestones; mark `Status: completed` when wrapping.
 7. **Skills are auto-discovered** by Claude Code, Codex, and Cursor via symlinks (`.claude/skills`, `.agents/skills`, `.cursor/skills` all point to `../.ai/skills`). These are POSIX-style symlinks; on Windows they may not check out correctly without developer mode or `core.symlinks=true`. If skill discovery fails on a Windows clone, replace each symlink with a directory junction or a recursive copy of `.ai/skills/` as a fallback.
+8. **Published package changes require a changeset.** If your change touches `src/**` or `package.json` in a published package, create the changeset with `bun run changeset` before opening or updating the PR. Never create or edit `.changeset/*.md` files manually; always go through the Changesets CLI.
 
 The vendored superpowers in `.ai/skills/` is the canonical copy used by every supported agent in this repo. The globally installed `superpowers` plugin is disabled at the project level via `.claude/settings.json` to prevent duplicate skill registration.
 
@@ -230,6 +231,7 @@ Any new public API surface must include minimal usage docs and, where applicable
 - Make focused, task-scoped commits.
 - Don't include unrelated local folders or tooling artifacts. `.gitignore` enforces what stays local.
 - Follow conventional commit message format: `type(scope): message`.
+- If the change touches published package source or manifests, run `bun run changeset` and commit the generated changeset. Do not hand-write changeset files.
 
 Before commit, ensure:
 
