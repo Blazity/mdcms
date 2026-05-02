@@ -11,6 +11,7 @@ import { aiError, isAiErrorCode, mapProviderError } from "./errors.js";
 import {
   buildProposalsFromOutput,
   type AiProposalEnvelope,
+  type AiProposalValidator,
 } from "./proposal-builder.js";
 import type { AiProvider, AiProviderUsage } from "./provider.js";
 import {
@@ -30,6 +31,14 @@ export type AiOrchestratorDeps = {
   clock?: AiOrchestratorClock;
   idFactory?: AiOrchestratorIdFactory;
   proposalTtlMs?: number;
+  /**
+   * Domain validator forwarded to the proposal builder. When omitted,
+   * proposals receive a shape-only `{ status: "valid" }` validation
+   * — callers shipping endpoints that mutate drafts MUST provide a
+   * validator that checks MDX components, frontmatter, and any other
+   * domain constraints required by SPEC-014.
+   */
+  proposalValidator?: AiProposalValidator;
 };
 
 export type AiOrchestrationInput = {
@@ -54,6 +63,7 @@ export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
   const clock = deps.clock ?? (() => new Date());
   const idFactory = deps.idFactory ?? defaultIdFactory;
   const ttlMs = deps.proposalTtlMs ?? DEFAULT_PROPOSAL_TTL_MS;
+  const validator = deps.proposalValidator;
 
   return {
     providerId: deps.provider.id,
@@ -93,9 +103,11 @@ export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
         deps.provider.id,
         generation.model,
         call.envelope,
+        parsedInput,
         idFactory,
         clock,
         ttlMs,
+        validator,
         enrichedContext,
       );
 
@@ -106,7 +118,7 @@ export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
         promptTemplateId: definition.promptTemplateId,
         occurredAt,
         outcome: "succeeded",
-        validation: { status: "valid" },
+        validation: aggregateValidation(proposals),
         proposals,
         usage: generation.usage,
       });
@@ -270,9 +282,11 @@ function buildProposals(
   providerId: string,
   model: string,
   envelope: AiProposalEnvelope,
+  taskInput: AiTaskInput,
   idFactory: AiOrchestratorIdFactory,
   clock: AiOrchestratorClock,
   ttlMs: number,
+  validator: AiProposalValidator | undefined,
   context: ErrorAuditContext,
 ): AiProposal[] {
   try {
@@ -284,8 +298,11 @@ function buildProposals(
         model,
         envelope,
         output,
+        anchors: taskInput.selectionId
+          ? { selectionId: taskInput.selectionId }
+          : undefined,
       },
-      { clock, idFactory, ttlMs },
+      { clock, idFactory, ttlMs, validator },
     );
   } catch (error) {
     if (
@@ -344,6 +361,32 @@ function normalizeUsage(
   }
 
   return Object.keys(result).length === 0 ? undefined : result;
+}
+
+/**
+ * When multiple proposals come back from a single orchestration call,
+ * the audit record's `validation` field collapses them into one
+ * representative state. Any invalid proposal poisons the audit record
+ * so downstream sinks can flag the call without scanning per-proposal
+ * fields.
+ */
+function aggregateValidation(
+  proposals: readonly AiProposal[],
+): AiAuditRecord["validation"] {
+  const aggregatedErrors: { code: string; message: string; path?: string }[] =
+    [];
+
+  for (const proposal of proposals) {
+    if (proposal.validation.status === "invalid") {
+      aggregatedErrors.push(...proposal.validation.errors);
+    }
+  }
+
+  if (aggregatedErrors.length === 0) {
+    return { status: "valid" };
+  }
+
+  return { status: "invalid", errors: aggregatedErrors };
 }
 
 function pascalCase(value: string): string {

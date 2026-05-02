@@ -30,6 +30,7 @@ const baseInput: AiOrchestrationInput = {
   input: {
     locale: "en",
     selectionText: "Hello world",
+    selectionId: "sel_anchor",
     instruction: "make it punchier",
   },
 };

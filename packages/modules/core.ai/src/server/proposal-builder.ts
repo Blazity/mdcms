@@ -19,6 +19,32 @@ export type AiProposalEnvelope = {
   baseDraftRevision?: number;
 };
 
+/**
+ * Server-trusted anchors that callers stamp onto the generated
+ * operations so the model never has to invent them. The orchestrator
+ * forwards values from `AiTaskInput` here.
+ */
+export type AiProposalAnchors = {
+  /** Forced selectionId on every `replace_selection` operation. */
+  selectionId?: string;
+};
+
+export type AiProposalCandidate = Omit<AiProposal, "validation">;
+
+/**
+ * Domain validator hook. Receives a candidate proposal (envelope +
+ * operations) and returns the validation status that should land on
+ * the final proposal. The foundation defaults to `{ status: "valid" }`
+ * when no validator is provided, which means callers without a
+ * validator are explicitly opting into shape-only validation —
+ * future endpoints that wire MDX/schema/frontmatter checks must pass
+ * a real validator so Studio's accept/reject controls reflect actual
+ * apply-time correctness.
+ */
+export type AiProposalValidator = (
+  candidate: AiProposalCandidate,
+) => AiProposalValidation;
+
 export type ProposalBuilderClock = () => Date;
 export type ProposalIdFactory = () => string;
 
@@ -27,6 +53,7 @@ export type AiProposalBuilderDeps = {
   idFactory: ProposalIdFactory;
   /** Proposal lifetime in milliseconds. */
   ttlMs: number;
+  validator?: AiProposalValidator;
 };
 
 export type BuildProposalsInput = {
@@ -36,6 +63,7 @@ export type BuildProposalsInput = {
   model: string;
   envelope: AiProposalEnvelope;
   output: AiTaskOutput;
+  anchors?: AiProposalAnchors;
 };
 
 const PROPOSAL_KIND_BY_OPERATION: Record<
@@ -47,6 +75,10 @@ const PROPOSAL_KIND_BY_OPERATION: Record<
   update_frontmatter: "update_frontmatter",
   create_document: "create_document",
 };
+
+const SHAPE_VALID: AiProposalValidation = Object.freeze({
+  status: "valid",
+}) as AiProposalValidation;
 
 function deriveProposalKind(
   operations: readonly AiProposalOperation[],
@@ -73,6 +105,27 @@ function mixedOperationKinds(
 }
 
 /**
+ * Apply server-trusted anchors to the model's operations. The model's
+ * value for any anchored field is discarded; the input value wins.
+ */
+function applyAnchors(
+  operations: readonly AiProposalOperation[],
+  anchors: AiProposalAnchors | undefined,
+): AiProposalOperation[] {
+  if (!anchors) {
+    return operations.slice();
+  }
+
+  return operations.map((op) => {
+    if (op.op === "replace_selection" && anchors.selectionId) {
+      return { ...op, selectionId: anchors.selectionId };
+    }
+
+    return op;
+  });
+}
+
+/**
  * Build one or more validated AiProposal objects from a parsed
  * task output. Multi-op outputs that mix operation kinds are split
  * into one proposal per kind so Studio can render homogenous
@@ -88,10 +141,11 @@ export function buildProposalsFromOutput(
   }
 
   const expiresAt = new Date(deps.clock().getTime() + deps.ttlMs).toISOString();
-  const groups = groupOperationsByKind(input.output.operations);
+  const stamped = applyAnchors(input.output.operations, input.anchors);
+  const groups = groupOperationsByKind(stamped);
 
   const proposals: AiProposal[] = groups.map((group) => {
-    const proposal: AiProposal = {
+    const candidate: AiProposalCandidate = {
       proposalId: deps.idFactory(),
       kind: deriveProposalKind(group),
       project: input.envelope.project,
@@ -100,7 +154,6 @@ export function buildProposalsFromOutput(
       locale: input.envelope.locale,
       summary: input.output.summary,
       operations: group,
-      validation: { status: "valid" },
       expiresAt,
       provider: {
         providerId: input.providerId,
@@ -115,29 +168,28 @@ export function buildProposalsFromOutput(
         : {}),
     };
 
+    const validation = deps.validator ? deps.validator(candidate) : SHAPE_VALID;
+    const proposal: AiProposal = { ...candidate, validation };
+
     const parsed = aiProposalSchema.safeParse(proposal);
 
     if (!parsed.success) {
-      const validation: AiProposalValidation = {
-        status: "invalid",
-        errors: parsed.error.issues.map((issue) => ({
-          code: issue.code ?? "invalid",
-          message: issue.message,
-          path: issue.path?.join(".") || undefined,
-        })),
-      };
-
       throw aiError(
         "AI_OUTPUT_INVALID",
         "Generated proposal failed schema validation.",
-        { validation },
+        {
+          issues: parsed.error.issues.map((issue) => ({
+            code: issue.code ?? "invalid",
+            message: issue.message,
+            path: issue.path?.join(".") || undefined,
+          })),
+        },
       );
     }
 
     return parsed.data;
   });
 
-  // When mixed, only the actually-grouped result reflects the split.
   if (proposals.length === 0) {
     throw aiError(
       "AI_OUTPUT_INVALID",

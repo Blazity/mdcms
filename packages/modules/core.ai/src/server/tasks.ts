@@ -15,6 +15,13 @@ export type AiTaskInput = {
   instruction?: string;
   /** Selected text in the editor, when relevant to the task. */
   selectionText?: string;
+  /**
+   * Server-trusted selection identifier. The orchestrator stamps this
+   * onto every generated `replace_selection` operation, so the model
+   * never has to invent a selection id (and any value the model
+   * supplies for that field is ignored).
+   */
+  selectionId?: string;
   /** Document body content for context-bearing tasks. */
   documentBody?: string;
   /** Frontmatter snapshot for SEO and current-document edits. */
@@ -45,6 +52,7 @@ const baseInputSchema = z
   .object({
     instruction: z.string().trim().min(1).optional(),
     selectionText: z.string().optional(),
+    selectionId: z.string().trim().min(1).optional(),
     documentBody: z.string().optional(),
     frontmatter: z.record(z.string(), z.unknown()).optional(),
     locale: z.string().trim().min(1),
@@ -72,14 +80,23 @@ function makeOutputSchema(
     .strict();
 }
 
-const copyImprovementInputSchema = baseInputSchema.refine(
-  (input) =>
-    typeof input.selectionText === "string" && input.selectionText.length > 0,
-  {
-    path: ["selectionText"],
-    message: "must include selected text for copy improvement.",
-  },
-);
+const copyImprovementInputSchema = baseInputSchema
+  .refine(
+    (input) =>
+      typeof input.selectionText === "string" && input.selectionText.length > 0,
+    {
+      path: ["selectionText"],
+      message: "must include selected text for copy improvement.",
+    },
+  )
+  .refine(
+    (input) =>
+      typeof input.selectionId === "string" && input.selectionId.length > 0,
+    {
+      path: ["selectionId"],
+      message: "must include a selectionId for copy improvement.",
+    },
+  );
 
 const seoImprovementInputSchema = baseInputSchema.refine(
   (input) => Boolean(input.documentBody) || Boolean(input.frontmatter),

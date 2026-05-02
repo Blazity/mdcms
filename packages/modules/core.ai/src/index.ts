@@ -29,8 +29,11 @@ export {
 export { aiError, isAiErrorCode, mapProviderError } from "./server/errors.js";
 export {
   buildProposalsFromOutput,
+  type AiProposalAnchors,
   type AiProposalBuilderDeps,
+  type AiProposalCandidate,
   type AiProposalEnvelope,
+  type AiProposalValidator,
   type BuildProposalsInput,
 } from "./server/proposal-builder.js";
 export {

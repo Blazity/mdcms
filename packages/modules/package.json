@@ -20,7 +20,7 @@
     "name": "modules"
   },
   "scripts": {
-    "test": "bun test ./src"
+    "test": "bun test ./src ./core.ai ./core.system ./domain.content"
   },
   "dependencies": {
     "@ai-sdk/provider": "^3.0.10",

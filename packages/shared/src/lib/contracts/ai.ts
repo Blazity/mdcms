@@ -180,7 +180,18 @@ export const aiProposalSchema = z
     expiresAt: isoDateString,
     provider: aiProposalProviderMetadataSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((proposal, ctx) => {
+    proposal.operations.forEach((operation, index) => {
+      if (operation.op !== proposal.kind) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["operations", index, "op"],
+          message: `operation.op "${operation.op}" must match proposal.kind "${proposal.kind}".`,
+        });
+      }
+    });
+  });
 
 function formatPath(path: string, issuePath: readonly PropertyKey[]): string {
   if (issuePath.length === 0) {

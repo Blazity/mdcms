@@ -123,6 +123,40 @@ test("aiProposalSchema rejects unknown top-level keys", () => {
   assert.equal(parsed.success, false);
 });
 
+test("aiProposalSchema rejects mismatched kind/operation", () => {
+  const parsed = aiProposalSchema.safeParse({
+    ...validProposal,
+    kind: "replace_selection",
+    operations: [
+      {
+        op: "create_document",
+        path: "foo.md",
+        format: "md",
+        frontmatter: {},
+        body: "x",
+      },
+    ],
+  });
+  assert.equal(parsed.success, false);
+});
+
+test("aiProposalSchema rejects heterogeneous operations", () => {
+  const parsed = aiProposalSchema.safeParse({
+    ...validProposal,
+    kind: "replace_selection",
+    operations: [
+      {
+        op: "replace_selection",
+        selectionId: "sel_1",
+        originalText: "a",
+        replacementText: "b",
+      },
+      { op: "update_frontmatter", patch: {} },
+    ],
+  });
+  assert.equal(parsed.success, false);
+});
+
 test("AI_PROPOSAL_KINDS exposes all four spec proposal kinds", () => {
   assert.deepEqual([...AI_PROPOSAL_KINDS].sort(), [
     "create_document",

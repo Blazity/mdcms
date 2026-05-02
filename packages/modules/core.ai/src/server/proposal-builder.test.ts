@@ -145,4 +145,144 @@ describe("buildProposalsFromOutput", () => {
         error instanceof RuntimeError && error.code === "AI_OUTPUT_INVALID",
     );
   });
+
+  test("anchors override the model's selectionId on replace_selection ops", () => {
+    counter = 0;
+    const [proposal] = buildProposalsFromOutput(
+      {
+        taskKind: "copy_improvement",
+        promptTemplateId: "copy_improvement.v1",
+        providerId: "echo",
+        model: "echo-1",
+        envelope,
+        output: {
+          summary: "Tightened intro",
+          operations: [
+            {
+              op: "replace_selection",
+              selectionId: "sel_invented_by_model",
+              originalText: "old",
+              replacementText: "new",
+            },
+          ],
+        },
+        anchors: { selectionId: "sel_trusted" },
+      },
+      deps,
+    );
+
+    assert.equal(
+      (proposal.operations[0] as { selectionId: string }).selectionId,
+      "sel_trusted",
+    );
+  });
+
+  test("anchors leave non-replace_selection ops untouched", () => {
+    counter = 0;
+    const [proposal] = buildProposalsFromOutput(
+      {
+        taskKind: "new_document_draft",
+        promptTemplateId: "new_document_draft.v1",
+        providerId: "echo",
+        model: "echo-1",
+        envelope: { ...envelope, documentId: undefined },
+        output: {
+          summary: "draft",
+          operations: [
+            {
+              op: "create_document",
+              path: "blog/post.mdx",
+              format: "mdx",
+              frontmatter: {},
+              body: "# x",
+            },
+          ],
+        },
+        anchors: { selectionId: "ignored" },
+      },
+      deps,
+    );
+
+    assert.equal(proposal.kind, "create_document");
+  });
+
+  test("validator hook replaces validation status", () => {
+    counter = 0;
+    const [proposal] = buildProposalsFromOutput(
+      {
+        taskKind: "mdx_component_insertion",
+        promptTemplateId: "mdx_component_insertion.v1",
+        providerId: "echo",
+        model: "echo-1",
+        envelope,
+        output: {
+          summary: "Add callout",
+          operations: [
+            {
+              op: "insert_block",
+              bodyMdx: "<UnknownComponent>hi</UnknownComponent>",
+            },
+          ],
+        },
+      },
+      {
+        ...deps,
+        validator: (candidate) => {
+          assert.equal(candidate.kind, "insert_block");
+          return {
+            status: "invalid",
+            errors: [
+              {
+                code: "MDX_COMPONENT_UNKNOWN",
+                message: "UnknownComponent is not registered.",
+              },
+            ],
+          };
+        },
+      },
+    );
+
+    assert.equal(proposal.validation.status, "invalid");
+    if (proposal.validation.status === "invalid") {
+      assert.equal(
+        proposal.validation.errors[0]?.code,
+        "MDX_COMPONENT_UNKNOWN",
+      );
+    }
+  });
+
+  test("validator hook can return valid for trusted operations", () => {
+    counter = 0;
+    let calls = 0;
+    const [proposal] = buildProposalsFromOutput(
+      {
+        taskKind: "copy_improvement",
+        promptTemplateId: "copy_improvement.v1",
+        providerId: "echo",
+        model: "echo-1",
+        envelope,
+        output: {
+          summary: "ok",
+          operations: [
+            {
+              op: "replace_selection",
+              selectionId: "sel_1",
+              originalText: "a",
+              replacementText: "b",
+            },
+          ],
+        },
+      },
+      {
+        ...deps,
+        validator: () => {
+          calls += 1;
+          return { status: "valid" };
+        },
+      },
+    );
+
+    assert.equal(calls, 1);
+    assert.deepEqual(proposal.validation, { status: "valid" });
+  });
 });
