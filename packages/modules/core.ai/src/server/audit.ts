@@ -39,7 +39,9 @@ export type BuildAuditRecordInput = {
   usage?: AiProviderUsage;
 };
 
-const DEFAULT_VALIDATION: AiProposalValidation = { status: "valid" };
+const DEFAULT_VALIDATION: AiProposalValidation = Object.freeze({
+  status: "valid",
+}) as AiProposalValidation;
 
 /**
  * Build a structured audit record describing a single orchestration
@@ -82,22 +84,26 @@ export function buildAuditRecord(input: BuildAuditRecordInput): AiAuditRecord {
   return record;
 }
 
+function isFiniteNonNegative(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
 function sanitizeUsage(usage: AiProviderUsage): AiProviderUsage | undefined {
   const result: AiProviderUsage = {};
 
-  if (typeof usage.inputTokens === "number") {
+  if (isFiniteNonNegative(usage.inputTokens)) {
     result.inputTokens = usage.inputTokens;
   }
 
-  if (typeof usage.outputTokens === "number") {
+  if (isFiniteNonNegative(usage.outputTokens)) {
     result.outputTokens = usage.outputTokens;
   }
 
-  if (typeof usage.totalTokens === "number") {
+  if (isFiniteNonNegative(usage.totalTokens)) {
     result.totalTokens = usage.totalTokens;
   }
 
-  if (typeof usage.costUsd === "number") {
+  if (isFiniteNonNegative(usage.costUsd)) {
     result.costUsd = usage.costUsd;
   }
 

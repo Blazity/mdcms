@@ -96,6 +96,22 @@ test("aiProposalSchema rejects proposals with non-ISO expiresAt", () => {
   assert.equal(parsed.success, false);
 });
 
+test("aiProposalSchema rejects date-only expiresAt strings", () => {
+  const parsed = aiProposalSchema.safeParse({
+    ...validProposal,
+    expiresAt: "2026-05-01",
+  });
+  assert.equal(parsed.success, false);
+});
+
+test("aiProposalSchema rejects locale-formatted dates that Date.parse accepts", () => {
+  const parsed = aiProposalSchema.safeParse({
+    ...validProposal,
+    expiresAt: "May 1 2026 12:00:00",
+  });
+  assert.equal(parsed.success, false);
+});
+
 test("aiProposalSchema rejects proposals missing provider metadata", () => {
   const { provider: _provider, ...rest } = validProposal;
   const parsed = aiProposalSchema.safeParse(rest);

@@ -17,6 +17,19 @@ const DEFAULT_STATUS_BY_CODE: Record<AiErrorCode, number> = {
 
 const AI_ERROR_CODE_SET: ReadonlySet<AiErrorCode> = new Set(AI_ERROR_CODES);
 
+/**
+ * Codes a provider adapter is allowed to surface up to the orchestrator.
+ * `AI_UNSUPPORTED_TASK` is excluded because that is an orchestrator-level
+ * concern, not something a provider call can produce.
+ */
+const PROVIDER_FACING_CODES: ReadonlySet<AiErrorCode> = new Set<AiErrorCode>([
+  "AI_DISABLED",
+  "AI_PROVIDER_UNAVAILABLE",
+  "AI_RATE_LIMITED",
+  "AI_CONTEXT_TOO_LARGE",
+  "AI_OUTPUT_INVALID",
+]);
+
 export function aiError(
   code: AiErrorCode,
   message: string,
@@ -40,13 +53,20 @@ const OUTPUT_INVALID_MESSAGE = "AI provider returned invalid output.";
 
 /**
  * Map any thrown value from a provider call to a deterministic
- * RuntimeError. Existing AI_* RuntimeErrors pass through; AI SDK
- * error classes map to specific AI_* codes; everything else
- * collapses to AI_PROVIDER_UNAVAILABLE so callers never see raw
- * provider response bodies or env values in error output.
+ * RuntimeError. Provider-facing AI_* RuntimeErrors pass through (so
+ * adapters can surface AI_RATE_LIMITED, AI_CONTEXT_TOO_LARGE, etc.
+ * directly); AI SDK error classes map to specific AI_* codes;
+ * everything else — including non-provider-facing AI codes such as
+ * AI_UNSUPPORTED_TASK — collapses to AI_PROVIDER_UNAVAILABLE so
+ * callers never see raw provider response bodies or unrelated
+ * orchestrator codes leaking out of the provider seam.
  */
 export function mapProviderError(error: unknown): RuntimeError {
-  if (error instanceof RuntimeError && isAiErrorCode(error.code)) {
+  if (
+    error instanceof RuntimeError &&
+    isAiErrorCode(error.code) &&
+    PROVIDER_FACING_CODES.has(error.code as AiErrorCode)
+  ) {
     return error;
   }
 

@@ -65,6 +65,27 @@ describe("mapProviderError", () => {
     assert.equal(mapped.statusCode, 503);
   });
 
+  test("does not pass through orchestrator-only AI codes", () => {
+    const orchestratorOnly = aiError("AI_UNSUPPORTED_TASK", "boom");
+    const mapped = mapProviderError(orchestratorOnly);
+    assert.equal(mapped.code, "AI_PROVIDER_UNAVAILABLE");
+    assert.notEqual(mapped, orchestratorOnly);
+  });
+
+  test("passes through provider-facing AI codes", () => {
+    for (const code of [
+      "AI_DISABLED",
+      "AI_PROVIDER_UNAVAILABLE",
+      "AI_RATE_LIMITED",
+      "AI_CONTEXT_TOO_LARGE",
+      "AI_OUTPUT_INVALID",
+    ] as const) {
+      const original = aiError(code, "x");
+      const mapped = mapProviderError(original);
+      assert.equal(mapped, original);
+    }
+  });
+
   test("collapses generic Errors to AI_PROVIDER_UNAVAILABLE", () => {
     const mapped = mapProviderError(new Error("network down"));
     assert.equal(mapped.code, "AI_PROVIDER_UNAVAILABLE");

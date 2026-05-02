@@ -58,8 +58,12 @@ export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
   return {
     providerId: deps.provider.id,
     async runTask(call) {
-      const definition = resolveTaskDefinition(call.taskKind);
       const occurredAt = clock();
+      const definition = resolveTaskDefinitionOrFail(
+        call.taskKind,
+        deps.provider.id,
+        occurredAt,
+      );
       const baseContext: ErrorAuditContext = {
         taskKind: definition.kind,
         providerId: deps.provider.id,
@@ -112,18 +116,32 @@ export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
   };
 }
 
-function resolveTaskDefinition(taskKind: AiTaskKind): AiTaskDefinition {
+function resolveTaskDefinitionOrFail(
+  taskKind: AiTaskKind,
+  providerId: string,
+  occurredAt: Date,
+): AiTaskDefinition {
   const definition = AI_TASK_DEFINITIONS[taskKind];
 
-  if (!definition) {
-    throw aiError(
-      "AI_UNSUPPORTED_TASK",
-      `AI task "${taskKind}" is not supported.`,
-      { taskKind },
-    );
+  if (definition) {
+    return definition;
   }
 
-  return definition;
+  const message = `AI task "${taskKind}" is not supported.`;
+
+  throw new OrchestratorFailure(
+    aiError("AI_UNSUPPORTED_TASK", message, { taskKind }),
+    buildAuditRecord({
+      taskKind,
+      providerId,
+      promptTemplateId: `unknown:${taskKind}`,
+      occurredAt,
+      outcome: "provider_error",
+      validation: { status: "valid" },
+      errorCode: "AI_UNSUPPORTED_TASK",
+      errorMessage: message,
+    }),
+  );
 }
 
 function parseTaskInput(

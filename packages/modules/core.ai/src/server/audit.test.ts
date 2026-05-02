@@ -98,6 +98,26 @@ describe("buildAuditRecord", () => {
     assert.equal(record.usage, undefined);
   });
 
+  test("drops NaN, Infinity, and negative usage values", () => {
+    const record = buildAuditRecord({
+      taskKind: "copy_improvement",
+      providerId: "echo",
+      model: "echo-1",
+      promptTemplateId: "copy_improvement.v1",
+      occurredAt,
+      outcome: "succeeded",
+      proposals: [proposal],
+      usage: {
+        inputTokens: Number.NaN,
+        outputTokens: Number.POSITIVE_INFINITY,
+        totalTokens: -1,
+        costUsd: 0,
+      },
+    });
+
+    assert.deepEqual(record.usage, { costUsd: 0 });
+  });
+
   test("captures invalid_output case with validation errors", () => {
     const record = buildAuditRecord({
       taskKind: "seo_improvement",

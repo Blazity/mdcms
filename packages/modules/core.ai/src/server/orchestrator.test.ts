@@ -211,13 +211,16 @@ describe("createAiOrchestrator", () => {
           input: { locale: "en" /* missing selectionText */ },
         }),
       (error) => {
+        assert.ok(error instanceof OrchestratorFailure);
         const runtime = getOrchestratorFailureRuntimeError(error);
-        return runtime?.code === "AI_OUTPUT_INVALID" || runtime === undefined;
+        assert.ok(runtime !== undefined);
+        assert.equal(runtime.code, "AI_OUTPUT_INVALID");
+        return true;
       },
     );
   });
 
-  test("unknown task kind → AI_UNSUPPORTED_TASK", async () => {
+  test("unknown task kind → AI_UNSUPPORTED_TASK wrapped in OrchestratorFailure", async () => {
     const provider = createEchoAiProvider({
       respond: () => buildEchoOutput(),
     });
@@ -233,8 +236,16 @@ describe("createAiOrchestrator", () => {
           ...baseInput,
           taskKind: "unknown_task" as never,
         }),
-      (error) =>
-        error instanceof RuntimeError && error.code === "AI_UNSUPPORTED_TASK",
+      (error) => {
+        assert.ok(error instanceof OrchestratorFailure);
+        const runtime = getOrchestratorFailureRuntimeError(error);
+        const audit = getOrchestratorFailureAudit(error);
+        assert.ok(runtime !== undefined);
+        assert.equal(runtime.code, "AI_UNSUPPORTED_TASK");
+        assert.equal(audit?.errorCode, "AI_UNSUPPORTED_TASK");
+        assert.equal(audit?.taskKind, "unknown_task");
+        return true;
+      },
     );
   });
 });

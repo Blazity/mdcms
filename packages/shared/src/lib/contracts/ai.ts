@@ -93,10 +93,9 @@ const nonEmptyString = z.string().trim().min(1, {
   message: "must be a non-empty string.",
 });
 
-const isoDateString = nonEmptyString.refine(
-  (value) => !Number.isNaN(Date.parse(value)),
-  { message: "must be an ISO-8601 date string." },
-);
+const isoDateString = z.iso.datetime({
+  message: "must be an ISO-8601 datetime string.",
+});
 
 const recordOfUnknown = z.record(z.string(), z.unknown());
 
