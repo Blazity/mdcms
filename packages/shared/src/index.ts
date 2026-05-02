@@ -1,5 +1,6 @@
 export * from "./lib/runtime/index.js";
 export * from "./lib/contracts/action-catalog.js";
+export * from "./lib/contracts/ai.js";
 export * from "./lib/contracts/config.js";
 export * from "./lib/contracts/content-api.js";
 export * from "./lib/contracts/current-principal-capabilities.js";

@@ -20,10 +20,12 @@
     "name": "modules"
   },
   "scripts": {
-    "test": "bun test ./src"
+    "test": "bun test ./src ./core.ai ./core.system ./domain.content"
   },
   "dependencies": {
+    "@ai-sdk/provider": "^3.0.10",
     "@mdcms/shared": "workspace:*",
+    "ai": "^6.0.173",
     "tslib": "^2.3.0"
   },
   "license": "MIT"
