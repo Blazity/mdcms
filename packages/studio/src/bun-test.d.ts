@@ -6,4 +6,9 @@ declare module "bun:test" {
     options: { timeout?: number },
     fn: () => void | Promise<void>,
   ): void;
+
+  export function describe(
+    label: string,
+    fn: () => void | Promise<void>,
+  ): void;
 }

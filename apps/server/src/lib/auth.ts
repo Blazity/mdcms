@@ -68,6 +68,7 @@ export const API_KEY_OPERATION_SCOPES = [
   "migrations:run",
   "projects:read",
   "projects:write",
+  "ai:use",
 ] as const;
 
 const API_KEY_PREFIX = "mdcms_key_";
@@ -2018,6 +2019,10 @@ function toRbacAction(requiredScope: ApiKeyOperationScope): RbacAction | null {
     return "projects:write";
   }
 
+  if (requiredScope === "ai:use") {
+    return "ai:use";
+  }
+
   return null;
 }
 
@@ -2091,6 +2096,7 @@ function buildCapabilitiesFromSessionGrants(input: {
   capabilities.content.delete = evaluate("content:delete");
   capabilities.users.manage = evaluate("user:manage");
   capabilities.settings.manage = evaluate("settings:manage");
+  capabilities.ai.use = evaluate("ai:use");
 
   return capabilities;
 }
@@ -2129,6 +2135,7 @@ function buildCapabilitiesFromApiKeyScopes(
     scopes,
     "content:delete",
   );
+  capabilities.ai.use = apiKeyScopesSatisfyRequirement(scopes, "ai:use");
 
   return capabilities;
 }

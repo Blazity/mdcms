@@ -24,8 +24,38 @@ export {
 } from "./server/orchestrator.js";
 export {
   createAiOrchestratorFromEnv,
+  type CoreAiServerDeps,
   type CreateAiOrchestratorFromEnvDeps,
 } from "./server/index.js";
+export {
+  applyAiProposal,
+  type AiApplyContentDocument,
+  type AiApplyContentScope,
+  type AiApplyContentStore,
+  type AiApplyInput,
+  type AiApplyWritePayload,
+} from "./server/apply.js";
+export {
+  createInMemoryAiProposalStore,
+  type AiProposalRecord,
+  type AiProposalStatus,
+  type AiProposalStore,
+  type AiProposalStoreClock,
+  type CreateAiProposalStoreOptions,
+} from "./server/proposal-store.js";
+export {
+  mountAiRoutes,
+  type AiAuditEmitter,
+  type AiAuthorizer,
+  type AiContentStore,
+  type AiContextResolver,
+  type AiCsrfProtector,
+  type AiSchemaHashLookup,
+  type InlineTransformAction,
+  type InlineTransformRequestBody,
+  type MountAiRoutesOptions,
+  type ProposalApplyRequestBody,
+} from "./server/routes.js";
 export { aiError, isAiErrorCode, mapProviderError } from "./server/errors.js";
 export {
   buildProposalsFromOutput,

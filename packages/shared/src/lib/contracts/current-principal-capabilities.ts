@@ -17,6 +17,9 @@ export type CurrentPrincipalCapabilities = {
   settings: {
     manage: boolean;
   };
+  ai: {
+    use: boolean;
+  };
 };
 
 export type CurrentPrincipalCapabilitiesResponse = {
@@ -44,6 +47,9 @@ export function createEmptyCurrentPrincipalCapabilities(): CurrentPrincipalCapab
     },
     settings: {
       manage: false,
+    },
+    ai: {
+      use: false,
     },
   };
 }

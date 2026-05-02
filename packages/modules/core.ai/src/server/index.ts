@@ -7,6 +7,7 @@ import {
 } from "./orchestrator.js";
 import type { AiProviderFactoryDeps } from "./provider.js";
 import { resolveAiProvider } from "./providers/factory.js";
+import { mountAiRoutes, type MountAiRoutesOptions } from "./routes.js";
 
 export type CreateAiOrchestratorFromEnvDeps = AiProviderFactoryDeps &
   Omit<AiOrchestratorDeps, "provider">;
@@ -25,23 +26,32 @@ export function createAiOrchestratorFromEnv(
     clock: deps.clock,
     idFactory: deps.idFactory,
     proposalTtlMs: deps.proposalTtlMs,
+    proposalValidator: deps.proposalValidator,
   });
 }
+
+export type CoreAiServerDeps = MountAiRoutesOptions;
 
 /**
  * Server surface for the AI module.
  *
- * The mount step is currently a no-op. The endpoint contracts in
- * SPEC-014 are added by follow-up tickets that consume the
- * orchestrator built above. Keeping the surface here lets future
- * tickets register `actions[]` without restructuring the module.
+ * The host (apps/server) supplies orchestrator + proposal store +
+ * content/auth deps via the module deps map under the `ai` key. When
+ * the deps are absent the surface mounts nothing, which matches the
+ * foundation behavior shipped with CMS-223.
  */
 export const coreAiServerSurface: ServerSurface<
   unknown,
-  Record<string, unknown>
+  Record<string, unknown> & { ai?: CoreAiServerDeps }
 > = {
-  mount: () => {
-    /* foundation only — no routes registered in this ticket */
+  mount: (app, deps) => {
+    const aiDeps = deps?.ai;
+
+    if (!aiDeps) {
+      return;
+    }
+
+    mountAiRoutes(app, aiDeps);
   },
   actions: [],
 };

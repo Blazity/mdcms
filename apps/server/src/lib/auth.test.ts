@@ -3793,6 +3793,7 @@ testWithDatabase(
             };
             users: { manage: boolean };
             settings: { manage: boolean };
+            ai: { use: boolean };
           };
         };
       };
@@ -3818,6 +3819,9 @@ testWithDatabase(
         },
         settings: {
           manage: false,
+        },
+        ai: {
+          use: true,
         },
       });
     } finally {
@@ -3914,6 +3918,7 @@ testWithDatabase(
             };
             users: { manage: boolean };
             settings: { manage: boolean };
+            ai: { use: boolean };
           };
         };
       };
@@ -3937,6 +3942,9 @@ testWithDatabase(
         },
         settings: {
           manage: false,
+        },
+        ai: {
+          use: false,
         },
       });
 

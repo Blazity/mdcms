@@ -7,7 +7,15 @@ import type {
 
 import type { AiProviderUsage } from "./provider.js";
 
-export type AiAuditOutcome = "succeeded" | "invalid_output" | "provider_error";
+export type AiAuditOutcome =
+  | "succeeded"
+  | "invalid_output"
+  | "provider_error"
+  | "accepted"
+  | "rejected"
+  | "expired"
+  | "apply_failed"
+  | "validation_failed";
 
 export type AiAuditRecord = {
   taskKind: AiTaskKind;
@@ -18,9 +26,16 @@ export type AiAuditRecord = {
   outcome: AiAuditOutcome;
   validation: AiProposalValidation;
   proposalIds?: string[];
-  errorCode?: AiErrorCode;
+  errorCode?: string;
   errorMessage?: string;
   usage?: AiProviderUsage;
+  /** Actor identifier when known at apply/reject time. */
+  actorId?: string;
+  /** Project/environment captured for lifecycle events. */
+  project?: string;
+  environment?: string;
+  /** Document id touched by the lifecycle event (apply only). */
+  documentId?: string;
   /** ISO-8601 timestamp captured by the orchestrator. */
   occurredAt: string;
 };
@@ -34,9 +49,13 @@ export type BuildAuditRecordInput = {
   outcome: AiAuditOutcome;
   validation?: AiProposalValidation;
   proposals?: AiProposal[];
-  errorCode?: AiErrorCode;
+  errorCode?: AiErrorCode | string;
   errorMessage?: string;
   usage?: AiProviderUsage;
+  actorId?: string;
+  project?: string;
+  environment?: string;
+  documentId?: string;
 };
 
 const DEFAULT_VALIDATION: AiProposalValidation = Object.freeze({
@@ -79,6 +98,22 @@ export function buildAuditRecord(input: BuildAuditRecordInput): AiAuditRecord {
     if (usage) {
       record.usage = usage;
     }
+  }
+
+  if (input.actorId) {
+    record.actorId = input.actorId;
+  }
+
+  if (input.project) {
+    record.project = input.project;
+  }
+
+  if (input.environment) {
+    record.environment = input.environment;
+  }
+
+  if (input.documentId) {
+    record.documentId = input.documentId;
   }
 
   return record;
