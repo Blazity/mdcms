@@ -145,9 +145,15 @@ export function buildProposalsFromOutput(
   const groups = groupOperationsByKind(stamped);
 
   const proposals: AiProposal[] = groups.map((group) => {
+    const kind = deriveProposalKind(group);
+    // create_document targets a NEW document, so source-document
+    // anchors from the envelope must not leak in. The other kinds
+    // mutate an existing draft, so they keep documentId and
+    // baseDraftRevision when supplied.
+    const carriesSourceDocument = kind !== "create_document";
     const candidate: AiProposalCandidate = {
       proposalId: deps.idFactory(),
-      kind: deriveProposalKind(group),
+      kind,
       project: input.envelope.project,
       environment: input.envelope.environment,
       type: input.envelope.type,
@@ -160,10 +166,11 @@ export function buildProposalsFromOutput(
         model: input.model,
         promptTemplateId: input.promptTemplateId,
       },
-      ...(input.envelope.documentId !== undefined
+      ...(carriesSourceDocument && input.envelope.documentId !== undefined
         ? { documentId: input.envelope.documentId }
         : {}),
-      ...(input.envelope.baseDraftRevision !== undefined
+      ...(carriesSourceDocument &&
+      input.envelope.baseDraftRevision !== undefined
         ? { baseDraftRevision: input.envelope.baseDraftRevision }
         : {}),
     };

@@ -191,6 +191,26 @@ export const aiProposalSchema = z
         });
       }
     });
+
+    if (proposal.kind === "create_document") {
+      if (proposal.documentId !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["documentId"],
+          message:
+            "create_document proposals must not carry a source documentId.",
+        });
+      }
+
+      if (proposal.baseDraftRevision !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["baseDraftRevision"],
+          message:
+            "create_document proposals must not carry a source baseDraftRevision.",
+        });
+      }
+    }
   });
 
 function formatPath(path: string, issuePath: readonly PropertyKey[]): string {

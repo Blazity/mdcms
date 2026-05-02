@@ -115,14 +115,24 @@ const mdxInsertionInputSchema = baseInputSchema.refine(
   },
 );
 
-const currentDocumentEditInputSchema = baseInputSchema.refine(
-  (input) => Boolean(input.documentBody) || Boolean(input.selectionText),
-  {
-    path: ["documentBody"],
-    message:
-      "must include document body or a selection for current-document edit.",
-  },
-);
+const currentDocumentEditInputSchema = baseInputSchema
+  .refine(
+    (input) => Boolean(input.documentBody) || Boolean(input.selectionText),
+    {
+      path: ["documentBody"],
+      message:
+        "must include document body or a selection for current-document edit.",
+    },
+  )
+  .refine(
+    (input) =>
+      typeof input.selectionId === "string" && input.selectionId.length > 0,
+    {
+      path: ["selectionId"],
+      message:
+        "must include a selectionId for current-document edit so replace_selection proposals can be anchored server-side.",
+    },
+  );
 
 const newDocumentDraftInputSchema = baseInputSchema.refine(
   (input) =>
@@ -159,7 +169,7 @@ const definitions: Record<AiTaskKind, AiTaskDefinition> = {
     kind: "seo_improvement",
     promptTemplateId: "seo_improvement.v1",
     system:
-      "You suggest SEO edits to an MDCMS document without altering meaning. Output JSON describing replace_selection or update_frontmatter operations only.",
+      "You suggest SEO edits to an MDCMS document by updating frontmatter only. Return JSON describing update_frontmatter operations.",
     buildUserPrompt: (input) =>
       [
         formatLocaleHint(input),
@@ -171,9 +181,14 @@ const definitions: Record<AiTaskKind, AiTaskDefinition> = {
       ]
         .filter((line): line is string => line !== null)
         .join("\n"),
-    allowedOperationOps: ["replace_selection", "update_frontmatter"],
+    // replace_selection is intentionally excluded: SEO is invoked
+    // doc-level (no trusted selection anchor), so we cannot stamp a
+    // server-trusted selectionId. Body rewrites for SEO go through
+    // copy_improvement (inline) or current_document_edit (chat), both
+    // of which require a selectionId in input.
+    allowedOperationOps: ["update_frontmatter"],
     inputSchema: seoImprovementInputSchema,
-    outputSchema: makeOutputSchema(["replace_selection", "update_frontmatter"]),
+    outputSchema: makeOutputSchema(["update_frontmatter"]),
   },
   mdx_component_insertion: {
     kind: "mdx_component_insertion",
@@ -196,7 +211,10 @@ const definitions: Record<AiTaskKind, AiTaskDefinition> = {
     kind: "current_document_edit",
     promptTemplateId: "current_document_edit.v1",
     system:
-      "You propose edits to the current draft document. Return JSON with replace_selection, insert_block, or update_frontmatter operations.",
+      "You propose edits to the current draft document. Return JSON with replace_selection, insert_block, or update_frontmatter operations. The replace_selection target is the caller's selectionId; do not address other locations.",
+    // selectionId is required by currentDocumentEditInputSchema, so
+    // every replace_selection operation gets a server-trusted
+    // anchor stamped by the proposal builder.
     buildUserPrompt: (input) =>
       [
         formatLocaleHint(input),

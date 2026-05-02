@@ -249,4 +249,89 @@ describe("createAiOrchestrator", () => {
       },
     );
   });
+
+  test("current_document_edit rejects input that omits selectionId", async () => {
+    const provider = createEchoAiProvider({
+      respond: () =>
+        JSON.stringify({
+          summary: "edit",
+          operations: [
+            {
+              op: "replace_selection",
+              selectionId: "sel_invented",
+              originalText: "a",
+              replacementText: "b",
+            },
+          ],
+        }),
+    });
+    const orchestrator = createAiOrchestrator({
+      provider,
+      clock: fixedClock,
+      idFactory,
+    });
+
+    await assert.rejects(
+      () =>
+        orchestrator.runTask({
+          taskKind: "current_document_edit",
+          envelope: baseInput.envelope,
+          input: {
+            locale: "en",
+            documentBody: "Some body",
+            instruction: "rewrite the intro",
+            // selectionId intentionally absent
+          },
+        }),
+      (error) => {
+        assert.ok(error instanceof OrchestratorFailure);
+        const runtime = getOrchestratorFailureRuntimeError(error);
+        assert.ok(runtime !== undefined);
+        assert.equal(runtime.code, "AI_OUTPUT_INVALID");
+        return true;
+      },
+    );
+  });
+
+  test("seo_improvement task only allows update_frontmatter operations", async () => {
+    const provider = createEchoAiProvider({
+      respond: () =>
+        JSON.stringify({
+          summary: "Tighten title",
+          operations: [
+            {
+              op: "replace_selection",
+              selectionId: "sel_invented",
+              originalText: "Old title",
+              replacementText: "New title",
+            },
+          ],
+        }),
+    });
+    const orchestrator = createAiOrchestrator({
+      provider,
+      clock: fixedClock,
+      idFactory,
+    });
+
+    await assert.rejects(
+      () =>
+        orchestrator.runTask({
+          taskKind: "seo_improvement",
+          envelope: baseInput.envelope,
+          input: {
+            locale: "en",
+            instruction: "improve SEO",
+            frontmatter: { title: "Old title" },
+          },
+        }),
+      (error) => {
+        assert.ok(error instanceof OrchestratorFailure);
+        const runtime = getOrchestratorFailureRuntimeError(error);
+        assert.ok(runtime !== undefined);
+        assert.equal(runtime.code, "AI_OUTPUT_INVALID");
+        return true;
+      },
+    );
+  });
 });

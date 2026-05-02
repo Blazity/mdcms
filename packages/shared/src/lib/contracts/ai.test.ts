@@ -56,8 +56,13 @@ test("aiProposalSchema accepts an insert_block proposal without afterSelectionId
 });
 
 test("aiProposalSchema accepts a create_document proposal", () => {
+  const {
+    documentId: _documentId,
+    baseDraftRevision: _baseDraftRevision,
+    ...rest
+  } = validProposal;
   const parsed = aiProposalSchema.safeParse({
-    ...validProposal,
+    ...rest,
     kind: "create_document",
     operations: [
       {
@@ -70,6 +75,41 @@ test("aiProposalSchema accepts a create_document proposal", () => {
     ],
   });
   assert.equal(parsed.success, true);
+});
+
+test("aiProposalSchema rejects create_document proposals carrying source documentId", () => {
+  const parsed = aiProposalSchema.safeParse({
+    ...validProposal,
+    kind: "create_document",
+    operations: [
+      {
+        op: "create_document",
+        path: "blog/new-post.mdx",
+        format: "mdx",
+        frontmatter: {},
+        body: "# Hi",
+      },
+    ],
+  });
+  assert.equal(parsed.success, false);
+});
+
+test("aiProposalSchema rejects create_document proposals carrying baseDraftRevision", () => {
+  const { documentId: _documentId, ...rest } = validProposal;
+  const parsed = aiProposalSchema.safeParse({
+    ...rest,
+    kind: "create_document",
+    operations: [
+      {
+        op: "create_document",
+        path: "blog/new-post.mdx",
+        format: "mdx",
+        frontmatter: {},
+        body: "# Hi",
+      },
+    ],
+  });
+  assert.equal(parsed.success, false);
 });
 
 test("aiProposalSchema rejects proposals with unknown kind", () => {

@@ -177,6 +177,87 @@ describe("buildProposalsFromOutput", () => {
     );
   });
 
+  test("create_document proposals drop source-document anchors from envelope", () => {
+    counter = 0;
+    const [proposal] = buildProposalsFromOutput(
+      {
+        taskKind: "new_document_draft",
+        promptTemplateId: "new_document_draft.v1",
+        providerId: "echo",
+        model: "echo-1",
+        // envelope still carries source document refs
+        envelope: {
+          ...envelope,
+          documentId: "doc_source",
+          baseDraftRevision: 4,
+        },
+        output: {
+          summary: "New post",
+          operations: [
+            {
+              op: "create_document",
+              path: "blog/new.mdx",
+              format: "mdx",
+              frontmatter: {},
+              body: "# x",
+            },
+          ],
+        },
+      },
+      deps,
+    );
+
+    assert.equal(proposal.kind, "create_document");
+    assert.equal(proposal.documentId, undefined);
+    assert.equal(proposal.baseDraftRevision, undefined);
+  });
+
+  test("mixed-kind output keeps source anchors only on the non-create_document proposal", () => {
+    counter = 0;
+    const proposals = buildProposalsFromOutput(
+      {
+        taskKind: "current_document_edit",
+        promptTemplateId: "current_document_edit.v1",
+        providerId: "echo",
+        model: "echo-1",
+        envelope: {
+          ...envelope,
+          documentId: "doc_source",
+          baseDraftRevision: 7,
+        },
+        output: {
+          summary: "Mixed",
+          operations: [
+            {
+              op: "replace_selection",
+              selectionId: "sel_1",
+              originalText: "a",
+              replacementText: "b",
+            },
+            {
+              op: "create_document",
+              path: "blog/new.mdx",
+              format: "mdx",
+              frontmatter: {},
+              body: "# x",
+            },
+          ],
+        },
+      },
+      deps,
+    );
+
+    const replaceProposal = proposals.find(
+      (p) => p.kind === "replace_selection",
+    );
+    const createProposal = proposals.find((p) => p.kind === "create_document");
+
+    assert.equal(replaceProposal?.documentId, "doc_source");
+    assert.equal(replaceProposal?.baseDraftRevision, 7);
+    assert.equal(createProposal?.documentId, undefined);
+    assert.equal(createProposal?.baseDraftRevision, undefined);
+  });
+
   test("anchors leave non-replace_selection ops untouched", () => {
     counter = 0;
     const [proposal] = buildProposalsFromOutput(
