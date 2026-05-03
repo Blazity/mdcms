@@ -6,6 +6,7 @@ import {
   flip,
   offset,
   shift,
+  size,
   useFloating,
 } from "@floating-ui/react-dom";
 import { Sparkles } from "lucide-react";
@@ -92,7 +93,19 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
     placement: "top-start",
     strategy: "fixed",
     whileElementsMounted: autoUpdate,
-    middleware: [offset(8), flip(), shift({ padding: 8 })],
+    middleware: [
+      offset(8),
+      flip({ padding: 8 }),
+      shift({ padding: 8 }),
+      size({
+        padding: 8,
+        apply({ availableHeight, elements }) {
+          // Cap the popover so it always fits in the viewport — the
+          // panel's inner action list scrolls when content overflows.
+          elements.floating.style.maxHeight = `${Math.max(availableHeight, 240)}px`;
+        },
+      }),
+    ],
   });
 
   useEffect(() => {
@@ -127,11 +140,12 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
           ref={refs.setFloating}
           style={floatingStyles}
           data-mdcms-ai-bubble="panel"
-          className={cn("z-50 w-80")}
+          className={cn("z-50 w-[22rem]")}
         >
           <InlineAiPanel
             {...panelProps}
             selection={panelSelection}
+            onClose={() => setOpen(false)}
             className="shadow-xl"
           />
         </div>

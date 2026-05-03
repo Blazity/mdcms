@@ -1,13 +1,24 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import {
   AlertCircle,
+  ArrowRight,
   Check,
+  ChevronRight,
+  Eraser,
+  Expand,
+  Languages,
   Loader2,
+  PenLine,
   RefreshCw,
+  Scissors,
+  Search,
+  SlidersHorizontal,
   Sparkles,
+  Squircle,
+  Wand2,
   X,
 } from "lucide-react";
 
@@ -27,58 +38,69 @@ import { Button } from "../ui/button.js";
 import { Input } from "../ui/input.js";
 import { cn } from "../../lib/utils.js";
 
-const INLINE_AI_ACTIONS: ReadonlyArray<{
+type InlineAiActionMeta = {
   id: StudioAiInlineAction;
   label: string;
   description: string;
+  icon: typeof Sparkles;
   requiresInput: boolean;
-}> = [
+};
+
+const INLINE_AI_ACTIONS: ReadonlyArray<InlineAiActionMeta> = [
   {
     id: "rewrite",
     label: "Rewrite",
-    description: "Rewrite while preserving meaning",
+    description: "Preserve meaning, change phrasing",
+    icon: PenLine,
     requiresInput: false,
   },
   {
     id: "shorten",
     label: "Shorten",
     description: "Trim to a tighter version",
+    icon: Scissors,
     requiresInput: false,
   },
   {
     id: "expand",
     label: "Expand",
     description: "Add supporting detail",
+    icon: Expand,
     requiresInput: false,
   },
   {
     id: "change_tone",
     label: "Change tone",
-    description: "Rewrite in the requested tone",
+    description: "Rewrite in a requested tone",
+    icon: Languages,
     requiresInput: true,
   },
   {
     id: "fix_grammar",
     label: "Fix grammar",
     description: "Correct grammar and spelling",
+    icon: Eraser,
     requiresInput: false,
   },
   {
     id: "improve_clarity",
     label: "Improve clarity",
     description: "Clarify and tighten phrasing",
+    icon: SlidersHorizontal,
     requiresInput: false,
   },
   {
     id: "improve_seo",
     label: "Improve SEO",
-    description: "Suggest SEO frontmatter updates",
+    description: "Suggest frontmatter edits",
+    icon: Search,
     requiresInput: true,
   },
   {
     id: "insert_mdx_component",
-    label: "Insert MDX component",
-    description: "Insert a registered MDX block",
+    label: "Insert component",
+    description: "Add a registered MDX block",
+    icon: Squircle,
     requiresInput: true,
   },
 ];
@@ -91,6 +113,7 @@ export type InlineAiPanelProps = {
     proposal: StudioAiProposal;
     bodyAfter: string;
   }) => void;
+  onClose?: () => void;
   className?: string;
   /** Optional override used by tests to seed the hook state. */
   initialIntent?: InlineAiTransformIntent;
@@ -150,28 +173,28 @@ function describeOperation(proposal: StudioAiProposal): string {
 
 function StateMessage(props: {
   tone: "info" | "warn" | "error";
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div
       role="status"
       className={cn(
-        "flex items-start gap-2 rounded-md border px-3 py-2 text-sm",
+        "flex items-start gap-2 rounded-md border px-3 py-2 text-xs",
         props.tone === "info" &&
-          "border-muted-foreground/20 bg-muted/30 text-muted-foreground",
+          "border-border bg-muted/40 text-muted-foreground",
         props.tone === "warn" &&
           "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
         props.tone === "error" &&
           "border-destructive/30 bg-destructive/10 text-destructive",
       )}
     >
-      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
       <span className="leading-snug">{props.children}</span>
     </div>
   );
 }
 
-function StateBody(props: {
+function ResultBody(props: {
   state: InlineAiState;
   onAccept: () => void;
   onReject: () => void;
@@ -180,11 +203,7 @@ function StateBody(props: {
   const { state, onAccept, onReject, onRetry } = props;
 
   if (state.status === "idle") {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Pick an action to ask AI for a draft proposal.
-      </p>
-    );
+    return null;
   }
 
   if (state.status === "loading") {
@@ -192,9 +211,9 @@ function StateBody(props: {
       <div
         role="status"
         aria-live="polite"
-        className="flex items-center gap-2 text-sm text-muted-foreground"
+        className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
       >
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
         Generating a proposal…
       </div>
     );
@@ -218,51 +237,55 @@ function StateBody(props: {
         <StateMessage tone="warn">
           The proposal failed validation and cannot be applied.
         </StateMessage>
-        <ul className="list-disc pl-5 text-xs text-muted-foreground">
-          {errorList.map((entry, index) => (
-            <li key={index}>
-              <strong>{entry.code}</strong> — {entry.message}
-            </li>
-          ))}
-        </ul>
-        <div className="flex gap-2">
-          <Button size="sm" variant="secondary" onClick={onReject}>
-            Dismiss
-          </Button>
-          <Button size="sm" variant="ghost" onClick={onRetry}>
-            <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden /> Try again
-          </Button>
-        </div>
+        {errorList.length > 0 ? (
+          <ul className="list-disc space-y-0.5 pl-5 text-[11px] text-muted-foreground">
+            {errorList.map((entry, index) => (
+              <li key={index}>
+                <span className="font-medium">{entry.code}</span> —{" "}
+                {entry.message}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <ResultActions
+          onPrimary={onRetry}
+          primaryLabel="Try again"
+          primaryIcon={<RefreshCw className="h-3.5 w-3.5" aria-hidden />}
+          onSecondary={onReject}
+          secondaryLabel="Dismiss"
+        />
       </div>
     );
   }
 
   if (state.status === "proposal") {
     return (
-      <div className="space-y-3">
+      <div className="space-y-2">
         <header className="space-y-1">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
             Proposed replacement
           </p>
-          <p className="text-sm font-medium">{state.proposal.summary}</p>
+          <p className="text-xs font-medium leading-snug">
+            {state.proposal.summary}
+          </p>
         </header>
         <pre
           data-testid="inline-ai-proposed-text"
-          className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md border bg-muted/30 p-3 text-sm"
+          className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-2 font-sans text-xs leading-relaxed"
         >
           {describeOperation(state.proposal)}
         </pre>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={onAccept}>
-            <Check className="mr-1 h-3.5 w-3.5" aria-hidden /> Accept
-          </Button>
-          <Button size="sm" variant="secondary" onClick={onReject}>
-            <X className="mr-1 h-3.5 w-3.5" aria-hidden /> Reject
-          </Button>
-          <Button size="sm" variant="ghost" onClick={onRetry}>
-            <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden /> Try again
-          </Button>
-        </div>
+        <ResultActions
+          onPrimary={onAccept}
+          primaryLabel="Accept"
+          primaryIcon={<Check className="h-3.5 w-3.5" aria-hidden />}
+          onSecondary={onReject}
+          secondaryLabel="Reject"
+          secondaryIcon={<X className="h-3.5 w-3.5" aria-hidden />}
+          tertiaryLabel="Try again"
+          onTertiary={onRetry}
+          tertiaryIcon={<RefreshCw className="h-3.5 w-3.5" aria-hidden />}
+        />
       </div>
     );
   }
@@ -272,9 +295,9 @@ function StateBody(props: {
       <div
         role="status"
         aria-live="polite"
-        className="flex items-center gap-2 text-sm text-muted-foreground"
+        className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
       >
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
         Applying proposal…
       </div>
     );
@@ -283,7 +306,7 @@ function StateBody(props: {
   if (state.status === "applied") {
     return (
       <StateMessage tone="info">
-        Proposal applied. Editor draft has been updated.
+        Proposal applied. Editor draft updated.
       </StateMessage>
     );
   }
@@ -292,14 +315,13 @@ function StateBody(props: {
     return (
       <div className="space-y-2">
         <StateMessage tone="warn">{state.message}</StateMessage>
-        <div className="flex gap-2">
-          <Button size="sm" variant="secondary" onClick={onReject}>
-            Dismiss
-          </Button>
-          <Button size="sm" variant="ghost" onClick={onRetry}>
-            <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden /> Try again
-          </Button>
-        </div>
+        <ResultActions
+          onPrimary={onRetry}
+          primaryLabel="Try again"
+          primaryIcon={<RefreshCw className="h-3.5 w-3.5" aria-hidden />}
+          onSecondary={onReject}
+          secondaryLabel="Dismiss"
+        />
       </div>
     );
   }
@@ -317,17 +339,16 @@ function StateBody(props: {
       <div className="space-y-2">
         <StateMessage tone="error">
           <span>
-            <strong>{state.code}</strong> — {state.message}
+            <span className="font-medium">{state.code}</span> — {state.message}
           </span>
         </StateMessage>
-        <div className="flex gap-2">
-          <Button size="sm" variant="secondary" onClick={onReject}>
-            Dismiss
-          </Button>
-          <Button size="sm" variant="ghost" onClick={onRetry}>
-            <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden /> Try again
-          </Button>
-        </div>
+        <ResultActions
+          onPrimary={onRetry}
+          primaryLabel="Try again"
+          primaryIcon={<RefreshCw className="h-3.5 w-3.5" aria-hidden />}
+          onSecondary={onReject}
+          secondaryLabel="Dismiss"
+        />
       </div>
     );
   }
@@ -335,8 +356,104 @@ function StateBody(props: {
   return null;
 }
 
+function ResultActions(props: {
+  onPrimary: () => void;
+  primaryLabel: string;
+  primaryIcon?: ReactNode;
+  onSecondary?: () => void;
+  secondaryLabel?: string;
+  secondaryIcon?: ReactNode;
+  onTertiary?: () => void;
+  tertiaryLabel?: string;
+  tertiaryIcon?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <Button size="sm" onClick={props.onPrimary} className="h-7 px-2.5">
+        {props.primaryIcon ? (
+          <span className="mr-1 inline-flex">{props.primaryIcon}</span>
+        ) : null}
+        {props.primaryLabel}
+      </Button>
+      {props.onSecondary && props.secondaryLabel ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={props.onSecondary}
+          className="h-7 px-2.5"
+        >
+          {props.secondaryIcon ? (
+            <span className="mr-1 inline-flex">{props.secondaryIcon}</span>
+          ) : null}
+          {props.secondaryLabel}
+        </Button>
+      ) : null}
+      {props.onTertiary && props.tertiaryLabel ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={props.onTertiary}
+          className="h-7 px-2.5 text-muted-foreground"
+        >
+          {props.tertiaryIcon ? (
+            <span className="mr-1 inline-flex">{props.tertiaryIcon}</span>
+          ) : null}
+          {props.tertiaryLabel}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function ActionRow(props: {
+  meta: InlineAiActionMeta;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const Icon = props.meta.icon;
+  return (
+    <button
+      type="button"
+      role="menuitemradio"
+      aria-checked={props.active}
+      onClick={props.onSelect}
+      data-testid={`inline-ai-action-${props.meta.id}`}
+      className={cn(
+        "group flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        props.active
+          ? "bg-primary/10 text-foreground"
+          : "text-foreground hover:bg-muted/60",
+      )}
+    >
+      <span
+        className={cn(
+          "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors",
+          props.active && "border-primary/40 bg-primary/15 text-primary",
+        )}
+      >
+        <Icon className="h-3.5 w-3.5" aria-hidden />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-xs font-medium leading-tight">
+          {props.meta.label}
+        </span>
+        <span className="truncate text-[11px] leading-tight text-muted-foreground">
+          {props.meta.description}
+        </span>
+      </span>
+      {props.meta.requiresInput ? (
+        <ChevronRight
+          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+          aria-hidden
+        />
+      ) : null}
+    </button>
+  );
+}
+
 export function InlineAiPanel(props: InlineAiPanelProps) {
-  const { api, options, selection, onApplied, className } = props;
+  const { api, options, selection, onApplied, onClose, className } = props;
 
   const [activeAction, setActiveAction] =
     useState<StudioAiInlineAction>("rewrite");
@@ -372,91 +489,117 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
       ? (transform.state as { intent: InlineAiTransformIntent }).intent
       : intentForAction(activeAction, detail.trim());
 
+  const detailPlaceholder =
+    activeAction === "change_tone"
+      ? "e.g. friendly, formal, concise"
+      : activeAction === "improve_seo"
+        ? "Target keyword or topic"
+        : "Component intent";
+
+  const isWorking =
+    transform.state.status === "loading" ||
+    transform.state.status === "applying";
+
   return (
     <section
       aria-label="AI inline transform"
       className={cn(
-        "flex flex-col gap-3 rounded-md border bg-card p-3 text-card-foreground",
+        "flex h-full max-h-full w-full flex-col overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-md",
         className,
       )}
     >
-      <header className="flex items-center gap-2 text-sm font-medium">
-        <Sparkles className="h-4 w-4 text-primary" aria-hidden />
-        AI transform
+      <header className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+        <div className="flex items-center gap-1.5 text-xs font-semibold">
+          <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden />
+          AI transform
+        </div>
+        {onClose ? (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close AI panel"
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            data-testid="inline-ai-close"
+          >
+            <X className="h-3.5 w-3.5" aria-hidden />
+          </button>
+        ) : null}
       </header>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div
+        role="menu"
+        aria-label="AI actions"
+        className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1.5"
+      >
         {INLINE_AI_ACTIONS.map((entry) => (
-          <Button
+          <ActionRow
             key={entry.id}
-            size="sm"
-            variant={entry.id === activeAction ? "default" : "ghost"}
-            type="button"
-            onClick={() => {
+            meta={entry}
+            active={entry.id === activeAction}
+            onSelect={() => {
               setActiveAction(entry.id);
               setDetail("");
             }}
-            data-testid={`inline-ai-action-${entry.id}`}
-          >
-            <span className="text-left">
-              <span className="block text-xs font-semibold">{entry.label}</span>
-              <span className="block text-[10px] text-muted-foreground">
-                {entry.description}
-              </span>
-            </span>
-          </Button>
+          />
         ))}
       </div>
 
-      {activeMeta.requiresInput ? (
-        <Input
-          aria-label={`${activeMeta.label} detail`}
-          placeholder={
-            activeAction === "change_tone"
-              ? "e.g. friendly, formal, concise"
-              : activeAction === "improve_seo"
-                ? "Target keyword or topic"
-                : "Component intent (e.g. callout for incident summary)"
-          }
-          value={detail}
-          onChange={(event) => setDetail(event.target.value)}
+      <div className="shrink-0 space-y-2 border-t border-border bg-muted/20 px-3 py-2">
+        {!hasSelection && isSelectionRequired ? (
+          <StateMessage tone="info">
+            Select editor text first, then pick an action.
+          </StateMessage>
+        ) : null}
+
+        {activeMeta.requiresInput ? (
+          <Input
+            aria-label={`${activeMeta.label} detail`}
+            placeholder={detailPlaceholder}
+            value={detail}
+            onChange={(event) => setDetail(event.target.value)}
+            className="h-8 text-xs"
+          />
+        ) : null}
+
+        <div className="flex items-center justify-between gap-2">
+          <p className="truncate text-[11px] text-muted-foreground">
+            {activeMeta.description}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            disabled={requestDisabled}
+            onClick={() =>
+              transform.request(intentForAction(activeAction, detail.trim()))
+            }
+            data-testid="inline-ai-request"
+            className="h-8 shrink-0 px-3"
+          >
+            {isWorking ? (
+              <>
+                <Loader2
+                  className="mr-1 h-3.5 w-3.5 animate-spin"
+                  aria-hidden
+                />
+                Generating
+              </>
+            ) : (
+              <>
+                <Wand2 className="mr-1 h-3.5 w-3.5" aria-hidden />
+                Ask AI
+                <ArrowRight className="ml-1 h-3.5 w-3.5" aria-hidden />
+              </>
+            )}
+          </Button>
+        </div>
+
+        <ResultBody
+          state={transform.state}
+          onAccept={transform.accept}
+          onReject={transform.reject}
+          onRetry={() => transform.request(lastIntent)}
         />
-      ) : null}
-
-      {!hasSelection && isSelectionRequired ? (
-        <StateMessage tone="info">
-          Select editor text first, then pick an action.
-        </StateMessage>
-      ) : null}
-
-      <Button
-        type="button"
-        size="sm"
-        disabled={requestDisabled}
-        onClick={() =>
-          transform.request(intentForAction(activeAction, detail.trim()))
-        }
-        data-testid="inline-ai-request"
-      >
-        {transform.state.status === "loading" ? (
-          <>
-            <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden />
-            Generating…
-          </>
-        ) : (
-          <>
-            <Sparkles className="mr-1 h-3.5 w-3.5" aria-hidden />
-            Ask AI
-          </>
-        )}
-      </Button>
-
-      <StateBody
-        state={transform.state}
-        onAccept={transform.accept}
-        onReject={transform.reject}
-        onRetry={() => transform.request(lastIntent)}
-      />
+      </div>
     </section>
   );
 }
