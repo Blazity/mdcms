@@ -93,6 +93,13 @@ export interface TipTapEditorHandle {
   setContent: (markdown: string) => void;
 }
 
+export type TipTapEditorSelectionInfo = {
+  /** Stable id derived from the current selection range. */
+  selectionId: string;
+  /** Plain text inside the selection. */
+  text: string;
+};
+
 interface TipTapEditorProps {
   initialContent?: string;
   onChange?: (content: string) => void;
@@ -103,6 +110,13 @@ interface TipTapEditorProps {
   onActiveMdxComponentChange?: (
     selection: MdxPropsPanelSelection | null,
   ) => void;
+  /**
+   * Notifies callers when the user's plain-text selection changes.
+   * Fires with `null` when the selection is empty or collapsed.
+   * Used by the inline AI affordance to drive selection-anchored
+   * transforms.
+   */
+  onSelectionTextChange?: (selection: TipTapEditorSelectionInfo | null) => void;
 }
 
 const defaultContent = `
@@ -199,6 +213,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       readOnly = false,
       forbidden = false,
       onActiveMdxComponentChange,
+      onSelectionTextChange,
     },
     ref,
   ) {
@@ -322,6 +337,47 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
     // it only drives a side-panel update, never the editor's own DOM —
     // so defer it off the keystroke's critical path.
     const auxSelectionFrameRef = useRef<number | null>(null);
+    const lastPublishedTextSelectionRef = useRef<string | null>(null);
+    const publishTextSelection = useEffectEvent(
+      (nextEditor: TipTapEditorInstance) => {
+        if (!onSelectionTextChange) {
+          return;
+        }
+
+        const { from, to, empty } = nextEditor.state.selection;
+
+        if (empty || from === to) {
+          if (lastPublishedTextSelectionRef.current !== null) {
+            lastPublishedTextSelectionRef.current = null;
+            onSelectionTextChange(null);
+          }
+          return;
+        }
+
+        const text = nextEditor.state.doc.textBetween(from, to, "\n", "\n");
+
+        if (text.trim().length === 0) {
+          if (lastPublishedTextSelectionRef.current !== null) {
+            lastPublishedTextSelectionRef.current = null;
+            onSelectionTextChange(null);
+          }
+          return;
+        }
+
+        // The selection id is derived from the range bounds + text so a
+        // moved-but-identical selection still re-uses the same id and
+        // the AI proposal stays anchored across `Try again` calls.
+        const selectionId = `sel:${from}-${to}`;
+        const fingerprint = `${selectionId}::${text}`;
+
+        if (lastPublishedTextSelectionRef.current === fingerprint) {
+          return;
+        }
+
+        lastPublishedTextSelectionRef.current = fingerprint;
+        onSelectionTextChange({ selectionId, text });
+      },
+    );
     const scheduleAuxSelectionUpdate = useEffectEvent(
       (nextEditor: TipTapEditorInstance) => {
         if (auxSelectionFrameRef.current !== null) {
@@ -330,6 +386,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
         auxSelectionFrameRef.current = requestAnimationFrame(() => {
           auxSelectionFrameRef.current = null;
           publishSelectedMdxComponent(nextEditor);
+          publishTextSelection(nextEditor);
         });
       },
     );
