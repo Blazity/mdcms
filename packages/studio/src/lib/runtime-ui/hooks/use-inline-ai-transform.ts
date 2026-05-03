@@ -33,9 +33,8 @@ export type InlineAiTransformOptions = {
 export type InlineAiTransformIntent = {
   action: StudioAiInlineAction;
   instruction?: string;
+  /** Required when `action` is `change_tone`; ignored otherwise. */
   tone?: string;
-  keyword?: string;
-  componentIntent?: string;
 };
 
 export type InlineAiState =
@@ -132,8 +131,6 @@ export function useInlineAiTransform(
           action: intent.action,
           instruction: intent.instruction,
           tone: intent.tone,
-          keyword: intent.keyword,
-          componentIntent: intent.componentIntent,
           signal: controller.signal,
         });
 

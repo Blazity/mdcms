@@ -24,12 +24,15 @@ const INLINE_TRANSFORM_ACTIONS = [
   "change_tone",
   "fix_grammar",
   "improve_clarity",
-  "improve_seo",
-  "insert_mdx_component",
 ] as const;
 
 export type InlineTransformAction = (typeof INLINE_TRANSFORM_ACTIONS)[number];
 
+// All inline transforms map to the copy_improvement task; the prompt is
+// shaped by the action-specific instruction hint below. SEO frontmatter
+// suggestions and MDX component insertion live on other surfaces (the
+// document properties panel, slash menu, chat) and are intentionally not
+// exposed through `/api/v1/ai/inline-transform`.
 const ACTION_TO_TASK: Record<InlineTransformAction, AiTaskKind> = {
   rewrite: "copy_improvement",
   shorten: "copy_improvement",
@@ -37,8 +40,6 @@ const ACTION_TO_TASK: Record<InlineTransformAction, AiTaskKind> = {
   change_tone: "copy_improvement",
   fix_grammar: "copy_improvement",
   improve_clarity: "copy_improvement",
-  improve_seo: "seo_improvement",
-  insert_mdx_component: "mdx_component_insertion",
 };
 
 const ACTION_INSTRUCTION_HINT: Record<InlineTransformAction, string> = {
@@ -51,9 +52,6 @@ const ACTION_INSTRUCTION_HINT: Record<InlineTransformAction, string> = {
     "Fix grammar and spelling errors in the selected content without changing meaning.",
   improve_clarity:
     "Rewrite the selected content for clarity, brevity, and active voice.",
-  improve_seo: "Suggest SEO frontmatter updates that improve discoverability.",
-  insert_mdx_component:
-    "Insert an MDX component block that fulfils the requested intent.",
 };
 
 export type InlineTransformRequestBody = {
@@ -64,8 +62,6 @@ export type InlineTransformRequestBody = {
   action?: string;
   instruction?: string;
   tone?: string;
-  keyword?: string;
-  componentIntent?: string;
 };
 
 export type ProposalApplyRequestBody = {
@@ -219,24 +215,11 @@ function buildInstruction(
 ): string {
   const userInstruction = ensureOptionalString(body.instruction, "instruction");
   const tone = ensureOptionalString(body.tone, "tone");
-  const keyword = ensureOptionalString(body.keyword, "keyword");
-  const componentIntent = ensureOptionalString(
-    body.componentIntent,
-    "componentIntent",
-  );
 
   const parts: string[] = [ACTION_INSTRUCTION_HINT[action]];
 
   if (action === "change_tone" && tone) {
     parts.push(`Tone: ${tone}.`);
-  }
-
-  if (action === "improve_seo" && keyword) {
-    parts.push(`Target keyword: ${keyword}.`);
-  }
-
-  if (action === "insert_mdx_component" && componentIntent) {
-    parts.push(`Component intent: ${componentIntent}.`);
   }
 
   if (userInstruction) {
@@ -314,18 +297,16 @@ async function handleInlineTransform(
     const action = ensureInlineTransformAction(body.action);
     const taskKind = ACTION_TO_TASK[action];
 
-    const documentId =
-      action === "improve_seo"
-        ? ensureNonEmptyString(body.documentId, "documentId")
-        : ensureOptionalString(body.documentId, "documentId");
-    const selectionId =
-      action === "improve_seo"
-        ? ensureOptionalString(body.selectionId, "selectionId")
-        : ensureNonEmptyString(body.selectionId, "selectionId");
-    const selectedText =
-      action === "improve_seo"
-        ? ensureOptionalString(body.selectedText, "selectedText")
-        : ensureNonEmptyString(body.selectedText, "selectedText");
+    // Every inline-transform action operates on a selection within a
+    // document, so selectionId, selectedText, and documentId are all
+    // required. Frontmatter and block-insertion workflows live on
+    // separate surfaces — see SPEC-014 §Inline Selection Transforms.
+    const documentId = ensureOptionalString(body.documentId, "documentId");
+    const selectionId = ensureNonEmptyString(body.selectionId, "selectionId");
+    const selectedText = ensureNonEmptyString(
+      body.selectedText,
+      "selectedText",
+    );
     const draftRevision = ensureOptionalNonNegativeInteger(
       body.draftRevision,
       "draftRevision",

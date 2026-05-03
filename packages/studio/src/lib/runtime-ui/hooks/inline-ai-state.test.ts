@@ -10,7 +10,6 @@ import {
   inlineAiTransformResultToState,
   intentForAction,
   resolveInlineAiRequest,
-  selectionRequiredForAction,
 } from "./inline-ai-state.js";
 
 function buildProposal(
@@ -149,83 +148,51 @@ describe("classifiedToTopLevelInlineAiState", () => {
   });
 });
 
-describe("selectionRequiredForAction", () => {
-  test("requires selection for inline transforms", () => {
-    assert.equal(selectionRequiredForAction("rewrite"), true);
-    assert.equal(selectionRequiredForAction("change_tone"), true);
-  });
-
-  test("does not require selection for SEO/MDX insertion", () => {
-    assert.equal(selectionRequiredForAction("improve_seo"), false);
-    assert.equal(selectionRequiredForAction("insert_mdx_component"), false);
-  });
-});
-
 describe("intentForAction", () => {
   test("change_tone packs detail as tone", () => {
     const intent = intentForAction("change_tone", "friendly");
     assert.equal(intent.tone, "friendly");
   });
 
-  test("improve_seo packs detail as keyword", () => {
-    const intent = intentForAction("improve_seo", "headless cms");
-    assert.equal(intent.keyword, "headless cms");
-  });
-
-  test("insert_mdx_component packs detail as componentIntent", () => {
-    const intent = intentForAction("insert_mdx_component", "callout");
-    assert.equal(intent.componentIntent, "callout");
-  });
-
   test("plain rewrite has no extra fields", () => {
     const intent = intentForAction("rewrite", "ignored");
     assert.deepEqual(intent, { action: "rewrite" });
   });
+
+  test("non-tone actions ignore detail input", () => {
+    assert.deepEqual(intentForAction("shorten", "anything"), {
+      action: "shorten",
+    });
+    assert.deepEqual(intentForAction("improve_clarity", "anything"), {
+      action: "improve_clarity",
+    });
+  });
 });
 
 describe("resolveInlineAiRequest", () => {
-  test("blocks selection-required action when selection is missing", () => {
-    const resolved = resolveInlineAiRequest({
-      intent: { action: "rewrite" },
-      selection: null,
-      options: { documentId: "doc_1", draftRevision: 4 },
-    });
+  test("blocks every action when selection is missing", () => {
+    for (const action of [
+      "rewrite",
+      "shorten",
+      "expand",
+      "change_tone",
+      "fix_grammar",
+      "improve_clarity",
+    ] as const) {
+      const resolved = resolveInlineAiRequest({
+        intent: { action },
+        selection: null,
+        options: { documentId: "doc_1", draftRevision: 4 },
+      });
 
-    assert.equal(resolved.kind, "blocked");
-    if (resolved.kind === "blocked") {
-      assert.equal(resolved.state.status, "error");
-      if (resolved.state.status === "error") {
-        assert.equal(resolved.state.code, "INVALID_INPUT");
+      assert.equal(resolved.kind, "blocked", `expected ${action} to block`);
+      if (resolved.kind === "blocked") {
+        assert.equal(resolved.state.status, "error");
+        if (resolved.state.status === "error") {
+          assert.equal(resolved.state.code, "INVALID_INPUT");
+        }
       }
     }
-  });
-
-  test("allows improve_seo without a selection", () => {
-    const resolved = resolveInlineAiRequest({
-      intent: { action: "improve_seo", keyword: "headless cms" },
-      selection: null,
-      options: { documentId: "doc_1" },
-    });
-
-    assert.equal(resolved.kind, "ready");
-    if (resolved.kind === "ready") {
-      assert.equal(resolved.payload.documentId, "doc_1");
-      assert.equal(resolved.payload.selectionId, undefined);
-      assert.equal(resolved.payload.selectedText, undefined);
-    }
-  });
-
-  test("allows insert_mdx_component without a selection", () => {
-    const resolved = resolveInlineAiRequest({
-      intent: {
-        action: "insert_mdx_component",
-        componentIntent: "callout",
-      },
-      selection: null,
-      options: {},
-    });
-
-    assert.equal(resolved.kind, "ready");
   });
 
   test("forwards selection fields when selection is provided", () => {

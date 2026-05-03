@@ -23,6 +23,13 @@ export type InlineAiBubbleProps = Omit<InlineAiPanelProps, "selection"> & {
    * `ai:use`). The trigger and panel are both hidden.
    */
   enabled: boolean;
+  /**
+   * Milliseconds the selection must stay stable before the trigger
+   * appears. Avoids the bubble flashing while the user is still
+   * dragging to extend a selection. Default 200ms; set to 0 to
+   * disable (useful for tests).
+   */
+  appearDelayMs?: number;
 };
 
 type AnchorRect = TipTapEditorSelectionInfo["anchorRect"];
@@ -58,36 +65,63 @@ function createVirtualReference(rect: AnchorRect) {
  * Dismiss / explicit close.
  */
 export function InlineAiBubble(props: InlineAiBubbleProps) {
-  const { selection, enabled, ...panelProps } = props;
+  const { selection, enabled, appearDelayMs = 200, ...panelProps } = props;
   const [open, setOpen] = useState(false);
+  // The "settled" selection drives the bubble's visible state. While the
+  // user is actively extending a selection (drag, shift+arrow), the
+  // upstream `selection` prop changes on every animation frame, but
+  // `settledSelection` only catches up after `appearDelayMs` of quiet —
+  // so the trigger doesn't flash and re-anchor mid-drag.
+  const [settledSelection, setSettledSelection] =
+    useState<TipTapEditorSelectionInfo | null>(null);
   const lastSelectionIdRef = useRef<string | null>(null);
-  const panelSelection = selection
-    ? { id: selection.selectionId, text: selection.text }
-    : null;
 
-  // When the selection changes to a new range, drop any open panel so
-  // the bubble re-anchors to the fresh range. When the selection
-  // disappears entirely, close the panel; the panel state machine
-  // ignores requests without a selection anyway.
   useEffect(() => {
     if (!selection) {
+      // Clear immediately — no point delaying the disappearance.
+      setSettledSelection(null);
+      return;
+    }
+
+    if (appearDelayMs <= 0) {
+      setSettledSelection(selection);
+      return;
+    }
+
+    const handle = setTimeout(() => {
+      setSettledSelection(selection);
+    }, appearDelayMs);
+
+    return () => clearTimeout(handle);
+  }, [selection, appearDelayMs]);
+
+  const panelSelection = settledSelection
+    ? { id: settledSelection.selectionId, text: settledSelection.text }
+    : null;
+
+  // When the settled selection changes to a new range, drop any open
+  // panel so the bubble re-anchors to the fresh range. When the
+  // selection disappears entirely, close the panel; the panel state
+  // machine ignores requests without a selection anyway.
+  useEffect(() => {
+    if (!settledSelection) {
       lastSelectionIdRef.current = null;
       setOpen(false);
       return;
     }
 
-    if (lastSelectionIdRef.current !== selection.selectionId) {
-      lastSelectionIdRef.current = selection.selectionId;
+    if (lastSelectionIdRef.current !== settledSelection.selectionId) {
+      lastSelectionIdRef.current = settledSelection.selectionId;
       setOpen(false);
     }
-  }, [selection]);
+  }, [settledSelection]);
 
   const reference = useMemo(() => {
-    if (!selection) {
+    if (!settledSelection) {
       return null;
     }
-    return createVirtualReference(selection.anchorRect);
-  }, [selection]);
+    return createVirtualReference(settledSelection.anchorRect);
+  }, [settledSelection]);
 
   const { refs, floatingStyles } = useFloating({
     placement: "top-start",
@@ -112,7 +146,7 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
     refs.setReference(reference as never);
   }, [refs, reference]);
 
-  if (!enabled || !selection) {
+  if (!enabled || !settledSelection) {
     return null;
   }
 

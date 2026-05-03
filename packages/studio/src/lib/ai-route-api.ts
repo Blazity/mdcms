@@ -18,15 +18,19 @@ export type StudioAiRouteApiOptions = {
   fetcher?: typeof fetch;
 };
 
+/**
+ * Inline-transform actions are scoped to selection-anchored copy edits.
+ * Frontmatter (SEO) suggestions and MDX block insertion are produced
+ * through other surfaces (properties panel and slash menu / chat
+ * respectively) per SPEC-014 §Inline Selection Transforms.
+ */
 export type StudioAiInlineAction =
   | "rewrite"
   | "shorten"
   | "expand"
   | "change_tone"
   | "fix_grammar"
-  | "improve_clarity"
-  | "improve_seo"
-  | "insert_mdx_component";
+  | "improve_clarity";
 
 export type StudioAiProposalOperation =
   | {
@@ -86,19 +90,14 @@ export type StudioAiProposal = {
 export type StudioAiInlineTransformRequest = {
   documentId?: string;
   draftRevision?: number;
-  /**
-   * Required for selection-anchored actions (rewrite, shorten, expand,
-   * change_tone, fix_grammar, improve_clarity). Optional for
-   * `improve_seo` and `insert_mdx_component`, which operate at
-   * frontmatter or block-level scope.
-   */
-  selectionId?: string;
-  selectedText?: string;
+  /** Stable id for the selection range; the server stamps this onto every replacement op. */
+  selectionId: string;
+  /** Plain-text contents of the selection. */
+  selectedText: string;
   action: StudioAiInlineAction;
   instruction?: string;
+  /** Required when `action` is `change_tone`; ignored otherwise. */
   tone?: string;
-  keyword?: string;
-  componentIntent?: string;
   signal?: AbortSignal;
 };
 
@@ -258,8 +257,6 @@ export function createStudioAiRouteApi(
           action: input.action,
           instruction: input.instruction,
           tone: input.tone,
-          keyword: input.keyword,
-          componentIntent: input.componentIntent,
         }),
       });
       const payload = await readJson(response);

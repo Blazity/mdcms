@@ -17,8 +17,6 @@ export type InlineAiTransformInput = {
   action: StudioAiInlineAction;
   instruction?: string;
   tone?: string;
-  keyword?: string;
-  componentIntent?: string;
 };
 
 export type InlineAiClassifiedError =
@@ -92,26 +90,12 @@ export function inlineAiTransformResultToState(input: {
   return { status: "proposal", proposal, intent: input.intent };
 }
 
-export function selectionRequiredForAction(
-  action: StudioAiInlineAction,
-): boolean {
-  return action !== "improve_seo" && action !== "insert_mdx_component";
-}
-
 export function intentForAction(
   action: StudioAiInlineAction,
   detail: string,
 ): InlineAiTransformIntent {
   if (action === "change_tone") {
     return { action, tone: detail };
-  }
-
-  if (action === "improve_seo") {
-    return { action, keyword: detail };
-  }
-
-  if (action === "insert_mdx_component") {
-    return { action, componentIntent: detail };
   }
 
   return { action };
@@ -130,23 +114,21 @@ export type ResolveInlineAiRequestResult =
       payload: {
         documentId?: string;
         draftRevision?: number;
-        selectionId?: string;
-        selectedText?: string;
+        selectionId: string;
+        selectedText: string;
       };
     };
 
 /**
  * Pure helper used by `useInlineAiTransform.request()` to decide whether
- * the current intent + selection combination is dispatchable. Selection
- * is only required for selection-anchored actions; SEO and MDX
- * insertion actions are allowed to proceed without one.
+ * the current intent + selection combination is dispatchable. Every
+ * inline-transform action is selection-anchored (SPEC-014), so the
+ * helper blocks dispatch when no selection is provided.
  */
 export function resolveInlineAiRequest(
   input: ResolveInlineAiRequestInput,
 ): ResolveInlineAiRequestResult {
-  const needsSelection = selectionRequiredForAction(input.intent.action);
-
-  if (needsSelection && !input.selection) {
+  if (!input.selection) {
     return {
       kind: "blocked",
       state: {
@@ -162,12 +144,8 @@ export function resolveInlineAiRequest(
     payload: {
       documentId: input.options.documentId,
       draftRevision: input.options.draftRevision,
-      ...(input.selection
-        ? {
-            selectionId: input.selection.id,
-            selectedText: input.selection.text,
-          }
-        : {}),
+      selectionId: input.selection.id,
+      selectedText: input.selection.text,
     },
   };
 }

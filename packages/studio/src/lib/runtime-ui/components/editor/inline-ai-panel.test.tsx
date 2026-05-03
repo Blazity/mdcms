@@ -20,7 +20,7 @@ function noopApi(): StudioAiRouteApi {
   };
 }
 
-test("InlineAiPanel renders all 8 inline actions for selection-aware tasks", () => {
+test("InlineAiPanel renders the 6 selection-anchored copy edits", () => {
   const markup = renderToStaticMarkup(
     createElement(InlineAiPanel, {
       api: noopApi(),
@@ -40,8 +40,6 @@ test("InlineAiPanel renders all 8 inline actions for selection-aware tasks", () 
     "change_tone",
     "fix_grammar",
     "improve_clarity",
-    "improve_seo",
-    "insert_mdx_component",
   ]) {
     assert.match(
       markup,
@@ -49,6 +47,10 @@ test("InlineAiPanel renders all 8 inline actions for selection-aware tasks", () 
       `expected action ${id} to render`,
     );
   }
+  // Frontmatter and MDX-insertion actions are intentionally absent —
+  // SPEC-014 routes those through the properties panel and slash menu.
+  assert.doesNotMatch(markup, /inline-ai-action-improve_seo/);
+  assert.doesNotMatch(markup, /inline-ai-action-insert_mdx_component/);
   assert.match(markup, /Ask AI/);
 });
 

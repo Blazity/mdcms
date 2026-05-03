@@ -14,10 +14,8 @@ import {
   PenLine,
   RefreshCw,
   Scissors,
-  Search,
   SlidersHorizontal,
   Sparkles,
-  Squircle,
   Wand2,
   X,
 } from "lucide-react";
@@ -89,20 +87,6 @@ const INLINE_AI_ACTIONS: ReadonlyArray<InlineAiActionMeta> = [
     icon: SlidersHorizontal,
     requiresInput: false,
   },
-  {
-    id: "improve_seo",
-    label: "Improve SEO",
-    description: "Suggest frontmatter edits",
-    icon: Search,
-    requiresInput: true,
-  },
-  {
-    id: "insert_mdx_component",
-    label: "Insert component",
-    description: "Add a registered MDX block",
-    icon: Squircle,
-    requiresInput: true,
-  },
 ];
 
 export type InlineAiPanelProps = {
@@ -125,14 +109,6 @@ function intentForAction(
 ): InlineAiTransformIntent {
   if (action === "change_tone") {
     return { action, tone: detail };
-  }
-
-  if (action === "improve_seo") {
-    return { action, keyword: detail };
-  }
-
-  if (action === "insert_mdx_component") {
-    return { action, componentIntent: detail };
   }
 
   return { action };
@@ -475,13 +451,14 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
     [activeAction],
   );
 
-  const isSelectionRequired =
-    activeAction !== "improve_seo" && activeAction !== "insert_mdx_component";
+  // Every inline action operates on a selection (per SPEC-014); the
+  // panel never appears without one in the floating bubble flow, but
+  // we guard here too in case the panel is mounted standalone.
   const hasSelection = Boolean(selection);
   const requestDisabled =
     transform.state.status === "loading" ||
     transform.state.status === "applying" ||
-    (isSelectionRequired && !hasSelection) ||
+    !hasSelection ||
     (activeMeta.requiresInput && detail.trim().length === 0);
 
   const lastIntent: InlineAiTransformIntent =
@@ -489,12 +466,7 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
       ? (transform.state as { intent: InlineAiTransformIntent }).intent
       : intentForAction(activeAction, detail.trim());
 
-  const detailPlaceholder =
-    activeAction === "change_tone"
-      ? "e.g. friendly, formal, concise"
-      : activeAction === "improve_seo"
-        ? "Target keyword or topic"
-        : "Component intent";
+  const detailPlaceholder = "e.g. friendly, formal, concise";
 
   const isWorking =
     transform.state.status === "loading" ||
@@ -545,7 +517,7 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
       </div>
 
       <div className="shrink-0 space-y-2 border-t border-border bg-muted/20 px-3 py-2">
-        {!hasSelection && isSelectionRequired ? (
+        {!hasSelection ? (
           <StateMessage tone="info">
             Select editor text first, then pick an action.
           </StateMessage>
