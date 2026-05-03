@@ -10,6 +10,7 @@ import {
   classifyInlineAiError,
   classifiedToTopLevelInlineAiState,
   inlineAiTransformResultToState,
+  resolveInlineAiRequest,
 } from "./inline-ai-state.js";
 
 export type InlineAiSelection = {
@@ -106,12 +107,17 @@ export function useInlineAiTransform(
 
   const request = useCallback(
     async (intent: InlineAiTransformIntent) => {
-      if (!selection) {
-        setState({
-          status: "error",
-          code: "INVALID_INPUT",
-          message: "Select editor content before requesting an AI transform.",
-        });
+      const resolved = resolveInlineAiRequest({
+        intent,
+        selection,
+        options: {
+          documentId: options.documentId,
+          draftRevision: options.draftRevision,
+        },
+      });
+
+      if (resolved.kind === "blocked") {
+        setState(resolved.state);
         return;
       }
 
@@ -122,10 +128,7 @@ export function useInlineAiTransform(
 
       try {
         const result = await api.inlineTransform({
-          documentId: options.documentId,
-          draftRevision: options.draftRevision,
-          selectionId: selection.id,
-          selectedText: selection.text,
+          ...resolved.payload,
           action: intent.action,
           instruction: intent.instruction,
           tone: intent.tone,

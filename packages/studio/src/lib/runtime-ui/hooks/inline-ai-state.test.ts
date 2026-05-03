@@ -9,6 +9,7 @@ import {
   classifyInlineAiError,
   inlineAiTransformResultToState,
   intentForAction,
+  resolveInlineAiRequest,
   selectionRequiredForAction,
 } from "./inline-ai-state.js";
 
@@ -179,5 +180,66 @@ describe("intentForAction", () => {
   test("plain rewrite has no extra fields", () => {
     const intent = intentForAction("rewrite", "ignored");
     assert.deepEqual(intent, { action: "rewrite" });
+  });
+});
+
+describe("resolveInlineAiRequest", () => {
+  test("blocks selection-required action when selection is missing", () => {
+    const resolved = resolveInlineAiRequest({
+      intent: { action: "rewrite" },
+      selection: null,
+      options: { documentId: "doc_1", draftRevision: 4 },
+    });
+
+    assert.equal(resolved.kind, "blocked");
+    if (resolved.kind === "blocked") {
+      assert.equal(resolved.state.status, "error");
+      if (resolved.state.status === "error") {
+        assert.equal(resolved.state.code, "INVALID_INPUT");
+      }
+    }
+  });
+
+  test("allows improve_seo without a selection", () => {
+    const resolved = resolveInlineAiRequest({
+      intent: { action: "improve_seo", keyword: "headless cms" },
+      selection: null,
+      options: { documentId: "doc_1" },
+    });
+
+    assert.equal(resolved.kind, "ready");
+    if (resolved.kind === "ready") {
+      assert.equal(resolved.payload.documentId, "doc_1");
+      assert.equal(resolved.payload.selectionId, undefined);
+      assert.equal(resolved.payload.selectedText, undefined);
+    }
+  });
+
+  test("allows insert_mdx_component without a selection", () => {
+    const resolved = resolveInlineAiRequest({
+      intent: {
+        action: "insert_mdx_component",
+        componentIntent: "callout",
+      },
+      selection: null,
+      options: {},
+    });
+
+    assert.equal(resolved.kind, "ready");
+  });
+
+  test("forwards selection fields when selection is provided", () => {
+    const resolved = resolveInlineAiRequest({
+      intent: { action: "rewrite" },
+      selection: { id: "sel_1", text: "Hello" },
+      options: { draftRevision: 4 },
+    });
+
+    assert.equal(resolved.kind, "ready");
+    if (resolved.kind === "ready") {
+      assert.equal(resolved.payload.selectionId, "sel_1");
+      assert.equal(resolved.payload.selectedText, "Hello");
+      assert.equal(resolved.payload.draftRevision, 4);
+    }
   });
 });

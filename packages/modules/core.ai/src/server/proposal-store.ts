@@ -167,6 +167,18 @@ export function createInMemoryAiProposalStore(
         throw proposalNotFound(proposalId);
       }
 
+      const now = clock();
+
+      if (isExpiredAt(existing, now)) {
+        const expired: AiProposalRecord = {
+          ...existing,
+          status: "expired",
+          resolvedAt: now.toISOString(),
+        };
+        records.set(proposalId, expired);
+        throw proposalAlreadyResolved(expired);
+      }
+
       if (TERMINAL_STATUSES.has(existing.status)) {
         throw proposalAlreadyResolved(existing);
       }
@@ -174,7 +186,7 @@ export function createInMemoryAiProposalStore(
       const accepted: AiProposalRecord = {
         ...existing,
         status: "accepted",
-        resolvedAt: clock().toISOString(),
+        resolvedAt: now.toISOString(),
         resolvedByActorId: actorId,
       };
       records.set(proposalId, accepted);
@@ -187,6 +199,18 @@ export function createInMemoryAiProposalStore(
         throw proposalNotFound(proposalId);
       }
 
+      const now = clock();
+
+      if (isExpiredAt(existing, now)) {
+        const expired: AiProposalRecord = {
+          ...existing,
+          status: "expired",
+          resolvedAt: now.toISOString(),
+        };
+        records.set(proposalId, expired);
+        throw proposalAlreadyResolved(expired);
+      }
+
       if (TERMINAL_STATUSES.has(existing.status)) {
         throw proposalAlreadyResolved(existing);
       }
@@ -194,7 +218,7 @@ export function createInMemoryAiProposalStore(
       const rejected: AiProposalRecord = {
         ...existing,
         status: "rejected",
-        resolvedAt: clock().toISOString(),
+        resolvedAt: now.toISOString(),
         resolvedByActorId: actorId,
       };
       records.set(proposalId, rejected);

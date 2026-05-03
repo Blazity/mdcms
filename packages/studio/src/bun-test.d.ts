@@ -7,8 +7,5 @@ declare module "bun:test" {
     fn: () => void | Promise<void>,
   ): void;
 
-  export function describe(
-    label: string,
-    fn: () => void | Promise<void>,
-  ): void;
+  export function describe(label: string, fn: () => void | Promise<void>): void;
 }

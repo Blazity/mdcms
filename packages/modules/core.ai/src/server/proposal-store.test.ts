@@ -67,7 +67,8 @@ describe("createInMemoryAiProposalStore", () => {
   });
 
   test("markAccepted moves pending proposal to accepted", () => {
-    const store = createInMemoryAiProposalStore();
+    const clock = () => new Date("2026-05-01T00:00:00.000Z");
+    const store = createInMemoryAiProposalStore({ clock });
     store.insert({ proposal: buildProposal(), actorId: "user_1" });
 
     const accepted = store.markAccepted({
@@ -80,7 +81,9 @@ describe("createInMemoryAiProposalStore", () => {
   });
 
   test("markAccepted on missing proposal raises NOT_FOUND", () => {
-    const store = createInMemoryAiProposalStore();
+    const store = createInMemoryAiProposalStore({
+      clock: () => new Date("2026-05-01T00:00:00.000Z"),
+    });
 
     assert.throws(
       () => store.markAccepted({ proposalId: "missing", actorId: "user_1" }),
@@ -92,7 +95,8 @@ describe("createInMemoryAiProposalStore", () => {
   });
 
   test("markRejected after acceptance raises AI_PROPOSAL_CONFLICT", () => {
-    const store = createInMemoryAiProposalStore();
+    const clock = () => new Date("2026-05-01T00:00:00.000Z");
+    const store = createInMemoryAiProposalStore({ clock });
     store.insert({ proposal: buildProposal(), actorId: "user_1" });
     store.markAccepted({ proposalId: "p_1", actorId: "user_1" });
 
@@ -102,6 +106,28 @@ describe("createInMemoryAiProposalStore", () => {
         error instanceof RuntimeError &&
         error.code === "AI_PROPOSAL_CONFLICT" &&
         error.statusCode === 409,
+    );
+  });
+
+  test("markAccepted on a stale-pending expired proposal raises AI_PROPOSAL_EXPIRED", () => {
+    let now = new Date("2026-05-01T00:00:00.000Z");
+    const store = createInMemoryAiProposalStore({ clock: () => now });
+    store.insert({
+      proposal: buildProposal({ expiresAt: "2026-05-01T00:00:30.000Z" }),
+      actorId: "user_1",
+    });
+
+    // Advance past expiry without calling observe(), so the record is
+    // still flagged "pending" in storage. markAccepted must defensively
+    // re-check expiry rather than blindly accepting it.
+    now = new Date("2026-05-01T00:01:00.000Z");
+
+    assert.throws(
+      () => store.markAccepted({ proposalId: "p_1", actorId: "user_1" }),
+      (error) =>
+        error instanceof RuntimeError &&
+        error.code === "AI_PROPOSAL_EXPIRED" &&
+        error.statusCode === 410,
     );
   });
 

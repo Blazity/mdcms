@@ -115,30 +115,37 @@ function intentForAction(
   return { action };
 }
 
+function describeSingleOperation(
+  operation: StudioAiProposal["operations"][number],
+): string {
+  if (operation.op === "replace_selection") {
+    return operation.replacementText;
+  }
+
+  if (operation.op === "insert_block") {
+    return operation.bodyMdx;
+  }
+
+  if (operation.op === "update_frontmatter") {
+    return JSON.stringify(operation.patch, null, 2);
+  }
+
+  if (operation.op === "create_document") {
+    return `Path: ${operation.path}\n\n${operation.body}`;
+  }
+
+  return "";
+}
+
 function describeOperation(proposal: StudioAiProposal): string {
-  const [first] = proposal.operations;
-
-  if (!first) {
-    return "AI proposal had no operations.";
+  if (proposal.operations.length === 0) {
+    return proposal.summary;
   }
 
-  if (first.op === "replace_selection") {
-    return first.replacementText;
-  }
-
-  if (first.op === "insert_block") {
-    return first.bodyMdx;
-  }
-
-  if (first.op === "update_frontmatter") {
-    return JSON.stringify(first.patch, null, 2);
-  }
-
-  if (first.op === "create_document") {
-    return `Path: ${first.path}\n\n${first.body}`;
-  }
-
-  return proposal.summary;
+  return proposal.operations
+    .map((operation) => describeSingleOperation(operation))
+    .filter((text) => text.length > 0)
+    .join("\n\n---\n\n");
 }
 
 function StateMessage(props: {

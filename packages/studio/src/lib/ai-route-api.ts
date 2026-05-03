@@ -86,8 +86,14 @@ export type StudioAiProposal = {
 export type StudioAiInlineTransformRequest = {
   documentId?: string;
   draftRevision?: number;
-  selectionId: string;
-  selectedText: string;
+  /**
+   * Required for selection-anchored actions (rewrite, shorten, expand,
+   * change_tone, fix_grammar, improve_clarity). Optional for
+   * `improve_seo` and `insert_mdx_component`, which operate at
+   * frontmatter or block-level scope.
+   */
+  selectionId?: string;
+  selectedText?: string;
   action: StudioAiInlineAction;
   instruction?: string;
   tone?: string;
@@ -147,10 +153,27 @@ function targetHeaders(
   };
 }
 
+function isDevEnvironment(): boolean {
+  try {
+    return (
+      typeof process !== "undefined" && process.env?.NODE_ENV !== "production"
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function readJson(response: Response): Promise<unknown> {
   try {
     return await response.json();
-  } catch {
+  } catch (error) {
+    if (isDevEnvironment()) {
+      // eslint-disable-next-line no-console -- dev-only diagnostic
+      console.warn(
+        `[mdcms-studio] failed to parse AI route JSON (status ${response.status}, url ${response.url})`,
+        error,
+      );
+    }
     return undefined;
   }
 }

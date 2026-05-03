@@ -9,7 +9,6 @@ import {
 
 import { applyAiProposal, type AiApplyContentStore } from "./apply.js";
 import { buildAuditRecord, type AiAuditRecord } from "./audit.js";
-import { isAiErrorCode } from "./errors.js";
 import {
   getOrchestratorFailureAudit,
   getOrchestratorFailureRuntimeError,
@@ -289,7 +288,20 @@ function toRuntimeErrorResponse(error: unknown): Response {
     );
   }
 
-  throw error;
+  const message =
+    error instanceof Error ? error.message : "Internal server error.";
+  return new Response(
+    JSON.stringify({
+      code: "INTERNAL_ERROR",
+      message: "Internal server error.",
+      details: { reason: message },
+      statusCode: 500,
+    }),
+    {
+      status: 500,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    },
+  );
 }
 
 async function handleInlineTransform(
@@ -654,7 +666,7 @@ async function handleProposalApply(
         outcome: lifecycleOutcome,
         occurredAt,
         actorId: observedRecord.createdByActorId,
-        errorCode: isAiErrorCode(code) ? code : code,
+        errorCode: code,
         errorMessage: error instanceof Error ? error.message : String(error),
       });
       emitAudit(options.emitAudit, audit);

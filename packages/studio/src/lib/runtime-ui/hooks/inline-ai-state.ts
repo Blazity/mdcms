@@ -116,3 +116,58 @@ export function intentForAction(
 
   return { action };
 }
+
+export type ResolveInlineAiRequestInput = {
+  intent: InlineAiTransformIntent;
+  selection: { id: string; text: string } | null;
+  options: { documentId?: string; draftRevision?: number };
+};
+
+export type ResolveInlineAiRequestResult =
+  | { kind: "blocked"; state: InlineAiState }
+  | {
+      kind: "ready";
+      payload: {
+        documentId?: string;
+        draftRevision?: number;
+        selectionId?: string;
+        selectedText?: string;
+      };
+    };
+
+/**
+ * Pure helper used by `useInlineAiTransform.request()` to decide whether
+ * the current intent + selection combination is dispatchable. Selection
+ * is only required for selection-anchored actions; SEO and MDX
+ * insertion actions are allowed to proceed without one.
+ */
+export function resolveInlineAiRequest(
+  input: ResolveInlineAiRequestInput,
+): ResolveInlineAiRequestResult {
+  const needsSelection = selectionRequiredForAction(input.intent.action);
+
+  if (needsSelection && !input.selection) {
+    return {
+      kind: "blocked",
+      state: {
+        status: "error",
+        code: "INVALID_INPUT",
+        message: "Select editor content before requesting an AI transform.",
+      },
+    };
+  }
+
+  return {
+    kind: "ready",
+    payload: {
+      documentId: input.options.documentId,
+      draftRevision: input.options.draftRevision,
+      ...(input.selection
+        ? {
+            selectionId: input.selection.id,
+            selectedText: input.selection.text,
+          }
+        : {}),
+    },
+  };
+}

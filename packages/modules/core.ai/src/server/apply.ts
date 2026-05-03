@@ -90,6 +90,13 @@ function ensureSingleOperation(proposal: AiProposal): AiProposalOperation {
     });
   }
 
+  if (proposal.operations.length > 1) {
+    throw aiOutputInvalid("Proposal must contain exactly one operation.", {
+      proposalId: proposal.proposalId,
+      operationCount: proposal.operations.length,
+    });
+  }
+
   return operation;
 }
 
@@ -131,6 +138,11 @@ function applyInsertBlock(
   body: string,
   operation: Extract<AiProposalOperation, { op: "insert_block" }>,
 ): string {
+  // TODO: honour `operation.afterSelectionId` for positional insertion
+  // once Studio supplies a stable text anchor map in the apply payload.
+  // For now we always append; the server-stamped selectionId is used
+  // by `replace_selection` proposals but the model has no reliable way
+  // to reference an arbitrary post-edit anchor inside the markdown body.
   const insertion = operation.bodyMdx;
 
   if (body.length === 0) {
