@@ -49,12 +49,11 @@ import {
   type TipTapEditorHandle,
   type TipTapEditorSelectionInfo,
 } from "../components/editor/tiptap-editor.js";
-import { InlineAiPanel } from "../components/editor/inline-ai-panel.js";
+import { InlineAiBubble } from "../components/editor/inline-ai-bubble.js";
 import {
   createStudioAiRouteApi,
   type StudioAiRouteApi,
 } from "../../ai-route-api.js";
-import type { InlineAiSelection } from "../hooks/use-inline-ai-transform.js";
 import { BreadcrumbTrail } from "../components/layout/page-header.js";
 import { Badge } from "../components/ui/badge.js";
 import { Button } from "../components/ui/button.js";
@@ -741,6 +740,13 @@ function resolveContentDocumentAiCapability(input: {
   }
 
   return schemaState.capabilities.ai.use === true;
+}
+
+function resolveSchemaHashForAi(schemaState?: StudioSchemaState): string {
+  if (!schemaState || schemaState.status !== "ready") {
+    return "";
+  }
+  return schemaState.serverSchemaHash ?? schemaState.localSchemaHash ?? "";
 }
 
 function resolveContentDocumentWriteAccess(input: {
@@ -2417,15 +2423,10 @@ function ContentDocumentPageSidebar(props: {
   onFrontmatterFieldChange?: (fieldName: string, value: unknown) => void;
   onViewVersion?: (version: number) => void;
   onBackToDraft?: () => void;
-  aiSelection?: TipTapEditorSelectionInfo | null;
-  aiApi?: StudioAiRouteApi;
-  onAiProposalApplied?: (input: { bodyAfter: string }) => void;
 }) {
   const hasComponentTab = Boolean(props.context && props.activeMdxComponent);
-  const aiCapabilityEnabled = props.state.canAi ?? false;
-  const showAiTab = aiCapabilityEnabled && Boolean(props.aiApi);
   const [activeTab, setActiveTab] = useState<
-    "properties" | "component" | "info" | "history" | "ai"
+    "properties" | "component" | "info" | "history"
   >(() => (hasComponentTab ? "component" : "properties"));
 
   useEffect(() => {
@@ -2484,21 +2485,6 @@ function ContentDocumentPageSidebar(props: {
             Component
           </button>
         ) : null}
-        {showAiTab ? (
-          <button
-            type="button"
-            className={cn(
-              "flex-1 py-2.5 text-center text-xs font-semibold transition-colors",
-              activeTab === "ai"
-                ? "border-b-2 border-primary text-primary"
-                : "text-foreground-muted hover:text-foreground",
-            )}
-            onClick={() => setActiveTab("ai")}
-            data-mdcms-sidebar-tab="ai"
-          >
-            AI
-          </button>
-        ) : null}
         <button
           type="button"
           className={cn(
@@ -2529,13 +2515,6 @@ function ContentDocumentPageSidebar(props: {
           />
         ) : activeTab === "info" ? (
           <SidebarInfoTab state={props.state} />
-        ) : activeTab === "ai" && showAiTab && props.aiApi ? (
-          <SidebarAiTab
-            state={props.state}
-            aiApi={props.aiApi}
-            aiSelection={props.aiSelection ?? null}
-            onAiProposalApplied={props.onAiProposalApplied}
-          />
         ) : (
           <SidebarHistoryTab
             state={props.state}
@@ -2545,44 +2524,6 @@ function ContentDocumentPageSidebar(props: {
         )}
       </div>
     </aside>
-  );
-}
-
-function SidebarAiTab(props: {
-  state: ContentDocumentPageReadyState;
-  aiApi: StudioAiRouteApi;
-  aiSelection: TipTapEditorSelectionInfo | null;
-  onAiProposalApplied?: (input: { bodyAfter: string }) => void;
-}) {
-  const schemaState = props.state.schemaState;
-  const schemaHash =
-    schemaState && schemaState.status === "ready"
-      ? (schemaState.serverSchemaHash ?? schemaState.localSchemaHash ?? "")
-      : "";
-
-  const inlineSelection: InlineAiSelection | null = props.aiSelection
-    ? { id: props.aiSelection.selectionId, text: props.aiSelection.text }
-    : null;
-
-  // draftRevision is intentionally omitted: the server stamps the
-  // proposal's baseDraftRevision from the live draft on creation and
-  // enforces optimistic concurrency at apply time. Surfacing the
-  // editor-shell's stale revision here would only flag false stale
-  // states without preventing real conflicts.
-  return (
-    <div className="space-y-3 p-3">
-      <InlineAiPanel
-        api={props.aiApi}
-        options={{
-          documentId: props.state.documentId,
-          schemaHash,
-        }}
-        selection={inlineSelection}
-        onApplied={({ bodyAfter }) => {
-          props.onAiProposalApplied?.({ bodyAfter });
-        }}
-      />
-    </div>
   );
 }
 
@@ -2972,9 +2913,23 @@ export function ContentDocumentPageView({
               onFrontmatterFieldChange={onFrontmatterFieldChange}
               onViewVersion={onViewVersion}
               onBackToDraft={onBackToDraft}
-              aiSelection={aiSelection ?? null}
-              aiApi={aiApi}
-              onAiProposalApplied={onAiProposalApplied}
+            />
+          ) : null}
+
+          {state.status === "ready" && aiApi ? (
+            <InlineAiBubble
+              api={aiApi}
+              enabled={state.canAi === true}
+              selection={aiSelection ?? null}
+              options={{
+                documentId: state.documentId,
+                schemaHash: resolveSchemaHashForAi(state.schemaState),
+              }}
+              onApplied={
+                onAiProposalApplied
+                  ? ({ bodyAfter }) => onAiProposalApplied({ bodyAfter })
+                  : undefined
+              }
             />
           ) : null}
         </div>

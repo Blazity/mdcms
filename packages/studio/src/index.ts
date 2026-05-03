@@ -33,6 +33,10 @@ export {
   type InlineAiPanelProps,
 } from "./lib/runtime-ui/components/editor/inline-ai-panel.js";
 export {
+  InlineAiBubble,
+  type InlineAiBubbleProps,
+} from "./lib/runtime-ui/components/editor/inline-ai-bubble.js";
+export {
   useInlineAiTransform,
   type InlineAiAppliedSignal,
   type InlineAiSelection,

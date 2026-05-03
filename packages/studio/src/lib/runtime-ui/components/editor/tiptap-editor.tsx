@@ -98,6 +98,21 @@ export type TipTapEditorSelectionInfo = {
   selectionId: string;
   /** Plain text inside the selection. */
   text: string;
+  /**
+   * Viewport-relative rect for the selection's start/end coordinates.
+   * Consumers can pass this to floating-ui (or use it directly) to
+   * anchor a popover near the selection. `top` and `bottom` come from
+   * `view.coordsAtPos(from)` and `view.coordsAtPos(to)` so multi-line
+   * selections produce a rect that covers both ends.
+   */
+  anchorRect: {
+    top: number;
+    left: number;
+    right: number;
+    bottom: number;
+    width: number;
+    height: number;
+  };
 };
 
 interface TipTapEditorProps {
@@ -364,18 +379,49 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           return;
         }
 
+        let anchorRect: TipTapEditorSelectionInfo["anchorRect"];
+
+        try {
+          const fromCoords = nextEditor.view.coordsAtPos(from);
+          const toCoords = nextEditor.view.coordsAtPos(to);
+          const top = Math.min(fromCoords.top, toCoords.top);
+          const bottom = Math.max(fromCoords.bottom, toCoords.bottom);
+          const left = Math.min(fromCoords.left, toCoords.left);
+          const right = Math.max(fromCoords.right, toCoords.right);
+          anchorRect = {
+            top,
+            left,
+            right,
+            bottom,
+            width: Math.max(right - left, 0),
+            height: Math.max(bottom - top, 0),
+          };
+        } catch {
+          // ProseMirror throws if the position is no longer in the
+          // document (e.g. between transactions). Fall back to a zero
+          // rect; the consumer will reposition on the next tick.
+          anchorRect = {
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: 0,
+            height: 0,
+          };
+        }
+
         // The selection id is derived from the range bounds + text so a
         // moved-but-identical selection still re-uses the same id and
         // the AI proposal stays anchored across `Try again` calls.
         const selectionId = `sel:${from}-${to}`;
-        const fingerprint = `${selectionId}::${text}`;
+        const fingerprint = `${selectionId}::${text}::${anchorRect.top}::${anchorRect.left}::${anchorRect.bottom}::${anchorRect.right}`;
 
         if (lastPublishedTextSelectionRef.current === fingerprint) {
           return;
         }
 
         lastPublishedTextSelectionRef.current = fingerprint;
-        onSelectionTextChange({ selectionId, text });
+        onSelectionTextChange({ selectionId, text, anchorRect });
       },
     );
     const scheduleAuxSelectionUpdate = useEffectEvent(
