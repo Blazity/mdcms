@@ -291,10 +291,16 @@ async function handleInlineTransform(
   request: Request,
   options: MountAiRoutesOptions,
 ): Promise<Response> {
+  // Hoisted so the catch arm can stamp the user-facing action onto an
+  // orchestrator-failure audit even though `action` is parsed inside
+  // the try block.
+  let resolvedAction: InlineTransformAction | undefined;
+
   try {
     const routing = assertRequestTargetRouting(request, "project_environment");
     const body = await readJsonBody<InlineTransformRequestBody>(request);
     const action = ensureInlineTransformAction(body.action);
+    resolvedAction = action;
     const taskKind = ACTION_TO_TASK[action];
 
     // Every inline-transform action operates on a selection within a
@@ -400,6 +406,7 @@ async function handleInlineTransform(
       project,
       environment,
       actorId: aiAuth.actorId,
+      action,
       ...(documentId ? { documentId } : {}),
     });
 
@@ -415,7 +422,13 @@ async function handleInlineTransform(
   } catch (error) {
     const failureAudit = getOrchestratorFailureAudit(error);
     if (failureAudit) {
-      emitAudit(options.emitAudit, failureAudit);
+      // The orchestrator failure audit doesn't know about the
+      // user-facing action; stamp it here so failed inline transforms
+      // are still attributable to the action the user picked.
+      emitAudit(options.emitAudit, {
+        ...failureAudit,
+        ...(resolvedAction ? { action: resolvedAction } : {}),
+      });
     }
     const runtimeError = getOrchestratorFailureRuntimeError(error) ?? error;
     return toRuntimeErrorResponse(runtimeError);

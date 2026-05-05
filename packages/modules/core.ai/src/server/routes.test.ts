@@ -289,7 +289,13 @@ describe("mountAiRoutes — inline-transform", () => {
 
     const stored = proposalStore.peek("prop_1");
     assert.equal(stored?.status, "pending");
-    assert.equal(audits.at(-1)?.outcome, "succeeded");
+    const succeeded = audits.at(-1)!;
+    assert.equal(succeeded.outcome, "succeeded");
+    // SPEC-014 §Observability: audit must include the user-facing
+    // action name and proposal kind alongside the orchestrator's
+    // taskKind.
+    assert.equal(succeeded.action, "rewrite");
+    assert.equal(succeeded.proposalKind, "replace_selection");
   });
 
   test("rejects when draftRevision does not match the live draft", async () => {
@@ -423,6 +429,12 @@ describe("mountAiRoutes — proposals/:id/apply", () => {
     const last = setup.audits.at(-1)!;
     assert.equal(last.outcome, "accepted");
     assert.equal(last.actorId, "user_1");
+    // Lifecycle audits derive proposalKind from the resolved proposal
+    // even though the original action name is not replayed at apply
+    // time. SPEC-014 §Observability requires both the proposalId and
+    // the kind on the record.
+    assert.equal(last.proposalKind, "replace_selection");
+    assert.deepEqual(last.proposalIds, [proposalId]);
   });
 
   test("expired proposal returns 410 and emits expired audit", async () => {

@@ -99,8 +99,6 @@ export type InlineAiPanelProps = {
   }) => void;
   onClose?: () => void;
   className?: string;
-  /** Optional override used by tests to seed the hook state. */
-  initialIntent?: InlineAiTransformIntent;
 };
 
 function intentForAction(
@@ -170,12 +168,20 @@ function StateMessage(props: {
   );
 }
 
-function ResultBody(props: {
+export type InlineAiResultBodyProps = {
   state: InlineAiState;
   onAccept: () => void;
   onReject: () => void;
   onRetry: () => void;
-}) {
+};
+
+/**
+ * Pure render of the proposal-result region (proposal preview,
+ * applying spinner, validation errors, stale / forbidden / error
+ * messages, etc.). Exported so tests can verify the per-state markup
+ * without driving the full `InlineAiPanel` state machine.
+ */
+export function InlineAiResultBody(props: InlineAiResultBodyProps) {
   const { state, onAccept, onReject, onRetry } = props;
 
   if (state.status === "idle") {
@@ -565,7 +571,7 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
           </Button>
         </div>
 
-        <ResultBody
+        <InlineAiResultBody
           state={transform.state}
           onAccept={transform.accept}
           onReject={transform.reject}

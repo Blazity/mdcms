@@ -1,6 +1,7 @@
 import type {
   AiErrorCode,
   AiProposal,
+  AiProposalKind,
   AiProposalValidation,
   AiTaskKind,
 } from "@mdcms/shared";
@@ -26,6 +27,20 @@ export type AiAuditRecord = {
   outcome: AiAuditOutcome;
   validation: AiProposalValidation;
   proposalIds?: string[];
+  /**
+   * Proposal kind for the call. Set when at least one proposal was
+   * produced (creation flow) or when the audit describes the
+   * lifecycle of a known proposal (apply/reject/expired). SPEC-014
+   * §Observability lists this as a required audit field.
+   */
+  proposalKind?: AiProposalKind;
+  /**
+   * For inline-transform calls, the user-facing action name ("rewrite",
+   * "shorten", etc.). For chat calls, the allowed action used. Empty
+   * for orchestrator-direct callers. Spec §Observability lists this
+   * as "action name or chat allowed action".
+   */
+  action?: string;
   errorCode?: string;
   errorMessage?: string;
   usage?: AiProviderUsage;
@@ -49,6 +64,14 @@ export type BuildAuditRecordInput = {
   outcome: AiAuditOutcome;
   validation?: AiProposalValidation;
   proposals?: AiProposal[];
+  /**
+   * Explicit proposal kind override. When omitted, the kind is taken
+   * from the first entry of `proposals`. Set explicitly for lifecycle
+   * audits that describe a single known proposal whose record may
+   * already have moved to `expired`.
+   */
+  proposalKind?: AiProposalKind;
+  action?: string;
   errorCode?: AiErrorCode | string;
   errorMessage?: string;
   usage?: AiProviderUsage;
@@ -82,6 +105,20 @@ export function buildAuditRecord(input: BuildAuditRecordInput): AiAuditRecord {
 
   if (input.proposals && input.proposals.length > 0) {
     record.proposalIds = input.proposals.map((proposal) => proposal.proposalId);
+  }
+
+  // proposalKind: prefer the explicit override, otherwise derive from
+  // the first generated proposal. The orchestrator's task definitions
+  // emit single-kind proposal sets today, so the first kind is
+  // representative; if a future task ever mixes kinds, the explicit
+  // override at the call site is the authoritative source.
+  const derivedProposalKind = input.proposalKind ?? input.proposals?.[0]?.kind;
+  if (derivedProposalKind) {
+    record.proposalKind = derivedProposalKind;
+  }
+
+  if (input.action) {
+    record.action = input.action;
   }
 
   if (input.errorCode) {

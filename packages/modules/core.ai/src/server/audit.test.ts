@@ -137,4 +137,48 @@ describe("buildAuditRecord", () => {
     assert.equal(record.outcome, "invalid_output");
     assert.equal(record.validation.status, "invalid");
   });
+
+  test("derives proposalKind from the first generated proposal", () => {
+    const record = buildAuditRecord({
+      taskKind: "copy_improvement",
+      providerId: "echo",
+      model: "echo-1",
+      promptTemplateId: "copy_improvement.v1",
+      occurredAt,
+      outcome: "succeeded",
+      proposals: [proposal],
+    });
+
+    assert.equal(record.proposalKind, "replace_selection");
+  });
+
+  test("explicit proposalKind override wins over the proposal-derived value", () => {
+    const record = buildAuditRecord({
+      taskKind: "copy_improvement",
+      providerId: "echo",
+      model: "echo-1",
+      promptTemplateId: "copy_improvement.v1",
+      occurredAt,
+      outcome: "expired",
+      proposals: [proposal],
+      proposalKind: "create_document",
+    });
+
+    assert.equal(record.proposalKind, "create_document");
+  });
+
+  test("captures user-facing action name when provided", () => {
+    const record = buildAuditRecord({
+      taskKind: "copy_improvement",
+      providerId: "echo",
+      model: "echo-1",
+      promptTemplateId: "copy_improvement.v1",
+      occurredAt,
+      outcome: "succeeded",
+      proposals: [proposal],
+      action: "rewrite",
+    });
+
+    assert.equal(record.action, "rewrite");
+  });
 });
