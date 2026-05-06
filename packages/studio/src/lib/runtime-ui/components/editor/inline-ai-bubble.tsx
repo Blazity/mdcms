@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { autoUpdate, shift, useFloating } from "@floating-ui/react-dom";
+import {
+  autoUpdate,
+  flip,
+  offset,
+  shift,
+  useFloating,
+} from "@floating-ui/react-dom";
 import { Check, Loader2, RotateCcw, Sparkles, X } from "lucide-react";
 
 import { InlineAiPanel } from "./inline-ai-panel.js";
@@ -279,7 +285,16 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
     placement: "top-start",
     strategy: "fixed",
     whileElementsMounted: autoUpdate,
-    middleware: [shift({ padding: 8 })],
+    middleware: [
+      // 10px gap between the pill and the selection so it doesn't
+      // crowd the highlighted range.
+      offset(10),
+      // Flip below the selection when there isn't enough headroom
+      // (e.g., selection sits right under a heading), and pad the
+      // viewport so the pill never hugs the screen edge.
+      flip({ padding: 12 }),
+      shift({ padding: 8 }),
+    ],
   });
 
   useEffect(() => {
