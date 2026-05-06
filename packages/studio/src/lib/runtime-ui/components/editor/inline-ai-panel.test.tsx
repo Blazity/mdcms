@@ -51,7 +51,11 @@ test("InlineAiPanel renders the 6 selection-anchored copy edits", () => {
   // SPEC-014 routes those through the properties panel and slash menu.
   assert.doesNotMatch(markup, /inline-ai-action-improve_seo/);
   assert.doesNotMatch(markup, /inline-ai-action-insert_mdx_component/);
-  assert.match(markup, /Ask AI/);
+  // Generate is the panel CTA wording; "Ask AI" is intentionally
+  // avoided because the action edits selected text rather than asking
+  // a question.
+  assert.match(markup, />Generate</);
+  assert.doesNotMatch(markup, />Ask AI</);
 });
 
 test("InlineAiPanel hints to select content when selection is missing", () => {

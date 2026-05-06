@@ -564,7 +564,7 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
             ) : (
               <>
                 <Wand2 className="mr-1 h-3.5 w-3.5" aria-hidden />
-                Ask AI
+                Generate
                 <ArrowRight className="ml-1 h-3.5 w-3.5" aria-hidden />
               </>
             )}

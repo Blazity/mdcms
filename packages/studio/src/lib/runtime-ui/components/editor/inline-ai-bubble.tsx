@@ -43,7 +43,7 @@ function rectToBoundingClientRect(rect: AnchorRect): DOMRect {
 }
 
 /**
- * Floating "Ask AI" affordance positioned at the selection's anchor
+ * Floating "Edit with AI" affordance positioned at the selection's anchor
  * rect. The trigger button is anchored to the selection via
  * floating-ui (the selection is a virtual element with no DOM node),
  * and the popover itself is rendered by Radix's Popover primitive so
@@ -137,10 +137,14 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
             type="button"
             size="sm"
             data-testid="inline-ai-bubble-trigger"
-            aria-label="Open AI transform menu"
-            className="shadow-md"
+            aria-label="Open AI edit menu"
+            // Radix flips the trigger's `data-state` to "open" while the
+            // popover is mounted. Keeping the element in the DOM keeps
+            // it as the anchor for floating-ui calculations, but we hide
+            // it visually so the popover takes over the space cleanly.
+            className="shadow-md transition-opacity data-[state=open]:pointer-events-none data-[state=open]:opacity-0"
           >
-            <Sparkles className="mr-1 h-3.5 w-3.5" aria-hidden /> Ask AI
+            <Sparkles className="mr-1 h-3.5 w-3.5" aria-hidden /> Edit with AI
           </Button>
         </PopoverTrigger>
         <PopoverContent
