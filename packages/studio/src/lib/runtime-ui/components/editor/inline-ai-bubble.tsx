@@ -329,9 +329,9 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
   }
 
   // Stage 3: inline preview is showing — render Accept / Reject pill.
-  // Hardcoded ink (#1C1B1B) so the chip stays a dark inky surface in
-  // both light and dark themes; accept = brand green, reject = soft
-  // coral. Mono uppercase eyebrow reads as a system label, not a CTA.
+  // Theme-aware: popover surface + theme foreground, with semantic
+  // success / destructive accents on the action buttons. Stays
+  // legible in both light and dark themes.
   if (preview) {
     const isApplying = transform.state.status === "applying";
     return (
@@ -344,12 +344,12 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
         <div
           className={cn(
             "inline-flex items-center overflow-hidden rounded-full",
-            "border border-white/10 shadow-[0_1px_2px_rgba(0,0,0,0.05),0_22px_40px_-18px_rgba(0,0,0,0.45)]",
+            "border border-border bg-popover text-popover-foreground",
+            "shadow-lg",
           )}
-          style={{ background: "#1C1B1B", color: "#FFF" }}
         >
-          <span className="inline-flex items-center gap-1.5 border-r border-white/10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-white/85">
-            <Sparkles className="h-3 w-3" aria-hidden />
+          <span className="inline-flex items-center gap-1.5 border-r border-border px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+            <Sparkles className="h-3 w-3 text-primary" aria-hidden />
             Proposed
           </span>
           <button
@@ -359,11 +359,10 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
             data-testid="inline-ai-preview-accept"
             aria-label="Accept AI replacement"
             className={cn(
-              "inline-flex items-center gap-1.5 border-r border-white/10 px-3 py-1.5",
-              "text-xs font-semibold transition-colors",
-              "hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60",
+              "inline-flex items-center gap-1.5 border-r border-border px-3 py-1.5",
+              "text-xs font-semibold text-success transition-colors",
+              "hover:bg-success-subtle disabled:cursor-not-allowed disabled:opacity-60",
             )}
-            style={{ color: "#CAF240" }}
           >
             {isApplying ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -380,10 +379,9 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
             aria-label="Reject AI replacement and reopen picker"
             className={cn(
               "inline-flex items-center gap-1.5 px-3 py-1.5",
-              "text-xs font-semibold transition-colors",
-              "hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60",
+              "text-xs font-semibold text-destructive transition-colors",
+              "hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60",
             )}
-            style={{ color: "#FFB4B4" }}
           >
             <RotateCcw className="h-3.5 w-3.5" aria-hidden />
             Reject
