@@ -316,8 +316,8 @@ function ToneFlyout(props: { onPick: (preset: TonePreset) => void }) {
           data-testid={`inline-ai-tone-${preset.id}`}
           className={cn(
             "block w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium",
-            "text-foreground transition-colors hover:bg-accent",
-            "focus-visible:outline-none focus-visible:bg-accent",
+            "text-foreground transition-colors hover:bg-muted",
+            "focus-visible:outline-none focus-visible:bg-muted",
           )}
         >
           {preset.label}
@@ -356,9 +356,9 @@ function ActionRow(props: {
         className={cn(
           "group flex w-full items-center gap-2.5 rounded-md px-2.5 py-2",
           "text-left text-[13px] font-medium text-foreground transition-colors",
-          "focus-visible:outline-none focus-visible:bg-accent",
+          "focus-visible:outline-none focus-visible:bg-muted",
           "disabled:cursor-not-allowed disabled:opacity-60",
-          expanded ? "bg-accent" : "hover:bg-accent",
+          expanded ? "bg-muted" : "hover:bg-muted",
         )}
       >
         <span
@@ -459,7 +459,7 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
             type="button"
             onClick={onClose}
             aria-label="Close AI panel"
-            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:bg-accent"
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:bg-muted"
             data-testid="inline-ai-close"
           >
             <X className="h-3.5 w-3.5" aria-hidden />
@@ -488,7 +488,7 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
         <div
           role="menu"
           aria-label="AI actions"
-          className="flex flex-col gap-0.5 p-1.5"
+          className="flex flex-col p-1.5"
         >
           {INLINE_AI_ACTIONS.map((meta) => (
             <ActionRow
