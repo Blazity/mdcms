@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import {
   AI_TASK_KINDS,
-  aiProposalOperationSchema,
+  aiProposalOperationSchemaByOp,
   type AiProposalOperation,
   type AiTaskKind,
 } from "@mdcms/shared";
@@ -63,21 +63,41 @@ const baseInputSchema = z
 function makeOutputSchema(
   allowedOps: readonly AiProposalOperation["op"][],
 ): z.ZodType<AiTaskOutput> {
-  const allowed = new Set<string>(allowedOps);
+  if (allowedOps.length === 0) {
+    throw new Error(
+      "Task definition must declare at least one allowed operation kind.",
+    );
+  }
 
-  const operationSchema = aiProposalOperationSchema.refine(
-    (op) => allowed.has(op.op),
-    {
-      message: `operation kind not allowed for this task.`,
-    },
+  // Compose only the schemas for the variants this task actually
+  // emits. The full union (`aiProposalOperationSchema`) is still used
+  // at the proposal-builder layer to validate provider output, but
+  // the JSON Schema we send to the provider via `generateObject` must
+  // not advertise variants the model would never produce — strict
+  // JSON-Schema modes (e.g. Groq, OpenAI Structured Outputs) reject
+  // unions that contain variants with optional fields that aren't
+  // listed in `required`.
+  const variantSchemas = allowedOps.map(
+    (op) => aiProposalOperationSchemaByOp[op],
   );
+  const operationSchema =
+    variantSchemas.length === 1
+      ? variantSchemas[0]!
+      : (z.discriminatedUnion(
+          "op",
+          variantSchemas as unknown as [
+            (typeof variantSchemas)[number],
+            (typeof variantSchemas)[number],
+            ...(typeof variantSchemas)[number][],
+          ],
+        ) as z.ZodType<AiProposalOperation>);
 
   return z
     .object({
       summary: z.string().trim().min(1),
       operations: z.array(operationSchema).min(1),
     })
-    .strict();
+    .strict() as z.ZodType<AiTaskOutput>;
 }
 
 const copyImprovementInputSchema = baseInputSchema

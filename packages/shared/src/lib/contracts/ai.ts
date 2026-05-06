@@ -99,40 +99,62 @@ const isoDateString = z.iso.datetime({
 
 const recordOfUnknown = z.record(z.string(), z.unknown());
 
+export const replaceSelectionOperationSchema = z
+  .object({
+    op: z.literal("replace_selection"),
+    selectionId: nonEmptyString,
+    originalText: z.string(),
+    replacementText: z.string(),
+  })
+  .strict();
+
+export const insertBlockOperationSchema = z
+  .object({
+    op: z.literal("insert_block"),
+    afterSelectionId: nonEmptyString.optional(),
+    bodyMdx: z.string().min(1, {
+      message: "must be a non-empty MDX block.",
+    }),
+  })
+  .strict();
+
+export const updateFrontmatterOperationSchema = z
+  .object({
+    op: z.literal("update_frontmatter"),
+    patch: recordOfUnknown,
+  })
+  .strict();
+
+export const createDocumentOperationSchema = z
+  .object({
+    op: z.literal("create_document"),
+    path: nonEmptyString,
+    format: z.enum(["md", "mdx"]),
+    frontmatter: recordOfUnknown,
+    body: z.string(),
+  })
+  .strict();
+
 export const aiProposalOperationSchema = z.discriminatedUnion("op", [
-  z
-    .object({
-      op: z.literal("replace_selection"),
-      selectionId: nonEmptyString,
-      originalText: z.string(),
-      replacementText: z.string(),
-    })
-    .strict(),
-  z
-    .object({
-      op: z.literal("insert_block"),
-      afterSelectionId: nonEmptyString.optional(),
-      bodyMdx: z.string().min(1, {
-        message: "must be a non-empty MDX block.",
-      }),
-    })
-    .strict(),
-  z
-    .object({
-      op: z.literal("update_frontmatter"),
-      patch: recordOfUnknown,
-    })
-    .strict(),
-  z
-    .object({
-      op: z.literal("create_document"),
-      path: nonEmptyString,
-      format: z.enum(["md", "mdx"]),
-      frontmatter: recordOfUnknown,
-      body: z.string(),
-    })
-    .strict(),
+  replaceSelectionOperationSchema,
+  insertBlockOperationSchema,
+  updateFrontmatterOperationSchema,
+  createDocumentOperationSchema,
 ]);
+
+/**
+ * Per-kind operation schema lookup. Tasks that only emit a subset of
+ * operation kinds compose the schemas they need from this map so the
+ * derived JSON Schema sent to providers (some of which run in
+ * `strict` mode and reject optional properties not listed in
+ * `required`) only mentions the variants the task can actually emit.
+ */
+export const aiProposalOperationSchemaByOp = {
+  replace_selection: replaceSelectionOperationSchema,
+  insert_block: insertBlockOperationSchema,
+  update_frontmatter: updateFrontmatterOperationSchema,
+  create_document: createDocumentOperationSchema,
+} as const;
 
 export const aiProposalValidationSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("valid") }).strict(),

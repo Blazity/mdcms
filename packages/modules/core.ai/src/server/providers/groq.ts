@@ -5,11 +5,18 @@ import type { AiProvider } from "../provider.js";
 
 export const GROQ_PROVIDER_ID = "groq" as const;
 /**
- * Default Groq model used when `AI_MODEL` is not set. `llama-3.3-70b-versatile`
- * supports the JSON-mode structured-output path that the orchestrator's
- * `generateObject` calls require.
+ * Default Groq model used when `AI_MODEL` is not set. The orchestrator
+ * relies on the AI SDK's `generateObject`, which (as of `ai@6`) drives
+ * structured output through `response_format: json_schema`. Only a
+ * subset of Groq models supports that mode; `openai/gpt-oss-20b` is on
+ * the list and is the fastest/cheapest of those, making it the
+ * sensible default. See
+ * https://console.groq.com/docs/structured-outputs#supported-models
+ * for the full set. Operators can override via `AI_MODEL`, but
+ * picking a model outside that set will surface
+ * `AI_PROVIDER_UNAVAILABLE` at proposal time.
  */
-export const GROQ_PROVIDER_DEFAULT_MODEL = "llama-3.3-70b-versatile" as const;
+export const GROQ_PROVIDER_DEFAULT_MODEL = "openai/gpt-oss-20b" as const;
 
 export type GroqProviderOptions = {
   apiKey: string;
