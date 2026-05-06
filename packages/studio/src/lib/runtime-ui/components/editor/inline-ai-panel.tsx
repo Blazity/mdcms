@@ -3,6 +3,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
+  autoUpdate,
+  flip,
+  offset,
+  shift,
+  size,
+  useFloating,
+} from "@floating-ui/react-dom";
+import {
   AlertCircle,
   ChevronRight,
   Eraser,
@@ -292,14 +300,43 @@ function DismissRetry(props: { onRetry: () => void; onDismiss: () => void }) {
   );
 }
 
-function ToneFlyout(props: { onPick: (preset: TonePreset) => void }) {
+function ToneFlyout(props: {
+  anchorEl: HTMLElement | null;
+  onPick: (preset: TonePreset) => void;
+}) {
+  // Floating-ui keeps the flyout in the viewport: flip to the left
+  // when the right side is constrained, shift to stay on-screen, and
+  // size() caps max-height + enables scroll when even flipped placement
+  // is short on space (e.g. picker near the bottom of a small viewport).
+  const { refs, floatingStyles } = useFloating({
+    placement: "right-start",
+    strategy: "fixed",
+    elements: { reference: props.anchorEl ?? undefined },
+    whileElementsMounted: autoUpdate,
+    middleware: [
+      offset(6),
+      flip({ fallbackPlacements: ["right-end", "left-start", "left-end"] }),
+      shift({ padding: 8 }),
+      size({
+        padding: 8,
+        apply({ availableHeight, elements }) {
+          Object.assign(elements.floating.style, {
+            maxHeight: `${Math.max(120, availableHeight)}px`,
+          });
+        },
+      }),
+    ],
+  });
+
   return (
     <div
+      ref={refs.setFloating}
       role="menu"
       aria-label="Target tone"
       data-testid="inline-ai-tone-flyout"
+      style={floatingStyles}
       className={cn(
-        "absolute left-[calc(100%+6px)] top-[-6px] z-[65] w-[200px]",
+        "z-[65] flex w-[200px] flex-col overflow-y-auto",
         "rounded-lg border border-border bg-popover p-1.5 shadow-lg",
         "animate-in fade-in-0 zoom-in-95",
       )}
@@ -333,14 +370,24 @@ function ActionRow(props: {
   disabled: boolean;
   onFire: () => void;
   onHoverEnter: () => void;
+  buttonRef?: (el: HTMLButtonElement | null) => void;
   children?: ReactNode;
 }) {
-  const { meta, expanded, disabled, onFire, onHoverEnter, children } = props;
+  const {
+    meta,
+    expanded,
+    disabled,
+    onFire,
+    onHoverEnter,
+    buttonRef,
+    children,
+  } = props;
   const Icon = meta.icon;
 
   return (
-    <div className="relative" onMouseEnter={onHoverEnter}>
+    <div onMouseEnter={onHoverEnter}>
       <button
+        ref={buttonRef}
         type="button"
         role="menuitem"
         aria-haspopup={meta.flyout ? "menu" : undefined}
@@ -398,6 +445,11 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
   } = props;
 
   const [toneOpen, setToneOpen] = useState(false);
+  // Tracked as state (not a ref) so the floating-ui flyout reflows
+  // when the anchor button mounts/unmounts.
+  const [toneAnchorEl, setToneAnchorEl] = useState<HTMLButtonElement | null>(
+    null,
+  );
   const isWorking =
     transform.state.status === "loading" ||
     transform.state.status === "applying";
@@ -445,9 +497,12 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
         "flex w-full flex-col overflow-visible rounded-lg border border-border bg-popover text-popover-foreground shadow-md",
         className,
       )}
-      // Close the tone flyout when the cursor leaves the picker
-      // entirely, so it doesn't linger after the user moves away.
-      onMouseLeave={() => setToneOpen(false)}
+      // Note: we don't close the flyout on section mouse-leave because
+      // the flyout floats outside the picker's bounding box (via
+      // floating-ui), and a global leave would race with moving the
+      // cursor onto the flyout. The flyout closes when the user hovers
+      // a different action row, picks a tone, dismisses the popover,
+      // or clicks outside.
     >
       <header className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
         <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
@@ -498,17 +553,18 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
               disabled={isWorking}
               onHoverEnter={() => setToneOpen(meta.flyout)}
               onFire={() => fire(intentForInlineAction(meta.id, ""))}
-            >
-              {meta.flyout && toneOpen ? (
-                <ToneFlyout
-                  onPick={(preset) => {
-                    setToneOpen(false);
-                    fire(intentForInlineAction("change_tone", preset.detail));
-                  }}
-                />
-              ) : null}
-            </ActionRow>
+              buttonRef={meta.flyout ? setToneAnchorEl : undefined}
+            />
           ))}
+          {toneOpen ? (
+            <ToneFlyout
+              anchorEl={toneAnchorEl}
+              onPick={(preset) => {
+                setToneOpen(false);
+                fire(intentForInlineAction("change_tone", preset.detail));
+              }}
+            />
+          ) : null}
         </div>
       )}
     </section>
