@@ -65,10 +65,15 @@ type PreviewState = {
       { status: "proposal" }
     >
   >["proposal"];
-  originalText: string;
   previewFrom: number;
   previewTo: number;
   anchorRect: AnchorRect;
+  /**
+   * Restores the original ProseMirror slice at the previewed range.
+   * Captured by `applyInlinePreview` so reverting brings back block
+   * structure (lists, headings) — not just the plain text.
+   */
+  revert: () => void;
 };
 
 function rectToBoundingClientRect(rect: AnchorRect): DOMRect {
@@ -221,10 +226,12 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
 
     setPreview({
       proposal: transform.state.proposal,
-      originalText: settledSelection.text,
       previewFrom: result.previewFrom,
       previewTo: result.previewTo,
       anchorRect: result.anchorRect,
+      revert: () => {
+        result.revert();
+      },
     });
     setPickerOpen(false);
   }, [transform.state, preview, editorRef, settledSelection]);
@@ -250,20 +257,13 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
     if (!preview) {
       return;
     }
-    const editor = editorRef.current;
-    if (editor) {
-      editor.revertInlinePreview({
-        previewFrom: preview.previewFrom,
-        previewTo: preview.previewTo,
-        originalText: preview.originalText,
-      });
-    }
+    preview.revert();
     setPreview(null);
     void transform.reject();
     // Open the picker after the revert so the user can adjust their
     // request without losing context.
     setPickerOpen(true);
-  }, [preview, transform, editorRef]);
+  }, [preview, transform]);
 
   const reference = useMemo(() => {
     const rect = preview

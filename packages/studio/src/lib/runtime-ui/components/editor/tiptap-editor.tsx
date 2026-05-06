@@ -111,16 +111,15 @@ export interface TipTapEditorHandle {
     previewFrom: number;
     previewTo: number;
     anchorRect: TipTapEditorAnchorRect;
+    /**
+     * Restores the original document slice (including block-level
+     * structure such as bullet lists or headings) at the previewed
+     * range. The slice was captured before the preview was applied,
+     * so reverting recovers formatting — not just the plain text.
+     * Returns `null` if the editor is unmounted.
+     */
+    revert: () => { anchorRect: TipTapEditorAnchorRect } | null;
   } | null;
-  /**
-   * Inverse of `applyInlinePreview`. Replaces the previewed range
-   * with `originalText` and returns the resulting anchor rect.
-   */
-  revertInlinePreview: (input: {
-    previewFrom: number;
-    previewTo: number;
-    originalText: string;
-  }) => { anchorRect: TipTapEditorAnchorRect } | null;
 }
 
 export type TipTapEditorAnchorRect = {
@@ -734,6 +733,17 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             }
           }
 
+          // Capture the original ProseMirror slice (with block-level
+          // structure intact: bullet items, headings, paragraphs)
+          // BEFORE we mutate the document. On reject we replace the
+          // previewed range with this slice so formatting comes back,
+          // not just the plain text.
+          const originalSlice = editor.state.doc.slice(
+            input.from,
+            input.to,
+            true,
+          );
+
           const previewFrom = input.from;
           const previewTo = input.from + input.replacementText.length;
 
@@ -747,42 +757,40 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             .setTextSelection({ from: previewFrom, to: previewTo })
             .run();
 
+          const revert = () => {
+            if (!editor || editor.isDestroyed) {
+              return null;
+            }
+            const liveDocSize = editor.state.doc.content.size;
+            if (previewFrom < 0 || previewTo > liveDocSize) {
+              return null;
+            }
+            const tr = editor.state.tr.replace(
+              previewFrom,
+              previewTo,
+              originalSlice,
+            );
+            // The slice may carry open node boundaries (e.g. when the
+            // selection started mid-list-item), so the resulting
+            // document size depends on what the slice contributes.
+            // Compute the restored end from the resulting mapping.
+            const restoredTo = tr.mapping.map(previewTo);
+            editor.view.dispatch(tr);
+            editor
+              .chain()
+              .focus()
+              .setTextSelection({ from: previewFrom, to: restoredTo })
+              .run();
+            return {
+              anchorRect: rectForRange(editor, previewFrom, restoredTo),
+            };
+          };
+
           return {
             previewFrom,
             previewTo,
             anchorRect: rectForRange(editor, previewFrom, previewTo),
-          };
-        },
-        revertInlinePreview(input) {
-          if (!editor || editor.isDestroyed) {
-            return null;
-          }
-
-          const docSize = editor.state.doc.content.size;
-
-          if (
-            input.previewFrom < 0 ||
-            input.previewTo > docSize ||
-            input.previewFrom > input.previewTo
-          ) {
-            return null;
-          }
-
-          const restoredFrom = input.previewFrom;
-          const restoredTo = input.previewFrom + input.originalText.length;
-
-          editor
-            .chain()
-            .focus()
-            .insertContentAt(
-              { from: input.previewFrom, to: input.previewTo },
-              input.originalText,
-            )
-            .setTextSelection({ from: restoredFrom, to: restoredTo })
-            .run();
-
-          return {
-            anchorRect: rectForRange(editor, restoredFrom, restoredTo),
+            revert,
           };
         },
       }),
