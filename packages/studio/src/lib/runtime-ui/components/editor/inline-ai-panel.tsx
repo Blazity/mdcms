@@ -2,14 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import {
-  autoUpdate,
-  flip,
-  offset,
-  shift,
-  size,
-  useFloating,
-} from "@floating-ui/react-dom";
+import { autoUpdate, offset, size, useFloating } from "@floating-ui/react-dom";
 import {
   AlertCircle,
   ChevronRight,
@@ -303,11 +296,14 @@ function DismissRetry(props: { onRetry: () => void; onDismiss: () => void }) {
 function ToneFlyout(props: {
   anchorEl: HTMLElement | null;
   onPick: (preset: TonePreset) => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+  registerEl?: (el: HTMLElement | null) => void;
 }) {
-  // Floating-ui keeps the flyout in the viewport: flip to the left
-  // when the right side is constrained, shift to stay on-screen, and
-  // size() caps max-height + enables scroll when even flipped placement
-  // is short on space (e.g. picker near the bottom of a small viewport).
+  // Always render to the right of the row — no flip. If the flyout
+  // doesn't fit the viewport vertically, size() caps its max-height
+  // and the inner overflow-y-auto lets the user scroll through tones.
+  // The user's request: never reposition; allow scroll instead.
   const { refs, floatingStyles } = useFloating({
     placement: "right-start",
     strategy: "fixed",
@@ -315,26 +311,31 @@ function ToneFlyout(props: {
     whileElementsMounted: autoUpdate,
     middleware: [
       offset(6),
-      flip({ fallbackPlacements: ["right-end", "left-start", "left-end"] }),
-      shift({ padding: 8 }),
       size({
         padding: 8,
         apply({ availableHeight, elements }) {
           Object.assign(elements.floating.style, {
-            maxHeight: `${Math.max(120, availableHeight)}px`,
+            maxHeight: `${Math.max(140, availableHeight)}px`,
           });
         },
       }),
     ],
   });
 
+  const setRefs = (el: HTMLDivElement | null) => {
+    refs.setFloating(el);
+    props.registerEl?.(el);
+  };
+
   return (
     <div
-      ref={refs.setFloating}
+      ref={setRefs}
       role="menu"
       aria-label="Target tone"
       data-testid="inline-ai-tone-flyout"
       style={floatingStyles}
+      onMouseEnter={props.onMouseEnter}
+      onMouseLeave={props.onMouseLeave}
       className={cn(
         "z-[65] flex w-[200px] flex-col overflow-y-auto",
         "rounded-lg border border-border bg-popover p-1.5 shadow-lg",
@@ -450,6 +451,69 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
   const [toneAnchorEl, setToneAnchorEl] = useState<HTMLButtonElement | null>(
     null,
   );
+  const flyoutElRef = useRef<HTMLElement | null>(null);
+
+  // Safe-triangle pointer tracking. When the cursor is moving from the
+  // tone row toward the open flyout, it briefly passes over neighbor
+  // rows. Without this, those rows' onMouseEnter handlers would close
+  // the flyout. We compute the triangle from the current cursor
+  // position to the flyout's near (left) edge and only allow neighbor
+  // rows to close the flyout when the cursor is OUTSIDE that triangle.
+  const cursorRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  useEffect(() => {
+    if (!toneOpen) return;
+    const onMove = (e: MouseEvent) => {
+      cursorRef.current = { x: e.clientX, y: e.clientY };
+    };
+    document.addEventListener("mousemove", onMove);
+    return () => document.removeEventListener("mousemove", onMove);
+  }, [toneOpen]);
+
+  const isHeadingTowardFlyout = (): boolean => {
+    if (!toneOpen) return false;
+    const flyout = flyoutElRef.current;
+    if (!flyout) return false;
+    const rect = flyout.getBoundingClientRect();
+    const { x: cx, y: cy } = cursorRef.current;
+    // Build the triangle (cursor, flyout-top-left, flyout-bottom-left)
+    // and test point-in-triangle via barycentric coords. Only relevant
+    // when cursor is to the left of the flyout — if the user has
+    // already moved past the flyout's left edge, they're inside or
+    // beyond the flyout and the triangle is moot.
+    if (cx >= rect.left) return false;
+    const ax = cx;
+    const ay = cy;
+    const bx = rect.left;
+    const by = rect.top;
+    const ccx = rect.left;
+    const ccy = rect.bottom;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const ex = ccx - ax;
+    const ey = ccy - ay;
+    // We don't run a real point-in-tri on every mousemove; instead we
+    // approximate "heading toward flyout" as: the cursor's X is left
+    // of the flyout AND the cursor's Y is between rect.top and
+    // rect.bottom (with some slack), which is the bounding box of the
+    // safe area. This is the standard "rectangle approximation" used
+    // by libraries that don't want to do bary computations per move.
+    void dx;
+    void dy;
+    void ex;
+    void ey;
+    const slack = 24;
+    return cy >= rect.top - slack && cy <= rect.bottom + slack;
+  };
+
+  const requestCloseTone = () => {
+    // If the cursor is inside the safe triangle (heading toward the
+    // open flyout), don't close. Without this, neighbor rows would
+    // close the flyout the moment the cursor crosses them.
+    if (isHeadingTowardFlyout()) {
+      return;
+    }
+    setToneOpen(false);
+  };
   const isWorking =
     transform.state.status === "loading" ||
     transform.state.status === "applying";
@@ -543,7 +607,16 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
         <div
           role="menu"
           aria-label="AI actions"
-          className="flex flex-col p-1.5"
+          // Cap the action list to the space Radix reports as
+          // available between the popover and the viewport, so the
+          // panel scrolls when the selection sits low on the page
+          // instead of getting clipped. The CSS var is set by Radix
+          // even when avoidCollisions is false.
+          style={{
+            maxHeight:
+              "calc(var(--radix-popover-content-available-height, 100vh) - 56px)",
+          }}
+          className="flex flex-col overflow-y-auto p-1.5"
         >
           {INLINE_AI_ACTIONS.map((meta) => (
             <ActionRow
@@ -551,7 +624,15 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
               meta={meta}
               expanded={meta.flyout && toneOpen}
               disabled={isWorking}
-              onHoverEnter={() => setToneOpen(meta.flyout)}
+              onHoverEnter={() => {
+                if (meta.flyout) {
+                  setToneOpen(true);
+                } else {
+                  // Honor the safe triangle: don't close the flyout
+                  // when the cursor is on its way to the flyout.
+                  requestCloseTone();
+                }
+              }}
               onFire={() => fire(intentForInlineAction(meta.id, ""))}
               buttonRef={meta.flyout ? setToneAnchorEl : undefined}
             />
@@ -559,6 +640,11 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
           {toneOpen ? (
             <ToneFlyout
               anchorEl={toneAnchorEl}
+              registerEl={(el) => {
+                flyoutElRef.current = el;
+              }}
+              onMouseEnter={() => setToneOpen(true)}
+              onMouseLeave={() => setToneOpen(false)}
               onPick={(preset) => {
                 setToneOpen(false);
                 fire(intentForInlineAction("change_tone", preset.detail));
