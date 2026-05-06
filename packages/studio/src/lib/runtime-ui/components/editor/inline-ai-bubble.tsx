@@ -25,7 +25,12 @@ import type {
   TipTapEditorSelectionInfo,
 } from "./tiptap-editor.js";
 import { Button } from "../ui/button.js";
-import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover.js";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+  PopoverTrigger,
+} from "../ui/popover.js";
 import { cn } from "../../lib/utils.js";
 
 export type InlineAiBubbleProps = {
@@ -121,6 +126,36 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [preview, setPreview] = useState<PreviewState | null>(null);
 
+  // Virtual anchor used by Radix to position the picker popover. The
+  // pill itself sits above the selection (via floating-ui), but the
+  // user wants the dropdown to always appear below the highlighted
+  // text so it never covers it. The anchor is a zero-height line at
+  // the bottom edge of the selection's rect; with `side="bottom"`
+  // Radix opens the popover just below the selection.
+  const popoverAnchorSelectionRef = useRef<TipTapEditorSelectionInfo | null>(
+    null,
+  );
+  const popoverAnchorRef = useRef<{ getBoundingClientRect(): DOMRect }>({
+    getBoundingClientRect: () => {
+      const current = popoverAnchorSelectionRef.current;
+      if (!current) {
+        return new DOMRect();
+      }
+      const rect = current.anchorRect;
+      return {
+        x: rect.left,
+        y: rect.bottom,
+        top: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: 0,
+        toJSON: () => rect,
+      } as DOMRect;
+    },
+  });
+
   // The "settled" selection drives the bubble's visible state. While
   // the user is actively extending a selection (drag, shift+arrow),
   // the upstream `selection` prop changes on every animation frame,
@@ -129,6 +164,13 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
   const [settledSelection, setSettledSelection] =
     useState<TipTapEditorSelectionInfo | null>(null);
   const lastSelectionIdRef = useRef<string | null>(null);
+
+  // Mirror the latest settled selection so the popover anchor's
+  // virtualRef can read the current rect on demand without React
+  // re-rendering the ref object.
+  useEffect(() => {
+    popoverAnchorSelectionRef.current = settledSelection;
+  }, [settledSelection]);
 
   useEffect(() => {
     // Skip debounce while the editor is showing a preview — the
@@ -379,6 +421,16 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
       className="z-50"
     >
       <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+        {/*
+          Decouple the popover's anchor from the trigger pill: the
+          pill sits above the selection (so it doesn't cover the
+          selected text), but the picker dropdown is anchored to the
+          bottom edge of the selection so it always opens below the
+          highlight.
+        */}
+        <PopoverAnchor
+          virtualRef={popoverAnchorRef as React.RefObject<HTMLElement>}
+        />
         <PopoverTrigger asChild>
           <button
             type="button"
@@ -409,8 +461,8 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
         </PopoverTrigger>
         <PopoverContent
           align="start"
-          side="top"
-          sideOffset={6}
+          side="bottom"
+          sideOffset={8}
           collisionPadding={8}
           data-mdcms-ai-bubble="panel"
           className="w-[22rem] p-0"
