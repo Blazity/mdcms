@@ -23,6 +23,7 @@
     "test": "bun test ./src ./core.ai ./core.system ./domain.content"
   },
   "dependencies": {
+    "@ai-sdk/groq": "^3.0.38",
     "@ai-sdk/provider": "^3.0.10",
     "@mdcms/shared": "workspace:*",
     "ai": "^6.0.173",

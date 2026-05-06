@@ -81,7 +81,10 @@ export {
   type AiTaskOutput,
 } from "./server/tasks.js";
 export {
+  AI_MODEL_ENV_KEY,
   AI_PROVIDER_ENV_KEY,
+  GROQ_API_KEY_ENV_KEY,
+  GROQ_BASE_URL_ENV_KEY,
   resolveAiProvider,
 } from "./server/providers/factory.js";
 export {
@@ -94,6 +97,12 @@ export {
   ECHO_PROVIDER_ID,
   type EchoAiProviderOptions,
 } from "./server/providers/echo.js";
+export {
+  createGroqAiProvider,
+  GROQ_PROVIDER_DEFAULT_MODEL,
+  GROQ_PROVIDER_ID,
+  type GroqProviderOptions,
+} from "./server/providers/groq.js";
 export type {
   AiProvider,
   AiProviderEnv,
