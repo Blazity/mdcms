@@ -63,7 +63,7 @@ describe("InlineAiResultBody — CMS-224 UI states", () => {
 
   test("loading state renders a 'Generating' status row", () => {
     const markup = render({ status: "loading", intent });
-    assert.match(markup, /Generating a proposal/);
+    assert.match(markup, /Generating…/);
     assert.match(markup, /role="status"/);
     assert.match(markup, /aria-live="polite"/);
   });
@@ -73,16 +73,16 @@ describe("InlineAiResultBody — CMS-224 UI states", () => {
     assert.match(markup, /AI did not return a usable proposal/);
   });
 
-  test("proposal state renders summary, replacement preview, and Accept/Reject/Try again", () => {
+  test("proposal state renders a fallback Accept/Reject pair", () => {
+    // The Option-A redesign moves the inline preview into the editor;
+    // the in-popover fallback is just a brief notice + Accept/Reject so
+    // unmasked callers don't end up with a dead UI.
     const proposal = buildProposal();
     const markup = render({ status: "proposal", proposal, intent });
 
-    assert.match(markup, /Tightened intro/);
-    assert.match(markup, /Hi there\./);
+    assert.match(markup, /Proposal ready/);
     assert.match(markup, />Accept</);
     assert.match(markup, />Reject</);
-    assert.match(markup, /Try again/);
-    assert.match(markup, /data-testid="inline-ai-proposed-text"/);
   });
 
   test("validation_invalid state lists errors and offers Try again", () => {
@@ -111,7 +111,7 @@ describe("InlineAiResultBody — CMS-224 UI states", () => {
 
   test("applying state renders an 'Applying' polite status row", () => {
     const markup = render({ status: "applying", proposal: buildProposal() });
-    assert.match(markup, /Applying proposal/);
+    assert.match(markup, /Applying…/);
     assert.match(markup, /aria-live="polite"/);
   });
 

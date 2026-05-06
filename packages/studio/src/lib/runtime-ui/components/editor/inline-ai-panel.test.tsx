@@ -21,10 +21,6 @@ test("InlineAiPanel renders the 6 selection-anchored copy edits", () => {
     createElement(InlineAiPanel, {
       transform: idleTransform(),
       hasSelection: true,
-      activeAction: "rewrite",
-      onActiveActionChange: () => {},
-      detail: "",
-      onDetailChange: () => {},
       onSubmit: () => {},
     }),
   );
@@ -47,11 +43,16 @@ test("InlineAiPanel renders the 6 selection-anchored copy edits", () => {
   // SPEC-014 routes those through the properties panel and slash menu.
   assert.doesNotMatch(markup, /inline-ai-action-improve_seo/);
   assert.doesNotMatch(markup, /inline-ai-action-insert_mdx_component/);
-  // Generate is the panel CTA wording; "Ask AI" is intentionally
-  // avoided because the action edits selected text rather than asking
-  // a question.
-  assert.match(markup, />Generate</);
+
+  // The Option-A picker fires actions on click and has no Generate
+  // CTA or detail textarea — guard against accidental regressions.
+  assert.doesNotMatch(markup, />Generate</);
   assert.doesNotMatch(markup, />Ask AI</);
+  assert.doesNotMatch(markup, /<input/i);
+  assert.doesNotMatch(markup, /<textarea/i);
+
+  // Eyebrow header reads as a system label, not a CTA.
+  assert.match(markup, /AI · edit selection/);
 });
 
 test("InlineAiPanel hints to select content when selection is missing", () => {
@@ -59,10 +60,6 @@ test("InlineAiPanel hints to select content when selection is missing", () => {
     createElement(InlineAiPanel, {
       transform: idleTransform(),
       hasSelection: false,
-      activeAction: "rewrite",
-      onActiveActionChange: () => {},
-      detail: "",
-      onDetailChange: () => {},
       onSubmit: () => {},
     }),
   );
@@ -114,29 +111,24 @@ test("InlineAiPanel hides the proposal preview when hideProposalResult is set", 
     createElement(InlineAiPanel, {
       transform,
       hasSelection: true,
-      activeAction: "rewrite",
-      onActiveActionChange: () => {},
-      detail: "",
-      onDetailChange: () => {},
       onSubmit: () => {},
       hideProposalResult: true,
     }),
   );
 
-  assert.doesNotMatch(masked, /Tighter intro/);
-  assert.doesNotMatch(masked, /Proposed replacement/);
+  // With hideProposalResult set, the in-popover proposal view is
+  // suppressed (the editor renders it inline) and the action list
+  // is shown instead.
+  assert.doesNotMatch(masked, /Proposed/);
+  assert.match(masked, /data-testid="inline-ai-action-rewrite"/);
 
   const visible = renderToStaticMarkup(
     createElement(InlineAiPanel, {
       transform,
       hasSelection: true,
-      activeAction: "rewrite",
-      onActiveActionChange: () => {},
-      detail: "",
-      onDetailChange: () => {},
       onSubmit: () => {},
     }),
   );
 
-  assert.match(visible, /Tighter intro/);
+  assert.match(visible, /Proposal ready/);
 });

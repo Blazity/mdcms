@@ -8,23 +8,21 @@ import {
   shift,
   useFloating,
 } from "@floating-ui/react-dom";
-import { Check, Loader2, RotateCcw, Sparkles, X } from "lucide-react";
+import { Check, Loader2, RotateCcw, Sparkles } from "lucide-react";
 
 import { InlineAiPanel } from "./inline-ai-panel.js";
-import type { StudioAiInlineAction } from "../../../ai-route-api.js";
 import {
   useInlineAiTransform,
   type InlineAiAppliedSignal,
+  type InlineAiTransformIntent,
   type InlineAiTransformOptions,
 } from "../../hooks/use-inline-ai-transform.js";
-import { intentForInlineAction } from "./inline-ai-panel.js";
 import type { StudioAiRouteApi } from "../../../ai-route-api.js";
 import type {
   TipTapEditorAnchorRect,
   TipTapEditorHandle,
   TipTapEditorSelectionInfo,
 } from "./tiptap-editor.js";
-import { Button } from "../ui/button.js";
 import {
   Popover,
   PopoverAnchor,
@@ -116,12 +114,6 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
     editorRef,
     onApplied,
   } = props;
-
-  // Picker state (lifted out of InlineAiPanel so it survives a
-  // close/reopen during the reject → reopen flow).
-  const [activeAction, setActiveAction] =
-    useState<StudioAiInlineAction>("rewrite");
-  const [detail, setDetail] = useState("");
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [preview, setPreview] = useState<PreviewState | null>(null);
@@ -269,8 +261,7 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
     setPreview(null);
     void transform.reject();
     // Open the picker after the revert so the user can adjust their
-    // request without losing context. The activeAction/detail state
-    // we held above is preserved — they didn't type anything new.
+    // request without losing context.
     setPickerOpen(true);
   }, [preview, transform, editorRef]);
 
@@ -306,15 +297,41 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
     refs.setReference(reference as never);
   }, [refs, reference]);
 
-  const handleSubmit = useCallback(() => {
-    void transform.request(intentForInlineAction(activeAction, detail.trim()));
-  }, [transform, activeAction, detail]);
+  const handleSubmit = useCallback(
+    (intent: InlineAiTransformIntent) => {
+      void transform.request(intent);
+    },
+    [transform],
+  );
+
+  // ⌘J / Ctrl+J opens the picker when a settled selection exists.
+  // Mirrors the kbd hint shown on the trigger pill.
+  useEffect(() => {
+    if (!enabled || !settledSelection || preview) {
+      return;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "j" && event.key !== "J") {
+        return;
+      }
+      if (!(event.metaKey || event.ctrlKey)) {
+        return;
+      }
+      event.preventDefault();
+      setPickerOpen((open) => !open);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [enabled, settledSelection, preview]);
 
   if (!enabled) {
     return null;
   }
 
   // Stage 3: inline preview is showing — render Accept / Reject pill.
+  // Hardcoded ink (#1C1B1B) so the chip stays a dark inky surface in
+  // both light and dark themes; accept = brand green, reject = soft
+  // coral. Mono uppercase eyebrow reads as a system label, not a CTA.
   if (preview) {
     const isApplying = transform.state.status === "applying";
     return (
@@ -324,47 +341,53 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
         data-mdcms-ai-bubble="preview"
         className="z-50"
       >
-        <div className="flex items-center gap-1 rounded-md border border-border bg-card p-1 shadow-lg">
-          <Button
+        <div
+          className={cn(
+            "inline-flex items-center overflow-hidden rounded-full",
+            "border border-white/10 shadow-[0_1px_2px_rgba(0,0,0,0.05),0_22px_40px_-18px_rgba(0,0,0,0.45)]",
+          )}
+          style={{ background: "#1C1B1B", color: "#FFF" }}
+        >
+          <span className="inline-flex items-center gap-1.5 border-r border-white/10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-white/85">
+            <Sparkles className="h-3 w-3" aria-hidden />
+            Proposed
+          </span>
+          <button
             type="button"
-            size="sm"
             onClick={handleAccept}
             disabled={isApplying}
             data-testid="inline-ai-preview-accept"
             aria-label="Accept AI replacement"
-            className="h-7 px-2.5"
+            className={cn(
+              "inline-flex items-center gap-1.5 border-r border-white/10 px-3 py-1.5",
+              "text-xs font-semibold transition-colors",
+              "hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60",
+            )}
+            style={{ color: "#CAF240" }}
           >
             {isApplying ? (
-              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden />
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
             ) : (
-              <Check className="mr-1 h-3.5 w-3.5" aria-hidden />
+              <Check className="h-3.5 w-3.5" aria-hidden />
             )}
             {isApplying ? "Applying" : "Accept"}
-          </Button>
-          <Button
+          </button>
+          <button
             type="button"
-            size="sm"
-            variant="secondary"
             onClick={handleReject}
             disabled={isApplying}
             data-testid="inline-ai-preview-reject"
             aria-label="Reject AI replacement and reopen picker"
-            className="h-7 px-2.5"
+            className={cn(
+              "inline-flex items-center gap-1.5 px-3 py-1.5",
+              "text-xs font-semibold transition-colors",
+              "hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60",
+            )}
+            style={{ color: "#FFB4B4" }}
           >
-            <RotateCcw className="mr-1 h-3.5 w-3.5" aria-hidden />
+            <RotateCcw className="h-3.5 w-3.5" aria-hidden />
             Reject
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            onClick={handleReject}
-            disabled={isApplying}
-            aria-label="Discard preview"
-            className="h-7 px-2 text-muted-foreground"
-          >
-            <X className="h-3.5 w-3.5" aria-hidden />
-          </Button>
+          </button>
         </div>
       </div>
     );
@@ -411,27 +434,38 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
             type="button"
             data-testid="inline-ai-bubble-trigger"
             aria-label="Open AI edit menu"
-            // Refined floating pill: glassy card surface + primary
-            // tinted ring + soft glow. Reads as an AI affordance
-            // without the visual weight of a primary action button.
-            // Radix flips `data-state` to "open" while the popover is
-            // mounted; keeping the pill in the DOM keeps it as the
-            // floating-ui anchor while we hide it visually.
+            // Refined floating pill: glassy backdrop-blur surface,
+            // primary-tinted border + glow, sparkle leading icon.
+            // Reads as an AI affordance, not a primary CTA. Radix
+            // flips `data-state` to "open" while the popover is
+            // mounted; we keep the pill in the DOM to preserve its
+            // role as floating-ui anchor and just hide it visually.
             className={cn(
-              "group inline-flex h-8 items-center gap-1.5 rounded-full",
-              "border border-primary/30 bg-card/90 px-3 text-xs font-medium text-foreground",
-              "shadow-lg shadow-primary/10 backdrop-blur-sm",
+              "group inline-flex items-center gap-1.5 rounded-full",
+              "px-3 py-1.5 text-xs font-semibold",
+              "border bg-card/80 backdrop-blur-md",
+              "border-primary/45 text-primary",
+              "shadow-[0_1px_2px_rgba(0,0,0,0.18),0_16px_32px_-16px_rgba(47,73,229,0.55)]",
               "transition-all duration-150",
-              "hover:border-primary/60 hover:bg-card hover:shadow-primary/20",
+              "hover:border-primary/70 hover:bg-card",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
               "data-[state=open]:pointer-events-none data-[state=open]:opacity-0",
             )}
           >
             <Sparkles
-              className="h-3.5 w-3.5 text-primary transition-transform duration-150 group-hover:scale-110"
+              className="h-3.5 w-3.5 transition-transform duration-150 group-hover:scale-110"
               aria-hidden
             />
             Edit with AI
+            <kbd
+              aria-hidden
+              className={cn(
+                "ml-1 rounded-sm font-mono text-[9px] tracking-[0.04em]",
+                "bg-primary/10 px-1.5 py-px text-primary",
+              )}
+            >
+              ⌘ J
+            </kbd>
           </button>
         </PopoverTrigger>
         <PopoverContent
@@ -440,15 +474,11 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
           sideOffset={8}
           collisionPadding={8}
           data-mdcms-ai-bubble="panel"
-          className="w-[22rem] p-0"
+          className="w-[240px] overflow-visible p-0"
         >
           <InlineAiPanel
             transform={transform}
             hasSelection={Boolean(settledSelection)}
-            activeAction={activeAction}
-            onActiveActionChange={setActiveAction}
-            detail={detail}
-            onDetailChange={setDetail}
             onSubmit={handleSubmit}
             onClose={() => setPickerOpen(false)}
             // The proposal preview lives in the editor now — hide the
