@@ -1,21 +1,42 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { autoUpdate, shift, useFloating } from "@floating-ui/react-dom";
-import { Sparkles } from "lucide-react";
+import { Check, Loader2, RotateCcw, Sparkles, X } from "lucide-react";
 
-import { InlineAiPanel, type InlineAiPanelProps } from "./inline-ai-panel.js";
-import type { TipTapEditorSelectionInfo } from "./tiptap-editor.js";
+import { InlineAiPanel } from "./inline-ai-panel.js";
+import type { StudioAiInlineAction } from "../../../ai-route-api.js";
+import {
+  useInlineAiTransform,
+  type InlineAiAppliedSignal,
+  type InlineAiTransformOptions,
+} from "../../hooks/use-inline-ai-transform.js";
+import { intentForInlineAction } from "./inline-ai-panel.js";
+import type { StudioAiRouteApi } from "../../../ai-route-api.js";
+import type {
+  TipTapEditorAnchorRect,
+  TipTapEditorHandle,
+  TipTapEditorSelectionInfo,
+} from "./tiptap-editor.js";
 import { Button } from "../ui/button.js";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover.js";
 
-export type InlineAiBubbleProps = Omit<InlineAiPanelProps, "selection"> & {
+export type InlineAiBubbleProps = {
+  api: StudioAiRouteApi;
+  options: InlineAiTransformOptions;
   selection: TipTapEditorSelectionInfo | null;
   /**
    * When false, the bubble is suppressed entirely (e.g. caller lacks
    * `ai:use`). The trigger and panel are both hidden.
    */
   enabled: boolean;
+  /**
+   * Imperative handle to the TipTap editor. Used to apply / revert the
+   * inline preview that appears inside the editor when a proposal
+   * arrives.
+   */
+  editorRef: React.RefObject<TipTapEditorHandle | null>;
+  onApplied?: (signal: InlineAiAppliedSignal) => void;
   /**
    * Milliseconds the selection must stay stable before the trigger
    * appears. Avoids the bubble flashing while the user is still
@@ -25,7 +46,20 @@ export type InlineAiBubbleProps = Omit<InlineAiPanelProps, "selection"> & {
   appearDelayMs?: number;
 };
 
-type AnchorRect = TipTapEditorSelectionInfo["anchorRect"];
+type AnchorRect = TipTapEditorAnchorRect;
+
+type PreviewState = {
+  proposal: NonNullable<
+    Extract<
+      ReturnType<typeof useInlineAiTransform>["state"],
+      { status: "proposal" }
+    >
+  >["proposal"];
+  originalText: string;
+  previewFrom: number;
+  previewTo: number;
+  anchorRect: AnchorRect;
+};
 
 function rectToBoundingClientRect(rect: AnchorRect): DOMRect {
   const { top, left, right, bottom, width, height } = rect;
@@ -43,20 +77,43 @@ function rectToBoundingClientRect(rect: AnchorRect): DOMRect {
 }
 
 /**
- * Floating "Edit with AI" affordance positioned at the selection's anchor
- * rect. The trigger button is anchored to the selection via
- * floating-ui (the selection is a virtual element with no DOM node),
- * and the popover itself is rendered by Radix's Popover primitive so
- * we get Esc/click-outside/focus-trap/ARIA wiring for free.
+ * Floating "Edit with AI" affordance positioned at the selection's
+ * anchor rect. Drives a three-stage UX:
  *
- * Mounting/unmounting is driven by the (debounced) selection: when
- * the user clears the selection the trigger collapses; when the
- * selection moves to a new range we close any open popover so the
- * next click re-anchors to the fresh range.
+ * 1. **Trigger** — a small pill at the selection. Click to open the
+ *    action picker.
+ * 2. **Picker** — Radix popover with the action list + Generate
+ *    button. Esc / click-outside dismisses to stage 1.
+ * 3. **Preview** — when a proposal arrives, the picker closes and the
+ *    proposed replacement is applied directly inline in the editor.
+ *    A small Accept / Reject affordance hovers over the replaced
+ *    range.
+ *      * Accept → call the apply endpoint, then settle the editor
+ *        from the server response.
+ *      * Reject → revert the inline replacement, restore the
+ *        original selection, and reopen the picker so the user can
+ *        try a different action or detail.
  */
 export function InlineAiBubble(props: InlineAiBubbleProps) {
-  const { selection, enabled, appearDelayMs = 200, ...panelProps } = props;
-  const [open, setOpen] = useState(false);
+  const {
+    selection,
+    enabled,
+    appearDelayMs = 200,
+    api,
+    options,
+    editorRef,
+    onApplied,
+  } = props;
+
+  // Picker state (lifted out of InlineAiPanel so it survives a
+  // close/reopen during the reject → reopen flow).
+  const [activeAction, setActiveAction] =
+    useState<StudioAiInlineAction>("rewrite");
+  const [detail, setDetail] = useState("");
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [preview, setPreview] = useState<PreviewState | null>(null);
+
   // The "settled" selection drives the bubble's visible state. While
   // the user is actively extending a selection (drag, shift+arrow),
   // the upstream `selection` prop changes on every animation frame,
@@ -67,6 +124,14 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
   const lastSelectionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    // Skip debounce while the editor is showing a preview — the
+    // preview replaces selection text and the editor publishes a new
+    // selection rooted at the replacement. We don't want to retract
+    // the bubble during that internal state shuffle.
+    if (preview) {
+      return;
+    }
+
     if (!selection) {
       setSettledSelection(null);
       return;
@@ -82,37 +147,132 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
     }, appearDelayMs);
 
     return () => clearTimeout(handle);
-  }, [selection, appearDelayMs]);
+  }, [selection, appearDelayMs, preview]);
 
-  const panelSelection = settledSelection
-    ? { id: settledSelection.selectionId, text: settledSelection.text }
-    : null;
-
-  // Close the popover when the underlying range changes so the next
-  // open re-anchors to the fresh selection. The Popover state machine
-  // handles Esc/click-outside on its own.
+  // Close the picker and clear preview state when the underlying
+  // range changes mid-flow. Each fresh selection re-anchors and
+  // resets the picker.
   useEffect(() => {
+    if (preview) {
+      return;
+    }
+
     if (!settledSelection) {
       lastSelectionIdRef.current = null;
-      setOpen(false);
+      setPickerOpen(false);
       return;
     }
 
     if (lastSelectionIdRef.current !== settledSelection.selectionId) {
       lastSelectionIdRef.current = settledSelection.selectionId;
-      setOpen(false);
+      setPickerOpen(false);
     }
-  }, [settledSelection]);
+  }, [settledSelection, preview]);
+
+  const transform = useInlineAiTransform({
+    api,
+    options,
+    selection: settledSelection
+      ? {
+          id: settledSelection.selectionId,
+          text: settledSelection.text,
+        }
+      : null,
+    onApplied,
+  });
+
+  // When the hook produces a proposal, lift it out of the popover and
+  // into the editor as an inline preview. The picker closes; the
+  // bubble switches to the Accept / Reject stage.
+  useEffect(() => {
+    if (transform.state.status !== "proposal") {
+      return;
+    }
+    if (preview) {
+      return;
+    }
+    if (!editorRef.current || !settledSelection) {
+      return;
+    }
+
+    const operation = transform.state.proposal.operations.find(
+      (op) => op.op === "replace_selection",
+    );
+    if (!operation || operation.op !== "replace_selection") {
+      return;
+    }
+
+    const result = editorRef.current.applyInlinePreview({
+      from: settledSelection.from,
+      to: settledSelection.to,
+      replacementText: operation.replacementText,
+      expectedText: settledSelection.text,
+    });
+
+    if (!result) {
+      // Document mutated under us. Leave the popover open so the user
+      // can read the error/proposal panel and retry.
+      return;
+    }
+
+    setPreview({
+      proposal: transform.state.proposal,
+      originalText: settledSelection.text,
+      previewFrom: result.previewFrom,
+      previewTo: result.previewTo,
+      anchorRect: result.anchorRect,
+    });
+    setPickerOpen(false);
+  }, [transform.state, preview, editorRef, settledSelection]);
+
+  // After accept (apply succeeds), drop the preview and let the
+  // bubble fall back to its trigger pill at the new range.
+  useEffect(() => {
+    if (transform.state.status === "applied" && preview) {
+      setPreview(null);
+    }
+  }, [transform.state, preview]);
+
+  // Accept → call apply through the hook. The page-level `onApplied`
+  // will refresh the editor body from the server response.
+  const handleAccept = useCallback(() => {
+    void transform.accept();
+  }, [transform]);
+
+  // Reject → revert the inline replacement, drop the proposal, and
+  // reopen the picker with the original selection so the user can try
+  // another action or detail.
+  const handleReject = useCallback(() => {
+    if (!preview) {
+      return;
+    }
+    const editor = editorRef.current;
+    if (editor) {
+      editor.revertInlinePreview({
+        previewFrom: preview.previewFrom,
+        previewTo: preview.previewTo,
+        originalText: preview.originalText,
+      });
+    }
+    setPreview(null);
+    void transform.reject();
+    // Open the picker after the revert so the user can adjust their
+    // request without losing context. The activeAction/detail state
+    // we held above is preserved — they didn't type anything new.
+    setPickerOpen(true);
+  }, [preview, transform, editorRef]);
 
   const reference = useMemo(() => {
-    if (!settledSelection) {
+    const rect = preview
+      ? preview.anchorRect
+      : (settledSelection?.anchorRect ?? null);
+    if (!rect) {
       return null;
     }
-    const rect = settledSelection.anchorRect;
     return {
       getBoundingClientRect: () => rectToBoundingClientRect(rect),
     };
-  }, [settledSelection]);
+  }, [preview, settledSelection]);
 
   const { refs, floatingStyles } = useFloating({
     placement: "top-start",
@@ -125,23 +285,94 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
     refs.setReference(reference as never);
   }, [refs, reference]);
 
-  if (!enabled || !settledSelection) {
+  const handleSubmit = useCallback(() => {
+    void transform.request(intentForInlineAction(activeAction, detail.trim()));
+  }, [transform, activeAction, detail]);
+
+  if (!enabled) {
+    return null;
+  }
+
+  // Stage 3: inline preview is showing — render Accept / Reject pill.
+  if (preview) {
+    const isApplying = transform.state.status === "applying";
+    return (
+      <div
+        ref={refs.setFloating}
+        style={floatingStyles}
+        data-mdcms-ai-bubble="preview"
+        className="z-50"
+      >
+        <div className="flex items-center gap-1 rounded-md border border-border bg-card p-1 shadow-lg">
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleAccept}
+            disabled={isApplying}
+            data-testid="inline-ai-preview-accept"
+            aria-label="Accept AI replacement"
+            className="h-7 px-2.5"
+          >
+            {isApplying ? (
+              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : (
+              <Check className="mr-1 h-3.5 w-3.5" aria-hidden />
+            )}
+            {isApplying ? "Applying" : "Accept"}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={handleReject}
+            disabled={isApplying}
+            data-testid="inline-ai-preview-reject"
+            aria-label="Reject AI replacement and reopen picker"
+            className="h-7 px-2.5"
+          >
+            <RotateCcw className="mr-1 h-3.5 w-3.5" aria-hidden />
+            Reject
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={handleReject}
+            disabled={isApplying}
+            aria-label="Discard preview"
+            className="h-7 px-2 text-muted-foreground"
+          >
+            <X className="h-3.5 w-3.5" aria-hidden />
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Stages 1 & 2: trigger pill + picker popover. The pill anchors to
+  // the (debounced) original selection.
+  if (!settledSelection) {
     return null;
   }
 
   return (
-    <div ref={refs.setFloating} style={floatingStyles} className="z-50">
-      <Popover open={open} onOpenChange={setOpen}>
+    <div
+      ref={refs.setFloating}
+      style={floatingStyles}
+      data-mdcms-ai-bubble="trigger"
+      className="z-50"
+    >
+      <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
         <PopoverTrigger asChild>
           <Button
             type="button"
             size="sm"
             data-testid="inline-ai-bubble-trigger"
             aria-label="Open AI edit menu"
-            // Radix flips the trigger's `data-state` to "open" while the
-            // popover is mounted. Keeping the element in the DOM keeps
-            // it as the anchor for floating-ui calculations, but we hide
-            // it visually so the popover takes over the space cleanly.
+            // Radix flips the trigger's `data-state` to "open" while
+            // the popover is mounted. Keeping it in the DOM keeps it
+            // as the floating-ui anchor; we hide it visually so the
+            // popover takes over the space cleanly.
             className="shadow-md transition-opacity data-[state=open]:pointer-events-none data-[state=open]:opacity-0"
           >
             <Sparkles className="mr-1 h-3.5 w-3.5" aria-hidden /> Edit with AI
@@ -154,13 +385,20 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
           collisionPadding={8}
           data-mdcms-ai-bubble="panel"
           className="w-[22rem] p-0"
-          // The panel renders its own border/background; cancel the
-          // default popover-content padding/sizing so the panel fills.
         >
           <InlineAiPanel
-            {...panelProps}
-            selection={panelSelection}
-            onClose={() => setOpen(false)}
+            transform={transform}
+            hasSelection={Boolean(settledSelection)}
+            activeAction={activeAction}
+            onActiveActionChange={setActiveAction}
+            detail={detail}
+            onDetailChange={setDetail}
+            onSubmit={handleSubmit}
+            onClose={() => setPickerOpen(false)}
+            // The proposal preview lives in the editor now — hide the
+            // in-popover proposal/applying/applied views so we don't
+            // double up the UI.
+            hideProposalResult
             className="border-0 shadow-none"
           />
         </PopoverContent>

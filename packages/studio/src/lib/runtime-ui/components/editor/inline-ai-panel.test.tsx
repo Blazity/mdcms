@@ -3,33 +3,29 @@ import { test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { StudioAiRouteApi } from "../../../ai-route-api.js";
+import type { UseInlineAiTransformResult } from "../../hooks/use-inline-ai-transform.js";
 import { InlineAiPanel } from "./inline-ai-panel.js";
 
-function noopApi(): StudioAiRouteApi {
+function idleTransform(): UseInlineAiTransformResult {
   return {
-    inlineTransform: async () => {
-      throw new Error("not used in render test");
-    },
-    applyProposal: async () => {
-      throw new Error("not used in render test");
-    },
-    rejectProposal: async () => {
-      throw new Error("not used in render test");
-    },
+    state: { status: "idle" },
+    request: async () => {},
+    accept: async () => {},
+    reject: async () => {},
+    reset: () => {},
   };
 }
 
 test("InlineAiPanel renders the 6 selection-anchored copy edits", () => {
   const markup = renderToStaticMarkup(
     createElement(InlineAiPanel, {
-      api: noopApi(),
-      options: {
-        documentId: "doc_1",
-        draftRevision: 4,
-        schemaHash: "h_1",
-      },
-      selection: { id: "sel_1", text: "Welcome to the site." },
+      transform: idleTransform(),
+      hasSelection: true,
+      activeAction: "rewrite",
+      onActiveActionChange: () => {},
+      detail: "",
+      onDetailChange: () => {},
+      onSubmit: () => {},
     }),
   );
 
@@ -61,15 +57,86 @@ test("InlineAiPanel renders the 6 selection-anchored copy edits", () => {
 test("InlineAiPanel hints to select content when selection is missing", () => {
   const markup = renderToStaticMarkup(
     createElement(InlineAiPanel, {
-      api: noopApi(),
-      options: {
-        documentId: "doc_1",
-        draftRevision: 4,
-        schemaHash: "h_1",
-      },
-      selection: null,
+      transform: idleTransform(),
+      hasSelection: false,
+      activeAction: "rewrite",
+      onActiveActionChange: () => {},
+      detail: "",
+      onDetailChange: () => {},
+      onSubmit: () => {},
     }),
   );
 
   assert.match(markup, /Select editor text first/);
+});
+
+test("InlineAiPanel hides the proposal preview when hideProposalResult is set", () => {
+  const proposal = {
+    proposalId: "p_1",
+    kind: "replace_selection" as const,
+    project: "demo",
+    environment: "draft",
+    documentId: "doc_1",
+    baseDraftRevision: 4,
+    type: "post",
+    locale: "en",
+    summary: "Tighter intro.",
+    operations: [
+      {
+        op: "replace_selection" as const,
+        selectionId: "sel_1",
+        originalText: "Hello",
+        replacementText: "Hi.",
+      },
+    ],
+    validation: { status: "valid" as const },
+    expiresAt: "2026-05-01T00:05:00.000Z",
+    provider: {
+      providerId: "echo",
+      model: "echo-1",
+      promptTemplateId: "copy_improvement.v1",
+    },
+  };
+
+  const transform: UseInlineAiTransformResult = {
+    state: {
+      status: "proposal",
+      proposal,
+      intent: { action: "rewrite" },
+    },
+    request: async () => {},
+    accept: async () => {},
+    reject: async () => {},
+    reset: () => {},
+  };
+
+  const masked = renderToStaticMarkup(
+    createElement(InlineAiPanel, {
+      transform,
+      hasSelection: true,
+      activeAction: "rewrite",
+      onActiveActionChange: () => {},
+      detail: "",
+      onDetailChange: () => {},
+      onSubmit: () => {},
+      hideProposalResult: true,
+    }),
+  );
+
+  assert.doesNotMatch(masked, /Tighter intro/);
+  assert.doesNotMatch(masked, /Proposed replacement/);
+
+  const visible = renderToStaticMarkup(
+    createElement(InlineAiPanel, {
+      transform,
+      hasSelection: true,
+      activeAction: "rewrite",
+      onActiveActionChange: () => {},
+      detail: "",
+      onDetailChange: () => {},
+      onSubmit: () => {},
+    }),
+  );
+
+  assert.match(visible, /Tighter intro/);
 });

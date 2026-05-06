@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 
 import {
   AlertCircle,
@@ -25,13 +25,10 @@ import {
   type StudioAiProposal,
 } from "../../../ai-route-api.js";
 import {
-  useInlineAiTransform,
-  type InlineAiSelection,
   type InlineAiState,
   type InlineAiTransformIntent,
-  type InlineAiTransformOptions,
+  type UseInlineAiTransformResult,
 } from "../../hooks/use-inline-ai-transform.js";
-import type { StudioAiRouteApi } from "../../../ai-route-api.js";
 import { Button } from "../ui/button.js";
 import { Input } from "../ui/input.js";
 import { cn } from "../../lib/utils.js";
@@ -90,18 +87,29 @@ const INLINE_AI_ACTIONS: ReadonlyArray<InlineAiActionMeta> = [
 ];
 
 export type InlineAiPanelProps = {
-  api: StudioAiRouteApi;
-  options: InlineAiTransformOptions;
-  selection: InlineAiSelection | null;
-  onApplied?: (input: {
-    proposal: StudioAiProposal;
-    bodyAfter: string;
-  }) => void;
+  /**
+   * Transform state machine. Lifted out of the panel so the bubble
+   * can react to proposal/applied transitions and drive the inline
+   * editor preview from outside.
+   */
+  transform: UseInlineAiTransformResult;
+  hasSelection: boolean;
+  activeAction: StudioAiInlineAction;
+  onActiveActionChange: (action: StudioAiInlineAction) => void;
+  detail: string;
+  onDetailChange: (detail: string) => void;
+  onSubmit: () => void;
   onClose?: () => void;
+  /**
+   * Suppress the in-popover proposal preview / Accept / Reject
+   * controls when an external surface (e.g. the editor's inline
+   * preview) is already rendering them.
+   */
+  hideProposalResult?: boolean;
   className?: string;
 };
 
-function intentForAction(
+export function intentForInlineAction(
   action: StudioAiInlineAction,
   detail: string,
 ): InlineAiTransformIntent {
@@ -435,32 +443,24 @@ function ActionRow(props: {
 }
 
 export function InlineAiPanel(props: InlineAiPanelProps) {
-  const { api, options, selection, onApplied, onClose, className } = props;
-
-  const [activeAction, setActiveAction] =
-    useState<StudioAiInlineAction>("rewrite");
-  const [detail, setDetail] = useState<string>("");
-
-  const transform = useInlineAiTransform({
-    api,
-    options,
-    selection,
-    onApplied: onApplied
-      ? ({ proposal, document }) => {
-          onApplied({ proposal, bodyAfter: document.body });
-        }
-      : undefined,
-  });
+  const {
+    transform,
+    hasSelection,
+    activeAction,
+    onActiveActionChange,
+    detail,
+    onDetailChange,
+    onSubmit,
+    onClose,
+    hideProposalResult,
+    className,
+  } = props;
 
   const activeMeta = useMemo(
     () => INLINE_AI_ACTIONS.find((entry) => entry.id === activeAction)!,
     [activeAction],
   );
 
-  // Every inline action operates on a selection (per SPEC-014); the
-  // panel never appears without one in the floating bubble flow, but
-  // we guard here too in case the panel is mounted standalone.
-  const hasSelection = Boolean(selection);
   const requestDisabled =
     transform.state.status === "loading" ||
     transform.state.status === "applying" ||
@@ -470,13 +470,26 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
   const lastIntent: InlineAiTransformIntent =
     "intent" in transform.state && transform.state.intent
       ? (transform.state as { intent: InlineAiTransformIntent }).intent
-      : intentForAction(activeAction, detail.trim());
+      : intentForInlineAction(activeAction, detail.trim());
 
   const detailPlaceholder = "e.g. friendly, formal, concise";
 
   const isWorking =
     transform.state.status === "loading" ||
     transform.state.status === "applying";
+
+  // Mask the in-popover proposal/applying/applied views when the
+  // bubble is rendering them inline in the editor instead. The error,
+  // empty, validation_invalid, stale, forbidden and loading states
+  // remain in-popover regardless because there is no inline surface
+  // to fall back to for those.
+  const maskedState =
+    hideProposalResult &&
+    (transform.state.status === "proposal" ||
+      transform.state.status === "applying" ||
+      transform.state.status === "applied")
+      ? ({ status: "idle" } as InlineAiState)
+      : transform.state;
 
   return (
     <section
@@ -515,8 +528,8 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
             meta={entry}
             active={entry.id === activeAction}
             onSelect={() => {
-              setActiveAction(entry.id);
-              setDetail("");
+              onActiveActionChange(entry.id);
+              onDetailChange("");
             }}
           />
         ))}
@@ -534,7 +547,7 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
             aria-label={`${activeMeta.label} detail`}
             placeholder={detailPlaceholder}
             value={detail}
-            onChange={(event) => setDetail(event.target.value)}
+            onChange={(event) => onDetailChange(event.target.value)}
             className="h-8 text-xs"
           />
         ) : null}
@@ -547,9 +560,7 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
             type="button"
             size="sm"
             disabled={requestDisabled}
-            onClick={() =>
-              transform.request(intentForAction(activeAction, detail.trim()))
-            }
+            onClick={onSubmit}
             data-testid="inline-ai-request"
             className="h-8 shrink-0 px-3"
           >
@@ -572,7 +583,7 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
         </div>
 
         <InlineAiResultBody
-          state={transform.state}
+          state={maskedState}
           onAccept={transform.accept}
           onReject={transform.reject}
           onRetry={() => transform.request(lastIntent)}

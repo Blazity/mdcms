@@ -2916,18 +2916,22 @@ export function ContentDocumentPageView({
             />
           ) : null}
 
-          {state.status === "ready" && aiApi ? (
+          {state.status === "ready" && aiApi && editorRef ? (
             <InlineAiBubble
               api={aiApi}
               enabled={state.canAi === true}
               selection={aiSelection ?? null}
+              editorRef={
+                editorRef as React.RefObject<TipTapEditorHandle | null>
+              }
               options={{
                 documentId: state.documentId,
                 schemaHash: resolveSchemaHashForAi(state.schemaState),
               }}
               onApplied={
                 onAiProposalApplied
-                  ? ({ bodyAfter }) => onAiProposalApplied({ bodyAfter })
+                  ? ({ document }) =>
+                      onAiProposalApplied({ bodyAfter: document.body })
                   : undefined
               }
             />

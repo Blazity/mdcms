@@ -91,13 +91,55 @@ import { cn } from "../../lib/utils.js";
 
 export interface TipTapEditorHandle {
   setContent: (markdown: string) => void;
+  /**
+   * Replace a text range with the given replacement text and return
+   * the resulting range + anchor rect. Used by the inline AI flow to
+   * stage a proposal preview directly in the editor before the user
+   * accepts or rejects it.
+   *
+   * Returns `null` if the editor is unmounted, the range is invalid,
+   * or the document text at `[from, to)` no longer matches
+   * `expectedText` (set when the caller wants to abort if the user
+   * has typed in the meantime).
+   */
+  applyInlinePreview: (input: {
+    from: number;
+    to: number;
+    replacementText: string;
+    expectedText?: string;
+  }) => {
+    previewFrom: number;
+    previewTo: number;
+    anchorRect: TipTapEditorAnchorRect;
+  } | null;
+  /**
+   * Inverse of `applyInlinePreview`. Replaces the previewed range
+   * with `originalText` and returns the resulting anchor rect.
+   */
+  revertInlinePreview: (input: {
+    previewFrom: number;
+    previewTo: number;
+    originalText: string;
+  }) => { anchorRect: TipTapEditorAnchorRect } | null;
 }
+
+export type TipTapEditorAnchorRect = {
+  top: number;
+  left: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+};
 
 export type TipTapEditorSelectionInfo = {
   /** Stable id derived from the current selection range. */
   selectionId: string;
   /** Plain text inside the selection. */
   text: string;
+  /** ProseMirror document positions for the selection range. */
+  from: number;
+  to: number;
   /**
    * Viewport-relative rect for the selection's start/end coordinates.
    * Consumers can pass this to floating-ui (or use it directly) to
@@ -105,14 +147,7 @@ export type TipTapEditorSelectionInfo = {
    * `view.coordsAtPos(from)` and `view.coordsAtPos(to)` so multi-line
    * selections produce a rect that covers both ends.
    */
-  anchorRect: {
-    top: number;
-    left: number;
-    right: number;
-    bottom: number;
-    width: number;
-    height: number;
-  };
+  anchorRect: TipTapEditorAnchorRect;
 };
 
 interface TipTapEditorProps {
@@ -160,6 +195,40 @@ type ToolbarButtonProps = {
 };
 
 type TipTapEditorInstance = NonNullable<ReturnType<typeof useEditor>>;
+
+const ZERO_ANCHOR_RECT: TipTapEditorAnchorRect = {
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  width: 0,
+  height: 0,
+};
+
+function rectForRange(
+  editor: TipTapEditorInstance,
+  from: number,
+  to: number,
+): TipTapEditorAnchorRect {
+  try {
+    const fromCoords = editor.view.coordsAtPos(from);
+    const toCoords = editor.view.coordsAtPos(to);
+    const top = Math.min(fromCoords.top, toCoords.top);
+    const bottom = Math.max(fromCoords.bottom, toCoords.bottom);
+    const left = Math.min(fromCoords.left, toCoords.left);
+    const right = Math.max(fromCoords.right, toCoords.right);
+    return {
+      top,
+      left,
+      right,
+      bottom,
+      width: Math.max(right - left, 0),
+      height: Math.max(bottom - top, 0),
+    };
+  } catch {
+    return ZERO_ANCHOR_RECT;
+  }
+}
 
 function ToolbarButton({
   children,
@@ -379,36 +448,10 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           return;
         }
 
-        let anchorRect: TipTapEditorSelectionInfo["anchorRect"];
-
-        try {
-          const fromCoords = nextEditor.view.coordsAtPos(from);
-          const toCoords = nextEditor.view.coordsAtPos(to);
-          const top = Math.min(fromCoords.top, toCoords.top);
-          const bottom = Math.max(fromCoords.bottom, toCoords.bottom);
-          const left = Math.min(fromCoords.left, toCoords.left);
-          const right = Math.max(fromCoords.right, toCoords.right);
-          anchorRect = {
-            top,
-            left,
-            right,
-            bottom,
-            width: Math.max(right - left, 0),
-            height: Math.max(bottom - top, 0),
-          };
-        } catch {
-          // ProseMirror throws if the position is no longer in the
-          // document (e.g. between transactions). Fall back to a zero
-          // rect; the consumer will reposition on the next tick.
-          anchorRect = {
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            width: 0,
-            height: 0,
-          };
-        }
+        // ProseMirror's coordsAtPos throws if positions slip during a
+        // transaction; rectForRange catches that and returns a zero
+        // rect, and the consumer repositions on the next tick.
+        const anchorRect = rectForRange(nextEditor, from, to);
 
         // The selection id is derived from the range bounds + text so a
         // moved-but-identical selection still re-uses the same id and
@@ -421,7 +464,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
         }
 
         lastPublishedTextSelectionRef.current = fingerprint;
-        onSelectionTextChange({ selectionId, text, anchorRect });
+        onSelectionTextChange({ selectionId, text, from, to, anchorRect });
       },
     );
     const scheduleAuxSelectionUpdate = useEffectEvent(
@@ -664,6 +707,83 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           // since we suppressed the update event above.
           publishSelectedMdxComponent(editor);
           syncSlashTrigger(editor);
+        },
+        applyInlinePreview(input) {
+          if (!editor || editor.isDestroyed) {
+            return null;
+          }
+
+          const docSize = editor.state.doc.content.size;
+
+          if (input.from < 0 || input.to > docSize || input.from >= input.to) {
+            return null;
+          }
+
+          // Bail when the user has typed in the previewed range since
+          // the AI request started. The caller can fall back to
+          // showing the proposal in the popover instead.
+          if (typeof input.expectedText === "string") {
+            const live = editor.state.doc.textBetween(
+              input.from,
+              input.to,
+              "\n",
+              "\n",
+            );
+            if (live !== input.expectedText) {
+              return null;
+            }
+          }
+
+          const previewFrom = input.from;
+          const previewTo = input.from + input.replacementText.length;
+
+          editor
+            .chain()
+            .focus()
+            .insertContentAt(
+              { from: input.from, to: input.to },
+              input.replacementText,
+            )
+            .setTextSelection({ from: previewFrom, to: previewTo })
+            .run();
+
+          return {
+            previewFrom,
+            previewTo,
+            anchorRect: rectForRange(editor, previewFrom, previewTo),
+          };
+        },
+        revertInlinePreview(input) {
+          if (!editor || editor.isDestroyed) {
+            return null;
+          }
+
+          const docSize = editor.state.doc.content.size;
+
+          if (
+            input.previewFrom < 0 ||
+            input.previewTo > docSize ||
+            input.previewFrom > input.previewTo
+          ) {
+            return null;
+          }
+
+          const restoredFrom = input.previewFrom;
+          const restoredTo = input.previewFrom + input.originalText.length;
+
+          editor
+            .chain()
+            .focus()
+            .insertContentAt(
+              { from: input.previewFrom, to: input.previewTo },
+              input.originalText,
+            )
+            .setTextSelection({ from: restoredFrom, to: restoredTo })
+            .run();
+
+          return {
+            anchorRect: rectForRange(editor, restoredFrom, restoredTo),
+          };
         },
       }),
       [editor],
