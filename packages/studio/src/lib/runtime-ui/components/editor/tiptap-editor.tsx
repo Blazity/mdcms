@@ -54,7 +54,11 @@ import {
   Undo,
 } from "lucide-react";
 import { createEditorExtensions } from "../../../editor-extensions.js";
-import { extractMarkdownFromEditor } from "../../../markdown-pipeline.js";
+import {
+  extractMarkdownFromEditor,
+  parseMarkdownToDocument,
+  serializeDocumentToMarkdown,
+} from "../../../markdown-pipeline.js";
 import { MdxComponentExtension } from "../../../mdx-component-extension.js";
 import { CodeBlockWithNodeView } from "./code-block-node-view.js";
 import {
@@ -91,6 +95,14 @@ import { cn } from "../../lib/utils.js";
 
 export interface TipTapEditorHandle {
   setContent: (markdown: string) => void;
+  /**
+   * Returns the markdown serialization of the document slice between
+   * `from` and `to`. Block-level structure (lists, headings,
+   * paragraphs) is preserved so the AI sees the same shape the user
+   * sees. Returns `null` if the editor is unmounted or the range is
+   * invalid; returns an empty string for a collapsed range.
+   */
+  getSelectionMarkdown: (input: { from: number; to: number }) => string | null;
   /**
    * Replace a text range with the given replacement text and return
    * the resulting range + anchor rect. Used by the inline AI flow to
@@ -707,6 +719,26 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           publishSelectedMdxComponent(editor);
           syncSlashTrigger(editor);
         },
+        getSelectionMarkdown(input) {
+          if (!editor || editor.isDestroyed) {
+            return null;
+          }
+          const docSize = editor.state.doc.content.size;
+          if (input.from < 0 || input.to > docSize || input.from > input.to) {
+            return null;
+          }
+          if (input.from === input.to) {
+            return "";
+          }
+          const slice = editor.state.doc.slice(input.from, input.to, true);
+          const fragmentJson = slice.content.toJSON() as
+            | Array<Record<string, unknown>>
+            | undefined;
+          return serializeDocumentToMarkdown({
+            type: "doc",
+            content: fragmentJson ?? [],
+          });
+        },
         applyInlinePreview(input) {
           if (!editor || editor.isDestroyed) {
             return null;
@@ -744,16 +776,37 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             true,
           );
 
+          // The replacement is treated as markdown (per SPEC-014's
+          // markdown-in/markdown-out contract). Parse it via the same
+          // markdown pipeline the editor uses, then insert the parsed
+          // block content so list / heading / paragraph structure is
+          // preserved instead of flattened to text.
+          const parsedDoc = parseMarkdownToDocument(input.replacementText);
+          const replacementBlocks = (parsedDoc.content ?? []) as Array<
+            Record<string, unknown>
+          >;
+
           const previewFrom = input.from;
-          const previewTo = input.from + input.replacementText.length;
+          const sizeBefore = editor.state.doc.content.size;
 
           editor
             .chain()
             .focus()
             .insertContentAt(
               { from: input.from, to: input.to },
-              input.replacementText,
+              replacementBlocks,
             )
+            .run();
+
+          const sizeAfter = editor.state.doc.content.size;
+          // Replaced range was (input.to - input.from); the inserted
+          // content's contribution is sizeAfter - sizeBefore + (input.to - input.from).
+          const previewTo =
+            input.from + (sizeAfter - sizeBefore) + (input.to - input.from);
+
+          editor
+            .chain()
+            .focus()
             .setTextSelection({ from: previewFrom, to: previewTo })
             .run();
 

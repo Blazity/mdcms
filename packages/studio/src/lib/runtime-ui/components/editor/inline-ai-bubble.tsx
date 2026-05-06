@@ -23,11 +23,7 @@ import type {
   TipTapEditorHandle,
   TipTapEditorSelectionInfo,
 } from "./tiptap-editor.js";
-import {
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-} from "../ui/popover.js";
+import { Popover, PopoverAnchor, PopoverContent } from "../ui/popover.js";
 import { cn } from "../../lib/utils.js";
 
 export type InlineAiBubbleProps = {
@@ -177,13 +173,41 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
     }
   }, [settledSelection, preview]);
 
+  // Serialize the selection as markdown so block structure (bullet
+  // lists, headings, paragraphs) survives the round-trip through the
+  // model. Falls back to the plain selection text only if the editor
+  // markdown serializer is unavailable. Memoized by selection id so
+  // we don't re-spin a transient editor on every render.
+  const lastSerializedRef = useRef<{ id: string; markdown: string } | null>(
+    null,
+  );
+  const selectionMarkdown = useMemo(() => {
+    if (!settledSelection) {
+      lastSerializedRef.current = null;
+      return null;
+    }
+    if (lastSerializedRef.current?.id === settledSelection.selectionId) {
+      return lastSerializedRef.current.markdown;
+    }
+    const markdown =
+      editorRef.current?.getSelectionMarkdown({
+        from: settledSelection.from,
+        to: settledSelection.to,
+      }) ?? settledSelection.text;
+    lastSerializedRef.current = {
+      id: settledSelection.selectionId,
+      markdown,
+    };
+    return markdown;
+  }, [settledSelection, editorRef]);
+
   const transform = useInlineAiTransform({
     api,
     options,
     selection: settledSelection
       ? {
           id: settledSelection.selectionId,
-          text: settledSelection.text,
+          text: selectionMarkdown ?? settledSelection.text,
         }
       : null,
     onApplied,

@@ -171,13 +171,13 @@ const definitions: Record<AiTaskKind, AiTaskDefinition> = {
     kind: "copy_improvement",
     promptTemplateId: "copy_improvement.v1",
     system:
-      "You revise selected document copy. Return only valid JSON matching the requested schema. Do not invent facts or alter unrelated content.",
+      "You revise selected document copy. The input selection is GitHub-flavored Markdown — block structure (bullet lists, ordered lists, headings, blockquotes, paragraph breaks) may be present. Your replacement MUST be valid Markdown that preserves the same block structure as the input unless the requested action explicitly changes it (e.g., 'shorten' may collapse multiple bullets into one). Echo the original markdown exactly into `originalText` and write the new markdown into `replacementText`. Return only valid JSON matching the requested schema. Do not invent facts or alter unrelated content.",
     buildUserPrompt: (input) =>
       [
         formatLocaleHint(input),
         input.tone ? `Tone: ${input.tone}.` : null,
         input.instruction ? `Instruction: ${input.instruction}.` : null,
-        `Original selection:\n${input.selectionText ?? ""}`,
+        `Original selection (Markdown):\n${input.selectionText ?? ""}`,
       ]
         .filter((line): line is string => line !== null)
         .join("\n"),
