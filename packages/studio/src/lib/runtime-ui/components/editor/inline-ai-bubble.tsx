@@ -20,6 +20,7 @@ import type {
 } from "./tiptap-editor.js";
 import { Button } from "../ui/button.js";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover.js";
+import { cn } from "../../lib/utils.js";
 
 export type InlineAiBubbleProps = {
   api: StudioAiRouteApi;
@@ -364,19 +365,32 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
     >
       <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
         <PopoverTrigger asChild>
-          <Button
+          <button
             type="button"
-            size="sm"
             data-testid="inline-ai-bubble-trigger"
             aria-label="Open AI edit menu"
-            // Radix flips the trigger's `data-state` to "open" while
-            // the popover is mounted. Keeping it in the DOM keeps it
-            // as the floating-ui anchor; we hide it visually so the
-            // popover takes over the space cleanly.
-            className="shadow-md transition-opacity data-[state=open]:pointer-events-none data-[state=open]:opacity-0"
+            // Refined floating pill: glassy card surface + primary
+            // tinted ring + soft glow. Reads as an AI affordance
+            // without the visual weight of a primary action button.
+            // Radix flips `data-state` to "open" while the popover is
+            // mounted; keeping the pill in the DOM keeps it as the
+            // floating-ui anchor while we hide it visually.
+            className={cn(
+              "group inline-flex h-8 items-center gap-1.5 rounded-full",
+              "border border-primary/30 bg-card/90 px-3 text-xs font-medium text-foreground",
+              "shadow-lg shadow-primary/10 backdrop-blur-sm",
+              "transition-all duration-150",
+              "hover:border-primary/60 hover:bg-card hover:shadow-primary/20",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+              "data-[state=open]:pointer-events-none data-[state=open]:opacity-0",
+            )}
           >
-            <Sparkles className="mr-1 h-3.5 w-3.5" aria-hidden /> Edit with AI
-          </Button>
+            <Sparkles
+              className="h-3.5 w-3.5 text-primary transition-transform duration-150 group-hover:scale-110"
+              aria-hidden
+            />
+            Edit with AI
+          </button>
         </PopoverTrigger>
         <PopoverContent
           align="start"

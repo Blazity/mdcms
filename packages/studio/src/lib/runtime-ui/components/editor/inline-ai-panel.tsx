@@ -552,17 +552,14 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
           />
         ) : null}
 
-        <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-[11px] text-muted-foreground">
-            {activeMeta.description}
-          </p>
+        <div className="flex justify-end">
           <Button
             type="button"
             size="sm"
             disabled={requestDisabled}
             onClick={onSubmit}
             data-testid="inline-ai-request"
-            className="h-8 shrink-0 px-3"
+            className="h-8 px-3"
           >
             {isWorking ? (
               <>
