@@ -27,7 +27,6 @@ import {
   Popover,
   PopoverAnchor,
   PopoverContent,
-  PopoverTrigger,
 } from "../ui/popover.js";
 import { cn } from "../../lib/utils.js";
 
@@ -397,23 +396,17 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
     return null;
   }
 
+  // The picker popover and the trigger pill are rendered as siblings:
+  // the pill is positioned via floating-ui inside a transform'd div,
+  // and CSS spec says `position: fixed` descendants of a transformed
+  // ancestor are positioned relative to the ancestor — not the
+  // viewport. Putting the popover-anchor div *inside* that transformed
+  // div would mis-anchor the picker. Lifting both Popover and Anchor
+  // up to the bubble root keeps the anchor's fixed coords viewport-
+  // relative as expected.
   return (
-    <div
-      ref={refs.setFloating}
-      style={floatingStyles}
-      data-mdcms-ai-bubble="trigger"
-      className="z-50"
-    >
+    <>
       <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-        {/*
-          Decouple the popover's anchor from the trigger pill: the
-          pill sits above the selection (so it doesn't cover the
-          selected text), but the picker dropdown is anchored to the
-          bottom edge of the selection so it always opens below the
-          highlight. Radix needs a real DOM node here, not a virtual
-          ref — render an invisible fixed-position div at the bottom
-          edge of the selection.
-        */}
         <PopoverAnchor asChild>
           <div
             aria-hidden
@@ -427,45 +420,6 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
             }}
           />
         </PopoverAnchor>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            data-testid="inline-ai-bubble-trigger"
-            aria-label="Open AI edit menu"
-            // Refined floating pill: glassy backdrop-blur surface,
-            // primary-tinted border + glow, sparkle leading icon.
-            // Reads as an AI affordance, not a primary CTA. Radix
-            // flips `data-state` to "open" while the popover is
-            // mounted; we keep the pill in the DOM to preserve its
-            // role as floating-ui anchor and just hide it visually.
-            className={cn(
-              "group inline-flex items-center gap-1.5 rounded-full",
-              "px-3 py-1.5 text-xs font-semibold",
-              "border bg-card/80 backdrop-blur-md",
-              "border-primary/45 text-primary",
-              "shadow-[0_1px_2px_rgba(0,0,0,0.18),0_16px_32px_-16px_rgba(47,73,229,0.55)]",
-              "transition-all duration-150",
-              "hover:border-primary/70 hover:bg-card",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
-              "data-[state=open]:pointer-events-none data-[state=open]:opacity-0",
-            )}
-          >
-            <Sparkles
-              className="h-3.5 w-3.5 transition-transform duration-150 group-hover:scale-110"
-              aria-hidden
-            />
-            Edit with AI
-            <kbd
-              aria-hidden
-              className={cn(
-                "ml-1 rounded-sm font-mono text-[9px] tracking-[0.04em]",
-                "bg-primary/10 px-1.5 py-px text-primary",
-              )}
-            >
-              ⌘ J
-            </kbd>
-          </button>
-        </PopoverTrigger>
         <PopoverContent
           align="start"
           side="bottom"
@@ -487,6 +441,56 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
           />
         </PopoverContent>
       </Popover>
-    </div>
+
+      <div
+        ref={refs.setFloating}
+        style={floatingStyles}
+        data-mdcms-ai-bubble="trigger"
+        className={cn(
+          "z-50",
+          // Hide the pill while the picker is open so the affordance
+          // doesn't double up. Kept in the DOM so floating-ui can
+          // continue tracking the selection rect via autoUpdate.
+          pickerOpen && "pointer-events-none opacity-0",
+        )}
+      >
+        <button
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={pickerOpen}
+          onClick={() => setPickerOpen((open) => !open)}
+          data-testid="inline-ai-bubble-trigger"
+          aria-label="Open AI edit menu"
+          // Glassy backdrop-blur pill, primary-tinted border + glow,
+          // sparkle leading icon. Reads as an AI affordance, not a
+          // primary CTA.
+          className={cn(
+            "group inline-flex items-center gap-1.5 rounded-full",
+            "px-3 py-1.5 text-xs font-semibold",
+            "border bg-card/80 backdrop-blur-md",
+            "border-primary/45 text-primary",
+            "shadow-[0_1px_2px_rgba(0,0,0,0.18),0_16px_32px_-16px_rgba(47,73,229,0.55)]",
+            "transition-all duration-150",
+            "hover:border-primary/70 hover:bg-card",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+          )}
+        >
+          <Sparkles
+            className="h-3.5 w-3.5 transition-transform duration-150 group-hover:scale-110"
+            aria-hidden
+          />
+          Edit with AI
+          <kbd
+            aria-hidden
+            className={cn(
+              "ml-1 rounded-sm font-mono text-[9px] tracking-[0.04em]",
+              "bg-primary/10 px-1.5 py-px text-primary",
+            )}
+          >
+            ⌘ J
+          </kbd>
+        </button>
+      </div>
+    </>
   );
 }
