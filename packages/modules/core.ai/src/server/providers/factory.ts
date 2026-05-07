@@ -20,8 +20,9 @@ export const GROQ_BASE_URL_ENV_KEY = "GROQ_BASE_URL" as const;
  * - "groq" → real Groq adapter via `@ai-sdk/groq`. Reads
  *   `GROQ_API_KEY` (required), optional `AI_MODEL`
  *   (defaults to `GROQ_PROVIDER_DEFAULT_MODEL`, currently
- *   `openai/gpt-oss-20b` — chosen because it supports Groq's
- *   `response_format: json_schema` strict mode), and optional
+ *   `openai/gpt-oss-120b` — chosen because it supports Groq's
+ *   `response_format: json_schema` strict mode and produces
+ *   noticeably better copy edits than the 20b variant), and optional
  *   `GROQ_BASE_URL` for proxies.
  * - Any other id is reserved for future AI SDK provider package
  *   adapters and currently throws `AI_PROVIDER_UNAVAILABLE` so callers

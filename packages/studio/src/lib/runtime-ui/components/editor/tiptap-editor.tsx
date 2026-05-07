@@ -27,6 +27,7 @@ import {
   useEditorState,
   type ReactNodeViewProps,
 } from "@tiptap/react";
+import { Fragment, Slice } from "@tiptap/pm/model";
 
 import {
   Bold,
@@ -783,12 +784,21 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           if (input.from === input.to) {
             return { text: "", mode: "text" };
           }
-          const slice = editor.state.doc.slice(input.from, input.to, true);
-          // openStart/openEnd > 0 means the slice cuts through a block
-          // node at one end (e.g. the user selected partway into a
-          // bullet item). Standalone markdown can't express that, so
-          // return plain text and let the caller apply it inline.
-          if (slice.openStart > 0 || slice.openEnd > 0) {
+
+          // Decide markdown vs text by whether the cut is at a clean
+          // block boundary, NOT by the slice's open depth. Whole-bullet
+          // selections still have openStart/openEnd > 0 because the
+          // cuts are inside a paragraph inside a listItem inside a
+          // bulletList — but parentOffset === 0 at `from` and
+          // parentOffset === parent.content.size at `to` means we're
+          // structurally aligned and markdown round-trips cleanly.
+          const $from = editor.state.doc.resolve(input.from);
+          const $to = editor.state.doc.resolve(input.to);
+          const fromAtParentStart = $from.parentOffset === 0;
+          const toAtParentEnd = $to.parentOffset === $to.parent.content.size;
+          const isWholeBlockCut = fromAtParentStart && toAtParentEnd;
+
+          if (!isWholeBlockCut) {
             return {
               text: editor.state.doc.textBetween(
                 input.from,
@@ -799,6 +809,8 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
               mode: "text",
             };
           }
+
+          const slice = editor.state.doc.slice(input.from, input.to, true);
           const fragmentJson = slice.content.toJSON() as
             | Array<Record<string, unknown>>
             | undefined;
@@ -852,23 +864,30 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           const mode = input.mode ?? "text";
 
           if (mode === "markdown") {
-            // The replacement is treated as markdown — only safe when
-            // the original selection spanned complete blocks (the
-            // caller decides via getSelectionMarkdown's mode field).
-            // Parsing markdown and inserting at a mid-block position
-            // would spawn a nested list; the caller must avoid that.
+            // Parse the AI's reply via the same markdown pipeline the
+            // editor uses, then build a ProseMirror Slice whose open
+            // depths MATCH the original cut. tr.replace fits the slice
+            // into the same structural context — so a whole-bullet
+            // selection's replacement splices listItems into the
+            // existing list instead of nesting a new bulletList inside
+            // it (the symptom that merged two bullets into one).
             const parsedDoc = parseMarkdownToDocument(input.replacementText);
-            const replacementBlocks = (parsedDoc.content ?? []) as Array<
-              Record<string, unknown>
-            >;
-            editor
-              .chain()
-              .focus()
-              .insertContentAt(
-                { from: input.from, to: input.to },
-                replacementBlocks,
-              )
-              .run();
+            const parsedFragment = Fragment.fromJSON(
+              editor.schema,
+              (parsedDoc.content ?? []) as Array<Record<string, unknown>>,
+            );
+            const newSlice = new Slice(
+              parsedFragment,
+              originalSlice.openStart,
+              originalSlice.openEnd,
+            );
+            const tr = editor.state.tr.replace(
+              input.from,
+              input.to,
+              newSlice,
+            );
+            editor.view.dispatch(tr);
+            editor.commands.focus();
           } else {
             // Plain-text mode — insert as inline content so the
             // surrounding block structure (the parent list item,
