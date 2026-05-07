@@ -180,32 +180,37 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
     }
   }, [settledSelection, preview]);
 
-  // Serialize the selection as markdown so block structure (bullet
-  // lists, headings, paragraphs) survives the round-trip through the
-  // model. Falls back to the plain selection text only if the editor
-  // markdown serializer is unavailable. Memoized by selection id so
-  // we don't re-spin a transient editor on every render.
-  const lastSerializedRef = useRef<{ id: string; markdown: string } | null>(
-    null,
-  );
-  const selectionMarkdown = useMemo(() => {
+  // Serialize the selection for AI input. Whole-block selections get
+  // full markdown round-tripping (lists, headings preserved); mid-
+  // block selections fall back to plain text so the surrounding block
+  // structure is left alone on apply. Memoized by selection id so we
+  // don't re-spin a transient editor on every render.
+  const lastSerializedRef = useRef<{
+    id: string;
+    text: string;
+    mode: "markdown" | "text";
+  } | null>(null);
+  const selectionPayload = useMemo(() => {
     if (!settledSelection) {
       lastSerializedRef.current = null;
       return null;
     }
     if (lastSerializedRef.current?.id === settledSelection.selectionId) {
-      return lastSerializedRef.current.markdown;
+      return lastSerializedRef.current;
     }
-    const markdown =
-      editorRef.current?.getSelectionMarkdown({
-        from: settledSelection.from,
-        to: settledSelection.to,
-      }) ?? settledSelection.text;
-    lastSerializedRef.current = {
+    const result = editorRef.current?.getSelectionMarkdown({
+      from: settledSelection.from,
+      to: settledSelection.to,
+    });
+    const payload = {
       id: settledSelection.selectionId,
-      markdown,
+      text: result?.text ?? settledSelection.text,
+      // Default to "text" if the editor handle is unavailable (e.g.
+      // unmounted) — apply preview will preserve surrounding blocks.
+      mode: result?.mode ?? ("text" as const),
     };
-    return markdown;
+    lastSerializedRef.current = payload;
+    return payload;
   }, [settledSelection, editorRef]);
 
   const transform = useInlineAiTransform({
@@ -214,7 +219,7 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
     selection: settledSelection
       ? {
           id: settledSelection.selectionId,
-          text: selectionMarkdown ?? settledSelection.text,
+          text: selectionPayload?.text ?? settledSelection.text,
         }
       : null,
     onApplied,
@@ -246,6 +251,11 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
       to: settledSelection.to,
       replacementText: operation.replacementText,
       expectedText: settledSelection.text,
+      // Match the apply mode to what the bubble sent for this
+      // selection. Mid-block selections were sent as plain text and
+      // must be applied as plain text — markdown parsing of a
+      // mid-block range produces nested lists.
+      mode: selectionPayload?.mode ?? "text",
     });
 
     if (!result) {

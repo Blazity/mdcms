@@ -171,7 +171,7 @@ const definitions: Record<AiTaskKind, AiTaskDefinition> = {
     kind: "copy_improvement",
     promptTemplateId: "copy_improvement.v1",
     system:
-      "You revise selected document copy. The input selection is GitHub-flavored Markdown — block structure (bullet lists, ordered lists, headings, blockquotes, paragraph breaks) may be present. Your replacement MUST be valid Markdown that preserves the same block structure as the input unless the requested action explicitly changes it (e.g., 'shorten' may collapse multiple bullets into one). Echo the original markdown exactly into `originalText` and write the new markdown into `replacementText`. Return only valid JSON matching the requested schema. Do not invent facts or alter unrelated content.",
+      "You revise selected document copy. The input selection may be either: (a) standalone Markdown spanning complete blocks (bullet lists, headings, paragraphs) — preserve that block structure unless the requested action implies collapsing it (e.g., 'shorten' may merge bullets); or (b) a plain-text fragment from inside a single block (a partial sentence or partial bullet) — in that case respond with plain text only, never add Markdown block markers like '- ', '* ', '# ', or '> ', because the host editor will insert your reply inline within the surrounding block. If the input has no Markdown markers, treat it as plain text. Echo the original input exactly into `originalText` and write the new content into `replacementText`. Return only valid JSON matching the requested schema. Do not invent facts or alter unrelated content.",
     buildUserPrompt: (input) =>
       [
         formatLocaleHint(input),

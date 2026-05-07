@@ -97,12 +97,28 @@ export interface TipTapEditorHandle {
   setContent: (markdown: string) => void;
   /**
    * Returns the markdown serialization of the document slice between
-   * `from` and `to`. Block-level structure (lists, headings,
-   * paragraphs) is preserved so the AI sees the same shape the user
-   * sees. Returns `null` if the editor is unmounted or the range is
-   * invalid; returns an empty string for a collapsed range.
+   * `from` and `to`, plus the mode the caller should use when
+   * applying the AI's reply.
+   *
+   * - `mode: "markdown"` — the slice spans complete blocks
+   *   (`openStart` and `openEnd` are 0). Block-level structure
+   *   (lists, headings, paragraphs) is preserved by serializing the
+   *   slice through the markdown pipeline. The replacement should be
+   *   parsed as markdown and inserted as nodes.
+   * - `mode: "text"` — the selection starts or ends mid-block, so
+   *   it can't be expressed as standalone markdown without
+   *   inventing parent structure. Returns plain text via
+   *   `textBetween` and the replacement should be applied as plain
+   *   text so the surrounding block structure (the parent list
+   *   item, heading, etc.) is preserved by NOT being mutated.
+   *
+   * Returns `null` if the editor is unmounted or the range is
+   * invalid.
    */
-  getSelectionMarkdown: (input: { from: number; to: number }) => string | null;
+  getSelectionMarkdown: (input: { from: number; to: number }) => {
+    text: string;
+    mode: "markdown" | "text";
+  } | null;
   /**
    * Replace a text range with the given replacement text and return
    * the resulting range + anchor rect. Used by the inline AI flow to
@@ -119,6 +135,20 @@ export interface TipTapEditorHandle {
     to: number;
     replacementText: string;
     expectedText?: string;
+    /**
+     * Determines how the replacement is inserted:
+     *
+     * - `"markdown"` — `replacementText` is parsed via the markdown
+     *   pipeline and inserted as block nodes. Used when the original
+     *   selection spanned complete blocks.
+     * - `"text"` — `replacementText` is inserted as inline plain
+     *   text, so the surrounding block structure (lists, headings)
+     *   is preserved.
+     *
+     * Defaults to `"text"` for safety — markdown parsing of a
+     * mid-block range can spawn nested lists.
+     */
+    mode?: "markdown" | "text";
   }) => {
     previewFrom: number;
     previewTo: number;
@@ -239,6 +269,29 @@ function rectForRange(
   } catch {
     return ZERO_ANCHOR_RECT;
   }
+}
+
+/**
+ * Strip leading markdown block markers (`-`, `*`, `1.`, `>`, `#`)
+ * from each line so a model that ignores the "plain text in/out"
+ * instruction doesn't end up writing literal `- ` into a list item.
+ * Multi-line text is collapsed onto single newlines that ProseMirror's
+ * plain-text insert handles as soft breaks within the surrounding
+ * block.
+ *
+ * Exported for testing.
+ */
+export function stripBlockMarkers(text: string): string {
+  return text
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(/^\s*([-*+])\s+/, "")
+        .replace(/^\s*\d+\.\s+/, "")
+        .replace(/^\s*>\s?/, "")
+        .replace(/^\s*#{1,6}\s+/, ""),
+    )
+    .join("\n");
 }
 
 function ToolbarButton({
@@ -728,16 +781,34 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             return null;
           }
           if (input.from === input.to) {
-            return "";
+            return { text: "", mode: "text" };
           }
           const slice = editor.state.doc.slice(input.from, input.to, true);
+          // openStart/openEnd > 0 means the slice cuts through a block
+          // node at one end (e.g. the user selected partway into a
+          // bullet item). Standalone markdown can't express that, so
+          // return plain text and let the caller apply it inline.
+          if (slice.openStart > 0 || slice.openEnd > 0) {
+            return {
+              text: editor.state.doc.textBetween(
+                input.from,
+                input.to,
+                "\n",
+                "\n",
+              ),
+              mode: "text",
+            };
+          }
           const fragmentJson = slice.content.toJSON() as
             | Array<Record<string, unknown>>
             | undefined;
-          return serializeDocumentToMarkdown({
-            type: "doc",
-            content: fragmentJson ?? [],
-          });
+          return {
+            text: serializeDocumentToMarkdown({
+              type: "doc",
+              content: fragmentJson ?? [],
+            }),
+            mode: "markdown",
+          };
         },
         applyInlinePreview(input) {
           if (!editor || editor.isDestroyed) {
@@ -776,27 +847,41 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             true,
           );
 
-          // The replacement is treated as markdown (per SPEC-014's
-          // markdown-in/markdown-out contract). Parse it via the same
-          // markdown pipeline the editor uses, then insert the parsed
-          // block content so list / heading / paragraph structure is
-          // preserved instead of flattened to text.
-          const parsedDoc = parseMarkdownToDocument(input.replacementText);
-          const replacementBlocks = (parsedDoc.content ?? []) as Array<
-            Record<string, unknown>
-          >;
-
           const previewFrom = input.from;
           const sizeBefore = editor.state.doc.content.size;
+          const mode = input.mode ?? "text";
 
-          editor
-            .chain()
-            .focus()
-            .insertContentAt(
-              { from: input.from, to: input.to },
-              replacementBlocks,
-            )
-            .run();
+          if (mode === "markdown") {
+            // The replacement is treated as markdown — only safe when
+            // the original selection spanned complete blocks (the
+            // caller decides via getSelectionMarkdown's mode field).
+            // Parsing markdown and inserting at a mid-block position
+            // would spawn a nested list; the caller must avoid that.
+            const parsedDoc = parseMarkdownToDocument(input.replacementText);
+            const replacementBlocks = (parsedDoc.content ?? []) as Array<
+              Record<string, unknown>
+            >;
+            editor
+              .chain()
+              .focus()
+              .insertContentAt(
+                { from: input.from, to: input.to },
+                replacementBlocks,
+              )
+              .run();
+          } else {
+            // Plain-text mode — insert as inline content so the
+            // surrounding block structure (the parent list item,
+            // heading, paragraph) is preserved. We strip any leading
+            // markdown block markers the model may have added back so
+            // they don't end up as literal text in a list item.
+            const sanitized = stripBlockMarkers(input.replacementText);
+            editor
+              .chain()
+              .focus()
+              .insertContentAt({ from: input.from, to: input.to }, sanitized)
+              .run();
+          }
 
           const sizeAfter = editor.state.doc.content.size;
           // Replaced range was (input.to - input.from); the inserted

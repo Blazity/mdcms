@@ -304,7 +304,7 @@ function ToneFlyout(props: {
   // doesn't fit the viewport vertically, size() caps its max-height
   // and the inner overflow-y-auto lets the user scroll through tones.
   // The user's request: never reposition; allow scroll instead.
-  const { refs, floatingStyles } = useFloating({
+  const { refs, floatingStyles, isPositioned } = useFloating({
     placement: "right-start",
     strategy: "fixed",
     elements: { reference: props.anchorEl ?? undefined },
@@ -339,7 +339,13 @@ function ToneFlyout(props: {
       className={cn(
         "z-[65] flex w-[200px] flex-col overflow-y-auto",
         "rounded-lg border border-border bg-popover p-1.5 shadow-lg",
-        "animate-in fade-in-0 zoom-in-95",
+        // Hide the flyout until floating-ui has measured the anchor
+        // and applied the final transform. Without this, the entrance
+        // animation plays from (0, 0) and the flyout appears to teleport
+        // into place a frame later.
+        isPositioned
+          ? "opacity-100 transition-opacity duration-150"
+          : "pointer-events-none opacity-0",
       )}
     >
       <div className="px-2 pb-1.5 pt-1 font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
