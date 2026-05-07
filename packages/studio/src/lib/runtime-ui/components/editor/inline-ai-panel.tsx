@@ -314,8 +314,15 @@ function ToneFlyout(props: {
       size({
         padding: 8,
         apply({ availableHeight, elements }) {
+          // Cap the flyout at its natural content height (~6 tones
+          // + header) when there's room, and shrink to the available
+          // space when constrained so it never overflows the viewport.
+          // Using Math.max(140, availableHeight) was the reverse —
+          // it ignored a smaller availableHeight and let the flyout
+          // exceed the viewport bottom.
+          const NATURAL_MAX_PX = 280;
           Object.assign(elements.floating.style, {
-            maxHeight: `${Math.max(140, availableHeight)}px`,
+            maxHeight: `${Math.min(NATURAL_MAX_PX, availableHeight)}px`,
           });
         },
       }),

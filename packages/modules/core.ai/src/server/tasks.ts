@@ -77,6 +77,19 @@ function makeOutputSchema(
   // JSON-Schema modes (e.g. Groq, OpenAI Structured Outputs) reject
   // unions that contain variants with optional fields that aren't
   // listed in `required`.
+  //
+  // z.discriminatedUnion fails opaquely on duplicate discriminator
+  // values; surface a clear error so misconfigured task definitions
+  // don't show up as a confusing zod runtime crash.
+  const uniqueOps = new Set(allowedOps);
+  if (uniqueOps.size !== allowedOps.length) {
+    const duplicates = allowedOps.filter(
+      (op, idx) => allowedOps.indexOf(op) !== idx,
+    );
+    throw new Error(
+      `makeOutputSchema: allowedOps must be unique. Duplicate op(s): ${[...new Set(duplicates)].join(", ")}.`,
+    );
+  }
   const variantSchemas = allowedOps.map(
     (op) => aiProposalOperationSchemaByOp[op],
   );

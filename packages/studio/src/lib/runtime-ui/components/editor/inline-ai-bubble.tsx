@@ -276,11 +276,30 @@ export function InlineAiBubble(props: InlineAiBubbleProps) {
     setPickerOpen(false);
   }, [transform.state, preview, editorRef, settledSelection]);
 
-  // After accept (apply succeeds), drop the preview and let the
-  // bubble fall back to its trigger pill at the new range.
+  // After accept resolves, drop the inline preview. On success
+  // ("applied") the bubble falls back to the trigger pill at the new
+  // range. On terminal failure ("stale" / "forbidden" / "error" /
+  // "validation_invalid") the apply did NOT persist, so we revert
+  // the in-editor preview to the original slice and clear the
+  // preview state — the picker reopens carrying the failure status,
+  // letting the user retry or dismiss instead of leaving the editor
+  // showing the AI's text as if it had been accepted.
   useEffect(() => {
-    if (transform.state.status === "applied" && preview) {
+    if (!preview) return;
+    const status = transform.state.status;
+    if (status === "applied") {
       setPreview(null);
+      return;
+    }
+    if (
+      status === "stale" ||
+      status === "forbidden" ||
+      status === "error" ||
+      status === "validation_invalid"
+    ) {
+      preview.revert();
+      setPreview(null);
+      setPickerOpen(true);
     }
   }, [transform.state, preview]);
 

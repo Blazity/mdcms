@@ -2916,7 +2916,10 @@ export function ContentDocumentPageView({
             />
           ) : null}
 
-          {state.status === "ready" && aiApi && editorRef ? (
+          {state.status === "ready" &&
+          aiApi &&
+          editorRef &&
+          !state.viewingVersion ? (
             <InlineAiBubble
               api={aiApi}
               enabled={state.canAi === true}
@@ -4088,6 +4091,11 @@ export default function ContentDocumentPage({
             ? {
                 ...current,
                 draftBody: bodyAfter,
+                // Sync the persisted snapshot too — otherwise
+                // saved/unsaved comparisons (draftBody vs
+                // document.body) would treat the just-applied AI
+                // change as a fresh local edit.
+                document: { ...current.document, body: bodyAfter },
                 saveState: "saved",
                 mutationError: undefined,
               }
