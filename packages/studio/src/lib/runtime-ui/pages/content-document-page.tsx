@@ -47,7 +47,13 @@ import {
 import {
   TipTapEditor,
   type TipTapEditorHandle,
+  type TipTapEditorSelectionInfo,
 } from "../components/editor/tiptap-editor.js";
+import { InlineAiBubble } from "../components/editor/inline-ai-bubble.js";
+import {
+  createStudioAiRouteApi,
+  type StudioAiRouteApi,
+} from "../../ai-route-api.js";
 import { BreadcrumbTrail } from "../components/layout/page-header.js";
 import { Badge } from "../components/ui/badge.js";
 import { Button } from "../components/ui/button.js";
@@ -166,6 +172,12 @@ export type ContentDocumentPageReadyState = {
   saveRequestFrontmatter?: Record<string, unknown>;
   canWrite: boolean;
   writeMessage?: string;
+  /**
+   * Mirrors `capabilities.ai.use` for the routed project/environment.
+   * When false, the AI sidebar tab is hidden and inline transforms are
+   * not requestable.
+   */
+  canAi?: boolean;
   publishDialogOpen: boolean;
   publishChangeSummary: string;
   publishState: "idle" | "publishing";
@@ -277,6 +289,10 @@ type ContentDocumentPageViewProps = {
   onLocaleSwitch?: (locale: string) => void;
   onCreateVariant?: (prefill: boolean) => void;
   onCancelVariantCreation?: () => void;
+  aiSelection?: TipTapEditorSelectionInfo | null;
+  onAiSelectionChange?: (selection: TipTapEditorSelectionInfo | null) => void;
+  aiApi?: StudioAiRouteApi;
+  onAiProposalApplied?: (input: { bodyAfter: string }) => void;
 };
 
 /** Captures the routed document identity used to reject stale async results. */
@@ -714,6 +730,25 @@ function createLoadingState(input: {
   };
 }
 
+function resolveContentDocumentAiCapability(input: {
+  schemaState?: StudioSchemaState;
+}): boolean {
+  const schemaState = input.schemaState;
+
+  if (!schemaState || schemaState.status !== "ready") {
+    return false;
+  }
+
+  return schemaState.capabilities.ai.use === true;
+}
+
+function resolveSchemaHashForAi(schemaState?: StudioSchemaState): string {
+  if (!schemaState || schemaState.status !== "ready") {
+    return "";
+  }
+  return schemaState.serverSchemaHash ?? schemaState.localSchemaHash ?? "";
+}
+
 function resolveContentDocumentWriteAccess(input: {
   route: StudioDocumentRouteMountContext;
   schemaState?: StudioSchemaState;
@@ -798,6 +833,9 @@ function createReadyState(input: {
     route: input.documentRoute,
     schemaState: input.schemaState,
   });
+  const canAi = resolveContentDocumentAiCapability({
+    schemaState: input.schemaState,
+  });
 
   return {
     status: "ready",
@@ -812,6 +850,7 @@ function createReadyState(input: {
     draftFrontmatter: cloneFrontmatter(document.frontmatter),
     saveState: "saved",
     canWrite: writeAccess.canWrite,
+    canAi,
     publishDialogOpen: false,
     publishChangeSummary: "",
     publishState: "idle",
@@ -984,11 +1023,15 @@ export function applySchemaStateToReadyState(input: {
     route: input.state.route,
     schemaState: input.schemaState,
   });
+  const canAi = resolveContentDocumentAiCapability({
+    schemaState: input.schemaState,
+  });
 
   return {
     ...input.state,
     schemaState: input.schemaState,
     canWrite: writeAccess.canWrite,
+    canAi,
     writeMessage: writeAccess.writeMessage,
   };
 }
@@ -2543,6 +2586,10 @@ export function ContentDocumentPageView({
   onLocaleSwitch,
   onCreateVariant,
   onCancelVariantCreation,
+  aiSelection,
+  onAiSelectionChange,
+  aiApi,
+  onAiProposalApplied,
 }: ContentDocumentPageViewProps) {
   const documentLabel =
     state.status === "ready"
@@ -2849,6 +2896,7 @@ export function ContentDocumentPageView({
                     context={context}
                     onChange={onDraftChange}
                     onActiveMdxComponentChange={onActiveMdxComponentChange}
+                    onSelectionTextChange={onAiSelectionChange}
                     readOnly={!state.canWrite || !!state.viewingVersion}
                     forbidden={false}
                   />
@@ -2865,6 +2913,30 @@ export function ContentDocumentPageView({
               onFrontmatterFieldChange={onFrontmatterFieldChange}
               onViewVersion={onViewVersion}
               onBackToDraft={onBackToDraft}
+            />
+          ) : null}
+
+          {state.status === "ready" &&
+          aiApi &&
+          editorRef &&
+          !state.viewingVersion ? (
+            <InlineAiBubble
+              api={aiApi}
+              enabled={state.canAi === true}
+              selection={aiSelection ?? null}
+              editorRef={
+                editorRef as React.RefObject<TipTapEditorHandle | null>
+              }
+              options={{
+                documentId: state.documentId,
+                schemaHash: resolveSchemaHashForAi(state.schemaState),
+              }}
+              onApplied={
+                onAiProposalApplied
+                  ? ({ document }) =>
+                      onAiProposalApplied({ bodyAfter: document.body })
+                  : undefined
+              }
             />
           ) : null}
         </div>
@@ -2981,6 +3053,21 @@ export default function ContentDocumentPage({
   const editorRef = useRef<TipTapEditorHandle>(null);
   const [activeMdxComponent, setActiveMdxComponent] =
     useState<MdxPropsPanelSelection | null>(null);
+  const [aiSelection, setAiSelection] =
+    useState<TipTapEditorSelectionInfo | null>(null);
+  const aiApi = useMemo<StudioAiRouteApi | undefined>(() => {
+    if (!activeContext || !route) {
+      return undefined;
+    }
+    return createStudioAiRouteApi(
+      {
+        project: route.project,
+        environment: route.initialEnvironment,
+        serverUrl: activeContext.apiBaseUrl,
+      },
+      { auth: activeContext.auth },
+    );
+  }, [activeContext, route]);
   const stateRef = useRef(state);
   const loadRequestIdRef = useRef(0);
 
@@ -3991,6 +4078,29 @@ export default function ContentDocumentPage({
       onBackToDraft={handleBackToDraft}
       onRestoreVersion={(version) => {
         void restoreDocumentVersion(version);
+      }}
+      aiSelection={aiSelection}
+      onAiSelectionChange={setAiSelection}
+      aiApi={aiApi}
+      onAiProposalApplied={({ bodyAfter }) => {
+        if (editorRef.current) {
+          editorRef.current.setContent(bodyAfter);
+        }
+        setState((current) =>
+          current.status === "ready"
+            ? {
+                ...current,
+                draftBody: bodyAfter,
+                // Sync the persisted snapshot too — otherwise
+                // saved/unsaved comparisons (draftBody vs
+                // document.body) would treat the just-applied AI
+                // change as a fresh local edit.
+                document: { ...current.document, body: bodyAfter },
+                saveState: "saved",
+                mutationError: undefined,
+              }
+            : current,
+        );
       }}
     />
   );

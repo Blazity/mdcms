@@ -24,8 +24,38 @@ export {
 } from "./server/orchestrator.js";
 export {
   createAiOrchestratorFromEnv,
+  type CoreAiServerDeps,
   type CreateAiOrchestratorFromEnvDeps,
 } from "./server/index.js";
+export {
+  applyAiProposal,
+  type AiApplyContentDocument,
+  type AiApplyContentScope,
+  type AiApplyContentStore,
+  type AiApplyInput,
+  type AiApplyWritePayload,
+} from "./server/apply.js";
+export {
+  createInMemoryAiProposalStore,
+  type AiProposalRecord,
+  type AiProposalStatus,
+  type AiProposalStore,
+  type AiProposalStoreClock,
+  type CreateAiProposalStoreOptions,
+} from "./server/proposal-store.js";
+export {
+  mountAiRoutes,
+  type AiAuditEmitter,
+  type AiAuthorizer,
+  type AiContentStore,
+  type AiContextResolver,
+  type AiCsrfProtector,
+  type AiSchemaHashLookup,
+  type InlineTransformAction,
+  type InlineTransformRequestBody,
+  type MountAiRoutesOptions,
+  type ProposalApplyRequestBody,
+} from "./server/routes.js";
 export { aiError, isAiErrorCode, mapProviderError } from "./server/errors.js";
 export {
   buildProposalsFromOutput,
@@ -51,7 +81,10 @@ export {
   type AiTaskOutput,
 } from "./server/tasks.js";
 export {
+  AI_MODEL_ENV_KEY,
   AI_PROVIDER_ENV_KEY,
+  GROQ_API_KEY_ENV_KEY,
+  GROQ_BASE_URL_ENV_KEY,
   resolveAiProvider,
 } from "./server/providers/factory.js";
 export {
@@ -64,6 +97,12 @@ export {
   ECHO_PROVIDER_ID,
   type EchoAiProviderOptions,
 } from "./server/providers/echo.js";
+export {
+  createGroqAiProvider,
+  GROQ_PROVIDER_DEFAULT_MODEL,
+  GROQ_PROVIDER_ID,
+  type GroqProviderOptions,
+} from "./server/providers/groq.js";
 export type {
   AiProvider,
   AiProviderEnv,

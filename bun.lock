@@ -79,6 +79,7 @@
       "name": "@mdcms/modules",
       "version": "0.0.1",
       "dependencies": {
+        "@ai-sdk/groq": "^3.0.38",
         "@ai-sdk/provider": "^3.0.10",
         "@mdcms/shared": "workspace:*",
         "ai": "^6.0.173",
@@ -95,7 +96,7 @@
     },
     "packages/shared": {
       "name": "@mdcms/shared",
-      "version": "0.1.4",
+      "version": "0.1.5",
       "dependencies": {
         "elysia": "^1.4.25",
         "tslib": "^2.3.0",
@@ -105,7 +106,7 @@
     },
     "packages/studio": {
       "name": "@mdcms/studio",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "dependencies": {
         "@elysiajs/eden": "^1.4.8",
         "@floating-ui/react-dom": "^2.1.8",
@@ -165,6 +166,8 @@
   },
   "packages": {
     "@ai-sdk/gateway": ["@ai-sdk/gateway@3.0.108", "", { "dependencies": { "@ai-sdk/provider": "3.0.10", "@ai-sdk/provider-utils": "4.0.26", "@vercel/oidc": "3.2.0" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-hOtwiM6E/m1PgqHnx0/grvh0P/kjENHsN222OL5iYPQwfWmcX+26oFXM7HGL/UzonB+RORMkYAbskgAiANVwCQ=="],
+
+    "@ai-sdk/groq": ["@ai-sdk/groq@3.0.38", "", { "dependencies": { "@ai-sdk/provider": "3.0.10", "@ai-sdk/provider-utils": "4.0.26" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-mzn+KYeROVHFZnAr3qNX+eZ4Un4BFykOcs8XDH8LLzdfgrW6fxQkdiZyww0asYGjIYaa16dkyVtglp4GV6BeUQ=="],
 
     "@ai-sdk/provider": ["@ai-sdk/provider@3.0.10", "", { "dependencies": { "json-schema": "^0.4.0" } }, "sha512-Q3BZ27qfpYqnCYGvE3vt+Qi6LGOF9R5Nmzn+9JoM1lCRsD9mYaIhfJLkSunN48nfGXJ6n+XNV0J/XVpqGQl7Dw=="],
 

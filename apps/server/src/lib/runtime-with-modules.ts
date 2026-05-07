@@ -53,6 +53,11 @@ import {
   type ServerModuleAppDeps,
   type ServerModuleLoadReport,
 } from "./module-loader.js";
+import {
+  createAiOrchestratorFromEnv,
+  createInMemoryAiProposalStore,
+  type CoreAiServerDeps,
+} from "@mdcms/modules";
 
 export type CreateServerRequestHandlerWithModulesOptions = {
   env?: NodeJS.ProcessEnv;
@@ -120,7 +125,118 @@ export function createServerRequestHandlerWithModules(
   });
   const projectStore = createDatabaseProjectStore({ db: dbConnection.db });
   const actions = collectServerModuleActions(moduleLoadReport);
-  const moduleDeps = { ...(options.moduleDeps ?? {}), dal };
+
+  const lookupSchemaHashForScope = async (scope: {
+    project: string;
+    environment: string;
+  }): Promise<string | undefined> => {
+    const resolvedScope = await resolveProjectEnvironmentScope(
+      dbConnection.db,
+      { project: scope.project, environment: scope.environment },
+    );
+
+    if (!resolvedScope) {
+      return undefined;
+    }
+
+    const row = await dbConnection.db.query.schemaSyncs.findFirst({
+      where: and(
+        eq(schemaSyncs.projectId, resolvedScope.project.id),
+        eq(schemaSyncs.environmentId, resolvedScope.environment.id),
+      ),
+    });
+
+    return row?.schemaHash;
+  };
+
+  const aiOrchestrator = createAiOrchestratorFromEnv({
+    env: rawEnv as Record<string, string | undefined>,
+  });
+  const aiProposalStore = createInMemoryAiProposalStore();
+
+  const aiModuleDeps: CoreAiServerDeps = {
+    orchestrator: aiOrchestrator,
+    proposalStore: aiProposalStore,
+    contentStore: {
+      getById: (scope, documentId, opts) =>
+        contentStore.getById(scope, documentId, opts),
+      update: (scope, documentId, payload, opts) =>
+        contentStore.update(scope, documentId, payload, opts),
+      create: (scope, payload, opts) =>
+        contentStore.create(scope, payload, opts),
+    },
+    contextResolver: {
+      loadDraftContext: async ({
+        request,
+        project,
+        environment,
+        documentId,
+      }) => {
+        await authService.authorizeRequest(request, {
+          requiredScope: "content:read:draft",
+          project,
+          environment,
+        });
+        const document = await contentStore.getById(
+          { project, environment },
+          documentId,
+          { draft: true },
+        );
+
+        if (!document || document.isDeleted) {
+          throw new RuntimeError({
+            code: "NOT_FOUND",
+            message: "Document not found.",
+            statusCode: 404,
+            details: { documentId },
+          });
+        }
+
+        await authService.authorizeRequest(request, {
+          requiredScope: "content:read:draft",
+          project,
+          environment,
+          documentPath: document.path,
+        });
+
+        return { document };
+      },
+    },
+    schemaHashLookup: ({ project, environment }) =>
+      lookupSchemaHashForScope({ project, environment }),
+    authorize: async (request, requirement) => {
+      const authorized = await authService.authorizeRequest(
+        request,
+        requirement,
+      );
+      const actorId =
+        authorized.principal.type === "session"
+          ? authorized.principal.session.userId
+          : authorized.principal.keyId;
+      return { actorId };
+    },
+    requireCsrf: (request) => authService.requireCsrfProtection(request),
+    emitAudit: (record) => {
+      logger.info("ai.audit", {
+        outcome: record.outcome,
+        taskKind: record.taskKind,
+        provider: record.providerId,
+        model: record.model,
+        proposalIds: record.proposalIds,
+        actorId: record.actorId,
+        project: record.project,
+        environment: record.environment,
+        documentId: record.documentId,
+        errorCode: record.errorCode,
+      });
+    },
+  };
+
+  const moduleDeps: ServerModuleAppDeps = {
+    ...(options.moduleDeps ?? {}),
+    dal,
+    ai: aiModuleDeps,
+  };
 
   const handler = createServerRequestHandler({
     ...(options.serverOptions ?? {}),
@@ -135,32 +251,9 @@ export function createServerRequestHandlerWithModules(
           authService.authorizeRequest(request, requirement),
         requireCsrf: (request) => authService.requireCsrfProtection(request),
         getWriteSchemaSyncState: async (scope) => {
-          const resolvedScope = await resolveProjectEnvironmentScope(
-            dbConnection.db,
-            {
-              project: scope.project,
-              environment: scope.environment,
-            },
-          );
+          const schemaHash = await lookupSchemaHashForScope(scope);
 
-          if (!resolvedScope) {
-            return undefined;
-          }
-
-          const row = await dbConnection.db.query.schemaSyncs.findFirst({
-            where: and(
-              eq(schemaSyncs.projectId, resolvedScope.project.id),
-              eq(schemaSyncs.environmentId, resolvedScope.environment.id),
-            ),
-          });
-
-          if (!row) {
-            return undefined;
-          }
-
-          return {
-            schemaHash: row.schemaHash,
-          };
+          return schemaHash ? { schemaHash } : undefined;
         },
         resolveUsers: async (userIds) => {
           if (userIds.length === 0) return {};

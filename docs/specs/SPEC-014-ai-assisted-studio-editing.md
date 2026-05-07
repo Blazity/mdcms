@@ -25,9 +25,11 @@ The first product scope includes:
   documents.
 - Copy-improvement workflows such as rewrite, shorten, expand, change tone, fix
   grammar, and improve clarity.
-- SEO-improvement workflows that produce actionable edits for document body and
-  metadata.
-- MDX-aware generation that can use only registered components and valid props.
+- SEO-improvement workflows that produce actionable frontmatter edits, surfaced
+  from the document properties panel rather than the inline editor.
+- MDX-aware generation that can use only registered components and valid props,
+  invoked from the editor slash menu, the toolbar Insert Component affordance,
+  or document chat.
 
 The first product scope excludes:
 
@@ -43,9 +45,27 @@ The first product scope excludes:
 
 ### Inline Selection Transforms
 
-Users can select text or an editor block and invoke an AI action from an inline
-editor affordance. Supported actions include rewrite, shorten, expand, change
-tone, fix grammar, improve clarity, and improve SEO.
+Users can select text in the editor and invoke an AI action from an inline
+editor affordance. Supported actions are scoped to **selection-anchored copy
+edits** that rewrite the selected text in place: rewrite, shorten, expand,
+change tone, fix grammar, and improve clarity.
+
+The selection is treated as **markdown**, not plain text. When the user selects
+content that spans block-level structure (bullet lists, ordered lists,
+headings, blockquotes, multiple paragraphs), Studio sends the markdown
+serialization of the selected slice and the model's replacement is interpreted
+as markdown. Block structure is preserved on apply and on reject. Plain prose
+selections degenerate into trivial markdown (no special tokens) without a
+separate code path.
+
+Other AI workflows do not belong in the inline panel:
+
+- **Frontmatter (SEO) edits** are surfaced from the document properties panel,
+  not from an editor selection. The underlying `seo_improvement` task is reused
+  there.
+- **MDX component insertion** is a block-level operation reachable from the
+  editor's slash menu, the toolbar's Insert Component affordance, and from
+  document chat. It is not a transform of the current selection.
 
 The result renders inline at the selection location as a proposed replacement,
 not as a committed draft write. The proposed replacement has visible controls:
@@ -150,7 +170,14 @@ export type AiProposalOperation =
   | {
       op: "replace_selection";
       selectionId: string;
+      // Markdown serialization of the original selection slice. Apply
+      // matches this against the persisted draft body (which is also
+      // markdown), so the two must round-trip through the same
+      // serializer.
       originalText: string;
+      // Markdown the model returns as the replacement. May contain
+      // block-level structure (lists, headings, paragraphs) when the
+      // original selection did, in which case structure is preserved.
       replacementText: string;
     }
   | {
@@ -254,13 +281,14 @@ All AI write application paths must:
 
 This table is normative and follows the shared contract template in `SPEC-005`.
 
-| Method | Endpoint                                 | Auth mode          | Required scope                                                 | Target routing                  | Request schema                                                                                                                                   | Success response schema                                               | Errors                                                                                                                                                                                                                                                                                                                     |
-| ------ | ---------------------------------------- | ------------------ | -------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/api/v1/ai/inline-transform`            | session_or_api_key | `ai:use`, `content:read:draft`                                 | required: `project_environment` | JSON: `{ documentId, draftRevision, selectionId, selectedText, action, instruction?, tone?, keyword?, componentIntent? }`                        | `200` `{ data: { proposals: AiProposal[] } }`                         | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `AI_DISABLED` (`403`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_CONTEXT_TOO_LARGE` (`413`), `AI_RATE_LIMITED` (`429`), `AI_PROVIDER_UNAVAILABLE` (`503`)                                        |
-| POST   | `/api/v1/ai/chat/messages`               | session_or_api_key | `ai:use`, `content:read:draft` for current-document operations | required: `project_environment` | JSON: `{ documentId?, draftRevision?, message, conversationId?, allowedActions?: ("answer" \| "edit_current_document" \| "create_document")[] }` | `200` `{ data: { conversationId, message, proposals? } }`             | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `AI_DISABLED` (`403`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_UNSUPPORTED_ACTION` (`400`), `AI_CONTEXT_TOO_LARGE` (`413`), `AI_RATE_LIMITED` (`429`), `AI_PROVIDER_UNAVAILABLE` (`503`)       |
-| POST   | `/api/v1/ai/proposals/:proposalId/apply` | session_or_api_key | `content:write`                                                | required: `project_environment` | path `proposalId`, JSON: `{ draftRevision?, schemaHash, clientSelectionState? }`                                                                 | `200` `{ data: { proposal: AiProposal, document: ContentDocument } }` | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_PROPOSAL_EXPIRED` (`410`), `AI_PROPOSAL_CONFLICT` (`409`), `AI_OUTPUT_INVALID` (`422`), `SCHEMA_HASH_REQUIRED` (`400`), `SCHEMA_HASH_MISMATCH` (`409`) |
+| Method | Endpoint                                  | Auth mode          | Required scope                                                 | Target routing                  | Request schema                                                                                                                                                                                            | Success response schema                                               | Errors                                                                                                                                                                                                                                                                                                                     |
+| ------ | ----------------------------------------- | ------------------ | -------------------------------------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/v1/ai/inline-transform`             | session_or_api_key | `ai:use`, `content:read:draft`                                 | required: `project_environment` | JSON: `{ documentId, draftRevision, selectionId, selectedText, action, instruction?, tone? }` — `selectedText` is the **markdown** serialization of the selected slice (block-level structure preserved). | `200` `{ data: { proposals: AiProposal[] } }`                         | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `AI_DISABLED` (`403`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_CONTEXT_TOO_LARGE` (`413`), `AI_RATE_LIMITED` (`429`), `AI_PROVIDER_UNAVAILABLE` (`503`)                                        |
+| POST   | `/api/v1/ai/chat/messages`                | session_or_api_key | `ai:use`, `content:read:draft` for current-document operations | required: `project_environment` | JSON: `{ documentId?, draftRevision?, message, conversationId?, allowedActions?: ("answer" \| "edit_current_document" \| "create_document")[] }`                                                          | `200` `{ data: { conversationId, message, proposals? } }`             | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `AI_DISABLED` (`403`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_UNSUPPORTED_ACTION` (`400`), `AI_CONTEXT_TOO_LARGE` (`413`), `AI_RATE_LIMITED` (`429`), `AI_PROVIDER_UNAVAILABLE` (`503`)       |
+| POST   | `/api/v1/ai/proposals/:proposalId/apply`  | session_or_api_key | `content:write`                                                | required: `project_environment` | path `proposalId`, JSON: `{ draftRevision?, schemaHash, clientSelectionState? }`                                                                                                                          | `200` `{ data: { proposal: AiProposal, document: ContentDocument } }` | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_PROPOSAL_EXPIRED` (`410`), `AI_PROPOSAL_CONFLICT` (`409`), `AI_OUTPUT_INVALID` (`422`), `SCHEMA_HASH_REQUIRED` (`400`), `SCHEMA_HASH_MISMATCH` (`409`) |
+| POST   | `/api/v1/ai/proposals/:proposalId/reject` | session_or_api_key | `content:write`                                                | required: `project_environment` | path `proposalId`, JSON body optional and ignored                                                                                                                                                         | `200` `{ data: { proposal: AiProposal } }`                            | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_PROPOSAL_EXPIRED` (`410`), `AI_PROPOSAL_CONFLICT` (`409`)                                                                                              |
 
-`action` for inline transforms is an enum:
+`action` for inline transforms is an enum of selection-anchored copy edits:
 
 - `rewrite`
 - `shorten`
@@ -268,8 +296,11 @@ This table is normative and follows the shared contract template in `SPEC-005`.
 - `change_tone`
 - `fix_grammar`
 - `improve_clarity`
-- `improve_seo`
-- `insert_mdx_component`
+
+SEO frontmatter assistance and MDX component insertion are not part of this
+endpoint. SEO suggestions are produced server-side by the `seo_improvement`
+task and surfaced through the document properties panel. MDX component
+insertion is handled by the editor slash menu and the document chat surface.
 
 ## Provider and Orchestration Requirements
 

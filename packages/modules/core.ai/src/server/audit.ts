@@ -1,13 +1,22 @@
 import type {
   AiErrorCode,
   AiProposal,
+  AiProposalKind,
   AiProposalValidation,
   AiTaskKind,
 } from "@mdcms/shared";
 
 import type { AiProviderUsage } from "./provider.js";
 
-export type AiAuditOutcome = "succeeded" | "invalid_output" | "provider_error";
+export type AiAuditOutcome =
+  | "succeeded"
+  | "invalid_output"
+  | "provider_error"
+  | "accepted"
+  | "rejected"
+  | "expired"
+  | "apply_failed"
+  | "validation_failed";
 
 export type AiAuditRecord = {
   taskKind: AiTaskKind;
@@ -18,9 +27,30 @@ export type AiAuditRecord = {
   outcome: AiAuditOutcome;
   validation: AiProposalValidation;
   proposalIds?: string[];
-  errorCode?: AiErrorCode;
+  /**
+   * Proposal kind for the call. Set when at least one proposal was
+   * produced (creation flow) or when the audit describes the
+   * lifecycle of a known proposal (apply/reject/expired). SPEC-014
+   * §Observability lists this as a required audit field.
+   */
+  proposalKind?: AiProposalKind;
+  /**
+   * For inline-transform calls, the user-facing action name ("rewrite",
+   * "shorten", etc.). For chat calls, the allowed action used. Empty
+   * for orchestrator-direct callers. Spec §Observability lists this
+   * as "action name or chat allowed action".
+   */
+  action?: string;
+  errorCode?: string;
   errorMessage?: string;
   usage?: AiProviderUsage;
+  /** Actor identifier when known at apply/reject time. */
+  actorId?: string;
+  /** Project/environment captured for lifecycle events. */
+  project?: string;
+  environment?: string;
+  /** Document id touched by the lifecycle event (apply only). */
+  documentId?: string;
   /** ISO-8601 timestamp captured by the orchestrator. */
   occurredAt: string;
 };
@@ -34,9 +64,21 @@ export type BuildAuditRecordInput = {
   outcome: AiAuditOutcome;
   validation?: AiProposalValidation;
   proposals?: AiProposal[];
-  errorCode?: AiErrorCode;
+  /**
+   * Explicit proposal kind override. When omitted, the kind is taken
+   * from the first entry of `proposals`. Set explicitly for lifecycle
+   * audits that describe a single known proposal whose record may
+   * already have moved to `expired`.
+   */
+  proposalKind?: AiProposalKind;
+  action?: string;
+  errorCode?: AiErrorCode | string;
   errorMessage?: string;
   usage?: AiProviderUsage;
+  actorId?: string;
+  project?: string;
+  environment?: string;
+  documentId?: string;
 };
 
 const DEFAULT_VALIDATION: AiProposalValidation = Object.freeze({
@@ -65,6 +107,20 @@ export function buildAuditRecord(input: BuildAuditRecordInput): AiAuditRecord {
     record.proposalIds = input.proposals.map((proposal) => proposal.proposalId);
   }
 
+  // proposalKind: prefer the explicit override, otherwise derive from
+  // the first generated proposal. The orchestrator's task definitions
+  // emit single-kind proposal sets today, so the first kind is
+  // representative; if a future task ever mixes kinds, the explicit
+  // override at the call site is the authoritative source.
+  const derivedProposalKind = input.proposalKind ?? input.proposals?.[0]?.kind;
+  if (derivedProposalKind) {
+    record.proposalKind = derivedProposalKind;
+  }
+
+  if (input.action) {
+    record.action = input.action;
+  }
+
   if (input.errorCode) {
     record.errorCode = input.errorCode;
   }
@@ -79,6 +135,22 @@ export function buildAuditRecord(input: BuildAuditRecordInput): AiAuditRecord {
     if (usage) {
       record.usage = usage;
     }
+  }
+
+  if (input.actorId) {
+    record.actorId = input.actorId;
+  }
+
+  if (input.project) {
+    record.project = input.project;
+  }
+
+  if (input.environment) {
+    record.environment = input.environment;
+  }
+
+  if (input.documentId) {
+    record.documentId = input.documentId;
   }
 
   return record;

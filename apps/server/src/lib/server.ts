@@ -73,6 +73,7 @@ const STUDIO_BROWSER_ROUTE_PREFIXES = [
   "/api/v1/media",
   "/api/v1/search",
   "/api/v1/webhooks",
+  "/api/v1/ai",
 ] as const;
 
 function matchesScopedPathPrefix(pathname: string, prefix: string): boolean {

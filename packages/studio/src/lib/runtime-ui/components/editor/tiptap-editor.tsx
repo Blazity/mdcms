@@ -54,7 +54,11 @@ import {
   Undo,
 } from "lucide-react";
 import { createEditorExtensions } from "../../../editor-extensions.js";
-import { extractMarkdownFromEditor } from "../../../markdown-pipeline.js";
+import {
+  extractMarkdownFromEditor,
+  parseMarkdownToDocument,
+  serializeDocumentToMarkdown,
+} from "../../../markdown-pipeline.js";
 import { MdxComponentExtension } from "../../../mdx-component-extension.js";
 import { CodeBlockWithNodeView } from "./code-block-node-view.js";
 import {
@@ -91,7 +95,101 @@ import { cn } from "../../lib/utils.js";
 
 export interface TipTapEditorHandle {
   setContent: (markdown: string) => void;
+  /**
+   * Returns the markdown serialization of the document slice between
+   * `from` and `to`, plus the mode the caller should use when
+   * applying the AI's reply.
+   *
+   * - `mode: "markdown"` — the slice spans complete blocks
+   *   (`openStart` and `openEnd` are 0). Block-level structure
+   *   (lists, headings, paragraphs) is preserved by serializing the
+   *   slice through the markdown pipeline. The replacement should be
+   *   parsed as markdown and inserted as nodes.
+   * - `mode: "text"` — the selection starts or ends mid-block, so
+   *   it can't be expressed as standalone markdown without
+   *   inventing parent structure. Returns plain text via
+   *   `textBetween` and the replacement should be applied as plain
+   *   text so the surrounding block structure (the parent list
+   *   item, heading, etc.) is preserved by NOT being mutated.
+   *
+   * Returns `null` if the editor is unmounted or the range is
+   * invalid.
+   */
+  getSelectionMarkdown: (input: { from: number; to: number }) => {
+    text: string;
+    mode: "markdown" | "text";
+  } | null;
+  /**
+   * Replace a text range with the given replacement text and return
+   * the resulting range + anchor rect. Used by the inline AI flow to
+   * stage a proposal preview directly in the editor before the user
+   * accepts or rejects it.
+   *
+   * Returns `null` if the editor is unmounted, the range is invalid,
+   * or the document text at `[from, to)` no longer matches
+   * `expectedText` (set when the caller wants to abort if the user
+   * has typed in the meantime).
+   */
+  applyInlinePreview: (input: {
+    from: number;
+    to: number;
+    replacementText: string;
+    expectedText?: string;
+    /**
+     * Determines how the replacement is inserted:
+     *
+     * - `"markdown"` — `replacementText` is parsed via the markdown
+     *   pipeline and inserted as block nodes. Used when the original
+     *   selection spanned complete blocks.
+     * - `"text"` — `replacementText` is inserted as inline plain
+     *   text, so the surrounding block structure (lists, headings)
+     *   is preserved.
+     *
+     * Defaults to `"text"` for safety — markdown parsing of a
+     * mid-block range can spawn nested lists.
+     */
+    mode?: "markdown" | "text";
+  }) => {
+    previewFrom: number;
+    previewTo: number;
+    anchorRect: TipTapEditorAnchorRect;
+    /**
+     * Restores the original document slice (including block-level
+     * structure such as bullet lists or headings) at the previewed
+     * range. The slice was captured before the preview was applied,
+     * so reverting recovers formatting — not just the plain text.
+     * Returns `null` if the editor is unmounted.
+     */
+    revert: () => { anchorRect: TipTapEditorAnchorRect } | null;
+  } | null;
 }
+
+export type TipTapEditorAnchorRect = {
+  top: number;
+  left: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+};
+
+export type TipTapEditorSelectionInfo = {
+  /** Stable id derived from the current selection range. */
+  selectionId: string;
+  /** Plain text inside the selection. */
+  text: string;
+  /** ProseMirror document positions for the selection range. */
+  from: number;
+  to: number;
+  /**
+   * Viewport-relative rect for the selection's start/end coordinates.
+   * Consumers can pass this to floating-ui (or use it directly) to
+   * anchor a popover near the selection. `top` and `bottom` come from
+   * `view.coordsAtPos(from)` and `view.coordsAtPos(to)` so multi-line
+   * selections produce a rect that covers both ends.
+   */
+  anchorRect: TipTapEditorAnchorRect;
+};
 
 interface TipTapEditorProps {
   initialContent?: string;
@@ -103,6 +201,13 @@ interface TipTapEditorProps {
   onActiveMdxComponentChange?: (
     selection: MdxPropsPanelSelection | null,
   ) => void;
+  /**
+   * Notifies callers when the user's plain-text selection changes.
+   * Fires with `null` when the selection is empty or collapsed.
+   * Used by the inline AI affordance to drive selection-anchored
+   * transforms.
+   */
+  onSelectionTextChange?: (selection: TipTapEditorSelectionInfo | null) => void;
 }
 
 const defaultContent = `
@@ -131,6 +236,63 @@ type ToolbarButtonProps = {
 };
 
 type TipTapEditorInstance = NonNullable<ReturnType<typeof useEditor>>;
+
+const ZERO_ANCHOR_RECT: TipTapEditorAnchorRect = {
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  width: 0,
+  height: 0,
+};
+
+function rectForRange(
+  editor: TipTapEditorInstance,
+  from: number,
+  to: number,
+): TipTapEditorAnchorRect {
+  try {
+    const fromCoords = editor.view.coordsAtPos(from);
+    const toCoords = editor.view.coordsAtPos(to);
+    const top = Math.min(fromCoords.top, toCoords.top);
+    const bottom = Math.max(fromCoords.bottom, toCoords.bottom);
+    const left = Math.min(fromCoords.left, toCoords.left);
+    const right = Math.max(fromCoords.right, toCoords.right);
+    return {
+      top,
+      left,
+      right,
+      bottom,
+      width: Math.max(right - left, 0),
+      height: Math.max(bottom - top, 0),
+    };
+  } catch {
+    return ZERO_ANCHOR_RECT;
+  }
+}
+
+/**
+ * Strip leading markdown block markers (`-`, `*`, `1.`, `>`, `#`)
+ * from each line so a model that ignores the "plain text in/out"
+ * instruction doesn't end up writing literal `- ` into a list item.
+ * Multi-line text is collapsed onto single newlines that ProseMirror's
+ * plain-text insert handles as soft breaks within the surrounding
+ * block.
+ *
+ * Exported for testing.
+ */
+export function stripBlockMarkers(text: string): string {
+  return text
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(/^\s*([-*+])\s+/, "")
+        .replace(/^\s*\d+\.\s+/, "")
+        .replace(/^\s*>\s?/, "")
+        .replace(/^\s*#{1,6}\s+/, ""),
+    )
+    .join("\n");
+}
 
 function ToolbarButton({
   children,
@@ -199,6 +361,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       readOnly = false,
       forbidden = false,
       onActiveMdxComponentChange,
+      onSelectionTextChange,
     },
     ref,
   ) {
@@ -322,6 +485,52 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
     // it only drives a side-panel update, never the editor's own DOM —
     // so defer it off the keystroke's critical path.
     const auxSelectionFrameRef = useRef<number | null>(null);
+    const lastPublishedTextSelectionRef = useRef<string | null>(null);
+    const publishTextSelection = useEffectEvent(
+      (nextEditor: TipTapEditorInstance) => {
+        if (!onSelectionTextChange) {
+          return;
+        }
+
+        const { from, to, empty } = nextEditor.state.selection;
+
+        if (empty || from === to) {
+          if (lastPublishedTextSelectionRef.current !== null) {
+            lastPublishedTextSelectionRef.current = null;
+            onSelectionTextChange(null);
+          }
+          return;
+        }
+
+        const text = nextEditor.state.doc.textBetween(from, to, "\n", "\n");
+
+        if (text.trim().length === 0) {
+          if (lastPublishedTextSelectionRef.current !== null) {
+            lastPublishedTextSelectionRef.current = null;
+            onSelectionTextChange(null);
+          }
+          return;
+        }
+
+        // ProseMirror's coordsAtPos throws if positions slip during a
+        // transaction; rectForRange catches that and returns a zero
+        // rect, and the consumer repositions on the next tick.
+        const anchorRect = rectForRange(nextEditor, from, to);
+
+        // The selection id is derived from the range bounds + text so a
+        // moved-but-identical selection still re-uses the same id and
+        // the AI proposal stays anchored across `Try again` calls.
+        const selectionId = `sel:${from}-${to}`;
+        const fingerprint = `${selectionId}::${text}::${anchorRect.top}::${anchorRect.left}::${anchorRect.bottom}::${anchorRect.right}`;
+
+        if (lastPublishedTextSelectionRef.current === fingerprint) {
+          return;
+        }
+
+        lastPublishedTextSelectionRef.current = fingerprint;
+        onSelectionTextChange({ selectionId, text, from, to, anchorRect });
+      },
+    );
     const scheduleAuxSelectionUpdate = useEffectEvent(
       (nextEditor: TipTapEditorInstance) => {
         if (auxSelectionFrameRef.current !== null) {
@@ -330,6 +539,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
         auxSelectionFrameRef.current = requestAnimationFrame(() => {
           auxSelectionFrameRef.current = null;
           publishSelectedMdxComponent(nextEditor);
+          publishTextSelection(nextEditor);
         });
       },
     );
@@ -561,6 +771,165 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           // since we suppressed the update event above.
           publishSelectedMdxComponent(editor);
           syncSlashTrigger(editor);
+        },
+        getSelectionMarkdown(input) {
+          if (!editor || editor.isDestroyed) {
+            return null;
+          }
+          const docSize = editor.state.doc.content.size;
+          if (input.from < 0 || input.to > docSize || input.from > input.to) {
+            return null;
+          }
+          if (input.from === input.to) {
+            return { text: "", mode: "text" };
+          }
+          const slice = editor.state.doc.slice(input.from, input.to, true);
+          // openStart/openEnd > 0 means the slice cuts through a block
+          // node at one end (e.g. the user selected partway into a
+          // bullet item). Standalone markdown can't express that, so
+          // return plain text and let the caller apply it inline.
+          if (slice.openStart > 0 || slice.openEnd > 0) {
+            return {
+              text: editor.state.doc.textBetween(
+                input.from,
+                input.to,
+                "\n",
+                "\n",
+              ),
+              mode: "text",
+            };
+          }
+          const fragmentJson = slice.content.toJSON() as
+            | Array<Record<string, unknown>>
+            | undefined;
+          return {
+            text: serializeDocumentToMarkdown({
+              type: "doc",
+              content: fragmentJson ?? [],
+            }),
+            mode: "markdown",
+          };
+        },
+        applyInlinePreview(input) {
+          if (!editor || editor.isDestroyed) {
+            return null;
+          }
+
+          const docSize = editor.state.doc.content.size;
+
+          if (input.from < 0 || input.to > docSize || input.from >= input.to) {
+            return null;
+          }
+
+          // Bail when the user has typed in the previewed range since
+          // the AI request started. The caller can fall back to
+          // showing the proposal in the popover instead.
+          if (typeof input.expectedText === "string") {
+            const live = editor.state.doc.textBetween(
+              input.from,
+              input.to,
+              "\n",
+              "\n",
+            );
+            if (live !== input.expectedText) {
+              return null;
+            }
+          }
+
+          // Capture the original ProseMirror slice (with block-level
+          // structure intact: bullet items, headings, paragraphs)
+          // BEFORE we mutate the document. On reject we replace the
+          // previewed range with this slice so formatting comes back,
+          // not just the plain text.
+          const originalSlice = editor.state.doc.slice(
+            input.from,
+            input.to,
+            true,
+          );
+
+          const previewFrom = input.from;
+          const sizeBefore = editor.state.doc.content.size;
+          const mode = input.mode ?? "text";
+
+          if (mode === "markdown") {
+            // The replacement is treated as markdown — only safe when
+            // the original selection spanned complete blocks (the
+            // caller decides via getSelectionMarkdown's mode field).
+            // Parsing markdown and inserting at a mid-block position
+            // would spawn a nested list; the caller must avoid that.
+            const parsedDoc = parseMarkdownToDocument(input.replacementText);
+            const replacementBlocks = (parsedDoc.content ?? []) as Array<
+              Record<string, unknown>
+            >;
+            editor
+              .chain()
+              .focus()
+              .insertContentAt(
+                { from: input.from, to: input.to },
+                replacementBlocks,
+              )
+              .run();
+          } else {
+            // Plain-text mode — insert as inline content so the
+            // surrounding block structure (the parent list item,
+            // heading, paragraph) is preserved. We strip any leading
+            // markdown block markers the model may have added back so
+            // they don't end up as literal text in a list item.
+            const sanitized = stripBlockMarkers(input.replacementText);
+            editor
+              .chain()
+              .focus()
+              .insertContentAt({ from: input.from, to: input.to }, sanitized)
+              .run();
+          }
+
+          const sizeAfter = editor.state.doc.content.size;
+          // Replaced range was (input.to - input.from); the inserted
+          // content's contribution is sizeAfter - sizeBefore + (input.to - input.from).
+          const previewTo =
+            input.from + (sizeAfter - sizeBefore) + (input.to - input.from);
+
+          editor
+            .chain()
+            .focus()
+            .setTextSelection({ from: previewFrom, to: previewTo })
+            .run();
+
+          const revert = () => {
+            if (!editor || editor.isDestroyed) {
+              return null;
+            }
+            const liveDocSize = editor.state.doc.content.size;
+            if (previewFrom < 0 || previewTo > liveDocSize) {
+              return null;
+            }
+            const tr = editor.state.tr.replace(
+              previewFrom,
+              previewTo,
+              originalSlice,
+            );
+            // The slice may carry open node boundaries (e.g. when the
+            // selection started mid-list-item), so the resulting
+            // document size depends on what the slice contributes.
+            // Compute the restored end from the resulting mapping.
+            const restoredTo = tr.mapping.map(previewTo);
+            editor.view.dispatch(tr);
+            editor
+              .chain()
+              .focus()
+              .setTextSelection({ from: previewFrom, to: restoredTo })
+              .run();
+            return {
+              anchorRect: rectForRange(editor, previewFrom, restoredTo),
+            };
+          };
+
+          return {
+            previewFrom,
+            previewTo,
+            anchorRect: rectForRange(editor, previewFrom, previewTo),
+            revert,
+          };
         },
       }),
       [editor],

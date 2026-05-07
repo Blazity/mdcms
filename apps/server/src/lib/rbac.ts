@@ -50,7 +50,8 @@ export type RbacAction =
   | "projects:read"
   | "projects:write"
   | "user:manage"
-  | "settings:manage";
+  | "settings:manage"
+  | "ai:use";
 
 const ROLE_RANK: Record<RbacRole, number> = {
   viewer: 0,
@@ -70,6 +71,7 @@ const ROLE_ACTIONS: Record<RbacRole, readonly RbacAction[]> = {
     "content:delete",
     "schema:read",
     "projects:read",
+    "ai:use",
   ],
   admin: [
     "content:read",
@@ -84,6 +86,7 @@ const ROLE_ACTIONS: Record<RbacRole, readonly RbacAction[]> = {
     "projects:write",
     "user:manage",
     "settings:manage",
+    "ai:use",
   ],
   owner: [
     "content:read",
@@ -98,6 +101,7 @@ const ROLE_ACTIONS: Record<RbacRole, readonly RbacAction[]> = {
     "projects:write",
     "user:manage",
     "settings:manage",
+    "ai:use",
   ],
 };
 

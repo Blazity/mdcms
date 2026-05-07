@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import {
   AI_TASK_KINDS,
-  aiProposalOperationSchema,
+  aiProposalOperationSchemaByOp,
   type AiProposalOperation,
   type AiTaskKind,
 } from "@mdcms/shared";
@@ -63,21 +63,54 @@ const baseInputSchema = z
 function makeOutputSchema(
   allowedOps: readonly AiProposalOperation["op"][],
 ): z.ZodType<AiTaskOutput> {
-  const allowed = new Set<string>(allowedOps);
+  if (allowedOps.length === 0) {
+    throw new Error(
+      "Task definition must declare at least one allowed operation kind.",
+    );
+  }
 
-  const operationSchema = aiProposalOperationSchema.refine(
-    (op) => allowed.has(op.op),
-    {
-      message: `operation kind not allowed for this task.`,
-    },
+  // Compose only the schemas for the variants this task actually
+  // emits. The full union (`aiProposalOperationSchema`) is still used
+  // at the proposal-builder layer to validate provider output, but
+  // the JSON Schema we send to the provider via `generateObject` must
+  // not advertise variants the model would never produce — strict
+  // JSON-Schema modes (e.g. Groq, OpenAI Structured Outputs) reject
+  // unions that contain variants with optional fields that aren't
+  // listed in `required`.
+  //
+  // z.discriminatedUnion fails opaquely on duplicate discriminator
+  // values; surface a clear error so misconfigured task definitions
+  // don't show up as a confusing zod runtime crash.
+  const uniqueOps = new Set(allowedOps);
+  if (uniqueOps.size !== allowedOps.length) {
+    const duplicates = allowedOps.filter(
+      (op, idx) => allowedOps.indexOf(op) !== idx,
+    );
+    throw new Error(
+      `makeOutputSchema: allowedOps must be unique. Duplicate op(s): ${[...new Set(duplicates)].join(", ")}.`,
+    );
+  }
+  const variantSchemas = allowedOps.map(
+    (op) => aiProposalOperationSchemaByOp[op],
   );
+  const operationSchema =
+    variantSchemas.length === 1
+      ? variantSchemas[0]!
+      : (z.discriminatedUnion(
+          "op",
+          variantSchemas as unknown as [
+            (typeof variantSchemas)[number],
+            (typeof variantSchemas)[number],
+            ...(typeof variantSchemas)[number][],
+          ],
+        ) as z.ZodType<AiProposalOperation>);
 
   return z
     .object({
       summary: z.string().trim().min(1),
       operations: z.array(operationSchema).min(1),
     })
-    .strict();
+    .strict() as z.ZodType<AiTaskOutput>;
 }
 
 const copyImprovementInputSchema = baseInputSchema
@@ -151,13 +184,13 @@ const definitions: Record<AiTaskKind, AiTaskDefinition> = {
     kind: "copy_improvement",
     promptTemplateId: "copy_improvement.v1",
     system:
-      "You revise selected document copy. Return only valid JSON matching the requested schema. Do not invent facts or alter unrelated content.",
+      "You revise selected document copy. The input selection may be either: (a) standalone Markdown spanning complete blocks (bullet lists, headings, paragraphs) — preserve that block structure unless the requested action implies collapsing it (e.g., 'shorten' may merge bullets); or (b) a plain-text fragment from inside a single block (a partial sentence or partial bullet) — in that case respond with plain text only, never add Markdown block markers like '- ', '* ', '# ', or '> ', because the host editor will insert your reply inline within the surrounding block. If the input has no Markdown markers, treat it as plain text. Echo the original input exactly into `originalText` and write the new content into `replacementText`. Return only valid JSON matching the requested schema. Do not invent facts or alter unrelated content.",
     buildUserPrompt: (input) =>
       [
         formatLocaleHint(input),
         input.tone ? `Tone: ${input.tone}.` : null,
         input.instruction ? `Instruction: ${input.instruction}.` : null,
-        `Original selection:\n${input.selectionText ?? ""}`,
+        `Original selection (Markdown):\n${input.selectionText ?? ""}`,
       ]
         .filter((line): line is string => line !== null)
         .join("\n"),

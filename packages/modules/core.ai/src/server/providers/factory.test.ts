@@ -4,7 +4,13 @@ import { describe, test } from "bun:test";
 import { RuntimeError } from "@mdcms/shared";
 
 import { ECHO_PROVIDER_ID } from "./echo.js";
-import { AI_PROVIDER_ENV_KEY, resolveAiProvider } from "./factory.js";
+import {
+  AI_MODEL_ENV_KEY,
+  AI_PROVIDER_ENV_KEY,
+  GROQ_API_KEY_ENV_KEY,
+  resolveAiProvider,
+} from "./factory.js";
+import { GROQ_PROVIDER_DEFAULT_MODEL, GROQ_PROVIDER_ID } from "./groq.js";
 import { NULL_PROVIDER_ID } from "./null.js";
 
 describe("resolveAiProvider", () => {
@@ -38,7 +44,56 @@ describe("resolveAiProvider", () => {
     assert.throws(
       () =>
         resolveAiProvider({
-          env: { [AI_PROVIDER_ENV_KEY]: "anthropic" },
+          env: { [AI_PROVIDER_ENV_KEY]: "openai" },
+        }),
+      (error) =>
+        error instanceof RuntimeError &&
+        error.code === "AI_PROVIDER_UNAVAILABLE",
+    );
+  });
+
+  test("returns groq provider with default model when API key is set", () => {
+    const provider = resolveAiProvider({
+      env: {
+        [AI_PROVIDER_ENV_KEY]: "groq",
+        [GROQ_API_KEY_ENV_KEY]: "gsk_test_key",
+      },
+    });
+    assert.equal(provider.id, GROQ_PROVIDER_ID);
+    assert.equal(provider.languageModel?.modelId, GROQ_PROVIDER_DEFAULT_MODEL);
+  });
+
+  test("respects AI_MODEL override for groq", () => {
+    const provider = resolveAiProvider({
+      env: {
+        [AI_PROVIDER_ENV_KEY]: "groq",
+        [GROQ_API_KEY_ENV_KEY]: "gsk_test_key",
+        [AI_MODEL_ENV_KEY]: "llama-3.1-8b-instant",
+      },
+    });
+    assert.equal(provider.languageModel?.modelId, "llama-3.1-8b-instant");
+  });
+
+  test("groq without GROQ_API_KEY raises AI_PROVIDER_UNAVAILABLE", () => {
+    assert.throws(
+      () =>
+        resolveAiProvider({
+          env: { [AI_PROVIDER_ENV_KEY]: "groq" },
+        }),
+      (error) =>
+        error instanceof RuntimeError &&
+        error.code === "AI_PROVIDER_UNAVAILABLE",
+    );
+  });
+
+  test("groq with whitespace-only GROQ_API_KEY raises AI_PROVIDER_UNAVAILABLE", () => {
+    assert.throws(
+      () =>
+        resolveAiProvider({
+          env: {
+            [AI_PROVIDER_ENV_KEY]: "groq",
+            [GROQ_API_KEY_ENV_KEY]: "   ",
+          },
         }),
       (error) =>
         error instanceof RuntimeError &&

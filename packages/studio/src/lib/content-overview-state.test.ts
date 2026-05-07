@@ -75,6 +75,9 @@ function createCapabilitiesApi(overrides?: {
         settings: {
           manage: false,
         },
+        ai: {
+          use: false,
+        },
       },
     }),
   } satisfies StudioCurrentPrincipalCapabilitiesApi;

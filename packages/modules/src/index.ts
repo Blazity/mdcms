@@ -4,6 +4,26 @@ import { coreAiModule } from "../core.ai/src/index.js";
 import { coreSystemModule } from "../core.system/src/index.js";
 import { domainContentModule } from "../domain.content/src/index.js";
 
+export {
+  createAiOrchestratorFromEnv,
+  createInMemoryAiProposalStore,
+  type AiAuditEmitter,
+  type AiAuditOutcome,
+  type AiAuditRecord,
+  type AiAuthorizer,
+  type AiContentStore,
+  type AiContextResolver,
+  type AiCsrfProtector,
+  type AiOrchestrator,
+  type AiProposalRecord,
+  type AiProposalStatus,
+  type AiProposalStore,
+  type AiSchemaHashLookup,
+  type CoreAiServerDeps,
+  type InlineTransformAction,
+  type MountAiRoutesOptions,
+} from "../core.ai/src/index.js";
+
 type LocalModulePackage = MdcmsModulePackage<unknown, Record<string, unknown>>;
 
 const localModules: LocalModulePackage[] = [

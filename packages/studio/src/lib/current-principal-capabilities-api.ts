@@ -194,6 +194,9 @@ function validateCurrentPrincipalCapabilitiesResponse(
     ["manage"],
     operation,
   );
+  const ai = isRecord(capabilities.ai)
+    ? validateBooleanRecord(capabilities.ai, ["use"], operation)
+    : { use: false };
 
   return {
     project: data.project,
@@ -216,6 +219,9 @@ function validateCurrentPrincipalCapabilitiesResponse(
       },
       settings: {
         manage: settings.manage,
+      },
+      ai: {
+        use: ai.use,
       },
     },
   };
