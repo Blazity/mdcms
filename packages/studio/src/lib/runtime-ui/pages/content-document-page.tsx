@@ -2749,7 +2749,8 @@ export function ContentDocumentPageView({
                 size="sm"
                 disabled={
                   state.saveState !== "unsaved" ||
-                  state.publishState === "publishing"
+                  state.publishState === "publishing" ||
+                  !!state.viewingVersion
                 }
                 onClick={() => onSaveNow?.()}
                 data-mdcms-document-save-now="true"
@@ -3441,6 +3442,12 @@ export default function ContentDocumentPage({
     if (
       !currentState.canWrite ||
       currentState.saveState !== "unsaved" ||
+      // Both the manual `Save draft` button and the autosave debounce
+      // route through this function. Refuse to persist while the user is
+      // viewing a historical version — restoring is an explicit action
+      // gated by the "Restore this version" button, not a side effect of
+      // autosave.
+      currentState.viewingVersion ||
       isDraftPersisted(currentState) ||
       (currentState.saveRequestBody === currentState.draftBody &&
         areJsonValuesEqual(
@@ -3982,6 +3989,10 @@ export default function ContentDocumentPage({
       state.status !== "ready" ||
       !state.canWrite ||
       state.saveState !== "unsaved" ||
+      // Saving while a historical version is being inspected would persist
+      // the historical body as a new draft without the user explicitly
+      // asking; the "Restore this version" button is the deliberate path.
+      state.viewingVersion ||
       isDraftPersisted(state) ||
       (state.saveRequestBody === state.draftBody &&
         areJsonValuesEqual(

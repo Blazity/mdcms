@@ -133,9 +133,9 @@ test("ContentPageView renders populated live overview cards with subtitle, compa
 
   assert.match(markup, /data-mdcms-content-page-state="ready"/);
   assert.match(markup, /data-mdcms-content-card-type="BlogPost"/);
-  // Header subtitle now summarises type/document counts rather than the
-  // generic legacy description.
-  assert.match(markup, /content type/);
+  // Header subtitle is the exact computed summary for the fixture: 2
+  // types totalling 10 documents, 1 of them localized.
+  assert.match(markup, />2 content types · 10 documents · 1 localized</);
   // i18n badge replaces the previous "Localized" / "Single locale" pills.
   assert.match(markup, />i18n</);
   assert.match(markup, /en-US, fr, de, ja/);

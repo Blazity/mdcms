@@ -41,8 +41,15 @@ function renderCard(
   const publishedCount = findMetricValue(entry, "published") ?? 0;
   const draftCount = findMetricValue(entry, "withDrafts") ?? 0;
   const hasMetrics = entry.metrics.length > 0;
-  const publishedPercentage =
+  // Clamp once so the "% published" text and the progress bar both stay in
+  // [0, 100] even if upstream returns published > total or a negative
+  // value.
+  const rawPublishedPercentage =
     totalCount > 0 ? Math.round((publishedCount / totalCount) * 100) : 0;
+  const publishedPercentage = Math.max(
+    0,
+    Math.min(100, rawPublishedPercentage),
+  );
   const initial = (entry.type[0] ?? "?").toUpperCase();
 
   const card = (

@@ -137,12 +137,7 @@ export function AppSidebar({
     sessionState.status === "authenticated" ? sessionState.session : null;
   const accountInitials = session ? deriveInitials(session.email) : "MD";
   const accountName = session ? deriveDisplayName(session.email) : "Studio";
-  const accountMeta =
-    mountInfo.project && session
-      ? `${mountInfo.project}`
-      : mountInfo.project
-        ? mountInfo.project
-        : "MDCMS";
+  const accountMeta = mountInfo.project ?? "MDCMS";
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -276,20 +271,19 @@ function SidebarNavLink({
     pathname === resolvedHref ||
     (resolvedHref !== basePath && pathname.startsWith(`${resolvedHref}/`));
 
-  const baseClasses = cn(
+  const className = cn(
     "group flex h-9 items-center gap-2.5 rounded-md px-3 text-[13px] font-medium transition-colors",
     isActive
       ? "bg-sidebar-accent text-sidebar-accent-foreground"
       : "text-sidebar-foreground-muted hover:bg-sidebar-surface hover:text-sidebar-foreground",
     collapsed && "justify-center px-0 gap-0",
   );
-  // Append `bg-accent-subtle` as an inert marker class on the active link.
-  // It's a no-op visually (the active background is bg-sidebar-accent above)
-  // but is asserted by app-sidebar.test.tsx to verify active routing under
-  // scenario base paths in the studio-review host.
-  const className = isActive ? `${baseClasses} bg-accent-subtle` : baseClasses;
   const link = (
-    <Link href={resolvedHref} className={className}>
+    <Link
+      href={resolvedHref}
+      className={className}
+      data-active={isActive ? "true" : undefined}
+    >
       <item.icon className="h-[18px] w-[18px] shrink-0" />
       {!collapsed && (
         <>

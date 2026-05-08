@@ -581,17 +581,11 @@ function SchemaSplitPane({ entries }: { entries: SchemaRegistryEntry[] }) {
   );
 }
 
-export default function SchemaPage({
-  context,
-}: {
-  context: StudioMountContext;
-}) {
+export default function SchemaPage() {
   const mountInfo = useStudioMountInfo();
   const [state, setState] = useState<StudioSchemaState>(() =>
     createSchemaPageLoadingState(),
   );
-
-  void context;
 
   useEffect(() => {
     if (!mountInfo.project || !mountInfo.environment) {

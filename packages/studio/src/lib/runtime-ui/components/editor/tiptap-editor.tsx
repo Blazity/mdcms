@@ -420,12 +420,17 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
     }, [catalogComponents, slashTrigger]);
 
     // Refs so the editor's prosemirror handleKeyDown — which is captured
-    // once when the editor is created — can read the latest filtered list
-    // and highlighted index without a stale closure on each keystroke.
+    // once when the editor is created — can read the latest filtered list,
+    // highlighted index, and picker visibility flags without a stale
+    // closure on each keystroke.
     const filteredSlashComponentsRef = useRef(filteredSlashComponents);
     filteredSlashComponentsRef.current = filteredSlashComponents;
     const slashHighlightIndexRef = useRef(slashHighlightIndex);
     slashHighlightIndexRef.current = slashHighlightIndex;
+    const slashTriggerRef = useRef(slashTrigger);
+    slashTriggerRef.current = slashTrigger;
+    const slashPickerCoordsRef = useRef(slashPickerCoords);
+    slashPickerCoordsRef.current = slashPickerCoords;
     const insertSelectedComponentRef = useRef<
       ((component: (typeof catalogComponents)[number]) => void) | null
     >(null);
@@ -749,7 +754,15 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             "data-placeholder": placeholder,
           },
           handleKeyDown: (_view, event) => {
-            if (pickerSourceRef.current === "slash") {
+            // The slash picker is only "visible" when the source flag, the
+            // active trigger, and the resolved float coords are all set. A
+            // stale `pickerSource === "slash"` between the close-flow's
+            // batched setStates is not enough to claim keystrokes.
+            const slashPickerVisible =
+              pickerSourceRef.current === "slash" &&
+              slashTriggerRef.current !== null &&
+              slashPickerCoordsRef.current !== null;
+            if (slashPickerVisible) {
               if (event.key === "Escape") {
                 setPickerSource(null);
                 setSlashTrigger(null);
@@ -758,34 +771,25 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
               }
               const items = filteredSlashComponentsRef.current;
               if (event.key === "ArrowDown") {
-                if (items.length > 0) {
-                  setSlashHighlightIndex(
-                    (slashHighlightIndexRef.current + 1) % items.length,
-                  );
-                }
+                if (items.length === 0) return false;
+                setSlashHighlightIndex(
+                  (slashHighlightIndexRef.current + 1) % items.length,
+                );
                 return true;
               }
               if (event.key === "ArrowUp") {
-                if (items.length > 0) {
-                  setSlashHighlightIndex(
-                    (slashHighlightIndexRef.current - 1 + items.length) %
-                      items.length,
-                  );
-                }
+                if (items.length === 0) return false;
+                setSlashHighlightIndex(
+                  (slashHighlightIndexRef.current - 1 + items.length) %
+                    items.length,
+                );
                 return true;
               }
-              if (event.key === "Enter") {
+              if (event.key === "Enter" || event.key === "Tab") {
+                if (items.length === 0) return false;
                 const item = items[slashHighlightIndexRef.current];
-                if (item) {
-                  insertSelectedComponentRef.current?.(item);
-                }
-                return true;
-              }
-              if (event.key === "Tab") {
-                const item = items[slashHighlightIndexRef.current];
-                if (item) {
-                  insertSelectedComponentRef.current?.(item);
-                }
+                if (!item || !insertSelectedComponentRef.current) return false;
+                insertSelectedComponentRef.current(item);
                 return true;
               }
             }

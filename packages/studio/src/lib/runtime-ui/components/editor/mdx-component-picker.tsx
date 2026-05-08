@@ -31,6 +31,19 @@ export function MdxComponentPicker({
 }: MdxComponentPickerProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
 
+  // Scroll the highlighted row into view when the user arrows past the
+  // visible area of a tall component catalog. Declared before the empty-
+  // catalog early return so hooks always fire in the same order.
+  useEffect(() => {
+    if (highlightedIndex === undefined) return;
+    const list = listRef.current;
+    if (!list) return;
+    const item = list.querySelector<HTMLElement>(
+      `[data-mdcms-mdx-picker-item-index="${highlightedIndex}"]`,
+    );
+    item?.scrollIntoView({ block: "nearest" });
+  }, [highlightedIndex]);
+
   if (components.length === 0) {
     return (
       <section
@@ -53,18 +66,6 @@ export function MdxComponentPicker({
       value.toLowerCase().includes(normalizedQuery),
     );
   });
-
-  // Scroll the highlighted row into view when the user arrows past the
-  // visible area of a tall component catalog.
-  useEffect(() => {
-    if (highlightedIndex === undefined) return;
-    const list = listRef.current;
-    if (!list) return;
-    const item = list.querySelector<HTMLElement>(
-      `[data-mdcms-mdx-picker-item-index="${highlightedIndex}"]`,
-    );
-    item?.scrollIntoView({ block: "nearest" });
-  }, [highlightedIndex]);
 
   return (
     <section
