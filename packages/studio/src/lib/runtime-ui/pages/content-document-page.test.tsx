@@ -1517,9 +1517,8 @@ test("ContentDocumentPageView renders tabbed sidebar in info, properties, histor
     },
   });
 
-  // The sidebar defaults to the Properties tab. Version history content
-  // is in the History tab and version diff is in a modal, so they are
-  // not present in the default SSR render. System metadata moved to Info.
+  // The sidebar exposes four tabs (Info, Properties, optional Component,
+  // History). Properties is the default — Info is shown via its tab.
   const infoIndex = readyMarkup.indexOf(">Info<");
   const propertiesIndex = readyMarkup.indexOf(">Properties<");
   const historyIndex = readyMarkup.indexOf(">History<");
@@ -1531,15 +1530,11 @@ test("ContentDocumentPageView renders tabbed sidebar in info, properties, histor
     infoIndex < propertiesIndex && propertiesIndex < historyIndex,
     "expected Info, Properties, History tab order",
   );
-  assert.match(readyMarkup, /Properties/);
   assert.match(readyMarkup, /Info/);
+  assert.match(readyMarkup, /Properties/);
   assert.match(readyMarkup, /History/);
   assert.match(readyMarkup, /Publish document/);
-  assert.doesNotMatch(readyMarkup, /Status/);
-  assert.doesNotMatch(readyMarkup, /Published version/);
-  assert.doesNotMatch(readyMarkup, /Last edited/);
-  assert.doesNotMatch(readyMarkup, /Path/);
-  // Old sidebar content should be gone
+  // Legacy sidebar copy stays out.
   assert.doesNotMatch(readyMarkup, /Document workflow/);
   assert.doesNotMatch(readyMarkup, /This page loads the routed draft/);
   assert.doesNotMatch(readyMarkup, />Unpublish</);
@@ -1561,21 +1556,25 @@ test("SidebarInfoTab renders the document system metadata outside Properties", (
 
   const markup = renderInfoTabMarkup(state);
 
-  assert.match(markup, /Status/);
+  // The redesigned Info block renders mono key/value rows under a single
+  // "Document" section header. Keys are lowercase mono labels (status,
+  // type, locale, publishedVersion, updatedAt, path).
+  assert.match(markup, />Document</);
+  assert.match(markup, />status</);
   assert.match(markup, />Published</);
-  assert.match(markup, /Published version/);
+  assert.match(markup, />publishedVersion</);
   assert.match(markup, />v1</);
-  assert.match(markup, /Locale/);
+  assert.match(markup, />locale</);
   assert.match(markup, />en</);
-  assert.match(markup, /Last edited/);
-  assert.match(markup, /Path/);
+  assert.match(markup, />updatedAt</);
+  assert.match(markup, />path</);
   assert.match(markup, /content\/posts\/hello-mdcms/);
   assert.doesNotMatch(markup, /data-mdcms-property-field=/);
 });
 
-test("ContentDocumentPageView derives truthful document badges from live document state", () => {
-  const changedMarkup = renderPageMarkup(createReadyState());
-  const publishedMarkup = renderPageMarkup({
+test("SidebarInfoTab derives truthful document status badges from live document state", () => {
+  const changedMarkup = renderInfoTabMarkup(createReadyState());
+  const publishedMarkup = renderInfoTabMarkup({
     ...createReadyState(),
     document: {
       ...createReadyState().document,
@@ -1583,7 +1582,7 @@ test("ContentDocumentPageView derives truthful document badges from live documen
       publishedVersion: 5,
     },
   });
-  const draftMarkup = renderPageMarkup({
+  const draftMarkup = renderInfoTabMarkup({
     ...createReadyState(),
     document: {
       ...createReadyState().document,
@@ -1598,6 +1597,22 @@ test("ContentDocumentPageView derives truthful document badges from live documen
   assert.doesNotMatch(publishedMarkup, />Changed</);
   assert.match(draftMarkup, />Draft</);
   assert.doesNotMatch(draftMarkup, />Published</);
+});
+
+test("ContentDocumentPageView surfaces UNPUBLISHED CHANGES in the topbar when the doc has unpublished edits", () => {
+  const changedMarkup = renderPageMarkup(createReadyState());
+  const publishedMarkup = renderPageMarkup({
+    ...createReadyState(),
+    document: {
+      ...createReadyState().document,
+      hasUnpublishedChanges: false,
+      publishedVersion: 5,
+    },
+  });
+
+  assert.match(changedMarkup, /UNPUBLISHED CHANGES/);
+  assert.match(changedMarkup, /data-mdcms-document-unpublished-changes="true"/);
+  assert.doesNotMatch(publishedMarkup, /UNPUBLISHED CHANGES/);
 });
 
 test("ContentDocumentPageView blocks writes when the local schema hash capability is unavailable", () => {

@@ -40,8 +40,11 @@ test("MdxComponentPicker renders catalog components with kind badges", () => {
 
   assert.match(markup, /data-mdcms-mdx-picker-item="Callout"/);
   assert.match(markup, /data-mdcms-mdx-picker-item="HeroBanner"/);
-  assert.match(markup, />Wrapper</);
-  assert.match(markup, />Void</);
+  // Slash-menu rows no longer surface the wrapper/void kind label — the
+  // distinction is implementation detail and the picker just lists each
+  // component by name + description.
+  assert.doesNotMatch(markup, />wrapper</);
+  assert.doesNotMatch(markup, />void</);
 });
 
 test("MdxComponentPicker filters components by query", () => {

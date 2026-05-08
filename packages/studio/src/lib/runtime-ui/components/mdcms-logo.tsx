@@ -61,7 +61,7 @@ export function MDCMSLogo({ collapsed = false, className }: MDCMSLogoProps) {
       {collapsed ? (
         <span className="sr-only">MDCMS</span>
       ) : (
-        <span className="font-heading text-lg font-bold tracking-tight text-foreground">
+        <span className="font-heading text-lg font-bold tracking-tight">
           MDCMS
         </span>
       )}

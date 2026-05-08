@@ -1,9 +1,10 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+
 import type { StudioMountContext } from "@mdcms/shared";
 
-import { Badge } from "../ui/badge.js";
-import { getMdxComponentKind } from "./mdx-component-catalog.js";
+import { cn } from "../../lib/utils.js";
 
 type MdxCatalogComponent = NonNullable<
   StudioMountContext["mdx"]
@@ -14,6 +15,10 @@ export type MdxComponentPickerProps = {
   query?: string;
   forbidden?: boolean;
   onSelect: (component: MdxCatalogComponent) => void;
+  /** Currently highlighted item — wired to keyboard arrow navigation. */
+  highlightedIndex?: number;
+  /** Notifies the host so mouse hover keeps the keyboard cursor in sync. */
+  onHighlightedIndexChange?: (index: number) => void;
 };
 
 export function MdxComponentPicker({
@@ -21,13 +26,17 @@ export function MdxComponentPicker({
   query = "",
   forbidden = false,
   onSelect,
+  highlightedIndex,
+  onHighlightedIndexChange,
 }: MdxComponentPickerProps) {
+  const listRef = useRef<HTMLDivElement | null>(null);
+
   if (components.length === 0) {
     return (
       <section
         data-mdcms-mdx-picker="catalog"
         data-mdcms-mdx-picker-state="empty"
-        className="rounded-md border border-border bg-background p-3 text-sm text-foreground-muted"
+        className="rounded-md border border-border bg-card p-3 text-sm text-foreground-muted shadow-[0_12px_32px_-12px_rgba(0,0,0,0.25)]"
       >
         No local MDX components registered.
       </section>
@@ -45,22 +54,31 @@ export function MdxComponentPicker({
     );
   });
 
+  // Scroll the highlighted row into view when the user arrows past the
+  // visible area of a tall component catalog.
+  useEffect(() => {
+    if (highlightedIndex === undefined) return;
+    const list = listRef.current;
+    if (!list) return;
+    const item = list.querySelector<HTMLElement>(
+      `[data-mdcms-mdx-picker-item-index="${highlightedIndex}"]`,
+    );
+    item?.scrollIntoView({ block: "nearest" });
+  }, [highlightedIndex]);
+
   return (
     <section
       data-mdcms-mdx-picker="catalog"
-      className="space-y-3 rounded-md border border-border bg-background p-3 shadow-sm"
+      className="rounded-md border border-border bg-card p-1.5 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.25)]"
     >
-      <div className="space-y-1">
-        <p className="text-sm font-medium text-foreground">Insert component</p>
-        <p className="text-xs text-foreground-muted">
-          Pick from the local MDX component catalog.
-        </p>
+      <div className="px-2 pb-1 pt-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-foreground-muted">
+        Mdx components
       </div>
 
       {forbidden ? (
         <p
           data-mdcms-mdx-picker-state="forbidden"
-          className="text-xs text-foreground-muted"
+          className="px-2 py-1 font-mono text-[11px] text-foreground-muted"
         >
           Component insertion is unavailable in read-only mode.
         </p>
@@ -69,14 +87,18 @@ export function MdxComponentPicker({
       {filteredComponents.length === 0 ? (
         <p
           data-mdcms-mdx-picker-state="filtered-empty"
-          className="text-xs text-foreground-muted"
+          className="px-2 py-1 font-mono text-[11px] text-foreground-muted"
         >
           No components match the current filter.
         </p>
       ) : (
-        <div className="space-y-2">
-          {filteredComponents.map((component) => {
-            const kind = getMdxComponentKind(component);
+        <div ref={listRef} className="flex flex-col gap-0.5">
+          {filteredComponents.map((component, index) => {
+            const initial = (component.name[0] ?? "?").toUpperCase();
+            const isHighlighted =
+              highlightedIndex !== undefined
+                ? highlightedIndex === index
+                : index === 0;
 
             return (
               <button
@@ -84,26 +106,43 @@ export function MdxComponentPicker({
                 type="button"
                 disabled={forbidden}
                 data-mdcms-mdx-picker-item={component.name}
+                data-mdcms-mdx-picker-item-index={index}
+                data-mdcms-mdx-picker-item-active={
+                  isHighlighted ? "true" : "false"
+                }
+                onMouseEnter={() => onHighlightedIndexChange?.(index)}
                 onClick={() => {
                   if (!forbidden) {
                     onSelect(component);
                   }
                 }}
-                className="flex w-full items-start justify-between rounded-md border border-border px-3 py-2 text-left hover:bg-background-subtle disabled:cursor-not-allowed disabled:opacity-60"
+                className={cn(
+                  "group flex w-full items-center gap-2.5 rounded-sm px-2 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                  isHighlighted
+                    ? "bg-blue-100 text-foreground"
+                    : "text-foreground hover:bg-accent-subtle",
+                )}
               >
-                <span className="space-y-1">
-                  <span className="block text-sm font-medium text-foreground">
+                <span
+                  className={cn(
+                    "grid h-[22px] w-[22px] shrink-0 place-items-center rounded-sm font-mono text-[11px] font-bold",
+                    isHighlighted
+                      ? "bg-card text-primary"
+                      : "bg-code-bg text-foreground-muted group-hover:bg-card group-hover:text-primary",
+                  )}
+                >
+                  {initial}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium text-foreground">
                     {component.name}
                   </span>
                   {component.description ? (
-                    <span className="block text-xs text-foreground-muted">
+                    <span className="block truncate font-mono text-[10px] text-foreground-muted">
                       {component.description}
                     </span>
                   ) : null}
                 </span>
-                <Badge variant="outline" className="text-[10px]">
-                  {kind === "wrapper" ? "Wrapper" : "Void"}
-                </Badge>
               </button>
             );
           })}

@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { Button } from "../../../../components/ui/button.js";
 import { Input } from "../../../../components/ui/input.js";
-import { Badge } from "../../../../components/ui/badge.js";
+import { cn } from "../../../../lib/utils.js";
 import { Avatar, AvatarFallback } from "../../../../components/ui/avatar.js";
 import {
   Select,
@@ -76,16 +76,19 @@ import {
 
 const statusConfig = {
   published: {
-    label: "Published",
-    className: "bg-success/10 text-success",
+    label: "PUBLISHED",
+    className:
+      "bg-[rgba(174,213,32,0.18)] text-[#516600] font-mono text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-sm",
   },
   draft: {
-    label: "Draft",
-    className: "bg-warning/10 text-warning",
+    label: "DRAFT",
+    className:
+      "bg-vibrant-green text-[#516600] font-mono text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-sm",
   },
   changed: {
-    label: "Changed",
-    className: "bg-warning/10 text-warning",
+    label: "UNPUBLISHED CHANGES",
+    className:
+      "bg-blue-100 text-primary font-mono text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-sm",
   },
 };
 
@@ -443,14 +446,25 @@ export default function ContentTypePage() {
         ]}
       />
 
-      <div className="p-6 space-y-6">
+      <div className="space-y-8 p-6 lg:p-8">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">{typeName}</h1>
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="font-heading text-[36px] font-bold leading-[1.05] tracking-tight text-foreground">
+              {typeName}
+            </h1>
+            <p className="mt-1.5 font-mono text-[12px] text-foreground-muted">
+              {schemaEntry?.directory ? `/${schemaEntry.directory}` : typeId}
+              {schemaEntry?.localized ? " · localized" : ""}
+              {list.pagination
+                ? ` · ${list.pagination.total} document${list.pagination.total === 1 ? "" : "s"}`
+                : ""}
+            </p>
+          </div>
           {capabilities.canCreateContent && schemaEntry && (
             <Button onClick={create.open}>
               <Plus className="mr-2 h-4 w-4" />
-              New Document
+              New document
             </Button>
           )}
         </div>
@@ -589,14 +603,17 @@ export default function ContentTypePage() {
         {list.status === "ready" && (
           <>
             {list.documents.length > 0 ? (
-              <div className="rounded-lg border border-border">
+              <div className="overflow-hidden rounded-lg border border-card-border bg-card">
                 <Table>
-                  <TableHeader>
+                  <TableHeader className="bg-background-subtle">
                     <TableRow>
                       {tableColumns.map((column) => (
                         <TableHead
                           key={column.key}
-                          className={column.className}
+                          className={cn(
+                            "h-10 px-4 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-foreground-muted",
+                            column.className,
+                          )}
                         >
                           {column.label}
                         </TableHead>
@@ -607,23 +624,25 @@ export default function ContentTypePage() {
                     {list.documents.map((doc) => (
                       <TableRow
                         key={doc.documentId}
-                        className="cursor-pointer"
+                        className="cursor-pointer border-b border-divider/60 last:border-0"
                         onClick={() =>
                           router.push(
                             `/admin/content/${typeId}/${doc.documentId}`,
                           )
                         }
                       >
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{doc.title}</p>
-                            <p className="text-xs text-foreground-muted font-mono">
+                        <TableCell className="px-4 py-3">
+                          <div className="max-w-[480px]">
+                            <p className="truncate text-[13px] font-semibold text-foreground">
+                              {doc.title}
+                            </p>
+                            <p className="truncate font-mono text-[11px] text-foreground-muted">
                               {doc.path}
                             </p>
                           </div>
                         </TableCell>
                         {showTranslationCoverage ? (
-                          <TableCell>
+                          <TableCell className="px-4 py-3">
                             <TranslationCoverageSummary
                               status={list.translationCoverageStatus}
                               coverage={
@@ -634,21 +653,18 @@ export default function ContentTypePage() {
                             />
                           </TableCell>
                         ) : null}
-                        <TableCell>
-                          <Badge
-                            variant="tag"
-                            className={statusConfig[doc.status].className}
-                          >
+                        <TableCell className="px-4 py-3">
+                          <span className={statusConfig[doc.status].className}>
                             {statusConfig[doc.status].label}
-                          </Badge>
+                          </span>
                         </TableCell>
-                        <TableCell className="text-sm text-foreground-muted">
+                        <TableCell className="px-4 py-3 font-mono text-[11px] text-foreground-muted">
                           {formatRelativeTime(doc.updatedAt)}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <Avatar className="h-6 w-6">
-                              <AvatarFallback className="text-xs">
+                              <AvatarFallback className="bg-blue-100 text-[10px] font-bold text-primary">
                                 {deriveAuthorInitials(
                                   list.users[doc.updatedBy]?.email,
                                 )}
@@ -656,7 +672,10 @@ export default function ContentTypePage() {
                             </Avatar>
                           </div>
                         </TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
+                        <TableCell
+                          className="px-4 py-3"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           {renderRowActions(doc)}
                         </TableCell>
                       </TableRow>

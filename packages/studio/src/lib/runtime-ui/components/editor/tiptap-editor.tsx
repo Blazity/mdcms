@@ -13,6 +13,7 @@ import {
   useEffect,
   useEffectEvent,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -209,6 +210,12 @@ interface TipTapEditorProps {
    * transforms.
    */
   onSelectionTextChange?: (selection: TipTapEditorSelectionInfo | null) => void;
+  /**
+   * Renders ABOVE the editable surface inside the scrollable canvas area —
+   * for the document path chip, frontmatter mono row, and any
+   * status/error banners the page wants centered with the doc body.
+   */
+  canvasHeader?: ReactNode;
 }
 
 const defaultContent = `
@@ -311,8 +318,9 @@ function ToolbarButton({
       aria-label={label}
       title={label}
       className={cn(
-        "h-8 px-2.5",
-        active && "bg-accent-subtle text-primary",
+        "h-[30px] w-[30px] rounded-sm border-0 px-0 font-mono text-[13px] text-foreground-muted hover:bg-accent-subtle hover:text-foreground",
+        active &&
+          "bg-blue-100 text-primary hover:bg-blue-100 hover:text-primary",
         className,
       )}
     >
@@ -363,6 +371,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       forbidden = false,
       onActiveMdxComponentChange,
       onSelectionTextChange,
+      canvasHeader,
     },
     ref,
   ) {
@@ -377,6 +386,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       useState<MdxComponentSlashTrigger | null>(null);
     const [slashPickerCoords, setSlashPickerCoords] =
       useState<SlashTriggerCoords | null>(null);
+    const [slashHighlightIndex, setSlashHighlightIndex] = useState(0);
     const [linkPopoverOpen, setLinkPopoverOpen] = useState(false);
     const [linkInputValue, setLinkInputValue] = useState("");
     // While the user drags an MDX component handle, the browser's default
@@ -392,6 +402,53 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       pickerSource === "slash" &&
       slashTrigger !== null &&
       slashPickerCoords !== null;
+
+    // Filter the MDX catalog by the current slash trigger query so the
+    // picker, the highlight cursor, and the keyboard handler all walk the
+    // exact same list. The filtering rule must match
+    // MdxComponentPicker's internal filter so what the user sees is what
+    // Enter inserts.
+    const filteredSlashComponents = useMemo(() => {
+      if (!slashTrigger) return catalogComponents;
+      const normalizedQuery = slashTrigger.query.trim().toLowerCase();
+      if (normalizedQuery.length === 0) return catalogComponents;
+      return catalogComponents.filter((component) =>
+        [component.name, component.description ?? ""].some((value) =>
+          value.toLowerCase().includes(normalizedQuery),
+        ),
+      );
+    }, [catalogComponents, slashTrigger]);
+
+    // Refs so the editor's prosemirror handleKeyDown — which is captured
+    // once when the editor is created — can read the latest filtered list
+    // and highlighted index without a stale closure on each keystroke.
+    const filteredSlashComponentsRef = useRef(filteredSlashComponents);
+    filteredSlashComponentsRef.current = filteredSlashComponents;
+    const slashHighlightIndexRef = useRef(slashHighlightIndex);
+    slashHighlightIndexRef.current = slashHighlightIndex;
+    const insertSelectedComponentRef = useRef<
+      ((component: (typeof catalogComponents)[number]) => void) | null
+    >(null);
+
+    // Reset / clamp the highlight when the filtered list changes (the user
+    // typed more characters and items dropped out, or the list emptied).
+    useEffect(() => {
+      if (!slashPickerOpen) return;
+      setSlashHighlightIndex((current) => {
+        if (filteredSlashComponents.length === 0) return 0;
+        if (current >= filteredSlashComponents.length) {
+          return filteredSlashComponents.length - 1;
+        }
+        return current;
+      });
+    }, [filteredSlashComponents, slashPickerOpen]);
+
+    // Reset to 0 each time the picker opens fresh.
+    useEffect(() => {
+      if (!slashPickerOpen) {
+        setSlashHighlightIndex(0);
+      }
+    }, [slashPickerOpen]);
     const {
       refs: floatingRefs,
       floatingStyles,
@@ -681,16 +738,56 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             // dead space and the drop indicator (and the drop itself)
             // silently no-ops, so users dragging an MDX block to the very
             // top of the document saw nothing happen.
+            // Padding is supplied by the canvas wrapper (`max-w-[880px]
+            // px-6 lg:px-12 ...`) so the dashed frontmatter row above the
+            // editor body and the body itself land on the same horizontal
+            // edges. Vertical padding stays here so the gutter above the
+            // first block and below the last keeps emitting dragover
+            // events for prosemirror-dropcursor.
             class:
-              "prose max-w-none prose-p:leading-relaxed focus:outline-none px-8 py-8 min-h-[480px]",
+              "prose max-w-none prose-p:leading-relaxed focus:outline-none py-4 min-h-[400px]",
             "data-placeholder": placeholder,
           },
           handleKeyDown: (_view, event) => {
-            if (event.key === "Escape" && pickerSourceRef.current === "slash") {
-              setPickerSource(null);
-              setSlashTrigger(null);
-              setSlashPickerCoords(null);
-              return true;
+            if (pickerSourceRef.current === "slash") {
+              if (event.key === "Escape") {
+                setPickerSource(null);
+                setSlashTrigger(null);
+                setSlashPickerCoords(null);
+                return true;
+              }
+              const items = filteredSlashComponentsRef.current;
+              if (event.key === "ArrowDown") {
+                if (items.length > 0) {
+                  setSlashHighlightIndex(
+                    (slashHighlightIndexRef.current + 1) % items.length,
+                  );
+                }
+                return true;
+              }
+              if (event.key === "ArrowUp") {
+                if (items.length > 0) {
+                  setSlashHighlightIndex(
+                    (slashHighlightIndexRef.current - 1 + items.length) %
+                      items.length,
+                  );
+                }
+                return true;
+              }
+              if (event.key === "Enter") {
+                const item = items[slashHighlightIndexRef.current];
+                if (item) {
+                  insertSelectedComponentRef.current?.(item);
+                }
+                return true;
+              }
+              if (event.key === "Tab") {
+                const item = items[slashHighlightIndexRef.current];
+                if (item) {
+                  insertSelectedComponentRef.current?.(item);
+                }
+                return true;
+              }
             }
             return false;
           },
@@ -881,11 +978,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
               originalSlice.openStart,
               originalSlice.openEnd,
             );
-            const tr = editor.state.tr.replace(
-              input.from,
-              input.to,
-              newSlice,
-            );
+            const tr = editor.state.tr.replace(input.from, input.to, newSlice);
             editor.view.dispatch(tr);
             editor.commands.focus();
           } else {
@@ -1367,6 +1460,10 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       handleEditorUpdate(editor);
       syncSlashTrigger(editor);
     };
+    // Keep the ref in sync so the editor's prosemirror handleKeyDown — which
+    // closes over the FIRST insertSelectedComponent — can always invoke the
+    // freshest version on Enter while the slash picker is open.
+    insertSelectedComponentRef.current = insertSelectedComponent;
 
     const slashPicker = slashPickerOpen ? (
       <div
@@ -1384,6 +1481,8 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           query={slashTrigger.query}
           forbidden={isEditorReadOnly}
           onSelect={insertSelectedComponent}
+          highlightedIndex={slashHighlightIndex}
+          onHighlightedIndexChange={setSlashHighlightIndex}
         />
       </div>
     ) : null;
@@ -1395,14 +1494,17 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
         // its descendants so the pointer doesn't paint a text selection over
         // sibling block content as it sweeps over them. `pointer-events`
         // stays on so dragover continues to fire and auto-scroll works.
+        // The wrapper takes the full height of the canvas pane so the
+        // toolbar can sit fixed at the top and the editor body can scroll
+        // independently below it.
         className={cn(
-          "relative",
+          "relative flex h-full min-h-0 flex-col",
           isMdxDragging && "select-none [&_*]:select-none",
         )}
       >
-        <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-background">
-          <div className="border-b border-border bg-background-subtle">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2.5">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+          <div className="shrink-0 border-b border-border bg-card">
+            <div className="flex flex-wrap items-center gap-x-1 gap-y-1 px-6 py-2">
               {toolbar.primaryGroups.map((group, groupIndex) => (
                 <div key={group.id} className="flex items-center gap-1.5">
                   {groupIndex > 0 ? (
@@ -1626,12 +1728,15 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             ) : null}
           </div>
 
-          <div className="bg-transparent">
-            <MdxComponentCollapseProvider
-              snapshot={collapseController.snapshot}
-            >
-              <EditorContent editor={editor} />
-            </MdxComponentCollapseProvider>
+          <div className="flex-1 overflow-y-auto">
+            <div className="mx-auto max-w-[880px] px-6 pb-24 pt-4 lg:px-10 lg:pt-5">
+              {canvasHeader}
+              <MdxComponentCollapseProvider
+                snapshot={collapseController.snapshot}
+              >
+                <EditorContent editor={editor} />
+              </MdxComponentCollapseProvider>
+            </div>
           </div>
         </div>
 

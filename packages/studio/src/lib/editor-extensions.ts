@@ -83,6 +83,83 @@ const BlurSelectionPreserver = Extension.create({
   },
 });
 
+// EmptyParagraphHint adds a `data-mdcms-empty-hint="true"` attribute to the
+// empty top-level paragraph containing the caret while the editor is
+// focused. CSS in styles.css renders the design's "Type / to insert a
+// component…" affordance via a `::before` on that node — scoped to the
+// active block only, and only when the block is a doc-root paragraph, so
+// the hint appears exactly where `/` would actually open the component
+// picker (lists, blockquotes, code blocks, and MDX wrappers do not).
+const EmptyParagraphHint = Extension.create({
+  name: "emptyParagraphHint",
+
+  addProseMirrorPlugins() {
+    const pluginKey = new PluginKey<{ focused: boolean }>("emptyParagraphHint");
+
+    return [
+      new Plugin<{ focused: boolean }>({
+        key: pluginKey,
+        state: {
+          init: () => ({ focused: true }),
+          apply: (tr, value) => {
+            const meta = tr.getMeta(pluginKey);
+            if (meta && typeof meta.focused === "boolean") {
+              return { focused: meta.focused };
+            }
+            return value;
+          },
+        },
+        props: {
+          decorations(state) {
+            const pluginState = pluginKey.getState(state);
+            if (!pluginState?.focused) return DecorationSet.empty;
+            const { selection } = state;
+            if (selection.from !== selection.to) return DecorationSet.empty;
+            const $pos = selection.$from;
+            const node = $pos.parent;
+            // The hint only fires on top-level empty paragraphs. Depth 1
+            // means the paragraph's direct parent is the doc root —
+            // anything deeper (blockquote, list item, MDX wrapper, code
+            // block, custom container) suppresses the hint, since "/"
+            // does not insert a component there.
+            if (
+              node.type.name !== "paragraph" ||
+              node.content.size > 0 ||
+              $pos.depth !== 1
+            ) {
+              return DecorationSet.empty;
+            }
+            const start = $pos.before($pos.depth);
+            const end = $pos.after($pos.depth);
+            return DecorationSet.create(state.doc, [
+              Decoration.node(start, end, {
+                "data-mdcms-empty-hint": "true",
+              }),
+            ]);
+          },
+        },
+        view(editorView) {
+          const setFocused = (focused: boolean) => {
+            editorView.dispatch(
+              editorView.state.tr.setMeta(pluginKey, { focused }),
+            );
+          };
+          const onFocus = () => setFocused(true);
+          const onBlur = () => setFocused(false);
+          editorView.dom.addEventListener("focus", onFocus);
+          editorView.dom.addEventListener("blur", onBlur);
+          return {
+            destroy() {
+              editorView.dom.removeEventListener("focus", onFocus);
+              editorView.dom.removeEventListener("blur", onBlur);
+            },
+          };
+        },
+      }),
+    ];
+  },
+});
+
 const HeadlessCodeBlock = CodeBlockLowlight.configure({
   lowlight: lowlightInstance,
   defaultLanguage: null,
@@ -112,6 +189,7 @@ export function createEditorExtensions(options?: {
     Underline,
     Highlight,
     BlurSelectionPreserver,
+    EmptyParagraphHint,
     Link.configure({
       openOnClick: false,
       HTMLAttributes: {
