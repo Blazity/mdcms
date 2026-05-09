@@ -15,7 +15,9 @@ import { StudioMountInfoProvider } from "./mount-info-context.js";
 import { StudioSessionProvider } from "./session-context.js";
 import {
   EnvironmentManagementPageView,
+  PROMOTE_DEFAULT_STATE,
   type EnvironmentManagementState,
+  type EnvironmentPromoteState,
   resolveDeleteFailureState,
 } from "./environments-page.js";
 
@@ -95,26 +97,38 @@ test("EnvironmentManagementPageView renders loading and empty states determinist
 
   assert.match(loadingMarkup, /class="min-h-screen"/);
   assert.match(loadingMarkup, /sticky top-0/);
-  assert.match(loadingMarkup, /p-6 space-y-6/);
   assert.match(loadingMarkup, /data-mdcms-environments-page-state="loading"/);
   assert.match(loadingMarkup, /Loading environments/i);
   assert.match(emptyMarkup, /data-mdcms-environments-page-state="empty"/);
   assert.match(emptyMarkup, /No environments were returned/i);
-  assert.match(emptyMarkup, /New Environment/);
+  assert.match(emptyMarkup, /New environment/);
 });
 
-test("EnvironmentManagementPageView renders live environment summaries and exposes per-environment action menus", () => {
+test("EnvironmentManagementPageView surfaces the definitions strip with hash and syncedAt", () => {
+  const markup = renderMarkup({
+    status: "ready",
+    project: "marketing-site",
+    environments: [createEnvironmentSummary()],
+    definitionsMeta: createDefinitionsMeta(),
+  });
+
+  assert.match(markup, /data-mdcms-environments-definitions-strip/);
+  assert.match(markup, /data-mdcms-environments-definitions-status="ready"/);
+  assert.match(markup, /sha256:abc123/);
+  assert.match(markup, /2026-03-19T10:00:00.000Z/);
+  assert.match(markup, /Defs synced via CLI/i);
+});
+
+test("EnvironmentManagementPageView renders lineage rail and management table with row actions", () => {
   const markup = renderMarkup({
     status: "ready",
     project: "marketing-site",
     environments: [
-      createEnvironmentSummary({
-        createdAt: "2026-03-19T10:00:00.000Z",
-      }),
+      createEnvironmentSummary({ createdAt: "2026-03-19T10:00:00.000Z" }),
       createEnvironmentSummary({
         id: "env-staging",
         name: "staging",
-        extends: "production",
+        extends: "env-production",
         isDefault: false,
         createdAt: "2026-03-20T11:30:45.000Z",
       }),
@@ -123,20 +137,131 @@ test("EnvironmentManagementPageView renders live environment summaries and expos
   });
 
   assert.match(markup, /data-mdcms-environments-page-state="ready"/);
+  // Lineage rail surfaces both nodes.
+  assert.match(markup, /data-mdcms-environments-lineage-node="production"/);
+  assert.match(markup, /data-mdcms-environments-lineage-node="staging"/);
+  // Lineage marks the default/root chip and renders the extends arrow.
+  assert.match(markup, /Default/);
+  assert.match(markup, /Root/);
+  assert.match(markup, /← production/);
+  // Table marker, row markers, and per-row actions.
+  assert.match(markup, /data-mdcms-environments-table/);
   assert.match(markup, /data-mdcms-environment-row="production"/);
   assert.match(markup, /data-mdcms-environment-row="staging"/);
-  assert.match(markup, />Default</);
-  assert.match(markup, /Extends production/);
+  assert.match(markup, /data-mdcms-environment-promote-action="production"/);
+  assert.match(markup, /data-mdcms-environment-clone-action="production"/);
+  assert.match(markup, /data-mdcms-environment-promote-action="staging"/);
+  assert.match(markup, /data-mdcms-environment-clone-action="staging"/);
   assert.match(markup, /2026-03-19T10:00:00.000Z/);
   assert.match(markup, /2026-03-20T11:30:45.000Z/);
-  // Both default and non-default rows now expose an action menu (clone into
-  // any environment is allowed; delete is gated to non-default at the menu
-  // item level — exercised in the e2e flow / route tests).
-  assert.match(markup, /data-mdcms-environment-actions="production"/);
-  assert.match(markup, /data-mdcms-environment-actions="staging"/);
-  assert.match(markup, /Actions for staging/);
-  assert.match(markup, /Actions for production/);
-  assert.doesNotMatch(markup, /document count/i);
+  // Default row's delete button is disabled.
+  assert.match(markup, /Default environment cannot be deleted/);
+  // Extends chip appears on the non-default row.
+  assert.match(markup, /extends production/);
+});
+
+test("EnvironmentManagementPageView renders the promote drawer in the configure stage", () => {
+  const promoteState: EnvironmentPromoteState = {
+    ...PROMOTE_DEFAULT_STATE,
+    sourceEnvironmentId: "env-production",
+    targetEnvironmentId: "env-staging",
+    documents: [
+      {
+        documentId: "doc-1",
+        translationGroupId: "tg-1",
+        project: "marketing-site",
+        environment: "production",
+        path: "blog/welcome",
+        type: "BlogPost",
+        locale: "en",
+        format: "md",
+        isDeleted: false,
+        hasUnpublishedChanges: true,
+        version: 4,
+        publishedVersion: 3,
+        draftRevision: 1,
+        frontmatter: {},
+        body: "",
+        createdBy: "system",
+        createdAt: "2026-03-01T00:00:00.000Z",
+        updatedBy: "system",
+        updatedAt: "2026-03-19T00:00:00.000Z",
+      },
+    ],
+    selectedDocumentIds: ["doc-1"],
+  };
+
+  const markup = renderMarkup(
+    {
+      status: "ready",
+      project: "marketing-site",
+      environments: [
+        createEnvironmentSummary(),
+        createEnvironmentSummary({
+          id: "env-staging",
+          name: "staging",
+          extends: "env-production",
+          isDefault: false,
+        }),
+      ],
+      definitionsMeta: createDefinitionsMeta(),
+    },
+    {
+      promoteTarget: createEnvironmentSummary({
+        id: "env-staging",
+        name: "staging",
+        extends: "env-production",
+        isDefault: false,
+      }),
+      promoteState,
+    },
+  );
+
+  assert.match(markup, /data-mdcms-environment-drawer="promote"/);
+  assert.match(markup, /data-mdcms-environment-promote-stepper="configure"/);
+  assert.match(markup, /data-mdcms-environment-promote-source/);
+  assert.match(markup, /data-mdcms-environment-promote-target/);
+  assert.match(markup, /Promote production .{0,5}.{0,5} staging/);
+  assert.match(markup, /1 selected/);
+  assert.match(markup, /data-mdcms-environment-promote-document-row="doc-1"/);
+  assert.match(markup, /Preview as dry-run/);
+  assert.match(markup, /includeUnpublished/);
+});
+
+test("EnvironmentManagementPageView renders the clone drawer with the contract toggles", () => {
+  const markup = renderMarkup(
+    {
+      status: "ready",
+      project: "marketing-site",
+      environments: [
+        createEnvironmentSummary(),
+        createEnvironmentSummary({
+          id: "env-staging",
+          name: "staging",
+          extends: "env-production",
+          isDefault: false,
+        }),
+      ],
+      definitionsMeta: createDefinitionsMeta(),
+    },
+    {
+      cloneTarget: createEnvironmentSummary({
+        id: "env-staging",
+        name: "staging",
+        extends: "env-production",
+        isDefault: false,
+      }),
+    },
+  );
+
+  assert.match(markup, /data-mdcms-environment-drawer="clone"/);
+  assert.match(markup, /data-mdcms-environment-clone-dialog="staging"/);
+  assert.match(markup, /sourceEnvironmentId/);
+  assert.match(markup, /include\.content/);
+  assert.match(markup, /include\.settings/);
+  assert.match(markup, /includeDrafts/);
+  assert.match(markup, /preservePaths/);
+  assert.match(markup, /Run clone/);
 });
 
 test("EnvironmentManagementPageView renders forbidden and error states", () => {
@@ -168,7 +293,7 @@ test("EnvironmentManagementPageView keeps delete conflicts inside the modal", ()
         createEnvironmentSummary({
           id: "env-staging",
           name: "staging",
-          extends: "production",
+          extends: "env-production",
           isDefault: false,
         }),
       ],
@@ -178,7 +303,7 @@ test("EnvironmentManagementPageView keeps delete conflicts inside the modal", ()
       deleteTarget: createEnvironmentSummary({
         id: "env-staging",
         name: "staging",
-        extends: "production",
+        extends: "env-production",
         isDefault: false,
       }),
       deleteError:
@@ -187,7 +312,7 @@ test("EnvironmentManagementPageView keeps delete conflicts inside the modal", ()
   );
 
   assert.match(markup, /data-mdcms-delete-error/);
-  assert.match(markup, /Delete Environment/);
+  assert.match(markup, /Delete environment/);
   assert.match(
     markup,
     /Environment &quot;staging&quot; cannot be deleted while content or schema state still exists\./,
@@ -200,16 +325,14 @@ test("EnvironmentManagementPageView disables creation when synced definitions ar
     status: "ready",
     project: "marketing-site",
     environments: [createEnvironmentSummary()],
-    definitionsMeta: {
-      definitionsStatus: "missing",
-    },
+    definitionsMeta: { definitionsStatus: "missing" },
   });
 
   assert.match(
     markup,
     /Environment management requires a successful cms schema sync/i,
   );
-  assert.match(markup, /New Environment/);
+  assert.match(markup, /New environment/);
   assert.match(markup, /disabled=""/);
 });
 

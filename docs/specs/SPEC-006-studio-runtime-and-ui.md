@@ -179,7 +179,7 @@ Internal Studio routes (examples):
 - `/admin/content` — Content browser (schema-first navigation)
 - `/admin/content/:type` — List documents of a specific type
 - `/admin/content/:type/:documentId` — Document editor
-- `/admin/environments` — Environment management
+- `/admin/environments` — Environment management, lineage, clone, and promote
 - `/admin/media` — Media library shell surface
 - `/admin/schema` — Read-only schema explorer
 - `/admin/users` — User management (admin only)
@@ -519,13 +519,22 @@ surface for the currently mounted project. It is backed by:
 - `GET /api/v1/environments` for the current project environment list
 - `POST /api/v1/environments` for environment creation
 - `DELETE /api/v1/environments/:id` for environment deletion
+- `POST /api/v1/environments/:id/clone` for cloning into a target environment
+- `POST /api/v1/environments/:id/promote` for promoting selected source
+  documents into a target environment
+- `GET /api/v1/content` (scoped to the source environment) for the document
+  picker that drives the promote flow
 - `GET /api/v1/me/capabilities` for shell-level admin navigation visibility
+
+The route is the canonical surface for clone and promote workflows. There is
+no separate `/admin/promote` route; per-document promotion is invoked from a
+row-level action on the environments table and runs inside the same view.
 
 Normative behavior:
 
-- The route manages only list/create/delete behavior in MVP. Clone, promote,
-  rename, description editing, and other environment workflows are out of scope
-  for this route until their owning work is specified.
+- The route manages list, create, delete, clone, and promote behavior. Rename,
+  description editing, and other environment workflows remain out of scope
+  until their owning work is specified.
 - Environment rows are rendered from the live `EnvironmentSummary[]` contract,
   and the route also consumes the `GET /api/v1/environments` metadata that
   reports whether synced environment definitions are available. Studio must not
@@ -539,6 +548,11 @@ Normative behavior:
   immediately explain that environment management requires a successful
   `cms schema sync` from the host app repo before new environments can be
   created.
+- The route surfaces the `EnvironmentDefinitionsMeta` contract — the
+  `definitionsStatus` value plus, when ready, the `configSnapshotHash` and
+  `syncedAt` fields — as a definitions strip on the page so operators can see
+  whether the server has a synced schema snapshot to validate against before
+  promoting or cloning.
 - On successful create, the creation dialog closes and the environment list
   reloads from the live API before the new row is presented as ready.
 - The default `production` environment is rendered as the non-deletable default
@@ -546,6 +560,43 @@ Normative behavior:
 - Deleting a non-default environment requires an explicit confirmation step and,
   on success, reloads the live environment list before removing the row from the
   UI.
+- The route presents two complementary views of the live environment list:
+  - A lineage view that walks the `extends` chain root → leaves, marking the
+    default environment and visualizing parent-of relationships.
+  - A management table that lists every environment with its name, default
+    status, parent environment (`extends`), `createdAt`, and per-row actions
+    for promote, clone, and delete.
+- Clone is launched from the environments row action and submits to
+  `POST /api/v1/environments/:targetId/clone`. The clone surface exposes the
+  `sourceEnvironmentId` picker plus the live contract toggles
+  (`include.content`, `include.settings`, `includeDrafts`, `preservePaths`)
+  with their spec defaults pre-selected. Source must differ from target. On
+  success the environment list reloads.
+- Promote is launched from the environments row action and runs as a staged
+  workflow inside the same surface, in this order:
+  1. Configure — operator picks `sourceEnvironmentId` and `targetEnvironmentId`,
+     selects one or more `documentIds` from the source environment's live
+     `GET /api/v1/content` list, and toggles `includeUnpublished`. The
+     configure stage must enforce that source differs from target before the
+     stage can advance.
+  2. Preview — Studio submits `dryRun: true` to
+     `POST /api/v1/environments/:targetId/promote` and renders the returned
+     `DocumentPromotionResult[]`, grouped by `overwrote`, `created`, and
+     `skipped_unpublished`. The preview stage must explicitly state that
+     promote is an overwrite — target content is replaced, no merge or
+     conflict resolution — and surface the per-row `remappedReferences`
+     count.
+  3. Run — Studio submits `dryRun: false` using the configuration captured
+     when the preview was produced, and replays the dry-run target ids via
+     `preallocatedTargetIds` so the real run produces identical
+     overwrote/created classification. Editing source, target, document
+     selection, or `includeUnpublished` after a successful preview must
+     invalidate the preview and require a new dry-run before the real run is
+     allowed.
+- Promote and clone surfaces must surface deterministic server failures
+  truthfully. `REFERENCE_REMAP_FAILED` (`409`) on a promote run or preview
+  must report the failure source (translation_group_id, locale, sourceDocumentId,
+  fieldPath when present) and must not present the run as successful.
 - The route must surface deterministic server failures truthfully:
   - `INVALID_INPUT` (`400`) on create is shown inline on the creation form.
   - `CONFIG_SNAPSHOT_REQUIRED` (`409`) on create is shown inline on the

@@ -11,7 +11,6 @@ import {
   LayoutDashboard,
   FileText,
   GitBranch,
-  Send,
   Upload,
   Users,
   Settings,
@@ -58,7 +57,6 @@ const mainNavItems: ReadonlyArray<NavItem> = [
     hint: "read-only",
   },
   { icon: GitBranch, label: "Environments", href: "/admin/environments" },
-  { icon: Send, label: "Promote", href: "/admin/promote" },
   { icon: Upload, label: "Media", href: "/admin/media" },
   { icon: GitBranch, label: "Workflows", href: "/admin/workflows" },
   { icon: Terminal, label: "API", href: "/admin/api" },
@@ -83,7 +81,6 @@ function filterNav(
 
   return items.filter((item) => {
     if (item.href === "/admin/environments") return canManageAdminSurfaces;
-    if (item.href === "/admin/promote") return canManageAdminSurfaces;
     if (item.href === "/admin/schema") return filters.canReadSchema;
     if (item.href === "/admin/users") return filters.canManageUsers;
     if (item.href === "/admin/settings") return filters.canManageSettings;
