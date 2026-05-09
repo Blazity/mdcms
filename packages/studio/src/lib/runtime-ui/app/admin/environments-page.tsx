@@ -68,6 +68,7 @@ export type EnvironmentPromoteState = {
   includeUnpublished: boolean;
   documents: ContentDocumentResponse[];
   documentsLoading: boolean;
+  documentsError: string | null;
   preview:
     | { status: "idle" }
     | { status: "loading" }
@@ -249,6 +250,7 @@ export const PROMOTE_DEFAULT_STATE: EnvironmentPromoteState = {
   includeUnpublished: false,
   documents: [],
   documentsLoading: false,
+  documentsError: null,
   preview: { status: "idle" },
   executing: false,
   executeError: null,
@@ -1086,6 +1088,7 @@ function PromoteConfigure({
 }) {
   const documentsLoading = promoteState.documentsLoading;
   const documents = promoteState.documents;
+  const documentsError = promoteState.documentsError;
 
   return (
     <>
@@ -1144,6 +1147,13 @@ function PromoteConfigure({
           {documentsLoading ? (
             <p className="px-4 py-3 text-sm text-foreground-muted">
               Loading documents…
+            </p>
+          ) : documentsError ? (
+            <p
+              data-mdcms-environment-promote-documents-error
+              className="px-4 py-3 text-sm text-destructive"
+            >
+              {documentsError}
             </p>
           ) : documents.length === 0 ? (
             <p className="px-4 py-3 text-sm text-foreground-muted">
@@ -1772,6 +1782,7 @@ export default function EnvironmentsPage() {
       ...prev,
       documents: [],
       documentsLoading: true,
+      documentsError: null,
       selectedDocumentIds: [],
     }));
 
@@ -1780,22 +1791,49 @@ export default function EnvironmentsPage() {
       { auth },
     );
 
-    void contentApi
-      .list({ limit: 100, sort: "updatedAt", order: "desc" })
-      .then((result) => {
+    // Paginate exhaustively so the picker reflects the entire source
+    // environment, not just the first 100 results. The cap protects against
+    // pathological pagination loops and matches what an operator can
+    // reasonably scroll in a drawer.
+    const PAGE_SIZE = 100;
+    const HARD_CAP = 1000;
+    const fetchAll = async (): Promise<ContentDocumentResponse[]> => {
+      const collected: ContentDocumentResponse[] = [];
+      let offset = 0;
+      while (collected.length < HARD_CAP) {
+        const result = await contentApi.list({
+          limit: PAGE_SIZE,
+          offset,
+          sort: "updatedAt",
+          order: "desc",
+        });
+        if (cancelled) return collected;
+        collected.push(...result.data);
+        if (!result.pagination.hasMore || result.data.length === 0) break;
+        offset = collected.length;
+      }
+      return collected;
+    };
+
+    void fetchAll()
+      .then((documents) => {
         if (cancelled) return;
         setPromoteState((prev) => ({
           ...prev,
-          documents: result.data,
+          documents,
           documentsLoading: false,
+          documentsError: null,
         }));
       })
-      .catch(() => {
+      .catch((error) => {
         if (cancelled) return;
         setPromoteState((prev) => ({
           ...prev,
-          documents: [],
           documentsLoading: false,
+          documentsError: readRuntimeErrorMessage(
+            error,
+            "Failed to load source environment documents.",
+          ),
         }));
       });
 
@@ -2001,8 +2039,12 @@ export default function EnvironmentsPage() {
         preview: { status: "ready", results: result.promoted, snapshot },
       }));
     } catch (error) {
+      // Advance the stepper to the preview stage so PromotePreview mounts and
+      // renders the error state — without this, the drawer stays on configure
+      // and the failure is silently invisible.
       setPromoteState((prev) => ({
         ...prev,
+        stage: "preview",
         preview: {
           status: "error",
           message: readRuntimeErrorMessage(error, "Promote preview failed."),

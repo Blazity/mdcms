@@ -227,6 +227,101 @@ test("EnvironmentManagementPageView renders the promote drawer in the configure 
   assert.match(markup, /includeUnpublished/);
 });
 
+test("EnvironmentManagementPageView surfaces failing promote flows inside the drawer", () => {
+  const promoteState: EnvironmentPromoteState = {
+    ...PROMOTE_DEFAULT_STATE,
+    sourceEnvironmentId: "env-production",
+    targetEnvironmentId: "env-staging",
+    documentsError: "Failed to load source environment documents.",
+    stage: "preview",
+    preview: {
+      status: "error",
+      message: "Promote preview failed.",
+      remapDetails: {
+        sourceDocumentId: "doc-1",
+        fieldPath: "frontmatter.author",
+        translationGroupId: "tg-author",
+        locale: "en",
+      },
+    },
+    executeError: "Promote execution failed.",
+  };
+
+  const markup = renderMarkup(
+    {
+      status: "ready",
+      project: "marketing-site",
+      environments: [
+        createEnvironmentSummary(),
+        createEnvironmentSummary({
+          id: "env-staging",
+          name: "staging",
+          extends: "production",
+          isDefault: false,
+        }),
+      ],
+      definitionsMeta: createDefinitionsMeta(),
+    },
+    {
+      promoteTarget: createEnvironmentSummary({
+        id: "env-staging",
+        name: "staging",
+        extends: "production",
+        isDefault: false,
+      }),
+      promoteState,
+    },
+  );
+
+  // Drawer is mounted and the stepper has advanced to the preview stage so
+  // the error surface is visible.
+  assert.match(markup, /data-mdcms-environment-drawer="promote"/);
+  assert.match(markup, /data-mdcms-environment-promote-stepper="preview"/);
+  // Preview-error block renders the message + remap details.
+  assert.match(markup, /data-mdcms-environment-promote-preview-error/);
+  assert.match(markup, /Promote preview failed\./);
+  assert.match(markup, /frontmatter\.author/);
+});
+
+test("EnvironmentManagementPageView surfaces document-load failures in the promote drawer", () => {
+  const promoteState: EnvironmentPromoteState = {
+    ...PROMOTE_DEFAULT_STATE,
+    sourceEnvironmentId: "env-production",
+    targetEnvironmentId: "env-staging",
+    documentsError: "Failed to load source environment documents.",
+  };
+
+  const markup = renderMarkup(
+    {
+      status: "ready",
+      project: "marketing-site",
+      environments: [
+        createEnvironmentSummary(),
+        createEnvironmentSummary({
+          id: "env-staging",
+          name: "staging",
+          extends: "production",
+          isDefault: false,
+        }),
+      ],
+      definitionsMeta: createDefinitionsMeta(),
+    },
+    {
+      promoteTarget: createEnvironmentSummary({
+        id: "env-staging",
+        name: "staging",
+        extends: "production",
+        isDefault: false,
+      }),
+      promoteState,
+    },
+  );
+
+  assert.match(markup, /data-mdcms-environment-promote-documents-error/);
+  assert.match(markup, /Failed to load source environment documents\./);
+  assert.doesNotMatch(markup, /No documents in source environment\./);
+});
+
 test("EnvironmentManagementPageView renders the clone drawer with the contract toggles", () => {
   const markup = renderMarkup(
     {
