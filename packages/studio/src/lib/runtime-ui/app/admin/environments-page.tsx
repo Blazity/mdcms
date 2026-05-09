@@ -797,11 +797,11 @@ function CloneDrawer({
             htmlFor="clone-source-env"
             className="font-mono text-[10px] uppercase tracking-[0.08em] text-foreground-muted"
           >
-            sourceEnvironmentId
+            Source environment
           </Label>
           <select
             id="clone-source-env"
-            className="h-9 rounded-md border border-card-border bg-background px-3 font-mono text-xs text-foreground"
+            className="h-9 rounded-md border border-card-border bg-background px-3 text-sm text-foreground"
             value={cloneForm.sourceEnvironmentId}
             onChange={(event) =>
               onCloneFormChange?.({
@@ -813,7 +813,7 @@ function CloneDrawer({
             <option value="">Select source environment…</option>
             {sources.map((entry) => (
               <option key={entry.id} value={entry.id}>
-                {entry.name} — {entry.id}
+                {entry.name}
               </option>
             ))}
           </select>
@@ -824,32 +824,32 @@ function CloneDrawer({
         </div>
 
         <CloneToggleRow
-          title="include.content"
-          hint="Default true — copy document rows."
+          title="Include content"
+          hint="Copy document rows from the source environment."
           checked={cloneForm.includeContent}
           onChange={(value) =>
             onCloneFormChange?.({ ...cloneForm, includeContent: value })
           }
         />
         <CloneToggleRow
-          title="include.settings"
-          hint="Default false — overwrites synced schema state, opt-in."
+          title="Include settings"
+          hint="Overwrites synced schema state in the target — opt in only."
           checked={cloneForm.includeSettings}
           onChange={(value) =>
             onCloneFormChange?.({ ...cloneForm, includeSettings: value })
           }
         />
         <CloneToggleRow
-          title="includeDrafts"
-          hint="Default true — clone drafts alongside published versions."
+          title="Include drafts"
+          hint="Clone drafts alongside published versions."
           checked={cloneForm.includeDrafts}
           onChange={(value) =>
             onCloneFormChange?.({ ...cloneForm, includeDrafts: value })
           }
         />
         <CloneToggleRow
-          title="preservePaths"
-          hint="Default true — keep source paths exactly."
+          title="Preserve paths"
+          hint="Keep source paths exactly as-is in the target."
           checked={cloneForm.preservePaths}
           onChange={(value) =>
             onCloneFormChange?.({ ...cloneForm, preservePaths: value })
@@ -1095,17 +1095,17 @@ function PromoteConfigure({
       <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-3">
         <div className="grid gap-2">
           <Label className="font-mono text-[10px] uppercase tracking-[0.08em] text-foreground-muted">
-            sourceEnvironmentId
+            Source environment
           </Label>
           <select
             data-mdcms-environment-promote-source
-            className="h-9 rounded-md border border-card-border bg-background px-3 font-mono text-xs text-foreground"
+            className="h-9 rounded-md border border-card-border bg-background px-3 text-sm text-foreground"
             value={promoteState.sourceEnvironmentId}
             onChange={(event) => onPromoteSourceChange?.(event.target.value)}
           >
             {environments.map((entry) => (
               <option key={entry.id} value={entry.id}>
-                {entry.name} — {entry.id}
+                {entry.name}
               </option>
             ))}
           </select>
@@ -1113,17 +1113,17 @@ function PromoteConfigure({
         <div className="pb-2 font-mono text-lg text-foreground-muted">→</div>
         <div className="grid gap-2">
           <Label className="font-mono text-[10px] uppercase tracking-[0.08em] text-foreground-muted">
-            targetEnvironmentId
+            Target environment
           </Label>
           <select
             data-mdcms-environment-promote-target
-            className="h-9 rounded-md border border-card-border bg-background px-3 font-mono text-xs text-foreground"
+            className="h-9 rounded-md border border-card-border bg-background px-3 text-sm text-foreground"
             value={promoteState.targetEnvironmentId}
             onChange={(event) => onPromoteTargetChange?.(event.target.value)}
           >
             {environments.map((entry) => (
               <option key={entry.id} value={entry.id}>
-                {entry.name} — {entry.id}
+                {entry.name}
               </option>
             ))}
           </select>
@@ -1138,7 +1138,7 @@ function PromoteConfigure({
 
       <div className="mt-5 grid gap-2">
         <Label className="font-mono text-[10px] uppercase tracking-[0.08em] text-foreground-muted">
-          documentIds · {promoteState.selectedDocumentIds.length} selected
+          Documents · {promoteState.selectedDocumentIds.length} selected
         </Label>
         <div
           className="max-h-[260px] overflow-auto rounded-md border border-card-border bg-background"
@@ -1193,16 +1193,14 @@ function PromoteConfigure({
             })
           )}
         </div>
-        <p className="font-mono text-[10px] text-foreground-muted">
-          Non-empty array of document UUIDs in the source env.
-        </p>
       </div>
 
       <label className="mt-4 flex items-center gap-3 border-t border-card-border/60 py-2">
         <div className="flex-1">
-          <div className="text-sm text-foreground">includeUnpublished</div>
+          <div className="text-sm text-foreground">Include unpublished</div>
           <div className="font-mono text-[10px] text-foreground-muted">
-            By default only published rows promote; flip to include drafts.
+            By default only published documents promote — turn on to include
+            drafts.
           </div>
         </div>
         <Switch
@@ -1300,29 +1298,23 @@ function PromotePlanList({
 }) {
   return (
     <div className="overflow-hidden rounded-md border border-card-border">
-      <div className="grid grid-cols-[100px_minmax(0,1fr)_60px_70px_120px] items-center gap-2.5 bg-background-subtle px-3.5 py-2 font-mono text-[9px] uppercase tracking-[0.08em] text-foreground-muted">
+      <div className="grid grid-cols-[80px_minmax(0,1fr)_56px_110px] items-center gap-2.5 bg-background-subtle px-3.5 py-2 font-mono text-[9px] uppercase tracking-[0.08em] text-foreground-muted">
         <span>Status</span>
         <span>Path</span>
         <span>Locale</span>
-        <span>v →</span>
         <span className="text-right">
-          {mode === "preview" ? "Remap refs" : "targetDocumentId"}
+          {mode === "preview" ? "Remap refs" : "Target id"}
         </span>
       </div>
       {results.map((entry) => (
         <div
           key={entry.sourceDocumentId}
-          className="grid grid-cols-[100px_minmax(0,1fr)_60px_70px_120px] items-center gap-2.5 border-b border-card-border/60 px-3.5 py-2 font-mono text-[11px] last:border-b-0"
+          className="grid grid-cols-[80px_minmax(0,1fr)_56px_110px] items-center gap-2.5 border-b border-card-border/60 px-3.5 py-2 font-mono text-[11px] last:border-b-0"
           data-mdcms-environment-promote-row={entry.sourceDocumentId}
         >
           <PromoteStatusPill status={entry.status} />
           <span className="truncate text-foreground">{entry.path}</span>
           <span className="text-foreground-muted">{entry.locale}</span>
-          <span className="text-foreground-muted">
-            {entry.publishedVersion != null
-              ? `v${entry.publishedVersion}`
-              : "—"}
-          </span>
           <span className="truncate text-right text-foreground-muted">
             {mode === "preview"
               ? `${entry.remappedReferences} remapped`
@@ -1346,7 +1338,7 @@ function PromoteStatusPill({
     <span
       data-mdcms-environment-promote-status={status}
       className={cn(
-        "inline-flex items-center rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.06em]",
+        "inline-flex w-fit items-center rounded-sm px-1 py-px font-mono text-[8px] font-bold uppercase tracking-[0.06em] leading-tight",
         status === "overwrote" && "bg-primary/20 text-primary",
         status === "created" && "bg-success/20 text-success",
         status === "skipped_unpublished" &&

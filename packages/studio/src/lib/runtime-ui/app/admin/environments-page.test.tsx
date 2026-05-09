@@ -224,7 +224,7 @@ test("EnvironmentManagementPageView renders the promote drawer in the configure 
   assert.match(markup, /1 selected/);
   assert.match(markup, /data-mdcms-environment-promote-document-row="doc-1"/);
   assert.match(markup, /Preview as dry-run/);
-  assert.match(markup, /includeUnpublished/);
+  assert.match(markup, /Include unpublished/);
 });
 
 test("EnvironmentManagementPageView surfaces failing promote flows inside the drawer", () => {
@@ -350,11 +350,11 @@ test("EnvironmentManagementPageView renders the clone drawer with the contract t
 
   assert.match(markup, /data-mdcms-environment-drawer="clone"/);
   assert.match(markup, /data-mdcms-environment-clone-dialog="staging"/);
-  assert.match(markup, /sourceEnvironmentId/);
-  assert.match(markup, /include\.content/);
-  assert.match(markup, /include\.settings/);
-  assert.match(markup, /includeDrafts/);
-  assert.match(markup, /preservePaths/);
+  assert.match(markup, /Source environment/);
+  assert.match(markup, /Include content/);
+  assert.match(markup, /Include settings/);
+  assert.match(markup, /Include drafts/);
+  assert.match(markup, /Preserve paths/);
   assert.match(markup, /Run clone/);
 });
 
