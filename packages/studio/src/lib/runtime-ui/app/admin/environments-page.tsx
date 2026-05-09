@@ -265,7 +265,7 @@ function orderedByLineage(
     seen.add(node.id);
     result.push(node);
     for (const child of environments) {
-      if (child.extends === node.id) walk(child);
+      if (child.extends === node.name) walk(child);
     }
   };
   for (const root of environments) {
@@ -283,6 +283,16 @@ function findEnvById(
 ): EnvironmentSummary | undefined {
   if (!id) return undefined;
   return environments.find((entry) => entry.id === id);
+}
+
+// `EnvironmentSummary.extends` is the parent environment's name (not its id),
+// so callers resolving the parent for display use this lookup.
+function findEnvByName(
+  environments: readonly EnvironmentSummary[],
+  name: string | null,
+): EnvironmentSummary | undefined {
+  if (!name) return undefined;
+  return environments.find((entry) => entry.name === name);
 }
 
 const PROMOTE_STAGES: { id: PromoteStage; label: string }[] = [
@@ -406,7 +416,7 @@ function LineageCard({
       <div className="flex flex-wrap items-stretch gap-0 px-4 py-5">
         {ordered.map((env, index) => {
           const isRoot = !env.extends;
-          const parent = findEnvById(environments, env.extends);
+          const parent = findEnvByName(environments, env.extends);
           const isLast = index === ordered.length - 1;
           return (
             <div
@@ -625,9 +635,6 @@ function EnvironmentTable({
             Manage
           </div>
         </div>
-        <span className="ml-auto font-mono text-[11px] text-foreground-muted">
-          {environments.length} entries · sort: createdAt ↑
-        </span>
       </div>
       <div className="w-full overflow-x-auto">
         <table className="w-full min-w-[760px] border-separate border-spacing-0">
@@ -654,7 +661,7 @@ function EnvironmentTable({
                 environment={environment}
                 parent={
                   environment.extends
-                    ? findEnvById(environments, environment.extends)
+                    ? findEnvByName(environments, environment.extends)
                     : undefined
                 }
                 pendingDeleteId={pendingDeleteId}

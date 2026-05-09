@@ -128,7 +128,7 @@ test("EnvironmentManagementPageView renders lineage rail and management table wi
       createEnvironmentSummary({
         id: "env-staging",
         name: "staging",
-        extends: "env-production",
+        extends: "production",
         isDefault: false,
         createdAt: "2026-03-20T11:30:45.000Z",
       }),
@@ -200,7 +200,7 @@ test("EnvironmentManagementPageView renders the promote drawer in the configure 
         createEnvironmentSummary({
           id: "env-staging",
           name: "staging",
-          extends: "env-production",
+          extends: "production",
           isDefault: false,
         }),
       ],
@@ -210,7 +210,7 @@ test("EnvironmentManagementPageView renders the promote drawer in the configure 
       promoteTarget: createEnvironmentSummary({
         id: "env-staging",
         name: "staging",
-        extends: "env-production",
+        extends: "production",
         isDefault: false,
       }),
       promoteState,
@@ -238,7 +238,7 @@ test("EnvironmentManagementPageView renders the clone drawer with the contract t
         createEnvironmentSummary({
           id: "env-staging",
           name: "staging",
-          extends: "env-production",
+          extends: "production",
           isDefault: false,
         }),
       ],
@@ -248,7 +248,7 @@ test("EnvironmentManagementPageView renders the clone drawer with the contract t
       cloneTarget: createEnvironmentSummary({
         id: "env-staging",
         name: "staging",
-        extends: "env-production",
+        extends: "production",
         isDefault: false,
       }),
     },
@@ -293,7 +293,7 @@ test("EnvironmentManagementPageView keeps delete conflicts inside the modal", ()
         createEnvironmentSummary({
           id: "env-staging",
           name: "staging",
-          extends: "env-production",
+          extends: "production",
           isDefault: false,
         }),
       ],
@@ -303,7 +303,7 @@ test("EnvironmentManagementPageView keeps delete conflicts inside the modal", ()
       deleteTarget: createEnvironmentSummary({
         id: "env-staging",
         name: "staging",
-        extends: "env-production",
+        extends: "production",
         isDefault: false,
       }),
       deleteError:
