@@ -568,7 +568,7 @@ function EnvironmentRow({
           <Button
             type="button"
             size="sm"
-            variant="outline"
+            variant="ghost"
             data-mdcms-environment-clone-action={environment.name}
             disabled={pendingCloneId === environment.id}
             onClick={() => onRequestClone?.(environment)}
@@ -578,7 +578,7 @@ function EnvironmentRow({
           <Button
             type="button"
             size="sm"
-            variant="outline"
+            variant="ghost"
             className={cn(
               !environment.isDefault &&
                 "border-destructive/30 text-destructive hover:text-destructive",
@@ -772,10 +772,7 @@ function CloneDrawer({
           <span className="flex-1 font-mono text-[10px] text-foreground-muted">
             media inclusion is deferred (SPEC-009).
           </span>
-          <Button
-            variant="outline"
-            onClick={() => onCloneDialogChange?.(false)}
-          >
+          <Button variant="ghost" onClick={() => onCloneDialogChange?.(false)}>
             Cancel
           </Button>
           <Button
@@ -983,7 +980,7 @@ function PromoteDrawer({
           {promoteState.stage === "configure" ? (
             <>
               <Button
-                variant="outline"
+                variant="ghost"
                 onClick={() => onPromoteDialogChange?.(false)}
               >
                 Cancel
@@ -1004,7 +1001,7 @@ function PromoteDrawer({
           {promoteState.stage === "preview" ? (
             <>
               <Button
-                variant="outline"
+                variant="ghost"
                 onClick={() => onPromoteBackToConfigure?.()}
               >
                 ← Back
@@ -1022,7 +1019,7 @@ function PromoteDrawer({
           ) : null}
           {promoteState.stage === "result" ? (
             <>
-              <Button variant="outline" onClick={() => onPromoteRunAnother?.()}>
+              <Button variant="ghost" onClick={() => onPromoteRunAnother?.()}>
                 Run another
               </Button>
               <Button onClick={() => onPromoteDialogChange?.(false)}>
@@ -1399,7 +1396,7 @@ function PromoteResult({
 function renderRetryButton(onRetry?: () => void) {
   if (!onRetry) return null;
   return (
-    <Button variant="outline" onClick={onRetry}>
+    <Button variant="ghost" onClick={onRetry}>
       Retry
     </Button>
   );
@@ -1505,7 +1502,7 @@ export function EnvironmentManagementPageView({
                 </div>
                 <DialogFooter>
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     onClick={() => onCreateDialogChange?.(false)}
                   >
                     Cancel
@@ -1644,7 +1641,7 @@ export function EnvironmentManagementPageView({
             ) : null}
             <DialogFooter>
               <Button
-                variant="outline"
+                variant="ghost"
                 onClick={() => onDeleteDialogChange?.(false)}
               >
                 Cancel
