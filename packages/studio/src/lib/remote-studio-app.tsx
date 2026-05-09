@@ -12,7 +12,6 @@ import ApiPlaygroundPage from "./runtime-ui/app/admin/api-page.js";
 import DashboardPage from "./runtime-ui/app/admin/page.js";
 import EnvironmentsPage from "./runtime-ui/app/admin/environments-page.js";
 import MediaPage from "./runtime-ui/app/admin/media-page.js";
-import PromotePage from "./runtime-ui/app/admin/promote-page.js";
 import ContentDocumentPage from "./runtime-ui/pages/content-document-page.js";
 import ContentPage from "./runtime-ui/pages/content-page.js";
 import ContentTypePage from "./runtime-ui/app/admin/content/[type]/page.js";
@@ -72,11 +71,6 @@ const RUNTIME_ROUTES: readonly StudioRuntimeRouteDefinition[] = [
     id: "environments",
     path: "/environments",
     render: () => <EnvironmentsPage />,
-  },
-  {
-    id: "promote",
-    path: "/promote",
-    render: () => <PromotePage />,
   },
   {
     id: "media",
