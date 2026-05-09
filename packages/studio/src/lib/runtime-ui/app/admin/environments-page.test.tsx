@@ -116,7 +116,6 @@ test("EnvironmentManagementPageView surfaces the definitions strip with hash and
   assert.match(markup, /data-mdcms-environments-definitions-status="ready"/);
   assert.match(markup, /sha256:abc123/);
   assert.match(markup, /2026-03-19T10:00:00.000Z/);
-  assert.match(markup, /Defs synced via CLI/i);
 });
 
 test("EnvironmentManagementPageView renders lineage rail and management table with row actions", () => {

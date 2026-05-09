@@ -382,9 +382,6 @@ function DefinitionsStrip({ meta }: { meta: EnvironmentDefinitionsMeta }) {
           create
         </span>
       )}
-      <span className="ml-auto rounded-sm bg-background-subtle px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.06em] text-foreground-muted">
-        Defs synced via CLI
-      </span>
     </div>
   );
 }
@@ -1464,7 +1461,7 @@ export function EnvironmentManagementPageView({
             </h1>
             <p className="font-mono text-[12px] text-foreground-muted">
               {canManage
-                ? `${state.environments.length} environments · isolated content tables · \`extends\` for lineage · promote & clone live here`
+                ? `${state.environments.length} environments`
                 : `Manage project environments for ${state.project}.`}
             </p>
           </div>
