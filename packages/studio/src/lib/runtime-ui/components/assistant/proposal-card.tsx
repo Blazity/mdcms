@@ -156,7 +156,7 @@ function Footer({
             ? "cursor-not-allowed bg-muted text-foreground-muted"
             : destructive
               ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              : "bg-secondary text-vibrant-green hover:bg-secondary/90",
+              : "bg-sidebar text-vibrant-green hover:bg-sidebar/90",
         )}
         title={
           contentInvalidated
@@ -203,7 +203,7 @@ function RejectFeedback({ onCancel, onSend }: RejectFeedbackProps) {
         <button
           type="button"
           onClick={() => onSend(feedback)}
-          className="inline-flex items-center gap-1.5 rounded bg-secondary px-2.5 py-1 font-mono text-[11px] font-semibold text-vibrant-green transition-colors hover:bg-secondary/90"
+          className="inline-flex items-center gap-1.5 rounded bg-sidebar px-2.5 py-1 font-mono text-[11px] font-semibold text-vibrant-green transition-colors hover:bg-sidebar/90"
         >
           <Send className="h-3 w-3" aria-hidden />
           Send & retry
@@ -688,7 +688,7 @@ function BatchCard({
   return (
     <CardChrome>
       <div className="flex items-center gap-2.5 border-b border-divider/40 bg-gradient-to-b from-primary/[0.04] to-transparent px-3 py-2.5">
-        <span className="shrink-0 rounded-sm bg-secondary px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-vibrant-green">
+        <span className="shrink-0 rounded-sm bg-sidebar px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-vibrant-green">
           Batch · {proposal.children.length}
         </span>
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">
@@ -742,7 +742,7 @@ function BatchCard({
               "inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
               acceptBlocked
                 ? "cursor-not-allowed bg-muted text-foreground-muted"
-                : "bg-secondary text-vibrant-green hover:bg-secondary/90",
+                : "bg-sidebar text-vibrant-green hover:bg-sidebar/90",
             )}
           >
             <Check className="h-3 w-3" aria-hidden />
