@@ -3,11 +3,14 @@
 import * as React from "react";
 
 import type {
+  AssistantContextDoc,
+  AssistantMessage,
   AssistantProposal,
   AssistantStore,
   AssistantThread,
 } from "./assistant-types.js";
 import { buildAssistantMockStore } from "./assistant-mock-data.js";
+import { respondToUserMessage } from "./assistant-stub-orchestrator.js";
 
 type RailMode = "closed" | "rail" | "fullscreen";
 
@@ -25,13 +28,27 @@ type AssistantAction =
   | { type: "select-thread"; threadId: string }
   | { type: "clear-selection-on-active" }
   | { type: "remove-context-doc"; path: string }
+  | { type: "attach-context-doc"; doc: AssistantContextDoc }
   | { type: "remove-proposal"; threadId: string; proposalId: string }
   | {
       type: "reject-proposal";
       threadId: string;
       proposalId: string;
       feedback: string;
+    }
+  | {
+      type: "send-message";
+      threadId: string;
+      userMessage: AssistantMessage;
+      assistantMessage: AssistantMessage;
+      newProposals: AssistantProposal[];
     };
+
+function collectProposalDocPaths(p: AssistantProposal): string[] {
+  if (p.kind === "batch") return p.children.map((c) => c.docPath);
+  if ("docPath" in p && p.docPath) return [p.docPath];
+  return [];
+}
 
 function reducer(
   state: AssistantState,
@@ -79,6 +96,49 @@ function reducer(
           ),
         },
       };
+    case "attach-context-doc":
+      return {
+        ...state,
+        store: {
+          ...state.store,
+          threads: state.store.threads.map((t) => {
+            if (t.id !== state.activeThreadId) return t;
+            if (t.contextDocs.some((d) => d.path === action.doc.path)) {
+              return t;
+            }
+            return { ...t, contextDocs: [...t.contextDocs, action.doc] };
+          }),
+        },
+      };
+    case "send-message": {
+      const proposalDelta = Object.fromEntries(
+        action.newProposals.map((p) => [p.proposalId, p]),
+      );
+      return {
+        ...state,
+        store: {
+          ...state.store,
+          proposals: { ...state.store.proposals, ...proposalDelta },
+          threads: state.store.threads.map((thread) => {
+            if (thread.id !== action.threadId) return thread;
+            const docCount = new Set([
+              ...thread.contextDocs.map((d) => d.path),
+              ...action.newProposals.flatMap((p) => collectProposalDocPaths(p)),
+            ]).size;
+            return {
+              ...thread,
+              docCount: Math.max(thread.docCount, docCount),
+              updatedAt: action.assistantMessage.at,
+              messages: [
+                ...thread.messages,
+                action.userMessage,
+                action.assistantMessage,
+              ],
+            };
+          }),
+        },
+      };
+    }
     case "remove-proposal":
       return {
         ...state,
@@ -160,6 +220,14 @@ export type AssistantContextValue = {
   removeContextDoc: (path: string) => void;
   acceptProposal: (proposal: AssistantProposal) => void;
   rejectProposal: (proposal: AssistantProposal, feedback: string) => void;
+  /**
+   * Submit a composer message. Appends a user turn, then runs the stub
+   * orchestrator (replaceable with a real chat endpoint) and appends the
+   * resulting assistant turn + proposals.
+   */
+  sendMessage: (text: string) => void;
+  /** Add a document to the active thread's context (used by @-mention). */
+  attachContextDoc: (doc: AssistantContextDoc) => void;
 };
 
 /**
@@ -210,6 +278,8 @@ const FALLBACK_VALUE: AssistantContextValue = {
   removeContextDoc: () => {},
   acceptProposal: () => {},
   rejectProposal: () => {},
+  sendMessage: () => {},
+  attachContextDoc: () => {},
 };
 
 const AssistantContext =
@@ -280,6 +350,28 @@ export function AssistantProvider({
           proposalId: proposal.proposalId,
           feedback,
         }),
+      sendMessage: (text) => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        const userMessage: AssistantMessage = {
+          id: `m-${Date.now().toString(36)}`,
+          role: "user",
+          at: new Date().toISOString(),
+          text: trimmed,
+        };
+        const result = respondToUserMessage({
+          thread: activeThread,
+          userMessage,
+        });
+        dispatch({
+          type: "send-message",
+          threadId: state.activeThreadId,
+          userMessage,
+          assistantMessage: result.assistantMessage,
+          newProposals: result.newProposals,
+        });
+      },
+      attachContextDoc: (doc) => dispatch({ type: "attach-context-doc", doc }),
     }),
     [state, activeThread],
   );

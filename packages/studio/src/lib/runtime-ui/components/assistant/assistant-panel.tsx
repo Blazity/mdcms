@@ -94,6 +94,126 @@ function ThreadList({
   );
 }
 
+type MentionCandidate = { path: string; type: string; locale: string };
+
+/**
+ * Build a candidate list for the @-mention picker. The list is sourced
+ * from the active assistant store: every distinct document that already
+ * appears as a thread context, attached selection, or proposal target
+ * is a candidate. This keeps the picker fully self-contained while the
+ * server-backed content-search endpoint for chat lands in a follow-up.
+ */
+function useMentionCandidates(): MentionCandidate[] {
+  const assistant = useAssistant();
+  return React.useMemo(() => {
+    const seen = new Map<string, MentionCandidate>();
+    const add = (
+      path: string | undefined,
+      type: string | undefined,
+      locale: string | undefined,
+    ) => {
+      if (!path || seen.has(path)) return;
+      seen.set(path, {
+        path,
+        type: type ?? "doc",
+        locale: locale ?? "en",
+      });
+    };
+    for (const thread of assistant.store.threads) {
+      for (const doc of thread.contextDocs) add(doc.path, doc.type, doc.locale);
+      add(
+        thread.attachedSelection?.path,
+        undefined,
+        thread.attachedSelection ? "en" : undefined,
+      );
+    }
+    for (const proposal of Object.values(assistant.store.proposals)) {
+      if (proposal.kind === "batch") {
+        for (const child of proposal.children) {
+          add(child.docPath, "doc", child.locale);
+        }
+      } else if ("docPath" in proposal) {
+        add(proposal.docPath, proposal.type, proposal.locale);
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) =>
+      a.path.localeCompare(b.path),
+    );
+  }, [assistant.store]);
+}
+
+function MentionPicker({
+  query,
+  excludePaths,
+  onPick,
+  onClose,
+}: {
+  query: string;
+  excludePaths: Set<string>;
+  onPick: (path: string, type: string, locale: string) => void;
+  onClose: () => void;
+}) {
+  const candidates = useMentionCandidates();
+  const filtered = React.useMemo(() => {
+    const q = query.toLowerCase();
+    return candidates
+      .filter((c) => !excludePaths.has(c.path))
+      .filter((c) => !q || c.path.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [candidates, query, excludePaths]);
+
+  if (filtered.length === 0) {
+    return (
+      <div
+        role="listbox"
+        aria-label="Document picker"
+        className="absolute bottom-full left-3 right-3 mb-1 rounded-md border border-divider/60 bg-popover px-3 py-3 text-[12px] text-foreground-muted shadow-lg"
+      >
+        No documents match{" "}
+        {query ? <code className="font-mono">@{query}</code> : "yet"}.{" "}
+        <button
+          type="button"
+          onClick={onClose}
+          className="ml-1 underline hover:text-foreground"
+        >
+          dismiss
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      role="listbox"
+      aria-label="Document picker"
+      className="absolute bottom-full left-3 right-3 mb-1 max-h-72 overflow-y-auto rounded-md border border-divider/60 bg-popover py-1 shadow-lg"
+    >
+      <div className="border-b border-divider/40 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-foreground-muted">
+        Attach document
+      </div>
+      {filtered.map((c) => (
+        <button
+          key={c.path}
+          type="button"
+          role="option"
+          onClick={() => onPick(c.path, c.type, c.locale)}
+          className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors hover:bg-accent-subtle"
+        >
+          <span className="shrink-0 rounded-sm bg-blue-100 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-primary">
+            {c.type}
+          </span>
+          <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-foreground">
+            {c.path}
+          </span>
+          <span className="shrink-0 font-mono text-[10px] text-foreground-muted/80">
+            {c.locale}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ContextChips({
   thread,
   onClearSelection,
@@ -216,15 +336,66 @@ function Composer({
   onClearSelection: () => void;
   onRemoveDoc: (path: string) => void;
 }) {
+  const assistant = useAssistant();
   const [draft, setDraft] = React.useState("");
-  const onSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
+  const [mention, setMention] = React.useState<{
+    query: string;
+    caret: number;
+  } | null>(null);
+  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+
+  const submit = () => {
+    if (!draft.trim()) return;
+    assistant.sendMessage(draft);
     setDraft("");
+    setMention(null);
   };
+
+  const onChange: React.ChangeEventHandler<HTMLTextAreaElement> = (e) => {
+    const next = e.target.value;
+    setDraft(next);
+    const caret = e.target.selectionStart ?? next.length;
+    const upToCaret = next.slice(0, caret);
+    const atIndex = upToCaret.lastIndexOf("@");
+    if (atIndex < 0) {
+      setMention(null);
+      return;
+    }
+    const between = upToCaret.slice(atIndex + 1);
+    // Only treat the @ as a mention if it sits at start-of-string or
+    // after a whitespace char, and the text after it has no whitespace.
+    const before = atIndex === 0 ? "" : upToCaret[atIndex - 1];
+    if (before && !/\s/.test(before)) {
+      setMention(null);
+      return;
+    }
+    if (/\s/.test(between)) {
+      setMention(null);
+      return;
+    }
+    setMention({ query: between, caret });
+  };
+
+  const handlePick = (path: string, type: string, locale: string) => {
+    assistant.attachContextDoc({ path, type, locale });
+    if (mention) {
+      const before = draft.slice(0, mention.caret);
+      const after = draft.slice(mention.caret);
+      const atIndex = before.lastIndexOf("@");
+      const replaced = `${draft.slice(0, atIndex)}@${path}${after}`;
+      setDraft(replaced);
+    }
+    setMention(null);
+    textareaRef.current?.focus();
+  };
+
   return (
     <form
-      onSubmit={onSubmit}
-      className="border-t border-divider/40 bg-background-subtle px-3 pb-3 pt-2.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+      className="relative border-t border-divider/40 bg-background-subtle px-3 pb-3 pt-2.5"
     >
       <ContextChips
         thread={thread}
@@ -236,14 +407,25 @@ function Composer({
         className="rounded-b-lg border border-divider/60 bg-card px-3 py-2.5 transition-colors focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-primary/30"
       >
         <textarea
+          ref={textareaRef}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={onChange}
           rows={2}
           placeholder="Ask about any doc, propose edits, draft new posts…"
           className="w-full resize-none border-none bg-transparent text-[13.5px] leading-snug text-foreground outline-none placeholder:text-foreground-muted"
           onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-              onSubmit(e);
+            if (mention && e.key === "Escape") {
+              e.preventDefault();
+              setMention(null);
+              return;
+            }
+            if (
+              (e.metaKey || e.ctrlKey) &&
+              e.key === "Enter" &&
+              !e.nativeEvent.isComposing
+            ) {
+              e.preventDefault();
+              submit();
             }
           }}
         />
@@ -253,21 +435,51 @@ function Composer({
           </span>
           <button
             type="button"
+            onClick={() => {
+              const ta = textareaRef.current;
+              if (!ta) return;
+              ta.focus();
+              const caret = ta.selectionStart ?? draft.length;
+              const next =
+                draft.slice(0, caret) +
+                (caret > 0 && !/\s/.test(draft[caret - 1] ?? "") ? " @" : "@") +
+                draft.slice(caret);
+              setDraft(next);
+              const newCaret = next.length - draft.slice(caret).length;
+              setMention({ query: "", caret: newCaret });
+              window.setTimeout(() => {
+                ta.setSelectionRange(newCaret, newCaret);
+              }, 0);
+            }}
             className="grid h-6 w-6 place-items-center rounded text-foreground-muted hover:bg-muted hover:text-foreground"
-            title="Attach document"
+            title="Attach document (@)"
             aria-label="Attach document"
           >
             <AtSign className="h-3.5 w-3.5" aria-hidden />
           </button>
           <button
             type="submit"
-            className="inline-flex items-center gap-1.5 rounded bg-primary px-2.5 py-1 font-mono text-[11px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+            disabled={!draft.trim()}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
+              draft.trim()
+                ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                : "cursor-not-allowed bg-muted text-foreground-muted",
+            )}
           >
             <Send className="h-3 w-3" aria-hidden /> Send
             <span className="font-mono text-[9px] opacity-70">⌘↵</span>
           </button>
         </div>
       </div>
+      {mention && (
+        <MentionPicker
+          query={mention.query}
+          excludePaths={new Set(thread.contextDocs.map((d) => d.path))}
+          onPick={handlePick}
+          onClose={() => setMention(null)}
+        />
+      )}
     </form>
   );
 }
