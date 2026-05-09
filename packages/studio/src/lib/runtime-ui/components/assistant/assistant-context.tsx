@@ -383,9 +383,19 @@ export function AssistantProvider({
   // itself, where ⌘K is the natural toggle-close gesture.
   React.useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      const isMac =
-        typeof navigator !== "undefined" &&
-        /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+      const isMac = (() => {
+        if (typeof navigator === "undefined") return false;
+        // `navigator.userAgentData.platform` is the modern, non-deprecated
+        // surface; fall back to `navigator.platform` on browsers that
+        // haven't shipped UA-CH yet (Safari at the time of writing).
+        const uaData = (
+          navigator as unknown as {
+            userAgentData?: { platform?: string };
+          }
+        ).userAgentData;
+        if (uaData?.platform) return /Mac/i.test(uaData.platform);
+        return /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+      })();
       const meta = isMac ? event.metaKey : event.ctrlKey;
       if (!meta) return;
       if (event.key !== "k" && event.key !== "K") return;

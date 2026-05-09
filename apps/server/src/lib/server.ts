@@ -173,17 +173,28 @@ function appendResponseHeaders(
 }
 
 /**
- * Loopback origins always allowed for Studio browser routes so a developer
- * running `apps/studio-example` against a local server isn't forced to set
- * `MDCMS_STUDIO_ALLOWED_ORIGINS` for both the `localhost` and `127.0.0.1`
- * variants of the same port. This mirrors the fallback in
- * `resolveCollaborationAllowedOrigins`. Production deployments rely on the
- * env-configured allowlist.
+ * Loopback origins implicitly trusted for Studio browser routes when
+ * running outside production. The dev-time convenience saves operators
+ * from listing both `localhost` and `127.0.0.1` variants of the same
+ * port in `MDCMS_STUDIO_ALLOWED_ORIGINS`; production deployments rely
+ * exclusively on the env-configured allowlist.
  */
-const STUDIO_LOOPBACK_ALLOWED_ORIGINS: readonly string[] = [
+const STUDIO_LOOPBACK_DEV_ORIGINS: readonly string[] = [
   "http://localhost:4173",
   "http://127.0.0.1:4173",
 ];
+
+function studioLoopbackEnabled(): boolean {
+  // Resolved at request time so test env mutations are honored without
+  // restarting the process.
+  try {
+    return (
+      typeof process !== "undefined" && process.env?.NODE_ENV !== "production"
+    );
+  } catch {
+    return false;
+  }
+}
 
 function resolveStudioCorsContext(
   request: Request,
@@ -202,11 +213,13 @@ function resolveStudioCorsContext(
   }
 
   const requestOrigin = new URL(request.url).origin;
+  const loopbackAllowed =
+    studioLoopbackEnabled() && STUDIO_LOOPBACK_DEV_ORIGINS.includes(origin);
 
   if (
     origin !== requestOrigin &&
     !allowedOrigins.includes(origin) &&
-    !STUDIO_LOOPBACK_ALLOWED_ORIGINS.includes(origin)
+    !loopbackAllowed
   ) {
     throw createForbiddenOriginError(origin, pathname);
   }

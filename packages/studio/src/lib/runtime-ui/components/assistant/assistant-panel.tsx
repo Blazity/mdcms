@@ -66,6 +66,7 @@ function ThreadList({
             type="button"
             key={t.id}
             onClick={() => onPick(t.id)}
+            aria-current={t.id === activeId ? "true" : undefined}
             className={cn(
               "mb-0.5 block w-full rounded-md border px-2.5 py-2 text-left transition-colors",
               t.id === activeId
@@ -303,10 +304,16 @@ function AssistantBubble({
   onReject: (proposalId: string, feedback: string) => void;
 }) {
   const proposalIds = message.proposals ?? [];
-  if (proposalIds.length === 0) return null;
+  const text = message.text?.trim();
+  if (proposalIds.length === 0 && !text) return null;
   const isSingleTurn = proposalIds.length === 1;
   return (
     <div className="mb-5 space-y-2">
+      {text && (
+        <div className="max-w-[92%] text-[13.5px] leading-relaxed text-foreground">
+          {text}
+        </div>
+      )}
       {proposalIds.map((pid, i) => {
         const proposal = proposalsById[pid];
         if (!proposal) return null;
