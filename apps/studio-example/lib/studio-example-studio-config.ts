@@ -9,6 +9,10 @@ export const studioExampleServerUrl = "http://localhost:4000";
  */
 export function resolveStudioExampleServerUrl(): string {
   if (typeof window === "undefined") return studioExampleServerUrl;
+  // Allow `next dev` builds to point at a non-default server (used by the
+  // dual-stack compose setup so each studio talks to its own server).
+  const envUrl = process.env.NEXT_PUBLIC_MDCMS_SERVER_URL;
+  if (envUrl && envUrl.length > 0) return envUrl;
   const { protocol, hostname } = window.location;
   return `${protocol}//${hostname}:4000`;
 }

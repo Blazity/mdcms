@@ -2,29 +2,18 @@
 
 import { useEffect, useState } from "react";
 import Link from "../../adapters/next-link.js";
-import {
-  FileText,
-  CheckCircle,
-  Edit3,
-  Plus,
-  ChevronRight,
-  Clock,
-  AlertCircle,
-  ShieldAlert,
-} from "lucide-react";
+import { AlertCircle, ShieldAlert } from "lucide-react";
+import { cn } from "../../lib/utils.js";
 import { Button } from "../../components/ui/button.js";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "../../components/ui/card.js";
-import { Badge } from "../../components/ui/badge.js";
 import { Skeleton } from "../../components/ui/skeleton.js";
 import { PageHeader } from "../../components/layout/page-header.js";
 import { useStudioSession } from "./session-context.js";
+import { useStudioMountInfo } from "./mount-info-context.js";
 import { useAdminCapabilities } from "./capabilities-context.js";
-import type { DashboardLoadResult } from "../../../dashboard-data.js";
+import type {
+  DashboardData,
+  DashboardLoadResult,
+} from "../../../dashboard-data.js";
 import { useDashboardData } from "../../hooks/use-dashboard-data.js";
 
 type DashboardState =
@@ -39,27 +28,33 @@ function formatRelativeTime(dateStr: string): string {
   }
   const now = new Date();
   const diff = now.getTime() - date.getTime();
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
+  const minutes = Math.floor(diff / 60_000);
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
 
-  if (seconds < 60) return "Just now";
+  if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes} min ago`;
-  if (hours < 24) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
-  if (days === 1) return "Yesterday";
+  if (hours < 24) return `${hours} hr ago`;
+  if (days === 1) return "yesterday";
   if (days < 7) return `${days} days ago`;
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function deriveUserLabel(email: string): string {
+function deriveUserLabel(email: string): string | null {
   const local = (email || "").split("@")[0];
-  if (!local) return "";
+  if (!local) return null;
   return local.charAt(0).toUpperCase() + local.slice(1);
 }
 
+const STAT_LABEL_CLASS =
+  "font-mono text-[10px] uppercase tracking-[0.08em] text-foreground-muted";
+const STAT_VALUE_CLASS =
+  "mt-2 font-heading text-[40px] font-bold leading-none tracking-tight text-foreground";
+const STAT_DELTA_CLASS = "mt-2 font-mono text-[11px] text-foreground-muted";
+
 export default function DashboardPage() {
   const session = useStudioSession();
+  const mountInfo = useStudioMountInfo();
   const { canCreateContent } = useAdminCapabilities();
   const query = useDashboardData();
   const [showLoadingSkeleton, setShowLoadingSkeleton] = useState(false);
@@ -67,8 +62,6 @@ export default function DashboardPage() {
   const isFetching = query.isFetching;
   const hasData = query.data !== undefined || query.isError;
 
-  // Delay showing the skeleton by 200ms — if data arrives faster the user
-  // never sees a loading flash.
   useEffect(() => {
     if (!isFetching || hasData) {
       setShowLoadingSkeleton(false);
@@ -109,57 +102,46 @@ export default function DashboardPage() {
     return (
       <div className="min-h-screen">
         <PageHeader breadcrumbs={[{ label: "Dashboard" }]} />
-        <div className="p-6 space-y-6">
-          <div>
-            <Skeleton className="h-8 w-40" />
-            <Skeleton className="mt-2 h-4 w-56" />
+        <div className="space-y-6 p-6 lg:p-8">
+          <div className="space-y-2">
+            <Skeleton className="h-9 w-44" />
+            <Skeleton className="h-3 w-64" />
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             {Array.from({ length: 3 }).map((_, i) => (
-              <Card key={i} className="border-border p-0 gap-0">
-                <CardContent className="p-4">
-                  <div className="space-y-2">
-                    <Skeleton className="h-4 w-20" />
-                    <Skeleton className="h-8 w-16" />
-                    <Skeleton className="h-3 w-28" />
-                  </div>
-                </CardContent>
-              </Card>
+              <div
+                key={i}
+                className="rounded-lg border border-card-border bg-card p-5"
+              >
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="mt-3 h-8 w-20" />
+                <Skeleton className="mt-3 h-3 w-28" />
+              </div>
             ))}
           </div>
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card className="border-border">
-              <CardHeader className="pb-2">
-                <Skeleton className="h-5 w-24" />
-              </CardHeader>
-              <CardContent className="space-y-1">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="flex items-center gap-4 p-3">
-                    <Skeleton className="h-10 w-10 rounded-md" />
-                    <div className="flex-1 space-y-2">
-                      <Skeleton className="h-4 w-28" />
-                      <Skeleton className="h-3 w-20" />
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-            <Card className="border-border">
-              <CardHeader className="pb-2">
+          <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+            <div className="rounded-lg border border-card-border bg-card">
+              <div className="flex items-center justify-between border-b border-divider px-5 py-3.5">
                 <Skeleton className="h-5 w-32" />
-              </CardHeader>
-              <CardContent className="space-y-1">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="flex items-start gap-3 p-2">
-                    <Skeleton className="h-8 w-8 rounded-md" />
-                    <div className="flex-1 space-y-2">
-                      <Skeleton className="h-4 w-36" />
-                      <Skeleton className="h-3 w-20" />
-                    </div>
-                  </div>
+                <Skeleton className="h-3 w-20" />
+              </div>
+              <div className="space-y-1 p-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
                 ))}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
+            <div className="rounded-lg border border-card-border bg-card">
+              <div className="flex items-center justify-between border-b border-divider px-5 py-3.5">
+                <Skeleton className="h-5 w-32" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+              <div className="space-y-1 p-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -198,217 +180,231 @@ export default function DashboardPage() {
   }
 
   const { data } = result;
+  const publishedPercentage =
+    data.totalDocuments > 0
+      ? Math.round((data.publishedDocuments / data.totalDocuments) * 100)
+      : 0;
 
-  const statCards = [
-    {
-      label: "Documents",
-      value: data.totalDocuments,
-      icon: FileText,
-      detail:
-        data.totalContentTypes > 0
-          ? `${data.totalContentTypes} content type${data.totalContentTypes !== 1 ? "s" : ""}`
-          : undefined,
-    },
-    {
-      label: "Published",
-      value: data.publishedDocuments,
-      icon: CheckCircle,
-      detail:
-        data.totalDocuments > 0
-          ? `${Math.round((data.publishedDocuments / data.totalDocuments) * 100)}% of total`
-          : undefined,
-    },
-    {
-      label: "Drafts",
-      value: data.draftDocuments,
-      icon: Edit3,
-      detail: "Unpublished documents",
-    },
-  ];
+  const subtitleParts: string[] = [];
+  if (mountInfo.project) subtitleParts.push(mountInfo.project);
+  if (mountInfo.environment) subtitleParts.push(mountInfo.environment);
+  const subtitle = subtitleParts.join(" · ");
 
   return (
     <div className="min-h-screen">
       <PageHeader breadcrumbs={[{ label: "Dashboard" }]} />
 
-      <div className="p-6 space-y-6">
+      <div className="space-y-8 p-6 lg:p-8">
         {/* Page Title */}
-        <div>
-          <h1 className="text-2xl font-semibold">Dashboard</h1>
-          {userLabel && (
-            <p className="text-sm text-foreground-muted">
-              Welcome back, {userLabel}
-            </p>
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="font-heading text-[36px] font-bold leading-[1.05] tracking-tight text-foreground">
+              Dashboard
+            </h1>
+            {(subtitle || userLabel) && (
+              <p className="mt-1.5 font-mono text-[12px] text-foreground-muted">
+                {subtitle || `Welcome back, ${userLabel}`}
+              </p>
+            )}
+          </div>
+          {canCreateContent && (
+            <Button asChild>
+              <Link href="/admin/content">+ New document</Link>
+            </Button>
           )}
         </div>
 
         {/* Stats Row */}
         <div className="grid gap-4 md:grid-cols-3">
-          {statCards.map((stat) => (
-            <Card key={stat.label} className="border-border p-0 gap-0">
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <p className="text-sm text-foreground-muted">
-                      {stat.label}
-                    </p>
-                    <p className="text-3xl font-bold">{stat.value}</p>
-                    {stat.detail && (
-                      <p className="text-xs text-foreground-muted">
-                        {stat.detail}
-                      </p>
-                    )}
-                  </div>
-                  <div className="rounded-md bg-primary/10 p-2">
-                    <stat.icon className="h-5 w-5 text-primary" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+          <StatCard
+            label="Total documents"
+            value={data.totalDocuments}
+            delta={
+              data.draftDocuments > 0
+                ? `${data.draftDocuments} in draft`
+                : undefined
+            }
+          />
+          <StatCard
+            label="Published"
+            value={data.publishedDocuments}
+            delta={
+              data.totalDocuments > 0
+                ? `${publishedPercentage}% of total`
+                : undefined
+            }
+          />
+          <StatCard
+            label="Drafts"
+            value={data.draftDocuments}
+            delta={
+              data.draftDocuments > 0 ? "unpublished changes" : "all caught up"
+            }
+            tone={data.draftDocuments > 0 ? "warn" : "ok"}
+          />
         </div>
 
-        {/* Quick Actions */}
-        {canCreateContent && (
-          <div className="flex flex-wrap gap-3">
-            <Button variant="default" asChild>
-              <Link href="/admin/content">
-                <Plus className="mr-2 h-4 w-4" />
-                New Document
-              </Link>
-            </Button>
-          </div>
-        )}
-
-        {/* Content Types & Recent Documents */}
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Content */}
-          <Card className="border-border">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-lg font-semibold">Content</CardTitle>
-              <Link
-                href="/admin/content"
-                className="text-sm text-foreground-muted hover:text-primary flex items-center gap-1"
-              >
-                View all <ChevronRight className="h-4 w-4" />
-              </Link>
-            </CardHeader>
-            <CardContent className="space-y-1">
-              {data.contentTypes.length === 0 ? (
-                <p className="text-sm text-foreground-muted py-4 text-center">
-                  No schema types synced yet.
-                </p>
-              ) : (
-                data.contentTypes.map((ct) => {
-                  const publishedRatio =
-                    ct.totalCount > 0
-                      ? (ct.publishedCount / ct.totalCount) * 100
-                      : 0;
-                  return (
-                    <Link
-                      key={ct.type}
-                      href={`/admin/content/${ct.type}`}
-                      className="flex items-center gap-4 rounded-lg p-3 transition-colors hover:bg-background-subtle"
-                    >
-                      <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10">
-                        <FileText className="h-5 w-5 text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium truncate">{ct.type}</p>
-                          {ct.localized && (
-                            <Badge variant="outline" className="text-xs">
-                              Localized
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-sm text-foreground-muted truncate">
-                          {ct.totalCount} document
-                          {ct.totalCount !== 1 ? "s" : ""}
-                        </p>
-                      </div>
-                      {ct.totalCount > 0 && (
-                        <div className="w-24">
-                          <div className="flex h-2 overflow-hidden rounded-full bg-border">
-                            <div
-                              className="bg-success transition-all"
-                              style={{ width: `${publishedRatio}%` }}
-                            />
-                            <div
-                              className="bg-warning"
-                              style={{ width: `${100 - publishedRatio}%` }}
-                            />
-                          </div>
-                          <p className="mt-1 text-xs text-foreground-muted text-right">
-                            {ct.publishedCount}/{ct.totalCount}
-                          </p>
-                        </div>
-                      )}
-                    </Link>
-                  );
-                })
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Recently Updated */}
-          <Card className="border-border">
-            <CardHeader className="flex flex-row items-center justify-between pb-4">
-              <CardTitle className="text-lg font-semibold">
-                Recently updated
-              </CardTitle>
-              <Link
-                href="/admin/content"
-                className="text-sm text-foreground-muted hover:text-primary flex items-center gap-1"
-              >
-                View all <ChevronRight className="h-4 w-4" />
-              </Link>
-            </CardHeader>
-            <CardContent>
-              {data.recentDocuments.length === 0 ? (
-                <p className="text-sm text-foreground-muted py-4 text-center">
-                  No documents yet.
-                </p>
-              ) : (
-                <div className="space-y-1">
-                  {data.recentDocuments.map((doc) => (
-                    <Link
-                      key={doc.documentId}
-                      href={`/admin/content/${doc.type}/${doc.documentId}`}
-                      className="flex items-start gap-3 rounded-lg p-2 transition-colors hover:bg-background-subtle"
-                    >
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
-                        <FileText className="h-4 w-4 text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0 text-sm">
-                        <p className="font-medium truncate">
-                          {doc.frontmatter.title
-                            ? String(doc.frontmatter.title)
-                            : doc.path}
-                        </p>
-                        <p className="text-foreground-muted truncate">
-                          <span>{doc.type}</span>
-                          {doc.hasUnpublishedChanges && (
-                            <Badge
-                              variant="outline"
-                              className="ml-2 text-xs text-warning"
-                            >
-                              Draft
-                            </Badge>
-                          )}
-                        </p>
-                      </div>
-                      <span className="shrink-0 text-xs text-foreground-muted flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {formatRelativeTime(doc.updatedAt)}
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        {/* Content Types & Recently updated */}
+        <div className="grid gap-4 lg:grid-cols-[400px_1fr]">
+          <ContentTypesCard data={data} />
+          <RecentDraftsCard data={data} formatTime={formatRelativeTime} />
         </div>
       </div>
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  delta,
+  tone,
+}: {
+  label: string;
+  value: number;
+  delta?: string;
+  tone?: "ok" | "warn";
+}) {
+  return (
+    <div className="rounded-lg border border-card-border bg-card p-5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+      <p className={STAT_LABEL_CLASS}>{label}</p>
+      <p className={STAT_VALUE_CLASS}>{value.toLocaleString()}</p>
+      {delta && (
+        <p
+          className={cn(
+            STAT_DELTA_CLASS,
+            tone === "warn" && "text-warning",
+            tone === "ok" && "text-success",
+          )}
+        >
+          {delta}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ContentTypesCard({ data }: { data: DashboardData }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-card-border bg-card">
+      <div className="flex items-center justify-between px-5 py-3.5">
+        <h2 className="font-heading text-[16px] font-bold text-foreground">
+          Content types
+        </h2>
+        <Link
+          href="/admin/schema"
+          className="font-mono text-[11px] text-primary hover:underline"
+        >
+          browse schema →
+        </Link>
+      </div>
+      {data.contentTypes.length === 0 ? (
+        <p className="p-6 text-center text-sm text-foreground-muted">
+          No schema types synced yet.
+        </p>
+      ) : (
+        data.contentTypes.map((ct) => {
+          const pct =
+            ct.totalCount > 0
+              ? Math.round((ct.publishedCount / ct.totalCount) * 100)
+              : 0;
+          const initial = (ct.type[0] ?? "?").toUpperCase();
+          return (
+            <Link
+              key={ct.type}
+              href={`/admin/content/${ct.type}`}
+              className="group flex items-center gap-3 border-t border-divider/60 border-l-2 border-l-transparent px-5 py-2.5 transition-colors hover:border-l-primary hover:bg-accent-subtle"
+            >
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded bg-blue-100 font-mono text-[11px] font-bold text-primary">
+                {initial}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate text-[13px] font-semibold text-foreground">
+                    {ct.type}
+                  </span>
+                  {ct.localized && (
+                    <span className="rounded-sm bg-blue-100 px-1.5 py-0 font-mono text-[9px] font-bold tracking-wider text-primary">
+                      i18n
+                    </span>
+                  )}
+                </div>
+                <div className="truncate font-mono text-[10px] text-foreground-muted">
+                  /{ct.directory}
+                </div>
+              </div>
+              <span className="shrink-0 font-mono text-[11px] tabular-nums text-foreground-muted">
+                {ct.publishedCount}/{ct.totalCount}
+              </span>
+              <div className="h-1 w-14 shrink-0 overflow-hidden rounded-full bg-background-subtle">
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </Link>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+function RecentDraftsCard({
+  data,
+  formatTime,
+}: {
+  data: DashboardData;
+  formatTime: (s: string) => string;
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-card-border bg-card">
+      <div className="flex items-center justify-between px-5 py-3.5">
+        <h2 className="font-heading text-[16px] font-bold text-foreground">
+          Recently updated
+        </h2>
+        <Link
+          href="/admin/content"
+          className="font-mono text-[11px] text-primary hover:underline"
+        >
+          all content →
+        </Link>
+      </div>
+      {data.recentDocuments.length === 0 ? (
+        <p className="p-6 text-center text-sm text-foreground-muted">
+          No documents yet.
+        </p>
+      ) : (
+        data.recentDocuments.map((doc) => {
+          const draft = doc.hasUnpublishedChanges;
+          const title = doc.frontmatter.title
+            ? String(doc.frontmatter.title)
+            : doc.path;
+          return (
+            <Link
+              key={doc.documentId}
+              href={`/admin/content/${doc.type}/${doc.documentId}`}
+              className="group flex min-w-0 flex-col gap-1 border-t border-divider/60 border-l-2 border-l-transparent px-5 py-2.5 transition-colors hover:border-l-primary hover:bg-accent-subtle"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <span
+                  className={cn(
+                    "h-1.5 w-1.5 shrink-0 rounded-full",
+                    draft ? "bg-vibrant-green" : "bg-success",
+                  )}
+                />
+                <span className="truncate text-[13px] font-semibold text-foreground">
+                  {title}
+                </span>
+              </div>
+              <div className="truncate font-mono text-[10px] text-foreground-muted">
+                {doc.type} · {doc.path} · {formatTime(doc.updatedAt)}
+                {draft && " · draft"}
+              </div>
+            </Link>
+          );
+        })
+      )}
     </div>
   );
 }

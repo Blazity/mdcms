@@ -201,11 +201,11 @@ test("SchemaPageView renders live schema entries with simple constraint metadata
   );
 
   assert.match(markup, /data-mdcms-schema-page-state="ready"/);
-  assert.match(markup, /Schema definitions are managed in code/i);
-  assert.match(markup, /validation rules/i);
+  assert.match(markup, /READ-ONLY IN STUDIO/);
+  assert.match(markup, /mdcms schema sync/);
   assert.match(markup, /data-mdcms-schema-entry-type="BlogPost"/);
   assert.match(markup, /content\/blog/);
-  assert.match(markup, /Localized/);
+  assert.match(markup, /i18n/);
   assert.match(markup, /data-mdcms-schema-field-name="author"/);
   assert.match(markup, /data-mdcms-schema-field-kind="string"/);
   assert.match(markup, /reference: Author/);
@@ -311,8 +311,14 @@ test("SchemaPageView renders shared sync metadata once for the whole page", () =
     }),
   );
 
-  assert.equal(markup.match(/Schema hash/g)?.length ?? 0, 1);
-  assert.equal(markup.match(/Synced at/g)?.length ?? 0, 1);
+  // Global sync metadata appears once in the registry strip, plus once in
+  // the active type's detail meta — never per type card. Two entries (Author
+  // + BlogPost) must not multiply the page-level summary.
+  assert.equal(markup.match(/schemaHash/g)?.length ?? 0, 2);
+  assert.equal(markup.match(/syncedAt/g)?.length ?? 0, 1);
+  // The split-pane shows the active type's detail (Author by default —
+  // sorted alphabetically) and lists every type in the left rail.
   assert.match(markup, /data-mdcms-schema-entry-type="Author"/);
-  assert.match(markup, /data-mdcms-schema-entry-type="BlogPost"/);
+  assert.match(markup, />Author</);
+  assert.match(markup, />BlogPost</);
 });

@@ -133,10 +133,12 @@ test("ContentPageView renders populated live overview cards with subtitle, compa
 
   assert.match(markup, /data-mdcms-content-page-state="ready"/);
   assert.match(markup, /data-mdcms-content-card-type="BlogPost"/);
-  assert.match(markup, /Browse and manage your content by type/);
-  assert.match(markup, />Localized</);
+  // Header subtitle is the exact computed summary for the fixture: 2
+  // types totalling 10 documents, 1 of them localized.
+  assert.match(markup, />2 content types · 10 documents · 1 localized</);
+  // i18n badge replaces the previous "Localized" / "Single locale" pills.
+  assert.match(markup, />i18n</);
   assert.match(markup, /en-US, fr, de, ja/);
-  assert.match(markup, />Single locale</);
   assert.match(markup, /7.*total/);
   assert.match(markup, /5.*published/);
   assert.match(markup, /2.*drafts/);

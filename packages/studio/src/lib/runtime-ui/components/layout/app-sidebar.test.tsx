@@ -58,7 +58,13 @@ test("AppSidebar keeps review deployment links scoped to the active scenario bas
 
   assert.match(markup, /href="\/review\/editor\/admin\/schema"/);
   assert.doesNotMatch(markup, /href="\/admin\/schema"/);
-  assert.match(markup, /bg-accent-subtle/);
+  // Active row carries data-active="true" — a semantic marker the test
+  // can anchor on without relying on a tailwind utility class. Match the
+  // <a> tag with both attributes regardless of attribute order.
+  assert.match(
+    markup,
+    /<a[^>]*\bhref="\/review\/editor\/admin\/schema"[^>]*\bdata-active="true"|<a[^>]*\bdata-active="true"[^>]*\bhref="\/review\/editor\/admin\/schema"/,
+  );
 });
 
 function renderSidebarWithCapabilities(caps: {

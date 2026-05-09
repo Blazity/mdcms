@@ -382,8 +382,38 @@ Normative behavior:
   to that mutable head snapshot.
 - The primary canvas edits the document `body` through the editor engine owned
   by SPEC-007.
+- The editor topbar exposes, in order from leading edge: a breadcrumb trail
+  (`Content` → routed type label → document label), an `UNPUBLISHED CHANGES`
+  status pill that is rendered only while the document has unpublished
+  changes, an inline auto-save indicator (`Saved`, `Saving...`, or
+  `Unsaved changes`), and a trailing action cluster.
+- The trailing action cluster contains, in order: the locale switcher (only
+  for localized types with at least one supported locale), a `Read-only`
+  badge when the active target denies writes, a ghost `Save draft` button,
+  the primary `Publish` button, and the sidebar visibility toggle.
+- `Save draft` calls the same draft-persistence routine that the auto-save
+  debounce uses. It is enabled only while the draft is in `unsaved` state
+  and a publish is not in flight; it is hidden when the active target denies
+  writes. It must not introduce a separate write path or bypass the same
+  guard checks that auto-save respects (RBAC, schema mismatch, viewing a
+  prior version).
+- The auto-save debounce continues to run independently of `Save draft`;
+  removing the manual button must never disable auto-save.
+- `Publish` opens the publish dialog and is disabled until the draft is
+  saved, has unpublished changes, and a publish is not already running.
+- The redundant workflow status pill (`Draft` / `Changed` / `Published`) and
+  the redundant `v{publishedVersion}` chip are NOT shown in the topbar; both
+  facts are surfaced via the `UNPUBLISHED CHANGES` badge and the inspector's
+  `Document` block respectively.
+- Above the editing surface, inside the centered canvas column, the editor
+  renders a document canvas header consisting of a `📄 path/to/doc.<ext>`
+  monospace path chip followed by a dashed-bordered monospace summary row of
+  the most relevant frontmatter facts (`author`, `publishedAt`, `tags`,
+  `slug` when present, plus `locale` and `format`). Mutation, write-message,
+  publish-error, viewing-version, and restore-version banners render
+  immediately below the canvas header and above the editor body.
 - The right sidebar exposes these tabs in order:
-  - `Info` for document system metadata
+  - `Info` for the document's read-only system metadata
   - `Properties` for schema-driven frontmatter editing
   - `Component` for the currently selected MDX component props
   - `History` for publish history and version comparison
@@ -394,11 +424,12 @@ Normative behavior:
 - `Properties` does not render document system metadata such as `status`,
   `publishedVersion`, `locale`, `updatedAt`, or `path`.
 - `Properties` does not render MDX component prop editors.
-- `Info` shows the existing read-only document metadata (`status`,
-  `publishedVersion`, `locale`, `updatedAt`, `path`).
-- The default selected sidebar tab is `Properties` even though `Info` appears
-  first in the tab strip unless an MDX component is actively selected, in which
-  case `Component` becomes the selected tab.
+- `Info` shows the read-only document metadata as a monospace key/value
+  block (`status`, `type`, `locale`, `publishedVersion`, `updatedAt`,
+  `path`).
+- The default selected sidebar tab is `Properties` unless an MDX component
+  is actively selected, in which case `Component` becomes the selected
+  tab.
 - Frontmatter controls are derived from the live resolved schema. Studio must
   not ship hard-coded per-type property forms for routed document editing.
 - Every property row shows an always-visible compact type label derived from
@@ -429,9 +460,9 @@ Normative behavior:
   as body edits. Changing only a property field is sufficient to mark the draft
   unsaved and trigger draft persistence.
 - Existing write-blocking states continue to apply to both body and property
-  editing. When Studio is read-only because of RBAC, schema mismatch, or other
-  guarded write conditions, the properties editor is disabled consistently with
-  the main editor canvas.
+  editing. When Studio is read-only because of RBAC, schema mismatch, or
+  other guarded write conditions, the `Properties` schema form is disabled
+  consistently with the main editor canvas.
 - Validation failures returned by `PUT /api/v1/content/:documentId` should be
   anchored to the corresponding property control when the failure can be mapped
   to a named frontmatter field; otherwise Studio falls back to the route-level

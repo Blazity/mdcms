@@ -29,6 +29,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "../ui/tooltip.js";
+import { useStudioSession } from "../../app/admin/session-context.js";
+import { useStudioMountInfo } from "../../app/admin/mount-info-context.js";
 import { MDCMSLogo } from "../mdcms-logo.js";
 
 interface AppSidebarProps {
@@ -39,38 +41,69 @@ interface AppSidebarProps {
   onToggle: () => void;
 }
 
-const mainNavItems = [
+type NavItem = {
+  icon: typeof LayoutDashboard;
+  label: string;
+  href: string;
+  hint?: string;
+};
+
+const mainNavItems: ReadonlyArray<NavItem> = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/admin" },
   { icon: FileText, label: "Content", href: "/admin/content" },
+  {
+    icon: FolderInput,
+    label: "Schema",
+    href: "/admin/schema",
+    hint: "read-only",
+  },
   { icon: GitBranch, label: "Environments", href: "/admin/environments" },
   { icon: Send, label: "Promote", href: "/admin/promote" },
   { icon: Upload, label: "Media", href: "/admin/media" },
-  { icon: FolderInput, label: "Schema", href: "/admin/schema" },
-  { icon: Users, label: "Users", href: "/admin/users" },
-  { icon: Settings, label: "Settings", href: "/admin/settings" },
   { icon: GitBranch, label: "Workflows", href: "/admin/workflows" },
   { icon: Terminal, label: "API", href: "/admin/api" },
   { icon: Trash2, label: "Trash", href: "/admin/trash" },
 ];
 
-function getMainNavItems(filters: {
-  canReadSchema: boolean;
-  canManageUsers: boolean;
-  canManageSettings: boolean;
-}) {
+const adminNavItems: ReadonlyArray<NavItem> = [
+  { icon: Users, label: "Users", href: "/admin/users" },
+  { icon: Settings, label: "Settings", href: "/admin/settings" },
+];
+
+function filterNav(
+  items: ReadonlyArray<NavItem>,
+  filters: {
+    canReadSchema: boolean;
+    canManageUsers: boolean;
+    canManageSettings: boolean;
+  },
+): NavItem[] {
   const canManageAdminSurfaces =
     filters.canManageUsers || filters.canManageSettings;
 
-  return mainNavItems.filter((item) => {
+  return items.filter((item) => {
     if (item.href === "/admin/environments") return canManageAdminSurfaces;
-    // Promote requires the same admin gate as Environments — both are
-    // operations the spec documents as session-or-API-key with admin scope.
     if (item.href === "/admin/promote") return canManageAdminSurfaces;
     if (item.href === "/admin/schema") return filters.canReadSchema;
     if (item.href === "/admin/users") return filters.canManageUsers;
     if (item.href === "/admin/settings") return filters.canManageSettings;
     return true;
   });
+}
+
+function deriveInitials(email: string): string {
+  const local = email.split("@")[0] ?? "";
+  const parts = local.split(/[._-]/).filter(Boolean);
+  if (parts.length >= 2) {
+    return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
+  }
+  return (local.slice(0, 2) || "??").toUpperCase();
+}
+
+function deriveDisplayName(email: string): string {
+  const local = email.split("@")[0] ?? "";
+  if (!local) return "Studio";
+  return local.charAt(0).toUpperCase() + local.slice(1);
 }
 
 export function AppSidebar({
@@ -83,78 +116,114 @@ export function AppSidebar({
   const pathname = usePathname();
   const basePath = useBasePath();
   const contextCanReadSchema = useCanReadSchema();
+  const sessionState = useStudioSession();
+  const mountInfo = useStudioMountInfo();
+
   const effectiveCanReadSchema = canReadSchema ?? contextCanReadSchema;
   const effectiveCanManageUsers = canManageUsers ?? false;
   const effectiveCanManageSettings = canManageSettings ?? false;
+
+  const filters = {
+    canReadSchema: effectiveCanReadSchema,
+    canManageUsers: effectiveCanManageUsers,
+    canManageSettings: effectiveCanManageSettings,
+  };
+
+  const visibleMain = filterNav(mainNavItems, filters);
+  const visibleAdmin = filterNav(adminNavItems, filters);
+  const showAdminSection = visibleAdmin.length > 0;
+
+  const session =
+    sessionState.status === "authenticated" ? sessionState.session : null;
+  const accountInitials = session ? deriveInitials(session.email) : "MD";
+  const accountName = session ? deriveDisplayName(session.email) : "Studio";
+  const accountMeta = mountInfo.project ?? "MDCMS";
+
   return (
     <TooltipProvider delayDuration={0}>
       <aside
         className={cn(
-          "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border bg-background transition-all duration-300",
+          "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-300",
           collapsed ? "w-16" : "w-60",
         )}
       >
-        {/* Logo */}
+        {/* Brand */}
         <div
           className={cn(
-            "flex h-14 items-center border-b border-border px-4",
+            "flex h-14 items-center gap-2.5 border-b border-sidebar-border px-3.5",
             collapsed && "justify-center px-2",
           )}
         >
-          <Link href="/admin">
-            <MDCMSLogo collapsed={collapsed} />
+          <Link
+            href={resolveStudioHref(basePath, "/admin")}
+            className="flex items-center gap-2.5 text-sidebar-foreground"
+          >
+            <MDCMSLogo
+              collapsed={collapsed}
+              className="text-sidebar-foreground"
+            />
           </Link>
         </div>
 
         {/* Main Navigation */}
-        <nav className="flex-1 overflow-y-auto p-2">
-          <ul className="space-y-1">
-            {getMainNavItems({
-              canReadSchema: effectiveCanReadSchema,
-              canManageUsers: effectiveCanManageUsers,
-              canManageSettings: effectiveCanManageSettings,
-            }).map((item) => {
-              const resolvedHref = resolveStudioHref(basePath, item.href);
-              const isActive =
-                pathname === resolvedHref ||
-                (resolvedHref !== basePath &&
-                  pathname.startsWith(`${resolvedHref}/`));
-
-              const NavLink = (
-                <Link
-                  href={resolvedHref}
-                  className={cn(
-                    "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
-                    isActive
-                      ? "bg-accent-subtle text-primary border-l-[3px] border-primary -ml-0.5 pl-[9px]"
-                      : "text-foreground-muted hover:bg-background-subtle hover:text-foreground",
-                    collapsed && "justify-center px-0 gap-0",
-                  )}
-                >
-                  <item.icon className="h-5 w-5 shrink-0" />
-                  {!collapsed && <span>{item.label}</span>}
-                </Link>
-              );
-
-              return (
-                <li key={item.href}>
-                  {collapsed ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>{NavLink}</TooltipTrigger>
-                      <TooltipContent side="right">{item.label}</TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    NavLink
-                  )}
-                </li>
-              );
-            })}
+        <nav className="flex-1 overflow-y-auto px-2 py-3 scrollbar-thin">
+          <ul className="space-y-0.5">
+            {visibleMain.map((item) => (
+              <li key={item.href}>
+                <SidebarNavLink
+                  item={item}
+                  pathname={pathname}
+                  basePath={basePath}
+                  collapsed={collapsed}
+                />
+              </li>
+            ))}
           </ul>
+
+          {showAdminSection && (
+            <>
+              {!collapsed && (
+                <div className="mt-5 px-3 pb-1.5 font-mono text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground-faint">
+                  Admin
+                </div>
+              )}
+              {collapsed && (
+                <div className="my-3 border-t border-sidebar-border" />
+              )}
+              <ul className="space-y-0.5">
+                {visibleAdmin.map((item) => (
+                  <li key={item.href}>
+                    <SidebarNavLink
+                      item={item}
+                      pathname={pathname}
+                      basePath={basePath}
+                      collapsed={collapsed}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </nav>
 
-        {/* Bottom Section */}
-        <div className="p-2">
-          {/* Collapse Toggle */}
+        {/* Account / collapse */}
+        <div className="border-t border-sidebar-border px-2 py-2 space-y-1">
+          {!collapsed && session && (
+            <div className="flex items-center gap-2.5 px-2 py-2">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent font-heading text-[11px] font-bold text-accent-foreground">
+                {accountInitials}
+              </span>
+              <div className="min-w-0 flex-1 leading-tight">
+                <div className="truncate text-[13px] font-semibold text-sidebar-foreground">
+                  {accountName}
+                </div>
+                <div className="truncate font-mono text-[10px] text-sidebar-foreground-muted">
+                  {accountMeta}
+                </div>
+              </div>
+            </div>
+          )}
+
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -162,7 +231,7 @@ export function AppSidebar({
                 size="sm"
                 onClick={onToggle}
                 className={cn(
-                  "w-full justify-center border-0 text-foreground-muted",
+                  "w-full justify-center border-0 bg-transparent text-sidebar-foreground-muted hover:bg-sidebar-surface hover:text-sidebar-foreground",
                   !collapsed && "justify-start gap-3 px-3",
                 )}
               >
@@ -184,4 +253,58 @@ export function AppSidebar({
       </aside>
     </TooltipProvider>
   );
+}
+
+function SidebarNavLink({
+  item,
+  pathname,
+  basePath,
+  collapsed,
+}: {
+  item: NavItem;
+  pathname: string;
+  basePath: string | undefined;
+  collapsed: boolean;
+}) {
+  const resolvedHref = resolveStudioHref(basePath, item.href);
+  const isActive =
+    pathname === resolvedHref ||
+    (resolvedHref !== basePath && pathname.startsWith(`${resolvedHref}/`));
+
+  const className = cn(
+    "group flex h-9 items-center gap-2.5 rounded-md px-3 text-[13px] font-medium transition-colors",
+    isActive
+      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+      : "text-sidebar-foreground-muted hover:bg-sidebar-surface hover:text-sidebar-foreground",
+    collapsed && "justify-center px-0 gap-0",
+  );
+  const link = (
+    <Link
+      href={resolvedHref}
+      className={className}
+      data-active={isActive ? "true" : undefined}
+    >
+      <item.icon className="h-[18px] w-[18px] shrink-0" />
+      {!collapsed && (
+        <>
+          <span className="flex-1 truncate">{item.label}</span>
+          {item.hint && (
+            <span className="font-mono text-[9px] uppercase tracking-wider text-sidebar-foreground-faint">
+              {item.hint}
+            </span>
+          )}
+        </>
+      )}
+    </Link>
+  );
+
+  if (collapsed) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{link}</TooltipTrigger>
+        <TooltipContent side="right">{item.label}</TooltipContent>
+      </Tooltip>
+    );
+  }
+  return link;
 }

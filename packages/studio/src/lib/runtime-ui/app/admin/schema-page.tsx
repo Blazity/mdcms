@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { SchemaRegistryEntry, StudioMountContext } from "@mdcms/shared";
 
@@ -15,21 +15,8 @@ import {
   PageHeaderDescription,
   PageHeaderHeading,
 } from "../../components/layout/page-header.js";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "../../components/ui/card.js";
 import { Badge } from "../../components/ui/badge.js";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../../components/ui/table.js";
+import { cn } from "../../lib/utils.js";
 
 type SchemaPageLoadInput = {
   config: {
@@ -127,20 +114,88 @@ function describeSchemaFieldConstraints(field: SchemaFieldSnapshot): string[] {
   return constraints;
 }
 
-function renderConstraintSummary(field: SchemaFieldSnapshot): ReactNode {
-  const constraints = describeSchemaFieldConstraints(field);
+const KIND_CHIP_CLASSES: Record<string, string> = {
+  string: "bg-[rgba(47,73,229,0.10)] text-primary",
+  number: "bg-[rgba(174,213,32,0.18)] text-[#516600]",
+  boolean: "bg-[rgba(186,26,26,0.10)] text-destructive",
+  date: "bg-[rgba(135,148,242,0.18)] text-primary",
+  enum: "bg-vibrant-green text-[#516600]",
+  literal: "bg-vibrant-green text-[#516600]",
+  array: "bg-code-bg text-foreground",
+  object: "bg-code-bg text-foreground",
+};
 
-  if (constraints.length === 0) {
-    return <span className="text-muted-foreground">None</span>;
+function renderKindChip(field: SchemaFieldSnapshot): ReactNode {
+  const baseClass =
+    "inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 font-mono text-[11px]";
+  if (field.reference) {
+    return (
+      <span className={cn(baseClass, "bg-blue-100 text-primary")}>
+        ref → {field.reference.targetType}
+      </span>
+    );
   }
-
+  if (field.kind === "array") {
+    const itemKind = field.item?.reference
+      ? `ref<${field.item.reference.targetType}>`
+      : (field.item?.kind ?? "any");
+    return (
+      <span className={cn(baseClass, KIND_CHIP_CLASSES.array)}>
+        {itemKind}[]
+      </span>
+    );
+  }
   return (
-    <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-      {constraints.map((constraint) => (
-        <li key={constraint}>{constraint}</li>
-      ))}
-    </ul>
+    <span
+      className={cn(
+        baseClass,
+        KIND_CHIP_CLASSES[field.kind] ?? "bg-code-bg text-foreground-muted",
+      )}
+    >
+      {field.kind}
+    </span>
   );
+}
+
+function renderConstraintFlags(field: SchemaFieldSnapshot): ReactNode {
+  const constraints = describeSchemaFieldConstraints(field);
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap gap-1">
+        <span
+          className={cn(
+            "inline-flex items-center rounded-sm px-1.5 py-0.5 font-mono text-[10px] tracking-wide",
+            field.required
+              ? "bg-[rgba(47,73,229,0.12)] text-primary"
+              : "bg-code-bg text-foreground-muted",
+          )}
+        >
+          {field.required ? "required" : "optional"}
+        </span>
+        {field.nullable && (
+          <span className="inline-flex items-center rounded-sm bg-code-bg px-1.5 py-0.5 font-mono text-[10px] tracking-wide text-foreground-muted">
+            nullable
+          </span>
+        )}
+      </div>
+      {constraints.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {constraints.map((constraint) => (
+            <span
+              key={constraint}
+              className="inline-flex items-center rounded-sm bg-code-bg px-1.5 py-0.5 font-mono text-[11px] text-foreground-muted"
+            >
+              {constraint}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function jsonStringify(value: unknown): string {
+  return JSON.stringify(value, null, 2);
 }
 
 /** Maps a StudioMountContext to a schema load input. Exported for tests. */
@@ -227,49 +282,46 @@ export function SchemaPageView({ state }: { state: StudioSchemaState }) {
     <div className="min-h-screen">
       <PageHeader breadcrumbs={[{ label: "Schema" }]} />
 
-      <div className="space-y-6 p-6">
-        <div className="space-y-1">
-          <PageHeaderHeading>Schema</PageHeaderHeading>
-          <PageHeaderDescription>{pageDescription}</PageHeaderDescription>
+      <div className="space-y-6 p-6 lg:p-8">
+        <div>
+          <PageHeaderHeading className="font-heading text-[36px] font-bold leading-[1.05] tracking-tight text-foreground">
+            Schema
+          </PageHeaderHeading>
+          <PageHeaderDescription className="mt-1.5 font-mono text-[12px] text-foreground-muted">
+            {pageDescription}
+          </PageHeaderDescription>
         </div>
 
-        <Card>
-          <CardContent className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
-            <div className="flex flex-wrap items-start gap-3">
-              <Badge variant="default">Read-only</Badge>
-              <p className="max-w-3xl text-sm text-muted-foreground">
-                {SCHEMA_READ_ONLY_COPY}
-              </p>
-            </div>
-
-            {sharedSyncSummary &&
-            (sharedSyncSummary.schemaHash || sharedSyncSummary.syncedAt) ? (
-              <div
-                data-mdcms-schema-sync-summary="page"
-                className="grid gap-2 text-xs text-muted-foreground xl:justify-items-end"
-              >
-                {sharedSyncSummary.syncedAt ? (
-                  <p className="flex flex-wrap items-baseline gap-1 xl:justify-end">
-                    <span className="font-medium text-foreground">
-                      Synced at
-                    </span>
-                    <span>{sharedSyncSummary.syncedAt}</span>
-                  </p>
-                ) : null}
-                {sharedSyncSummary.schemaHash ? (
-                  <p className="flex flex-wrap items-start gap-1 xl:justify-end">
-                    <span className="font-medium text-foreground">
-                      Schema hash
-                    </span>
-                    <code className="break-all font-mono text-[11px] leading-relaxed">
-                      {sharedSyncSummary.schemaHash}
-                    </code>
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
+        {/* Registry strip — always visible, surfaces sync state + read-only marker */}
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-primary/60 bg-card px-4 py-2.5 font-mono text-[11px] text-foreground-muted">
+          <span className="h-2 w-2 shrink-0 rounded-full bg-success" />
+          <span className="text-foreground-muted">schemaHash</span>
+          <span className="text-foreground">
+            {sharedSyncSummary?.schemaHash ?? "—"}
+          </span>
+          <span className="hidden h-3 w-px bg-divider sm:inline-block" />
+          <span className="text-foreground-muted">syncedAt</span>
+          <span className="text-foreground">
+            {sharedSyncSummary?.syncedAt ?? "—"}
+          </span>
+          <span className="hidden h-3 w-px bg-divider sm:inline-block" />
+          <span className="text-foreground-muted">project</span>
+          <span className="text-foreground">
+            {state.status === "ready"
+              ? state.project
+              : state.status === "project-mismatch"
+                ? state.serverProject
+                : state.status === "forbidden" || state.status === "error"
+                  ? state.project
+                  : "—"}
+          </span>
+          <span className="ml-auto rounded-sm bg-foreground px-2 py-1 font-mono text-[11px] text-background">
+            $ mdcms schema sync
+          </span>
+          <span className="rounded-sm bg-code-bg px-2 py-1 text-[10px] font-bold tracking-wider text-foreground-muted">
+            READ-ONLY IN STUDIO
+          </span>
+        </div>
 
         {state.status === "loading" ? (
           <div
@@ -328,9 +380,10 @@ export function SchemaPageView({ state }: { state: StudioSchemaState }) {
           >
             <Badge variant="outline">Empty</Badge>
             <p className="text-sm text-muted-foreground">
-              No synced schema is available for this project and environment.
+              {SCHEMA_READ_ONLY_COPY}
             </p>
             <p className="text-sm text-muted-foreground">
+              No synced schema is available for this project and environment.
               Ask an admin or developer to run <code>cms schema sync</code> from
               the host app repo to publish the latest schema.
             </p>
@@ -339,82 +392,188 @@ export function SchemaPageView({ state }: { state: StudioSchemaState }) {
             </p>
           </section>
         ) : (
-          <div
-            data-mdcms-schema-page-state="ready"
-            className="grid gap-4 lg:grid-cols-2"
-          >
-            {sortEntries(state.entries).map((entry) => (
-              <Card
-                key={entry.type}
-                data-mdcms-schema-entry-type={entry.type}
-                className="p-0 gap-0"
-              >
-                <CardHeader className="gap-2 p-5 pb-3">
-                  <div className="space-y-1.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <CardTitle className="text-lg tracking-tight">
-                        {entry.type}
-                      </CardTitle>
-                      <Badge variant={entry.localized ? "default" : "outline"}>
-                        {entry.localized ? "Localized" : "Single locale"}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground font-mono">
-                      {entry.directory}
-                    </p>
-                  </div>
-                </CardHeader>
+          <SchemaSplitPane entries={sortEntries(state.entries)} />
+        )}
+      </div>
+    </div>
+  );
+}
 
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="pl-5">Field</TableHead>
-                        <TableHead>Kind</TableHead>
-                        <TableHead>Req</TableHead>
-                        <TableHead>Null</TableHead>
-                        <TableHead className="pr-5">Constraints</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sortFields(entry.resolvedSchema.fields).map(
-                        ([fieldName, field]) => (
-                          <TableRow
-                            key={fieldName}
-                            data-mdcms-schema-field-name={fieldName}
-                            data-mdcms-schema-field-kind={field.kind}
-                          >
-                            <TableCell className="pl-5 font-medium">
-                              {fieldName}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="text-[10px]">
-                                {field.kind}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              {field.required ? "Yes" : "No"}
-                            </TableCell>
-                            <TableCell>
-                              {field.nullable ? "Yes" : "No"}
-                            </TableCell>
-                            <TableCell className="pr-5">
-                              <div
-                                data-mdcms-schema-field-constraints={describeSchemaFieldConstraints(
-                                  field,
-                                ).join(" | ")}
-                              >
-                                {renderConstraintSummary(field)}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ),
-                      )}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            ))}
+function SchemaSplitPane({ entries }: { entries: SchemaRegistryEntry[] }) {
+  const [activeType, setActiveType] = useState(entries[0]?.type ?? "");
+  const [tab, setTab] = useState<"fields" | "source">("fields");
+
+  const entry = useMemo(
+    () => entries.find((e) => e.type === activeType) ?? entries[0],
+    [entries, activeType],
+  );
+
+  if (!entry) {
+    return null;
+  }
+
+  const fields = sortFields(entry.resolvedSchema.fields);
+
+  return (
+    <div
+      data-mdcms-schema-page-state="ready"
+      className="grid min-h-[480px] overflow-hidden rounded-lg border border-card-border bg-card lg:grid-cols-[260px_1fr]"
+    >
+      {/* Type list */}
+      <div className="border-b border-divider lg:border-b-0 lg:border-r lg:border-divider">
+        <div className="px-4 pb-2 pt-3 font-mono text-[10px] uppercase tracking-[0.08em] text-foreground-muted">
+          Types · {entries.length}
+        </div>
+        <ul className="pb-2">
+          {entries.map((e) => {
+            const isActive = e.type === entry.type;
+            return (
+              <li key={e.type}>
+                <button
+                  type="button"
+                  onClick={() => setActiveType(e.type)}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 border-l-2 border-transparent px-4 py-2.5 text-left transition-colors",
+                    isActive
+                      ? "border-primary bg-blue-100"
+                      : "hover:bg-background-subtle",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "grid h-6 w-6 shrink-0 place-items-center rounded font-mono text-[11px] font-bold",
+                      isActive
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-code-bg text-foreground-muted",
+                    )}
+                  >
+                    {e.type[0]}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-semibold text-foreground">
+                      {e.type}
+                    </div>
+                    <div className="truncate font-mono text-[10px] text-foreground-muted">
+                      /{e.directory}
+                    </div>
+                  </div>
+                  {e.localized && (
+                    <span className="rounded-sm bg-blue-100 px-1.5 py-0.5 font-mono text-[9px] tracking-wider text-primary">
+                      i18n
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      {/* Detail */}
+      <div
+        data-mdcms-schema-entry-type={entry.type}
+        className="flex min-w-0 flex-col"
+      >
+        <div className="flex items-start gap-4 border-b border-divider px-7 py-6">
+          <div className="min-w-0 flex-1">
+            <h2 className="font-heading text-[28px] font-bold leading-[1.1] tracking-tight text-foreground">
+              {entry.type}
+            </h2>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-foreground-muted">
+              <span>
+                <span className="text-primary">directory</span> /
+                {entry.directory}
+              </span>
+              <span>
+                <span className="text-primary">localized</span>{" "}
+                {String(entry.localized)}
+              </span>
+              <span>
+                <span className="text-primary">fields</span> {fields.length}
+              </span>
+              <span className="break-all">
+                <span className="text-primary">schemaHash</span>{" "}
+                {entry.schemaHash}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex border-b border-divider">
+          <button
+            type="button"
+            onClick={() => setTab("fields")}
+            className={cn(
+              "border-b-2 border-transparent px-4 py-2.5 font-mono text-[11px] uppercase tracking-wider transition-colors",
+              tab === "fields"
+                ? "border-primary text-foreground"
+                : "text-foreground-muted hover:text-foreground",
+            )}
+          >
+            Fields
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("source")}
+            className={cn(
+              "border-b-2 border-transparent px-4 py-2.5 font-mono text-[11px] uppercase tracking-wider transition-colors",
+              tab === "source"
+                ? "border-primary text-foreground"
+                : "text-foreground-muted hover:text-foreground",
+            )}
+          >
+            resolvedSchema (JSON)
+          </button>
+        </div>
+
+        {tab === "fields" ? (
+          <div className="overflow-x-auto">
+            <table className="w-full border-separate border-spacing-0">
+              <thead className="bg-background-subtle">
+                <tr>
+                  <th className="border-b border-divider px-7 py-2.5 text-left font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-foreground-muted">
+                    Field
+                  </th>
+                  <th className="border-b border-divider px-7 py-2.5 text-left font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-foreground-muted">
+                    Kind
+                  </th>
+                  <th className="border-b border-divider px-7 py-2.5 text-left font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-foreground-muted">
+                    Constraints
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {fields.map(([fieldName, field]) => (
+                  <tr
+                    key={fieldName}
+                    data-mdcms-schema-field-name={fieldName}
+                    data-mdcms-schema-field-kind={field.kind}
+                    className="border-b border-divider/60"
+                  >
+                    <td className="border-t border-divider/60 px-7 py-3.5 align-top">
+                      <div className="font-mono text-[13px] font-semibold text-foreground">
+                        {fieldName}
+                        {field.required && (
+                          <span className="ml-1 text-primary">*</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="border-t border-divider/60 px-7 py-3.5 align-top">
+                      {renderKindChip(field)}
+                    </td>
+                    <td className="border-t border-divider/60 px-7 py-3.5 align-top">
+                      {renderConstraintFlags(field)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="p-7">
+            <pre className="overflow-auto rounded-lg border border-divider bg-foreground p-5 font-mono text-[12px] leading-relaxed text-background">
+              {jsonStringify(entry.resolvedSchema)}
+            </pre>
           </div>
         )}
       </div>
@@ -422,11 +581,7 @@ export function SchemaPageView({ state }: { state: StudioSchemaState }) {
   );
 }
 
-export default function SchemaPage({
-  context,
-}: {
-  context: StudioMountContext;
-}) {
+export default function SchemaPage() {
   const mountInfo = useStudioMountInfo();
   const [state, setState] = useState<StudioSchemaState>(() =>
     createSchemaPageLoadingState(),

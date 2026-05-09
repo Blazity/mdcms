@@ -86,7 +86,7 @@ const RUNTIME_ROUTES: readonly StudioRuntimeRouteDefinition[] = [
   {
     id: "schema",
     path: "/schema",
-    render: (context) => <SchemaPage context={context} />,
+    render: () => <SchemaPage />,
   },
   {
     id: "users",

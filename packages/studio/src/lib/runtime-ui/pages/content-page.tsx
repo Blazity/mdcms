@@ -14,7 +14,6 @@ import {
 import { useStudioMountInfo } from "../app/admin/mount-info-context.js";
 import { useStudioContentOverview } from "../hooks/use-content-overview.js";
 import Link from "../adapters/next-link.js";
-import { ChevronRight, FileText, Globe, GlobeOff } from "lucide-react";
 import { Skeleton } from "../components/ui/skeleton.js";
 import { resolveStudioHref, useBasePath } from "../navigation.js";
 import {
@@ -23,7 +22,7 @@ import {
   PageHeaderHeading,
 } from "../components/layout/page-header.js";
 import { Badge } from "../components/ui/badge.js";
-import { Card, CardContent } from "../components/ui/card.js";
+import { cn } from "../lib/utils.js";
 
 type ContentPageLoadInput = LoadStudioContentOverviewStateInput;
 
@@ -38,95 +37,97 @@ function renderCard(
   entry: StudioContentOverviewEntry,
   basePath: string,
 ): ReactNode {
-  const totalCount = findMetricValue(entry, "documents");
-  const publishedCount = findMetricValue(entry, "published");
-  const draftCount = findMetricValue(entry, "withDrafts");
+  const totalCount = findMetricValue(entry, "documents") ?? 0;
+  const publishedCount = findMetricValue(entry, "published") ?? 0;
+  const draftCount = findMetricValue(entry, "withDrafts") ?? 0;
+  const hasMetrics = entry.metrics.length > 0;
+  // Clamp once so the "% published" text and the progress bar both stay in
+  // [0, 100] even if upstream returns published > total or a negative
+  // value.
+  const rawPublishedPercentage =
+    totalCount > 0 ? Math.round((publishedCount / totalCount) * 100) : 0;
+  const publishedPercentage = Math.max(
+    0,
+    Math.min(100, rawPublishedPercentage),
+  );
+  const initial = (entry.type[0] ?? "?").toUpperCase();
+
   const card = (
-    <Card
+    <div
       data-mdcms-content-card-type={entry.type}
       data-mdcms-content-card-disabled={entry.canNavigate ? "false" : "true"}
-      className="h-full border-border p-0 gap-0 transition-all hover:border-primary/50 hover:shadow-sm"
+      className={cn(
+        "flex h-full flex-col rounded-lg border border-card-border bg-card p-5 transition-colors",
+        entry.canNavigate && "hover:border-primary/60",
+      )}
     >
-      <CardContent className="p-4">
-        <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <FileText className="h-6 w-6 text-primary" />
-          </div>
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold">{entry.type}</h2>
-              {entry.canNavigate ? (
-                <ChevronRight className="h-4 w-4 text-foreground-muted" />
-              ) : null}
-            </div>
-            <p className="line-clamp-2 text-sm text-muted-foreground">
-              {entry.directory}
-            </p>
-          </div>
+      {/* Head: letter mark + name/dir + i18n */}
+      <div className="flex items-center gap-3">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-blue-100 font-heading text-base font-bold text-primary">
+          {initial}
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="font-heading text-[18px] font-bold leading-[1.1] tracking-tight text-foreground">
+            {entry.type}
+          </h2>
+          <p className="mt-0.5 truncate font-mono text-[11px] text-foreground-muted">
+            /{entry.directory}
+          </p>
         </div>
+        {entry.localized ? (
+          <span
+            className="rounded-sm bg-blue-100 px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-wider text-primary"
+            title={entry.locales?.join(", ") ?? "Localized"}
+          >
+            i18n
+          </span>
+        ) : null}
+      </div>
 
-        <div className="mt-4 space-y-3 border-t border-border pt-4">
-          {entry.metrics.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-4 text-sm">
-              {totalCount !== undefined ? (
-                <span
-                  data-mdcms-content-metric="documents"
-                  className="text-muted-foreground"
-                >
-                  <span className="font-medium text-foreground">
-                    {totalCount}
-                  </span>{" "}
-                  total
-                </span>
-              ) : null}
-              {publishedCount !== undefined ? (
-                <span
-                  data-mdcms-content-metric="published"
-                  className="text-muted-foreground"
-                >
-                  <span className="font-medium text-success">
-                    {publishedCount}
-                  </span>{" "}
-                  published
-                </span>
-              ) : null}
-              {draftCount !== undefined ? (
-                <span
-                  data-mdcms-content-metric="withDrafts"
-                  className="text-muted-foreground"
-                >
-                  <span className="font-medium text-warning">{draftCount}</span>{" "}
-                  drafts
-                </span>
-              ) : null}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Counts unavailable for your current permissions.
-            </p>
-          )}
+      {/* Stats: total/published/drafts */}
+      {hasMetrics ? (
+        <>
+          <div className="mt-4 grid grid-cols-3 gap-3 border-t border-divider/60 pt-4">
+            <CardStat
+              label="Total"
+              metricLabel="total"
+              value={totalCount}
+              metric="documents"
+            />
+            <CardStat
+              label="Published"
+              metricLabel="published"
+              value={publishedCount}
+              metric="published"
+            />
+            <CardStat
+              label="Drafts"
+              metricLabel="drafts"
+              value={draftCount}
+              metric="withDrafts"
+            />
+          </div>
 
-          {entry.localized ? (
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="gap-1">
-                <Globe className="h-3 w-3" />
-                Localized
-              </Badge>
-              {entry.locales?.length ? (
-                <span className="text-xs text-muted-foreground">
-                  {entry.locales.join(", ")}
-                </span>
-              ) : null}
-            </div>
-          ) : (
-            <Badge variant="outline" className="gap-1">
-              <GlobeOff className="h-3 w-3" />
-              Single locale
-            </Badge>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+          <div className="mt-4 h-1 overflow-hidden rounded-full bg-background-subtle">
+            <div
+              className="h-full bg-primary transition-all"
+              style={{ width: `${publishedPercentage}%` }}
+            />
+          </div>
+
+          <div className="mt-2.5 flex items-center justify-between font-mono text-[11px] text-foreground-muted">
+            <span>{publishedPercentage}% published</span>
+            {entry.canNavigate ? (
+              <span className="text-primary">browse →</span>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <p className="mt-4 border-t border-divider/60 pt-4 text-sm text-muted-foreground">
+          Counts unavailable for your current permissions.
+        </p>
+      )}
+    </div>
   );
 
   if (!entry.canNavigate) {
@@ -140,6 +141,33 @@ function renderCard(
     >
       {card}
     </Link>
+  );
+}
+
+function CardStat({
+  label,
+  value,
+  metric,
+  metricLabel,
+}: {
+  label: string;
+  value: number;
+  metric: StudioContentOverviewEntry["metrics"][number]["id"];
+  metricLabel: string;
+}) {
+  return (
+    <div
+      data-mdcms-content-metric={metric}
+      data-mdcms-content-metric-summary={`${value} ${metricLabel}`}
+      className="flex flex-col gap-0.5"
+    >
+      <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-foreground-muted">
+        {label}
+      </span>
+      <span className="font-heading text-[22px] font-bold leading-none text-foreground">
+        {value}
+      </span>
+    </div>
   );
 }
 
@@ -183,22 +211,51 @@ function createContentPageMissingRouteState(): StudioContentOverviewState {
   };
 }
 
+function summariseTotals(entries: StudioContentOverviewEntry[]): {
+  totalDocuments: number;
+  localizedTypes: number;
+} {
+  let totalDocuments = 0;
+  let localizedTypes = 0;
+  for (const entry of entries) {
+    totalDocuments += findMetricValue(entry, "documents") ?? 0;
+    if (entry.localized) localizedTypes += 1;
+  }
+  return { totalDocuments, localizedTypes };
+}
+
 export function ContentPageView({
   state,
 }: {
   state: StudioContentOverviewState;
 }) {
   const basePath = useBasePath();
+  const summary =
+    state.status === "ready" || state.status === "permission-constrained"
+      ? summariseTotals(state.entries)
+      : null;
+  const typesCount =
+    state.status === "ready" || state.status === "permission-constrained"
+      ? state.entries.length
+      : 0;
 
   return (
     <div className="min-h-screen">
       <PageHeader breadcrumbs={[{ label: "Content" }]} />
 
-      <div className="space-y-6 p-6">
-        <div className="space-y-1">
-          <PageHeaderHeading>Content</PageHeaderHeading>
-          <PageHeaderDescription>
-            Browse and manage your content by type
+      <div className="space-y-6 p-6 lg:p-8">
+        <div>
+          <PageHeaderHeading className="font-heading text-[36px] font-bold leading-[1.05] tracking-tight text-foreground">
+            Content
+          </PageHeaderHeading>
+          <PageHeaderDescription className="mt-1.5 font-mono text-[12px] text-foreground-muted">
+            {summary
+              ? `${typesCount} content type${typesCount === 1 ? "" : "s"} · ${summary.totalDocuments} document${summary.totalDocuments === 1 ? "" : "s"}${
+                  summary.localizedTypes > 0
+                    ? ` · ${summary.localizedTypes} localized`
+                    : ""
+                }`
+              : "Browse and manage your content by type"}
           </PageHeaderDescription>
         </div>
 
@@ -208,22 +265,23 @@ export function ContentPageView({
             className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
           >
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="rounded-lg border border-border p-4">
-                <div className="flex items-start gap-4">
-                  <Skeleton className="h-12 w-12 rounded-lg" />
+              <div
+                key={i}
+                className="rounded-lg border border-card-border bg-card p-5"
+              >
+                <div className="flex items-start gap-3">
+                  <Skeleton className="h-9 w-9 rounded-md" />
                   <div className="flex-1 space-y-2">
                     <Skeleton className="h-5 w-28" />
-                    <Skeleton className="h-4 w-36" />
+                    <Skeleton className="h-3 w-36" />
                   </div>
                 </div>
-                <div className="mt-4 space-y-3 border-t border-border pt-4">
-                  <div className="flex gap-4">
-                    <Skeleton className="h-4 w-16" />
-                    <Skeleton className="h-4 w-20" />
-                    <Skeleton className="h-4 w-16" />
-                  </div>
-                  <Skeleton className="h-5 w-24 rounded-full" />
+                <div className="mt-4 grid grid-cols-3 gap-3 border-t border-divider/60 pt-4">
+                  <Skeleton className="h-7 w-12" />
+                  <Skeleton className="h-7 w-12" />
+                  <Skeleton className="h-7 w-12" />
                 </div>
+                <Skeleton className="mt-4 h-1 w-full rounded-full" />
               </div>
             ))}
           </div>
