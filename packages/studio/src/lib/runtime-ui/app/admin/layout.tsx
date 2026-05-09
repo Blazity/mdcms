@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   QueryClientProvider,
   keepPreviousData,
@@ -23,6 +30,12 @@ import {
 import { StudioMountInfoProvider } from "./mount-info-context.js";
 import { usePathname, useRouter } from "../../navigation.js";
 import { AppSidebar } from "../../components/layout/app-sidebar.js";
+import { AssistantProvider } from "../../components/assistant/assistant-context.js";
+import {
+  AssistantRail,
+  useAssistantMainPadding,
+} from "../../components/assistant/assistant-rail.js";
+import { useAssistant } from "../../components/assistant/assistant-context.js";
 import { cn } from "../../lib/utils.js";
 
 type AdminLayoutCapabilitiesLoadInput = {
@@ -498,39 +511,68 @@ function AdminLayoutInner({
 
   return (
     <ToastProvider>
-      <div className="min-h-screen overflow-x-hidden bg-background">
-        <AdminCapabilitiesProvider
-          value={{
-            canReadSchema,
-            canCreateContent,
-            canPublishContent,
-            canUnpublishContent,
-            canDeleteContent,
-            canManageUsers,
-            canManageSettings,
-          }}
-        >
-          <StudioSessionProvider value={sessionState}>
-            <StudioMountInfoProvider value={mountInfo}>
-              <AppSidebar
-                canReadSchema={canReadSchema}
-                canManageUsers={canManageUsers}
-                canManageSettings={canManageSettings}
-                collapsed={sidebarCollapsed}
-                onToggle={handleToggle}
-              />
-              <main
-                className={cn(
-                  "min-h-screen min-w-0 overflow-x-hidden transition-all duration-300",
-                  sidebarCollapsed ? "ml-16" : "ml-60",
-                )}
-              >
-                {children}
-              </main>
-            </StudioMountInfoProvider>
-          </StudioSessionProvider>
-        </AdminCapabilitiesProvider>
-      </div>
+      <AssistantProvider>
+        <div className="min-h-screen overflow-x-hidden bg-background">
+          <AdminCapabilitiesProvider
+            value={{
+              canReadSchema,
+              canCreateContent,
+              canPublishContent,
+              canUnpublishContent,
+              canDeleteContent,
+              canManageUsers,
+              canManageSettings,
+            }}
+          >
+            <StudioSessionProvider value={sessionState}>
+              <StudioMountInfoProvider value={mountInfo}>
+                <AppSidebar
+                  canReadSchema={canReadSchema}
+                  canManageUsers={canManageUsers}
+                  canManageSettings={canManageSettings}
+                  collapsed={sidebarCollapsed}
+                  onToggle={handleToggle}
+                />
+                <AdminMain sidebarCollapsed={sidebarCollapsed}>
+                  {children}
+                </AdminMain>
+                <AssistantRail sidebarCollapsed={sidebarCollapsed} />
+              </StudioMountInfoProvider>
+            </StudioSessionProvider>
+          </AdminCapabilitiesProvider>
+        </div>
+      </AssistantProvider>
     </ToastProvider>
+  );
+}
+
+/**
+ * <main> element split out so it can subscribe to the assistant rail
+ * state and reserve right padding while the rail is docked.
+ */
+function AdminMain({
+  children,
+  sidebarCollapsed,
+}: {
+  children: ReactNode;
+  sidebarCollapsed: boolean;
+}) {
+  const assistantPadding = useAssistantMainPadding();
+  const assistant = useAssistant();
+  // While the rail is in fullscreen mode, hide the editor entirely so
+  // the rail can take over the page without dual-scroll glitches.
+  const fullscreenHidden = assistant.isFullscreen;
+  return (
+    <main
+      className={cn(
+        "min-h-screen min-w-0 overflow-x-hidden transition-all duration-300",
+        sidebarCollapsed ? "ml-16" : "ml-60",
+        assistantPadding,
+        fullscreenHidden && "invisible",
+      )}
+      aria-hidden={fullscreenHidden ? true : undefined}
+    >
+      {children}
+    </main>
   );
 }

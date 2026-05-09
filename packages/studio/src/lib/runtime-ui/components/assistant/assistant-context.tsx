@@ -1,0 +1,281 @@
+"use client";
+
+import * as React from "react";
+
+import type {
+  AssistantProposal,
+  AssistantStore,
+  AssistantThread,
+} from "./assistant-types.js";
+import { buildAssistantMockStore } from "./assistant-mock-data.js";
+
+type RailMode = "closed" | "rail" | "fullscreen";
+
+type AssistantState = {
+  store: AssistantStore;
+  mode: RailMode;
+  activeThreadId: string;
+};
+
+type AssistantAction =
+  | { type: "open-rail" }
+  | { type: "close" }
+  | { type: "toggle-fullscreen" }
+  | { type: "set-mode"; mode: RailMode }
+  | { type: "select-thread"; threadId: string }
+  | { type: "clear-selection-on-active" }
+  | { type: "remove-context-doc"; path: string }
+  | { type: "remove-proposal"; threadId: string; proposalId: string };
+
+function reducer(
+  state: AssistantState,
+  action: AssistantAction,
+): AssistantState {
+  switch (action.type) {
+    case "open-rail":
+      return state.mode === "closed" ? { ...state, mode: "rail" } : state;
+    case "close":
+      return { ...state, mode: "closed" };
+    case "toggle-fullscreen":
+      if (state.mode === "fullscreen") return { ...state, mode: "rail" };
+      if (state.mode === "rail") return { ...state, mode: "fullscreen" };
+      return state;
+    case "set-mode":
+      return { ...state, mode: action.mode };
+    case "select-thread":
+      return { ...state, activeThreadId: action.threadId };
+    case "clear-selection-on-active":
+      return {
+        ...state,
+        store: {
+          ...state.store,
+          threads: state.store.threads.map((t) =>
+            t.id === state.activeThreadId
+              ? { ...t, attachedSelection: undefined }
+              : t,
+          ),
+        },
+      };
+    case "remove-context-doc":
+      return {
+        ...state,
+        store: {
+          ...state.store,
+          threads: state.store.threads.map((t) =>
+            t.id === state.activeThreadId
+              ? {
+                  ...t,
+                  contextDocs: t.contextDocs.filter(
+                    (d) => d.path !== action.path,
+                  ),
+                }
+              : t,
+          ),
+        },
+      };
+    case "remove-proposal":
+      return {
+        ...state,
+        store: {
+          ...state.store,
+          threads: state.store.threads.map((thread) =>
+            thread.id === action.threadId
+              ? {
+                  ...thread,
+                  messages: thread.messages.map((m) => {
+                    if (!m.proposals?.includes(action.proposalId)) return m;
+                    return {
+                      ...m,
+                      proposals: m.proposals.filter(
+                        (id) => id !== action.proposalId,
+                      ),
+                    };
+                  }),
+                }
+              : thread,
+          ),
+        },
+      };
+    default:
+      return state;
+  }
+}
+
+export type AssistantContextValue = {
+  store: AssistantStore;
+  mode: RailMode;
+  isOpen: boolean;
+  isFullscreen: boolean;
+  activeThread: AssistantThread;
+  openRail: () => void;
+  close: () => void;
+  toggleFullscreen: () => void;
+  setMode: (mode: RailMode) => void;
+  selectThread: (threadId: string) => void;
+  clearActiveSelection: () => void;
+  removeContextDoc: (path: string) => void;
+  acceptProposal: (proposal: AssistantProposal) => void;
+  rejectProposal: (proposal: AssistantProposal, feedback: string) => void;
+};
+
+/**
+ * Headless fallback returned when `useAssistant()` is called outside of an
+ * `AssistantProvider`. The launcher embeds inside the page header, which
+ * is rendered by unit tests in isolation; we don't want those tests to
+ * have to wrap every page in a provider just because the topbar exposes
+ * the launcher. The fallback intentionally exposes an empty store and
+ * no-op handlers — the launcher is invisible in that mode.
+ */
+const FALLBACK_STORE: AssistantStore = {
+  now: new Date(0).toISOString(),
+  activeThreadId: "fallback",
+  threads: [],
+  proposals: {},
+};
+
+const FALLBACK_THREAD: AssistantThread = {
+  id: "fallback",
+  title: "AI assistant",
+  updatedAt: new Date(0).toISOString(),
+  preview: "",
+  contextDocs: [],
+  messages: [],
+  docCount: 0,
+};
+
+const FALLBACK_VALUE: AssistantContextValue = {
+  store: FALLBACK_STORE,
+  mode: "closed",
+  isOpen: false,
+  isFullscreen: false,
+  activeThread: FALLBACK_THREAD,
+  openRail: () => {},
+  close: () => {},
+  toggleFullscreen: () => {},
+  setMode: () => {},
+  selectThread: () => {},
+  clearActiveSelection: () => {},
+  removeContextDoc: () => {},
+  acceptProposal: () => {},
+  rejectProposal: () => {},
+};
+
+const AssistantContext =
+  React.createContext<AssistantContextValue>(FALLBACK_VALUE);
+
+export type AssistantProviderProps = {
+  children: React.ReactNode;
+  /** Optional override for tests / Storybook-style harnesses. */
+  initialStore?: AssistantStore;
+  /** Initial visibility — defaults to closed. */
+  initialMode?: RailMode;
+};
+
+export function AssistantProvider({
+  children,
+  initialStore,
+  initialMode = "closed",
+}: AssistantProviderProps) {
+  const [state, dispatch] = React.useReducer(reducer, undefined, () => {
+    const store = initialStore ?? buildAssistantMockStore();
+    return {
+      store,
+      mode: initialMode,
+      activeThreadId: store.activeThreadId,
+    };
+  });
+
+  const activeThread =
+    state.store.threads.find((t) => t.id === state.activeThreadId) ??
+    state.store.threads[0]!;
+
+  const value = React.useMemo<AssistantContextValue>(
+    () => ({
+      store: state.store,
+      mode: state.mode,
+      isOpen: state.mode !== "closed",
+      isFullscreen: state.mode === "fullscreen",
+      activeThread,
+      openRail: () => dispatch({ type: "open-rail" }),
+      close: () => dispatch({ type: "close" }),
+      toggleFullscreen: () => dispatch({ type: "toggle-fullscreen" }),
+      setMode: (mode) => dispatch({ type: "set-mode", mode }),
+      selectThread: (threadId) => dispatch({ type: "select-thread", threadId }),
+      clearActiveSelection: () =>
+        dispatch({ type: "clear-selection-on-active" }),
+      removeContextDoc: (path) =>
+        dispatch({ type: "remove-context-doc", path }),
+      acceptProposal: (proposal) =>
+        dispatch({
+          type: "remove-proposal",
+          threadId: state.activeThreadId,
+          proposalId: proposal.proposalId,
+        }),
+      rejectProposal: (proposal) =>
+        dispatch({
+          type: "remove-proposal",
+          threadId: state.activeThreadId,
+          proposalId: proposal.proposalId,
+        }),
+    }),
+    [state, activeThread],
+  );
+
+  // Global ⌘K / Ctrl-K opens the rail (and toggles closed → rail).
+  React.useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const isMac =
+        typeof navigator !== "undefined" &&
+        /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+      const meta = isMac ? event.metaKey : event.ctrlKey;
+      if (!meta) return;
+      if (event.key !== "k" && event.key !== "K") return;
+      // Don't hijack when the user is typing in a contenteditable/textarea/input.
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "TEXTAREA" ||
+          target.tagName === "INPUT" ||
+          target.isContentEditable)
+      ) {
+        // Still allow ⌘K from inside a chat composer to toggle close,
+        // because the user may want to dismiss; but don't open if focused
+        // somewhere else.
+      }
+      event.preventDefault();
+      dispatch({ type: "open-rail" });
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  return (
+    <AssistantContext.Provider value={value}>
+      {children}
+    </AssistantContext.Provider>
+  );
+}
+
+export function useAssistant(): AssistantContextValue {
+  return React.useContext(AssistantContext);
+}
+
+/**
+ * `true` when the consumer is inside a real `AssistantProvider` rather
+ * than the headless fallback. Components like the topbar launcher use
+ * this to hide themselves entirely outside the provider.
+ */
+export function useAssistantMounted(): boolean {
+  return React.useContext(AssistantContext) !== FALLBACK_VALUE;
+}
+
+export function relTime(iso: string, nowIso?: string): string {
+  const d = new Date(iso);
+  const now = nowIso ? new Date(nowIso) : new Date();
+  const diff = (now.getTime() - d.getTime()) / 1000;
+  if (Number.isNaN(diff)) return "";
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.round(diff / 60)}m`;
+  if (diff < 86400) return `${Math.round(diff / 3600)}h`;
+  return `${Math.round(diff / 86400)}d`;
+}
