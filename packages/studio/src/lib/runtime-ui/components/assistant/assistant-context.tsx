@@ -376,11 +376,20 @@ export function AssistantProvider({
     [state, activeThread],
   );
 
-  // Global ⌘K / Ctrl-K opens the rail (and toggles closed → rail).
-  // Bail when focus is inside an input/textarea/contenteditable so the
-  // hotkey doesn't steal keystrokes the user expects to land in their
-  // current field — except when the focus is the assistant composer
-  // itself, where ⌘K is the natural toggle-close gesture.
+  // Mode is read inside the once-mounted ⌘K handler, so keep a ref in
+  // sync with the latest reducer state to avoid stale closure reads.
+  const modeRef = React.useRef(state.mode);
+  React.useEffect(() => {
+    modeRef.current = state.mode;
+  }, [state.mode]);
+
+  // Global ⌘K / Ctrl-K behaviour:
+  //   closed                              →  open the rail
+  //   open + composer focused             →  close the rail
+  //   open + composer NOT focused         →  focus the composer
+  // Bail when focus is in an input/textarea/contenteditable that is
+  // NOT the assistant composer, so we don't steal keystrokes from the
+  // user's current field.
   React.useEffect(() => {
     function onKey(event: KeyboardEvent) {
       const isMac = (() => {
@@ -399,18 +408,48 @@ export function AssistantProvider({
       const meta = isMac ? event.metaKey : event.ctrlKey;
       if (!meta) return;
       if (event.key !== "k" && event.key !== "K") return;
+
       const target = event.target as HTMLElement | null;
+      const composerSelector = `[${ASSISTANT_COMPOSER_DATA_ATTR}]`;
+      const inComposer = !!target?.closest(composerSelector);
+
+      // Only swallow ⌘K when it's harmless — i.e., we're not stealing it
+      // from another input the user is typing into.
       if (
         target &&
         (target.tagName === "TEXTAREA" ||
           target.tagName === "INPUT" ||
           target.isContentEditable) &&
-        !target.closest(`[${ASSISTANT_COMPOSER_DATA_ATTR}]`)
+        !inComposer
       ) {
         return;
       }
+
       event.preventDefault();
-      dispatch({ type: "open-rail" });
+
+      const mode = modeRef.current;
+      if (mode === "closed") {
+        dispatch({ type: "open-rail" });
+        return;
+      }
+
+      if (inComposer) {
+        // Already typing in the composer → toggle close.
+        dispatch({ type: "close" });
+        return;
+      }
+
+      // Rail is visible but composer isn't focused → focus it.
+      const composerTextarea = document.querySelector(
+        `${composerSelector} textarea`,
+      ) as HTMLTextAreaElement | null;
+      if (composerTextarea) {
+        composerTextarea.focus();
+        // Place the caret at end so the user can keep typing without
+        // re-selecting.
+        const end = composerTextarea.value.length;
+        composerTextarea.setSelectionRange(end, end);
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

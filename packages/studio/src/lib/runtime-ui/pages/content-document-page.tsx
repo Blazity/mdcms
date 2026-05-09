@@ -55,6 +55,7 @@ import {
   type StudioAiRouteApi,
 } from "../../ai-route-api.js";
 import { BreadcrumbTrail } from "../components/layout/page-header.js";
+import { AssistantLauncher } from "../components/assistant/assistant-launcher.js";
 import { Badge } from "../components/ui/badge.js";
 import { Button } from "../components/ui/button.js";
 import {
@@ -2742,6 +2743,8 @@ export function ContentDocumentPageView({
                 Read-only
               </Badge>
             ) : null}
+
+            <AssistantLauncher className="h-8 px-2.5 text-[11px]" />
 
             {state.status === "ready" && state.canWrite ? (
               <Button
