@@ -35,6 +35,8 @@ services:
       APP_VERSION: ${APP_VERSION:-0.0.0}
       PORT: ${PORT:-4000}
       SERVICE_NAME: ${SERVICE_NAME:-mdcms-server}
+      MDCMS_STUDIO_ALLOWED_ORIGINS: ${MDCMS_STUDIO_ALLOWED_ORIGINS:-http://localhost:4173,http://127.0.0.1:4173}
+      MDCMS_COLLAB_ALLOWED_ORIGINS: ${MDCMS_COLLAB_ALLOWED_ORIGINS:-http://localhost:4173,http://127.0.0.1:4173}
     healthcheck:
       test:
         [

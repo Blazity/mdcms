@@ -127,7 +127,14 @@ export function resolveCollaborationAllowedOrigins(
     ? [new URL(env.MDCMS_SERVER_URL).origin]
     : [];
 
-  return [...new Set([...origins, ...fallback, "http://127.0.0.1:4173"])];
+  return [
+    ...new Set([
+      ...origins,
+      ...fallback,
+      "http://127.0.0.1:4173",
+      "http://localhost:4173",
+    ]),
+  ];
 }
 
 /**

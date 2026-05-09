@@ -25,7 +25,13 @@ type AssistantAction =
   | { type: "select-thread"; threadId: string }
   | { type: "clear-selection-on-active" }
   | { type: "remove-context-doc"; path: string }
-  | { type: "remove-proposal"; threadId: string; proposalId: string };
+  | { type: "remove-proposal"; threadId: string; proposalId: string }
+  | {
+      type: "reject-proposal";
+      threadId: string;
+      proposalId: string;
+      feedback: string;
+    };
 
 function reducer(
   state: AssistantState,
@@ -96,6 +102,44 @@ function reducer(
           ),
         },
       };
+    case "reject-proposal": {
+      // Reject removes the proposal from its message and appends a user
+      // turn carrying the regenerate feedback so the chat history is
+      // honest about what the user asked for. The empty-string case is
+      // treated as a silent reject and skips the feedback turn.
+      const trimmedFeedback = action.feedback.trim();
+      const feedbackUserMessage = trimmedFeedback
+        ? {
+            id: `m-${Date.now()}`,
+            role: "user" as const,
+            at: new Date().toISOString(),
+            text: trimmedFeedback,
+            rejectedProposalId: action.proposalId,
+          }
+        : null;
+      return {
+        ...state,
+        store: {
+          ...state.store,
+          threads: state.store.threads.map((thread) => {
+            if (thread.id !== action.threadId) return thread;
+            const messagesWithoutProposal = thread.messages.map((m) => {
+              if (!m.proposals?.includes(action.proposalId)) return m;
+              return {
+                ...m,
+                proposals: m.proposals.filter((id) => id !== action.proposalId),
+              };
+            });
+            return {
+              ...thread,
+              messages: feedbackUserMessage
+                ? [...messagesWithoutProposal, feedbackUserMessage]
+                : messagesWithoutProposal,
+            };
+          }),
+        },
+      };
+    }
     default:
       return state;
   }
@@ -117,6 +161,14 @@ export type AssistantContextValue = {
   acceptProposal: (proposal: AssistantProposal) => void;
   rejectProposal: (proposal: AssistantProposal, feedback: string) => void;
 };
+
+/**
+ * Marker selector applied to the assistant composer textarea so the
+ * global ⌘K handler can keep listening even when focus is inside the
+ * composer (the user typically wants ⌘K to dismiss the rail). Any other
+ * input/textarea/contenteditable element should be left alone.
+ */
+export const ASSISTANT_COMPOSER_DATA_ATTR = "data-assistant-composer";
 
 /**
  * Headless fallback returned when `useAssistant()` is called outside of an
@@ -163,6 +215,15 @@ const FALLBACK_VALUE: AssistantContextValue = {
 const AssistantContext =
   React.createContext<AssistantContextValue>(FALLBACK_VALUE);
 
+/**
+ * Dedicated boolean context that flips to `true` only when an
+ * `AssistantProvider` is mounted above the consumer. The launcher reads
+ * this to hide itself outside the provider — and unlike comparing the
+ * value context against the FALLBACK_VALUE singleton, this is robust to
+ * the value object being spread or replaced.
+ */
+const AssistantMountedContext = React.createContext<boolean>(false);
+
 export type AssistantProviderProps = {
   children: React.ReactNode;
   /** Optional override for tests / Storybook-style harnesses. */
@@ -187,7 +248,8 @@ export function AssistantProvider({
 
   const activeThread =
     state.store.threads.find((t) => t.id === state.activeThreadId) ??
-    state.store.threads[0]!;
+    state.store.threads[0] ??
+    FALLBACK_THREAD;
 
   const value = React.useMemo<AssistantContextValue>(
     () => ({
@@ -211,17 +273,22 @@ export function AssistantProvider({
           threadId: state.activeThreadId,
           proposalId: proposal.proposalId,
         }),
-      rejectProposal: (proposal) =>
+      rejectProposal: (proposal, feedback) =>
         dispatch({
-          type: "remove-proposal",
+          type: "reject-proposal",
           threadId: state.activeThreadId,
           proposalId: proposal.proposalId,
+          feedback,
         }),
     }),
     [state, activeThread],
   );
 
   // Global ⌘K / Ctrl-K opens the rail (and toggles closed → rail).
+  // Bail when focus is inside an input/textarea/contenteditable so the
+  // hotkey doesn't steal keystrokes the user expects to land in their
+  // current field — except when the focus is the assistant composer
+  // itself, where ⌘K is the natural toggle-close gesture.
   React.useEffect(() => {
     function onKey(event: KeyboardEvent) {
       const isMac =
@@ -230,17 +297,15 @@ export function AssistantProvider({
       const meta = isMac ? event.metaKey : event.ctrlKey;
       if (!meta) return;
       if (event.key !== "k" && event.key !== "K") return;
-      // Don't hijack when the user is typing in a contenteditable/textarea/input.
       const target = event.target as HTMLElement | null;
       if (
         target &&
         (target.tagName === "TEXTAREA" ||
           target.tagName === "INPUT" ||
-          target.isContentEditable)
+          target.isContentEditable) &&
+        !target.closest(`[${ASSISTANT_COMPOSER_DATA_ATTR}]`)
       ) {
-        // Still allow ⌘K from inside a chat composer to toggle close,
-        // because the user may want to dismiss; but don't open if focused
-        // somewhere else.
+        return;
       }
       event.preventDefault();
       dispatch({ type: "open-rail" });
@@ -250,9 +315,11 @@ export function AssistantProvider({
   }, []);
 
   return (
-    <AssistantContext.Provider value={value}>
-      {children}
-    </AssistantContext.Provider>
+    <AssistantMountedContext.Provider value={true}>
+      <AssistantContext.Provider value={value}>
+        {children}
+      </AssistantContext.Provider>
+    </AssistantMountedContext.Provider>
   );
 }
 
@@ -266,7 +333,7 @@ export function useAssistant(): AssistantContextValue {
  * this to hide themselves entirely outside the provider.
  */
 export function useAssistantMounted(): boolean {
-  return React.useContext(AssistantContext) !== FALLBACK_VALUE;
+  return React.useContext(AssistantMountedContext);
 }
 
 export function relTime(iso: string, nowIso?: string): string {

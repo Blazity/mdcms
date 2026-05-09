@@ -134,12 +134,25 @@ export type AssistantProposalDelete = ProposalCommonFields & {
 };
 
 export type AssistantBatchChild = {
+  /**
+   * Stable id of the underlying child proposal. Mirrors
+   * `AiProposal.proposalId` on the wire so the UI can route per-child
+   * accept/reject regeneration calls and surface which child failed
+   * when a batch is invalid.
+   */
+  proposalId?: string;
   kind: Exclude<AssistantProposalKind, "batch">;
   docPath: string;
   locale: string;
   summary: string;
   /** Short MDX/markdown preview rendered inside the expanded child diff. */
   preview?: string;
+  /**
+   * Optional per-child validation. When the batch as a whole is
+   * `invalid` the parent surfaces the count, but the UI also needs the
+   * per-child status to highlight the offending row(s).
+   */
+  validation?: AssistantValidation;
 };
 
 export type AssistantProposalBatch = ProposalCommonFields & {
@@ -164,6 +177,13 @@ export type AssistantMessage = {
   text?: string;
   proposals?: string[];
   at: string;
+  /**
+   * When the user turn is a regenerate-with-feedback follow-up, the
+   * proposal id this message is responding to. Forwarded to the chat
+   * endpoint so the server can correlate the regenerate request with
+   * its predecessor for audit + cost accounting.
+   */
+  rejectedProposalId?: string;
 };
 
 export type AssistantThread = {

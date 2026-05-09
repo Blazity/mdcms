@@ -297,7 +297,7 @@ function EditOrInsertCard({
   rejecting: boolean;
   defaultCollapsed: boolean;
   onAccept: () => void;
-  onReject: () => void;
+  onReject: (feedback: string) => void;
 }) {
   const [collapsed, setCollapsed] = React.useState(defaultCollapsed);
   const [showReject, setShowReject] = React.useState(rejecting);
@@ -346,8 +346,8 @@ function EditOrInsertCard({
       {showReject ? (
         <RejectFeedback
           onCancel={() => setShowReject(false)}
-          onSend={() => {
-            onReject();
+          onSend={(feedback) => {
+            onReject(feedback);
             setShowReject(false);
           }}
         />
@@ -373,12 +373,14 @@ function CreateCard({
   proposal: AssistantProposalCreate;
   rejecting: boolean;
   onAccept: () => void;
-  onReject: () => void;
+  onReject: (feedback: string) => void;
 }) {
   const [showReject, setShowReject] = React.useState(rejecting);
   React.useEffect(() => setShowReject(rejecting), [rejecting]);
 
-  const hasBody = !!proposal.op.bodyPreview && proposal.op.bodyPreview.trim();
+  const hasBody = Boolean(
+    proposal.op.bodyPreview && proposal.op.bodyPreview.trim(),
+  );
   const isInvalid = proposal.validation.status === "invalid";
 
   return (
@@ -450,8 +452,8 @@ function CreateCard({
       {showReject ? (
         <RejectFeedback
           onCancel={() => setShowReject(false)}
-          onSend={() => {
-            onReject();
+          onSend={(feedback) => {
+            onReject(feedback);
             setShowReject(false);
           }}
         />
@@ -477,7 +479,7 @@ function InvalidInsertCard({
   proposal: AssistantProposalInsert;
   rejecting: boolean;
   onAccept: () => void;
-  onReject: () => void;
+  onReject: (feedback: string) => void;
 }) {
   const [showReject, setShowReject] = React.useState(rejecting);
   React.useEffect(() => setShowReject(rejecting), [rejecting]);
@@ -511,8 +513,8 @@ function InvalidInsertCard({
       {showReject ? (
         <RejectFeedback
           onCancel={() => setShowReject(false)}
-          onSend={() => {
-            onReject();
+          onSend={(feedback) => {
+            onReject(feedback);
             setShowReject(false);
           }}
         />
@@ -538,7 +540,7 @@ function DeleteCard({
   proposal: AssistantProposalDelete;
   rejecting: boolean;
   onAccept: () => void;
-  onReject: () => void;
+  onReject: (feedback: string) => void;
 }) {
   const [showReject, setShowReject] = React.useState(rejecting);
   React.useEffect(() => setShowReject(rejecting), [rejecting]);
@@ -583,8 +585,8 @@ function DeleteCard({
       {showReject ? (
         <RejectFeedback
           onCancel={() => setShowReject(false)}
-          onSend={() => {
-            onReject();
+          onSend={(feedback) => {
+            onReject(feedback);
             setShowReject(false);
           }}
         />
@@ -674,10 +676,14 @@ function BatchCard({
   proposal: AssistantProposalBatch;
   rejecting: boolean;
   onAccept: () => void;
-  onReject: () => void;
+  onReject: (feedback: string) => void;
 }) {
   const [showReject, setShowReject] = React.useState(rejecting);
   React.useEffect(() => setShowReject(rejecting), [rejecting]);
+
+  const ok = proposal.validation.status === "valid";
+  const stale = Boolean(proposal.contentInvalidated);
+  const acceptBlocked = !ok || stale;
 
   return (
     <CardChrome>
@@ -693,21 +699,25 @@ function BatchCard({
       </div>
       <ul className="m-0 list-none p-0">
         {proposal.children.map((c, i) => (
-          <BatchChildRow key={`${c.docPath}-${i}`} child={c} />
+          <BatchChildRow key={c.proposalId ?? `${c.docPath}-${i}`} child={c} />
         ))}
       </ul>
       {showReject ? (
         <RejectFeedback
           onCancel={() => setShowReject(false)}
-          onSend={() => {
-            onReject();
+          onSend={(feedback) => {
+            onReject(feedback);
             setShowReject(false);
           }}
         />
       ) : (
         <div className="flex items-center gap-2 border-t border-divider/40 bg-background-subtle px-3 py-2">
           <span className="flex-1 font-mono text-[10px] text-foreground-muted">
-            applies as one transaction
+            {stale
+              ? "source text changed — retry"
+              : ok
+                ? "applies as one transaction"
+                : "fix invalid children before accepting"}
           </span>
           <button
             type="button"
@@ -718,8 +728,22 @@ function BatchCard({
           </button>
           <button
             type="button"
-            onClick={onAccept}
-            className="inline-flex items-center gap-1.5 rounded bg-secondary px-2.5 py-1 font-mono text-[11px] font-semibold text-vibrant-green transition-colors hover:bg-secondary/90"
+            onClick={acceptBlocked ? undefined : onAccept}
+            disabled={acceptBlocked}
+            aria-disabled={acceptBlocked}
+            title={
+              stale
+                ? "Source text changed — retry to regenerate"
+                : ok
+                  ? "Apply all children as one transaction"
+                  : "Fix invalid children before accepting"
+            }
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
+              acceptBlocked
+                ? "cursor-not-allowed bg-muted text-foreground-muted"
+                : "bg-secondary text-vibrant-green hover:bg-secondary/90",
+            )}
           >
             <Check className="h-3 w-3" aria-hidden />
             Accept all ({proposal.children.length})
@@ -740,7 +764,12 @@ export type ProposalCardProps = {
   rejecting?: boolean;
   defaultCollapsed?: boolean;
   onAccept: () => void;
-  onReject: () => void;
+  /**
+   * Called when the user submits the inline reject-feedback panel. The
+   * feedback string is the reason the user is rejecting; an empty string
+   * means a silent reject (Cancel from the panel does NOT call this).
+   */
+  onReject: (feedback: string) => void;
 };
 
 export function ProposalCard({
@@ -809,22 +838,58 @@ export function ProposalCard({
   }
   // update_frontmatter falls through to a minimal renderer.
   return (
+    <FrontmatterCard
+      proposal={proposal}
+      rejecting={rejecting}
+      onAccept={onAccept}
+      onReject={onReject}
+    />
+  );
+}
+
+function FrontmatterCard({
+  proposal,
+  rejecting,
+  onAccept,
+  onReject,
+}: {
+  proposal: AssistantProposal;
+  rejecting: boolean;
+  onAccept: () => void;
+  onReject: (feedback: string) => void;
+}) {
+  const [showReject, setShowReject] = React.useState(rejecting);
+  React.useEffect(() => setShowReject(rejecting), [rejecting]);
+  // The fallthrough only renders for non-batch proposals that carry per-doc routing.
+  const docPath = "docPath" in proposal ? proposal.docPath : undefined;
+  const locale = "locale" in proposal ? proposal.locale : undefined;
+  return (
     <CardChrome>
       <StandardHeader
         kind={proposal.kind}
-        docPath={proposal.docPath}
-        locale={proposal.locale}
+        docPath={docPath ?? ""}
+        locale={locale}
         validation={proposal.validation}
       />
       <div className="px-3 py-3 text-[13px] text-foreground">
         {proposal.summary}
       </div>
-      <Footer
-        contentInvalidated={proposal.contentInvalidated}
-        validation={proposal.validation}
-        onAccept={onAccept}
-        onReject={onReject}
-      />
+      {showReject ? (
+        <RejectFeedback
+          onCancel={() => setShowReject(false)}
+          onSend={(feedback) => {
+            onReject(feedback);
+            setShowReject(false);
+          }}
+        />
+      ) : (
+        <Footer
+          contentInvalidated={proposal.contentInvalidated}
+          validation={proposal.validation}
+          onAccept={onAccept}
+          onReject={() => setShowReject(true)}
+        />
+      )}
     </CardChrome>
   );
 }

@@ -13,7 +13,11 @@ import {
 
 import { cn } from "../../lib/utils.js";
 import { Button } from "../ui/button.js";
-import { useAssistant, relTime } from "./assistant-context.js";
+import {
+  ASSISTANT_COMPOSER_DATA_ATTR,
+  useAssistant,
+  relTime,
+} from "./assistant-context.js";
 import type {
   AssistantMessage,
   AssistantProposal,
@@ -176,7 +180,7 @@ function AssistantBubble({
   message: AssistantMessage;
   proposalsById: Record<string, AssistantProposal>;
   onAccept: (proposalId: string) => void;
-  onReject: (proposalId: string) => void;
+  onReject: (proposalId: string, feedback: string) => void;
 }) {
   const proposalIds = message.proposals ?? [];
   if (proposalIds.length === 0) return null;
@@ -195,7 +199,7 @@ function AssistantBubble({
             proposal={proposal}
             defaultCollapsed={defaultCollapsed}
             onAccept={() => onAccept(pid)}
-            onReject={() => onReject(pid)}
+            onReject={(feedback) => onReject(pid, feedback)}
           />
         );
       })}
@@ -227,7 +231,10 @@ function Composer({
         onClearSelection={onClearSelection}
         onRemoveDoc={onRemoveDoc}
       />
-      <div className="rounded-b-lg border border-divider/60 bg-card px-3 py-2.5 transition-colors focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-primary/30">
+      <div
+        {...{ [ASSISTANT_COMPOSER_DATA_ATTR]: "" }}
+        className="rounded-b-lg border border-divider/60 bg-card px-3 py-2.5 transition-colors focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-primary/30"
+      >
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -348,9 +355,9 @@ export function AssistantPanel({
                   const p = assistant.store.proposals[pid];
                   if (p) assistant.acceptProposal(p);
                 }}
-                onReject={(pid) => {
+                onReject={(pid, feedback) => {
                   const p = assistant.store.proposals[pid];
-                  if (p) assistant.rejectProposal(p, "");
+                  if (p) assistant.rejectProposal(p, feedback);
                 }}
               />
             ),

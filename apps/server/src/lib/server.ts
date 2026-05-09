@@ -172,6 +172,19 @@ function appendResponseHeaders(
   });
 }
 
+/**
+ * Loopback origins always allowed for Studio browser routes so a developer
+ * running `apps/studio-example` against a local server isn't forced to set
+ * `MDCMS_STUDIO_ALLOWED_ORIGINS` for both the `localhost` and `127.0.0.1`
+ * variants of the same port. This mirrors the fallback in
+ * `resolveCollaborationAllowedOrigins`. Production deployments rely on the
+ * env-configured allowlist.
+ */
+const STUDIO_LOOPBACK_ALLOWED_ORIGINS: readonly string[] = [
+  "http://localhost:4173",
+  "http://127.0.0.1:4173",
+];
+
 function resolveStudioCorsContext(
   request: Request,
   allowedOrigins: readonly string[],
@@ -190,7 +203,11 @@ function resolveStudioCorsContext(
 
   const requestOrigin = new URL(request.url).origin;
 
-  if (origin !== requestOrigin && !allowedOrigins.includes(origin)) {
+  if (
+    origin !== requestOrigin &&
+    !allowedOrigins.includes(origin) &&
+    !STUDIO_LOOPBACK_ALLOWED_ORIGINS.includes(origin)
+  ) {
     throw createForbiddenOriginError(origin, pathname);
   }
 
