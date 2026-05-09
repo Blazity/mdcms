@@ -1,5 +1,13 @@
 # @mdcms/cli
 
+## 0.2.2
+
+### Patch Changes
+
+- Updated dependencies [a81169a]
+- Updated dependencies [98779f0]
+  - @mdcms/shared@0.2.0
+
 ## 0.2.1
 
 ### Patch Changes
