@@ -33,6 +33,7 @@ import type {
   AssistantProposal,
   AssistantThread,
 } from "./assistant-types.js";
+import { AssistantMarkdown } from "./assistant-markdown.js";
 import { EmptyStarter } from "./empty-starter.js";
 import { KindGlyph } from "./kind-glyph.js";
 import { AppliedLogLine, ProposalCard } from "./proposal-card.js";
@@ -407,8 +408,8 @@ function AssistantBubble({
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         {text ? (
-          <div className="max-w-[92%] py-0.5 text-[13.5px] leading-relaxed text-foreground">
-            {text}
+          <div className="max-w-[92%] py-0.5">
+            <AssistantMarkdown text={text} />
           </div>
         ) : isStreamingPlaceholder ? (
           <div
