@@ -168,6 +168,28 @@ export type MountAiRoutesOptions = {
     id: string;
     displayName: string;
   }>;
+
+  /**
+   * Backend for the find_entries chat tool. Wraps contentStore.list
+   * scoped to the active project + environment.
+   */
+  listEntries?: (input: {
+    project: string;
+    environment: string;
+    type: string;
+    query?: string;
+    locale?: string;
+    limit?: number;
+  }) => Promise<import("./chat-tools.js").FindEntriesResult>;
+
+  /**
+   * Backend for the get_entry chat tool. Wraps contentStore.getById.
+   */
+  getEntry?: (input: {
+    project: string;
+    environment: string;
+    documentId: string;
+  }) => Promise<import("./chat-tools.js").GetEntryResult | undefined>;
 };
 
 const KIND_BY_TASK: Record<AiTaskKind, AiProposalKind> = {
@@ -1251,9 +1273,7 @@ async function handleChatMessage(
       canEditDocument: effectiveAllowed.has("edit_document"),
       canCreateDocument: effectiveAllowed.has("create_document"),
       canDeleteDocument: effectiveAllowed.has("delete_document"),
-      // canReadEntries is wired to a real value in T11 (findEntriesBackend).
-      // Default to false until the route is fully wired.
-      canReadEntries: false,
+      canReadEntries: Boolean(options.listEntries),
     };
 
     // Gather per-turn project knowledge in parallel with the existing
@@ -1309,6 +1329,37 @@ async function handleChatMessage(
           supportedLocales,
           ...(currentUser ? { currentUser } : {}),
         },
+        ...(options.listEntries || options.getEntry
+          ? {
+              toolBackends: {
+                ...(options.listEntries
+                  ? {
+                      findEntries: (input: {
+                        type: string;
+                        query?: string;
+                        locale?: string;
+                        limit?: number;
+                      }) =>
+                        options.listEntries!({
+                          project,
+                          environment,
+                          ...input,
+                        }),
+                    }
+                  : {}),
+                ...(options.getEntry
+                  ? {
+                      getEntry: (input: { documentId: string }) =>
+                        options.getEntry!({
+                          project,
+                          environment,
+                          documentId: input.documentId,
+                        }),
+                    }
+                  : {}),
+              },
+            }
+          : {}),
       });
       newProposals = chatResult.proposals;
       assistantText = chatResult.text;

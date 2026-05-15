@@ -174,6 +174,8 @@ function createTestSetup(input: {
   contentTypesLookup?: MountAiRoutesOptions["contentTypesLookup"];
   supportedLocalesLookup?: MountAiRoutesOptions["supportedLocalesLookup"];
   userLookup?: MountAiRoutesOptions["userLookup"];
+  listEntries?: MountAiRoutesOptions["listEntries"];
+  getEntry?: MountAiRoutesOptions["getEntry"];
 }) {
   const document = input.document ?? buildDocument();
   const orchestrator: AiOrchestrator = createAiOrchestrator({
@@ -264,6 +266,8 @@ function createTestSetup(input: {
     ...(input.contentTypesLookup ? { contentTypesLookup: input.contentTypesLookup } : {}),
     ...(input.supportedLocalesLookup ? { supportedLocalesLookup: input.supportedLocalesLookup } : {}),
     ...(input.userLookup ? { userLookup: input.userLookup } : {}),
+    ...(input.listEntries ? { listEntries: input.listEntries } : {}),
+    ...(input.getEntry ? { getEntry: input.getEntry } : {}),
   };
 
   const app = createFakeApp();
@@ -1212,5 +1216,72 @@ describe("mountAiRoutes — chat-message", () => {
       data: { message: { text?: string } };
     };
     assert.equal(payload.data.message.text, "Hi!");
+  });
+
+  test("find_entries tool call flows through to backend and result reaches model", async () => {
+    let backendCalledWith: { type: string; query?: string } | undefined;
+    const { app } = createTestSetup({
+      authorize: authorizeWithScopes(
+        new Set(["ai:use", "content:read:draft", "content:write"]),
+      ),
+      contentTypesLookup: async () => [
+        {
+          type: "author",
+          directory: "authors",
+          localized: false,
+          fields: {
+            name: { kind: "string", required: true, nullable: false },
+          },
+        },
+      ],
+      supportedLocalesLookup: async () => ["en"],
+      userLookup: async () => ({ id: "u1", displayName: "K" }),
+      listEntries: async (input) => {
+        backendCalledWith = { type: input.type, query: input.query };
+        return {
+          matches: [
+            {
+              documentId: "doc_author_1",
+              path: "authors/john",
+              type: "author",
+              locale: "en",
+              title: "John Doe",
+              updatedAt: "2026-05-01T00:00:00.000Z",
+              hasUnpublishedChanges: false,
+            },
+          ],
+          total: 1,
+        };
+      },
+      echoSteps: [
+        {
+          type: "tool-calls",
+          calls: [
+            {
+              toolName: "find_entries",
+              input: JSON.stringify({ type: "author", query: "John" }),
+            },
+          ],
+        },
+        { type: "text", text: "Found one match: John Doe." },
+      ],
+    });
+
+    const response = await app.fetch(
+      "POST",
+      "https://test.local/api/v1/ai/chat/messages",
+      {
+        method: "POST",
+        headers: TARGET_HEADERS,
+        body: JSON.stringify({ message: "find an author named John" }),
+      },
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(backendCalledWith, { type: "author", query: "John" });
+    const payload = (await response.json()) as {
+      data: { message: { text?: string } };
+    };
+    assert.equal(payload.data.message.text, "Found one match: John Doe.");
   });
 });
