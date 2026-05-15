@@ -44,11 +44,7 @@ import {
   createStudioRuntimePublication,
   type CreateStudioRuntimePublicationOptions,
 } from "./studio-bootstrap.js";
-import {
-  authUsers,
-  schemaRegistryEntries,
-  schemaSyncs,
-} from "./db/schema.js";
+import { authUsers, schemaRegistryEntries, schemaSyncs } from "./db/schema.js";
 import { resolveProjectEnvironmentScope } from "./project-provisioning.js";
 
 import {

@@ -20,8 +20,8 @@ This design grounds the chat model comprehensively: every fact the model could h
 
 ## Goals
 
-- The model never needs to *guess* a content type. The registered types and their schemas are in the system prompt.
-- The model never needs to *invent* a reference id. A `find_entries` tool returns real candidates.
+- The model never needs to _guess_ a content type. The registered types and their schemas are in the system prompt.
+- The model never needs to _invent_ a reference id. A `find_entries` tool returns real candidates.
 - The model can read a specific entry's full content when comparing or cross-referencing via a `get_entry` tool.
 - The validator backstop catches lies the model still slips through: unknown types, missing required fields, unknown fields, wrong-type values, taken paths, dangling references.
 - The plumbing is project-aware (per-project schema + locale + user) and request-cheap (parallel DB fetches, no caching needed for v1 sizes).
@@ -129,15 +129,15 @@ candidates. Do not invent ids — the apply will reject them.
 
 ### Format choice rationale
 
-Markdown bullets, not JSON or TypeScript types. LLMs parse tabular markdown more reliably than nested JSON when reading their own context. The token cost is ~70% lower than the equivalent indented JSON. Tool *outputs* stay JSON because that's what the model parses programmatically.
+Markdown bullets, not JSON or TypeScript types. LLMs parse tabular markdown more reliably than nested JSON when reading their own context. The token cost is ~70% lower than the equivalent indented JSON. Tool _outputs_ stay JSON because that's what the model parses programmatically.
 
 ### Token budget
 
-| Project size | Project knowledge block |
-|---|---|
-| Small (~4 types) | ~600 tokens |
-| Medium (~15 types) | ~2,100 tokens |
-| Large (~50 types) | ~6,200 tokens |
+| Project size       | Project knowledge block |
+| ------------------ | ----------------------- |
+| Small (~4 types)   | ~600 tokens             |
+| Medium (~15 types) | ~2,100 tokens           |
+| Large (~50 types)  | ~6,200 tokens           |
 
 For `openai/gpt-oss-120b` (128k context), even the large case is <5% of the window. At Groq pricing (~$0.50 / 1M input), a 20-turn conversation in a 50-type project runs ~$0.10 of input cost.
 
@@ -146,10 +146,11 @@ For `openai/gpt-oss-120b` (128k context), even the large case is <5% of the wind
 ### Description (model-facing)
 
 > Search the project's documents by content type with an optional text query. Use this when:
+>
 > 1. **Filling a reference field on a proposal** — e.g. setting `author` on a new post. Call `find_entries({ type: "author", query: "<name>" })` and pick the right `documentId` from the results.
 > 2. **Checking what already exists** before proposing a new draft to avoid duplicates.
 >
-> Returns up to `limit` matches (default 10, max 25), most-recently-updated first. The `type` parameter is enum-constrained to the project's registered content types; passing anything else fails the call. Do not use this for editing — combine with the propose_* tools after picking a result.
+> Returns up to `limit` matches (default 10, max 25), most-recently-updated first. The `type` parameter is enum-constrained to the project's registered content types; passing anything else fails the call. Do not use this for editing — combine with the propose\_\* tools after picking a result.
 
 ### Input schema (Zod, dynamic enums per turn)
 
@@ -159,7 +160,7 @@ z.object({
   query: z.string().optional(),
   locale: z.enum([...supportedLocales]).optional(),
   limit: z.number().int().min(1).max(25).optional(),
-})
+});
 ```
 
 The `type` and `locale` enums are constructed at chat-time from the per-turn `projectKnowledge`. Vercel SDK rejects mismatched values before our `execute` runs — the model literally cannot ask for a nonexistent type.
@@ -205,7 +206,8 @@ Wraps the existing `listContent` query path the @-mention picker already uses. W
 ### Description (model-facing)
 
 > Fetch the full body + frontmatter of a specific document by its `documentId`. Use this when:
-> 1. You need to read an existing document's content before proposing changes to a *different* document that references or links to it.
+>
+> 1. You need to read an existing document's content before proposing changes to a _different_ document that references or links to it.
 > 2. You picked a candidate from `find_entries` and want to read its full content before referencing or duplicating parts of it.
 >
 > Returns the document's frontmatter, body, type, locale, path, and revision info. If the document doesn't exist or has been soft-deleted, returns an error. The active document the user is editing is already in your context — don't call this for it.
@@ -215,7 +217,7 @@ Wraps the existing `listContent` query path the @-mention picker already uses. W
 ```ts
 z.object({
   documentId: z.string().min(1),
-})
+});
 ```
 
 ### Output shape
@@ -312,9 +314,9 @@ The schema declares `reference?: { targetType: string }` on the field but the **
 
 ```ts
 createSchemaAwareProposalValidator({
-  schemaLookup,       // existing (CMS-235)
-  pathExists,         // new
-  documentExists,     // new
+  schemaLookup, // existing (CMS-235)
+  pathExists, // new
+  documentExists, // new
 });
 ```
 
@@ -357,13 +359,27 @@ type MountAiRoutesOptions = {
   // ... existing fields ...
 
   // Per-turn project knowledge
-  contentTypesLookup: (i: { project; environment }) => Promise<SchemaRegistryTypeSnapshot[]>;
+  contentTypesLookup: (i: {
+    project;
+    environment;
+  }) => Promise<SchemaRegistryTypeSnapshot[]>;
   supportedLocalesLookup: (i: { project; environment }) => Promise<string[]>;
   userLookup: (i: { userId }) => Promise<{ id: string; displayName: string }>;
 
   // Tool backends
-  listEntries: (i: { project; environment; type; query?; locale?; limit? }) => Promise<FindEntriesResult>;
-  getEntry: (i: { project; environment; documentId }) => Promise<GetEntryResult | null>;
+  listEntries: (i: {
+    project;
+    environment;
+    type;
+    query?;
+    locale?;
+    limit?;
+  }) => Promise<FindEntriesResult>;
+  getEntry: (i: {
+    project;
+    environment;
+    documentId;
+  }) => Promise<GetEntryResult | null>;
 };
 ```
 
@@ -378,8 +394,8 @@ type AiChatInput = {
     currentUser?: { id: string; displayName: string };
   };
   toolBackends: {
-    findEntries: typeof MountAiRoutesOptions["listEntries"];
-    getEntry: typeof MountAiRoutesOptions["getEntry"];
+    findEntries: (typeof MountAiRoutesOptions)["listEntries"];
+    getEntry: (typeof MountAiRoutesOptions)["getEntry"];
   };
 };
 ```
@@ -407,7 +423,10 @@ type AiChatInput = {
 
 ```ts
 const contentTypesLookup = async ({ project, environment }) => {
-  const scope = await resolveProjectEnvironmentScope(db, { project, environment });
+  const scope = await resolveProjectEnvironmentScope(db, {
+    project,
+    environment,
+  });
   if (!scope) return [];
   const rows = await db.query.schemaRegistryEntries.findMany({
     where: and(
@@ -428,7 +447,14 @@ const userLookup = async ({ userId }) => {
     : { id: userId, displayName: userId };
 };
 
-const listEntries = async ({ project, environment, type, query, locale, limit }) =>
+const listEntries = async ({
+  project,
+  environment,
+  type,
+  query,
+  locale,
+  limit,
+}) =>
   contentStore.list(
     { project, environment },
     { type, query, locale, limit: limit ?? 10, draft: true },
@@ -438,12 +464,18 @@ const getEntry = async ({ project, environment, documentId }) =>
   contentStore.getById({ project, environment }, documentId, { draft: true });
 
 const pathExists = async ({ project, environment, path }) => {
-  const existing = await contentStore.getByPath({ project, environment }, path, { draft: true });
+  const existing = await contentStore.getByPath(
+    { project, environment },
+    path,
+    { draft: true },
+  );
   return existing !== null && !existing.isDeleted;
 };
 
 const documentExists = async ({ project, environment, documentId }) => {
-  const doc = await contentStore.getById({ project, environment }, documentId, { draft: true });
+  const doc = await contentStore.getById({ project, environment }, documentId, {
+    draft: true,
+  });
   return doc !== null && !doc.isDeleted;
 };
 ```
@@ -460,12 +492,12 @@ All five are thin wrappers around the existing `contentStore` + Drizzle schema. 
 
 ## Per-turn perf
 
-| Cost surface | Magnitude |
-|---|---|
-| Project knowledge in prompt | ~600 tokens for small projects, ~6k for 50-type projects |
-| DB fetch (4 parallel queries) | ~3 ms added wall-clock (longest query dominates) |
-| `find_entries` tool call | ~10 ms backend + ~500-2000 result tokens |
-| `get_entry` tool call | ~5 ms backend + body-size result tokens |
+| Cost surface                  | Magnitude                                                |
+| ----------------------------- | -------------------------------------------------------- |
+| Project knowledge in prompt   | ~600 tokens for small projects, ~6k for 50-type projects |
+| DB fetch (4 parallel queries) | ~3 ms added wall-clock (longest query dominates)         |
+| `find_entries` tool call      | ~10 ms backend + ~500-2000 result tokens                 |
+| `get_entry` tool call         | ~5 ms backend + body-size result tokens                  |
 
 Two scenarios to monitor:
 
@@ -477,6 +509,7 @@ Two scenarios to monitor:
 ### Unit tests
 
 **NEW `project-knowledge.test.ts`** — pure prompt-block builder:
+
 - Empty types → minimal block.
 - Reference field renders `reference → <target>`.
 - Enum field renders `enum: "a" | "b"`.
@@ -486,6 +519,7 @@ Two scenarios to monitor:
 - Snapshot against the marketing-site fixture to catch drift.
 
 **NEW `chat-tools.test.ts`** — `find_entries` and `get_entry`:
+
 - `find_entries.type` enum is constrained to `registeredTypes`; unregistered → SDK validation fails pre-execute.
 - Locale filter passes through.
 - `limit` defaults to 10, caps at 25.
@@ -494,6 +528,7 @@ Two scenarios to monitor:
 - Both tools only register when `canRead` is set.
 
 **EXTEND `validate-proposal.test.ts`** (CMS-235):
+
 - `PATH_ALREADY_IN_USE`: pathExists true → invalid; pathExists false → no error.
 - `UNKNOWN_REFERENCE`: single missing → invalid; multiple references where some valid + some missing → only missing in errors; null on nullable ref → no error.
 
@@ -536,35 +571,35 @@ End-to-end checks after implementation, in order:
 
 ## Critical files (modify list)
 
-| File | Change |
-|---|---|
-| `packages/modules/core.ai/src/server/project-knowledge.ts` (NEW) | The prompt-block builder + helper renderers |
-| `packages/modules/core.ai/src/server/project-knowledge.test.ts` (NEW) | Snapshot + per-field-kind rendering tests |
-| `packages/modules/core.ai/src/server/chat-tools.ts` | Add `find_entries` + `get_entry`; thread type/locale enums + backends through `ChatToolDeps` |
-| `packages/modules/core.ai/src/server/chat-tools.test.ts` (NEW) | Tests for the two new tools |
-| `packages/modules/core.ai/src/server/tasks.ts` | `buildChatSystemPrompt` accepts `projectKnowledge`, renders the block |
-| `packages/modules/core.ai/src/server/orchestrator.ts` | `AiChatInput` gains `projectKnowledge` + `toolBackends`; `runChat` passes them through |
-| `packages/modules/core.ai/src/server/routes.ts` | `MountAiRoutesOptions` gains the 5 lookup fields; `handleChatMessage` parallel-fetches; passes to `runChat` |
-| `packages/modules/core.ai/src/server/validate-proposal.ts` | Add `pathExists` + `documentExists` deps; emit `PATH_ALREADY_IN_USE` + `UNKNOWN_REFERENCE` |
-| `packages/modules/core.ai/src/server/validate-proposal.test.ts` | Extend with new error code tests |
-| `packages/modules/core.ai/src/index.ts` | Export new types + factory tweaks |
-| `packages/modules/src/index.ts` | Re-export |
-| `apps/server/src/lib/runtime-with-modules.ts` | Wire the 5 new lookups + pass new validator deps |
-| `packages/modules/core.ai/src/server/routes.test.ts` | Integration tests for system-prompt grounding + new tools + new validator codes |
-| `docs/specs/SPEC-014-ai-assisted-studio-editing.md` | Document the new tools + grounding architecture + new error codes |
+| File                                                                  | Change                                                                                                      |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `packages/modules/core.ai/src/server/project-knowledge.ts` (NEW)      | The prompt-block builder + helper renderers                                                                 |
+| `packages/modules/core.ai/src/server/project-knowledge.test.ts` (NEW) | Snapshot + per-field-kind rendering tests                                                                   |
+| `packages/modules/core.ai/src/server/chat-tools.ts`                   | Add `find_entries` + `get_entry`; thread type/locale enums + backends through `ChatToolDeps`                |
+| `packages/modules/core.ai/src/server/chat-tools.test.ts` (NEW)        | Tests for the two new tools                                                                                 |
+| `packages/modules/core.ai/src/server/tasks.ts`                        | `buildChatSystemPrompt` accepts `projectKnowledge`, renders the block                                       |
+| `packages/modules/core.ai/src/server/orchestrator.ts`                 | `AiChatInput` gains `projectKnowledge` + `toolBackends`; `runChat` passes them through                      |
+| `packages/modules/core.ai/src/server/routes.ts`                       | `MountAiRoutesOptions` gains the 5 lookup fields; `handleChatMessage` parallel-fetches; passes to `runChat` |
+| `packages/modules/core.ai/src/server/validate-proposal.ts`            | Add `pathExists` + `documentExists` deps; emit `PATH_ALREADY_IN_USE` + `UNKNOWN_REFERENCE`                  |
+| `packages/modules/core.ai/src/server/validate-proposal.test.ts`       | Extend with new error code tests                                                                            |
+| `packages/modules/core.ai/src/index.ts`                               | Export new types + factory tweaks                                                                           |
+| `packages/modules/src/index.ts`                                       | Re-export                                                                                                   |
+| `apps/server/src/lib/runtime-with-modules.ts`                         | Wire the 5 new lookups + pass new validator deps                                                            |
+| `packages/modules/core.ai/src/server/routes.test.ts`                  | Integration tests for system-prompt grounding + new tools + new validator codes                             |
+| `docs/specs/SPEC-014-ai-assisted-studio-editing.md`                   | Document the new tools + grounding architecture + new error codes                                           |
 
 ## Reuse — existing helpers
 
-| Helper | Path | Why |
-|---|---|---|
-| `createSchemaAwareProposalValidator` | `packages/modules/core.ai/src/server/validate-proposal.ts` | Extend with two new deps + two new error codes |
-| `contentStore.list / getById / getByPath` | `apps/server/src/lib/content-api/database-store.ts` | All five lookups are thin wrappers |
-| `resolveProjectEnvironmentScope` | `apps/server/src/lib/project-provisioning.ts` | Already used by `lookupSchemaHashForScope` |
-| `schemaRegistryEntries` table | `apps/server/src/lib/db/schema.ts` | Schema lookup source — same one CMS-235 uses |
-| `authUsers` table | `apps/server/src/lib/db/schema.ts` | `userLookup` source |
-| `SchemaRegistryTypeSnapshot` / `SchemaRegistryFieldSnapshot` | `@mdcms/shared` | Shapes for the catalog + per-field rendering |
-| `useStudioMountInfo` (mount-info-context.tsx) | `packages/studio/src/lib/runtime-ui/app/admin/mount-info-context.tsx` | `supportedLocales` source — confirm parallel exists server-side |
-| Existing `propose_*` tools | `packages/modules/core.ai/src/server/chat-tools.ts` | Pattern for `find_entries` + `get_entry` (capability gating, error structure) |
+| Helper                                                       | Path                                                                  | Why                                                                           |
+| ------------------------------------------------------------ | --------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `createSchemaAwareProposalValidator`                         | `packages/modules/core.ai/src/server/validate-proposal.ts`            | Extend with two new deps + two new error codes                                |
+| `contentStore.list / getById / getByPath`                    | `apps/server/src/lib/content-api/database-store.ts`                   | All five lookups are thin wrappers                                            |
+| `resolveProjectEnvironmentScope`                             | `apps/server/src/lib/project-provisioning.ts`                         | Already used by `lookupSchemaHashForScope`                                    |
+| `schemaRegistryEntries` table                                | `apps/server/src/lib/db/schema.ts`                                    | Schema lookup source — same one CMS-235 uses                                  |
+| `authUsers` table                                            | `apps/server/src/lib/db/schema.ts`                                    | `userLookup` source                                                           |
+| `SchemaRegistryTypeSnapshot` / `SchemaRegistryFieldSnapshot` | `@mdcms/shared`                                                       | Shapes for the catalog + per-field rendering                                  |
+| `useStudioMountInfo` (mount-info-context.tsx)                | `packages/studio/src/lib/runtime-ui/app/admin/mount-info-context.tsx` | `supportedLocales` source — confirm parallel exists server-side               |
+| Existing `propose_*` tools                                   | `packages/modules/core.ai/src/server/chat-tools.ts`                   | Pattern for `find_entries` + `get_entry` (capability gating, error structure) |
 
 ## Scope summary
 

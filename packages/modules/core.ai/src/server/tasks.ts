@@ -324,7 +324,7 @@ const definitions: Record<AiTaskKind, AiTaskDefinition> = {
     kind: "current_document_edit",
     promptTemplateId: "current_document_edit.v1",
     system:
-      "You propose edits to the current draft document. Return JSON with replace_selection, insert_block, or update_frontmatter operations. The replace_selection target is the caller's selectionId; do not address other locations. When the conversation includes prior turns, resolve anaphora (e.g. \"it\", \"the same\") against them.",
+      'You propose edits to the current draft document. Return JSON with replace_selection, insert_block, or update_frontmatter operations. The replace_selection target is the caller\'s selectionId; do not address other locations. When the conversation includes prior turns, resolve anaphora (e.g. "it", "the same") against them.',
     // selectionId is required by currentDocumentEditInputSchema, so
     // every replace_selection operation gets a server-trusted
     // anchor stamped by the proposal builder.
@@ -478,7 +478,7 @@ export function buildChatSystemPrompt(input: {
   // Delete
   if (!input.capabilities.canDeleteDocument) {
     reasons.push(
-      "- Delete document (`propose_delete_document`): UNAVAILABLE — the signed-in user does not have delete permission (`content:delete`). If they ask to delete/remove/archive content, say so plainly: \"You don't have delete permission in this role — ask an editor with `content:delete` or have an admin grant the capability.\" Do not propose any other destructive action as a substitute.",
+      '- Delete document (`propose_delete_document`): UNAVAILABLE — the signed-in user does not have delete permission (`content:delete`). If they ask to delete/remove/archive content, say so plainly: "You don\'t have delete permission in this role — ask an editor with `content:delete` or have an admin grant the capability." Do not propose any other destructive action as a substitute.',
     );
   } else if (!input.hasActiveDocument) {
     reasons.push(
@@ -520,9 +520,7 @@ export function buildChatUserPrompt(input: {
   additionalContextDocs?: AiTaskAdditionalContextDoc[];
   conversationHistory?: AiTaskConversationTurn[];
 }): string {
-  const lines: (string | null)[] = [
-    `Target locale: ${input.locale}.`,
-  ];
+  const lines: (string | null)[] = [`Target locale: ${input.locale}.`];
 
   if (input.activeDocument) {
     lines.push(
@@ -531,9 +529,7 @@ export function buildChatUserPrompt(input: {
   }
 
   if (input.attachedSelection) {
-    lines.push(
-      `Selected text:\n${input.attachedSelection.text}`,
-    );
+    lines.push(`Selected text:\n${input.attachedSelection.text}`);
   }
 
   lines.push(

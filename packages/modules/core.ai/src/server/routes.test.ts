@@ -263,8 +263,12 @@ function createTestSetup(input: {
     authorize,
     requireCsrf,
     emitAudit: input.emitAudit ?? ((record) => audits.push(record)),
-    ...(input.contentTypesLookup ? { contentTypesLookup: input.contentTypesLookup } : {}),
-    ...(input.supportedLocalesLookup ? { supportedLocalesLookup: input.supportedLocalesLookup } : {}),
+    ...(input.contentTypesLookup
+      ? { contentTypesLookup: input.contentTypesLookup }
+      : {}),
+    ...(input.supportedLocalesLookup
+      ? { supportedLocalesLookup: input.supportedLocalesLookup }
+      : {}),
     ...(input.userLookup ? { userLookup: input.userLookup } : {}),
     ...(input.listEntries ? { listEntries: input.listEntries } : {}),
     ...(input.getEntry ? { getEntry: input.getEntry } : {}),
@@ -708,9 +712,7 @@ describe("mountAiRoutes — chat-message", () => {
       authorize: authorizeWithScopes(
         new Set(["ai:use", "content:read:draft", "content:write"]),
       ),
-      echoSteps: [
-        { type: "text", text: "hi" },
-      ],
+      echoSteps: [{ type: "text", text: "hi" }],
     });
 
     const response = await app.fetch(
@@ -1145,8 +1147,7 @@ describe("mountAiRoutes — chat-message", () => {
                 path: "blog/poems/morning-poem",
                 type: "blog",
                 format: "md",
-                frontmatter:
-                  '{"title":"Morning poem","date":"2026-05-15"}',
+                frontmatter: '{"title":"Morning poem","date":"2026-05-15"}',
                 body: "In the hush of morning light…",
               }),
             },
@@ -1196,9 +1197,7 @@ describe("mountAiRoutes — chat-message", () => {
       ],
       supportedLocalesLookup: async () => ["en", "pl"],
       userLookup: async () => ({ id: "u1", displayName: "Karol" }),
-      echoSteps: [
-        { type: "text", text: "Hi!" },
-      ],
+      echoSteps: [{ type: "text", text: "Hi!" }],
     });
 
     const response = await app.fetch(

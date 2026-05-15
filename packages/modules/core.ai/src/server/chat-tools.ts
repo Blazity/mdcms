@@ -118,9 +118,9 @@ export type ChatToolDeps = {
    * Backend for the get_entry tool — wraps contentStore.getById at
    * the route layer.
    */
-  getEntryBackend?: (input: { documentId: string }) => Promise<
-    GetEntryResult | undefined
-  >;
+  getEntryBackend?: (input: {
+    documentId: string;
+  }) => Promise<GetEntryResult | undefined>;
 };
 
 const SUMMARY_FIELD = z
@@ -170,7 +170,9 @@ export function buildChatTools(deps: ChatToolDeps): Record<string, Tool> {
   const stampProposal = async (
     output: {
       summary: string;
-      operations: Parameters<typeof buildProposalsFromOutput>[0]["output"]["operations"];
+      operations: Parameters<
+        typeof buildProposalsFromOutput
+      >[0]["output"]["operations"];
     },
     anchors?: Parameters<typeof buildProposalsFromOutput>[0]["anchors"],
     envelopeOverride?: Partial<AiProposalEnvelope>,
@@ -210,7 +212,7 @@ export function buildChatTools(deps: ChatToolDeps): Record<string, Tool> {
   ) {
     tools.propose_edit_selection = tool({
       description:
-        "Propose a rewrite of the user's currently selected text in the active draft. Use when the user wants the selected span replaced (\"tighten this\", \"rewrite into bullets\", \"shorten\"). The selection anchor is server-supplied — do not invent a selectionId.",
+        'Propose a rewrite of the user\'s currently selected text in the active draft. Use when the user wants the selected span replaced ("tighten this", "rewrite into bullets", "shorten"). The selection anchor is server-supplied — do not invent a selectionId.',
       inputSchema: z.object({
         summary: SUMMARY_FIELD,
         originalText: z
@@ -296,7 +298,7 @@ export function buildChatTools(deps: ChatToolDeps): Record<string, Tool> {
           .string()
           .min(2)
           .describe(
-            "JSON-encoded shallow-merge patch object. Example: `{\"title\":\"New title\",\"tags\":[\"a\",\"b\"]}`. Include only fields you want to change. Pass this as a JSON STRING — do not pass a raw object.",
+            'JSON-encoded shallow-merge patch object. Example: `{"title":"New title","tags":["a","b"]}`. Include only fields you want to change. Pass this as a JSON STRING — do not pass a raw object.',
           ),
       }),
       execute: async (args) => {
@@ -340,12 +342,14 @@ export function buildChatTools(deps: ChatToolDeps): Record<string, Tool> {
           ),
         format: z
           .enum(["md", "mdx"])
-          .describe("`md` for plain Markdown, `mdx` when MDX components are used."),
+          .describe(
+            "`md` for plain Markdown, `mdx` when MDX components are used.",
+          ),
         frontmatter: z
           .string()
           .min(2)
           .describe(
-            "JSON-encoded frontmatter object. Example: `{\"title\":\"A Short Poem\",\"date\":\"2026-05-15\",\"tags\":[\"poetry\"]}`. Pass this as a JSON STRING — do not pass a raw object. Include EVERY field the content type's schema marks as required (e.g. `title`) plus any optional fields you're confident about. DO NOT serialize the frontmatter as YAML inside the `body` field; that's what this field is for.",
+            'JSON-encoded frontmatter object. Example: `{"title":"A Short Poem","date":"2026-05-15","tags":["poetry"]}`. Pass this as a JSON STRING — do not pass a raw object. Include EVERY field the content type\'s schema marks as required (e.g. `title`) plus any optional fields you\'re confident about. DO NOT serialize the frontmatter as YAML inside the `body` field; that\'s what this field is for.',
           ),
         body: z
           .string()
@@ -405,7 +409,7 @@ export function buildChatTools(deps: ChatToolDeps): Record<string, Tool> {
           .string()
           .optional()
           .describe(
-            "Brief justification shown to the user on the proposal card (\"superseded by …\", \"out of date\"). Optional.",
+            'Brief justification shown to the user on the proposal card ("superseded by …", "out of date"). Optional.',
           ),
       }),
       execute: async (args) => {
@@ -458,9 +462,7 @@ export function buildChatTools(deps: ChatToolDeps): Record<string, Tool> {
         query: z.string().optional(),
         locale:
           deps.supportedLocales.length > 0
-            ? z
-                .enum(deps.supportedLocales as [string, ...string[]])
-                .optional()
+            ? z.enum(deps.supportedLocales as [string, ...string[]]).optional()
             : z.string().optional(),
         limit: z.number().int().min(1).max(25).optional(),
       }),

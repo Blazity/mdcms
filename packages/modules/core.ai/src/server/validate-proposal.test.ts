@@ -72,13 +72,17 @@ function createCandidate(
 
 describe("createSchemaAwareProposalValidator — create_document", () => {
   test("accepts a proposal with all required fields", async () => {
-    const validator = createSchemaAwareProposalValidator({ schemaLookup: lookup });
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: lookup,
+    });
     const result = await validator(createCandidate());
     assert.equal(result.status, "valid");
   });
 
   test("flags an unknown content type", async () => {
-    const validator = createSchemaAwareProposalValidator({ schemaLookup: lookup });
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: lookup,
+    });
     const result = await validator(createCandidate({ type: "podcast" }));
     assert.equal(result.status, "invalid");
     if (result.status === "invalid") {
@@ -88,7 +92,9 @@ describe("createSchemaAwareProposalValidator — create_document", () => {
   });
 
   test("flags missing required frontmatter fields", async () => {
-    const validator = createSchemaAwareProposalValidator({ schemaLookup: lookup });
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: lookup,
+    });
     const result = await validator(
       createCandidate({
         operations: [
@@ -116,7 +122,9 @@ describe("createSchemaAwareProposalValidator — create_document", () => {
   });
 
   test("flags unknown frontmatter fields", async () => {
-    const validator = createSchemaAwareProposalValidator({ schemaLookup: lookup });
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: lookup,
+    });
     const result = await validator(
       createCandidate({
         operations: [
@@ -145,7 +153,9 @@ describe("createSchemaAwareProposalValidator — create_document", () => {
   });
 
   test("flags wrong runtime types for frontmatter values", async () => {
-    const validator = createSchemaAwareProposalValidator({ schemaLookup: lookup });
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: lookup,
+    });
     const result = await validator(
       createCandidate({
         operations: [
@@ -174,7 +184,9 @@ describe("createSchemaAwareProposalValidator — create_document", () => {
   });
 
   test("aggregates multiple errors", async () => {
-    const validator = createSchemaAwareProposalValidator({ schemaLookup: lookup });
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: lookup,
+    });
     const result = await validator(
       createCandidate({
         operations: [
@@ -195,15 +207,18 @@ describe("createSchemaAwareProposalValidator — create_document", () => {
     assert.equal(result.status, "invalid");
     if (result.status === "invalid") {
       const codes = result.errors.map((e) => e.code).sort();
-      assert.deepEqual(
-        codes,
-        ["INVALID_FRONTMATTER_TYPE", "MISSING_REQUIRED_FRONTMATTER", "UNKNOWN_FRONTMATTER_FIELD"],
-      );
+      assert.deepEqual(codes, [
+        "INVALID_FRONTMATTER_TYPE",
+        "MISSING_REQUIRED_FRONTMATTER",
+        "UNKNOWN_FRONTMATTER_FIELD",
+      ]);
     }
   });
 
   test("accepts nullable fields with null value", async () => {
-    const validator = createSchemaAwareProposalValidator({ schemaLookup: lookup });
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: lookup,
+    });
     const result = await validator(
       createCandidate({
         operations: [
@@ -227,7 +242,9 @@ describe("createSchemaAwareProposalValidator — create_document", () => {
 
 describe("createSchemaAwareProposalValidator — update_frontmatter", () => {
   test("accepts a patch with known fields and correct types", async () => {
-    const validator = createSchemaAwareProposalValidator({ schemaLookup: lookup });
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: lookup,
+    });
     const result = await validator({
       proposalId: "p1",
       kind: "update_frontmatter",
@@ -253,7 +270,9 @@ describe("createSchemaAwareProposalValidator — update_frontmatter", () => {
   });
 
   test("flags unknown fields in patch", async () => {
-    const validator = createSchemaAwareProposalValidator({ schemaLookup: lookup });
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: lookup,
+    });
     const result = await validator({
       proposalId: "p1",
       kind: "update_frontmatter",
@@ -282,7 +301,9 @@ describe("createSchemaAwareProposalValidator — update_frontmatter", () => {
   });
 
   test("does NOT enforce required fields on patch (update is a partial)", async () => {
-    const validator = createSchemaAwareProposalValidator({ schemaLookup: lookup });
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: lookup,
+    });
     // patch only updates description (optional), even though blog requires title+date
     const result = await validator({
       proposalId: "p1",
@@ -311,7 +332,9 @@ describe("createSchemaAwareProposalValidator — update_frontmatter", () => {
 
 describe("createSchemaAwareProposalValidator — other kinds", () => {
   test("replace_selection is shape-valid (no MDX catalog yet)", async () => {
-    const validator = createSchemaAwareProposalValidator({ schemaLookup: lookup });
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: lookup,
+    });
     const result = await validator({
       proposalId: "p1",
       kind: "replace_selection",
@@ -339,7 +362,9 @@ describe("createSchemaAwareProposalValidator — other kinds", () => {
   });
 
   test("insert_block is shape-valid (no MDX catalog yet)", async () => {
-    const validator = createSchemaAwareProposalValidator({ schemaLookup: lookup });
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: lookup,
+    });
     const result = await validator({
       proposalId: "p1",
       kind: "insert_block",
@@ -365,7 +390,9 @@ describe("createSchemaAwareProposalValidator — other kinds", () => {
   });
 
   test("delete_document is shape-valid (chat-tools handles published-version check)", async () => {
-    const validator = createSchemaAwareProposalValidator({ schemaLookup: lookup });
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: lookup,
+    });
     const result = await validator({
       proposalId: "p1",
       kind: "delete_document",

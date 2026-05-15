@@ -70,12 +70,23 @@ export function createSchemaAwareProposalValidator(input: {
 }): AiProposalValidator {
   const { schemaLookup, pathExists, documentExists } = input;
 
-  return async (candidate: AiProposalCandidate): Promise<AiProposalValidation> => {
+  return async (
+    candidate: AiProposalCandidate,
+  ): Promise<AiProposalValidation> => {
     switch (candidate.kind) {
       case "create_document":
-        return validateCreateDocument(candidate, schemaLookup, pathExists, documentExists);
+        return validateCreateDocument(
+          candidate,
+          schemaLookup,
+          pathExists,
+          documentExists,
+        );
       case "update_frontmatter":
-        return validateUpdateFrontmatter(candidate, schemaLookup, documentExists);
+        return validateUpdateFrontmatter(
+          candidate,
+          schemaLookup,
+          documentExists,
+        );
       case "delete_document":
       case "replace_selection":
       case "insert_block":
@@ -274,12 +285,7 @@ function validateFrontmatterAgainstSchema(
       });
       continue;
     }
-    const typeError = checkFieldType(
-      key,
-      value,
-      field,
-      `frontmatter.${key}`,
-    );
+    const typeError = checkFieldType(key, value, field, `frontmatter.${key}`);
     if (typeError) errors.push(typeError);
   }
 }

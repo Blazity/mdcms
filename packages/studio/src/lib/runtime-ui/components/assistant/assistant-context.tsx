@@ -72,7 +72,9 @@ function deriveThreadTitle(text: string): string {
 
 function makeEmptyThread(now: string, threadId?: string): AssistantThread {
   return {
-    id: threadId ?? `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    id:
+      threadId ??
+      `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     title: NEW_THREAD_TITLE,
     updatedAt: now,
     preview: "",
@@ -380,9 +382,7 @@ function reducer(
         (t) => t.id !== action.threadId,
       );
       const proposalIdsToKeep = new Set(
-        remaining.flatMap((t) =>
-          t.messages.flatMap((m) => m.proposals ?? []),
-        ),
+        remaining.flatMap((t) => t.messages.flatMap((m) => m.proposals ?? [])),
       );
       const proposals = Object.fromEntries(
         Object.entries(state.store.proposals).filter(([pid]) =>
@@ -665,7 +665,9 @@ export function AssistantProvider({
   const [state, dispatch] = React.useReducer(reducer, undefined, () => {
     const persisted = storageKey ? loadStoreFromStorage(storageKey) : undefined;
     const store =
-      initialStore ?? persisted ?? buildEmptyAssistantStore(new Date().toISOString());
+      initialStore ??
+      persisted ??
+      buildEmptyAssistantStore(new Date().toISOString());
     return {
       store,
       mode: initialMode,
@@ -800,8 +802,9 @@ export function AssistantProvider({
           if (!text) return undefined;
           return { role: m.role, text };
         })
-        .filter((t): t is { role: "user" | "assistant"; text: string } =>
-          t !== undefined,
+        .filter(
+          (t): t is { role: "user" | "assistant"; text: string } =>
+            t !== undefined,
         )
         .slice(-10);
 
