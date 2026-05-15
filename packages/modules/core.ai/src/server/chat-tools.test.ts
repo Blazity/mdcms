@@ -5,6 +5,7 @@ import {
   buildChatTools,
   type ChatToolDeps,
   type FindEntriesResult,
+  type GetEntryResult,
 } from "./chat-tools.js";
 import type { AiProposal } from "@mdcms/shared";
 
@@ -123,5 +124,72 @@ describe("find_entries tool", () => {
     )) as { queued: false; error: string };
     assert.equal(result.queued, false);
     assert.ok(result.error.includes("DB unreachable"));
+  });
+});
+
+describe("get_entry tool", () => {
+  test("is registered when caller has read capability and backend present", () => {
+    const tools = buildChatTools(
+      baseDeps({
+        capabilities: {
+          canEditDocument: false,
+          canCreateDocument: false,
+          canDeleteDocument: false,
+          canReadEntries: true,
+        },
+        getEntryBackend: async () => undefined,
+      }),
+    );
+    assert.ok(tools.get_entry);
+  });
+
+  test("returns the full document when backend resolves it", async () => {
+    const tools = buildChatTools(
+      baseDeps({
+        capabilities: {
+          canEditDocument: false,
+          canCreateDocument: false,
+          canDeleteDocument: false,
+          canReadEntries: true,
+        },
+        getEntryBackend: async () => ({
+          documentId: "doc_1",
+          path: "blog/welcome",
+          type: "post",
+          locale: "en",
+          draftRevision: 4,
+          hasUnpublishedChanges: true,
+          publishedVersion: null,
+          frontmatter: { title: "Welcome" },
+          body: "Body text",
+        }),
+      }),
+    );
+    const result = (await tools.get_entry!.execute!(
+      { documentId: "doc_1" },
+      { toolCallId: "tc_1", messages: [] },
+    )) as { documentId: string; body: string };
+    assert.equal(result.documentId, "doc_1");
+    assert.equal(result.body, "Body text");
+  });
+
+  test("returns NOT_FOUND structured error when backend returns undefined", async () => {
+    const tools = buildChatTools(
+      baseDeps({
+        capabilities: {
+          canEditDocument: false,
+          canCreateDocument: false,
+          canDeleteDocument: false,
+          canReadEntries: true,
+        },
+        getEntryBackend: async () => undefined,
+      }),
+    );
+    const result = (await tools.get_entry!.execute!(
+      { documentId: "missing" },
+      { toolCallId: "tc_1", messages: [] },
+    )) as { queued: false; error: string };
+    assert.equal(result.queued, false);
+    assert.ok(result.error.toLowerCase().includes("not found"));
   });
 });

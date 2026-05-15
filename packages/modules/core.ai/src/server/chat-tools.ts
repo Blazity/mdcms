@@ -479,6 +479,34 @@ export function buildChatTools(deps: ChatToolDeps): Record<string, Tool> {
     });
   }
 
+  if (deps.capabilities.canReadEntries && deps.getEntryBackend) {
+    const backend = deps.getEntryBackend;
+    tools.get_entry = tool({
+      description:
+        "Fetch the full body + frontmatter of a specific document by its `documentId`. Use this when:\n" +
+        "1. You need to read an existing document's content before proposing changes to a different document that references or links to it.\n" +
+        "2. You picked a candidate from `find_entries` and want to read its full content before referencing or duplicating parts of it.\n" +
+        "Returns the document's frontmatter, body, type, locale, path, and revision info. If the document doesn't exist or has been soft-deleted, returns an error. The active document the user is editing is already in your context — don't call this for it.",
+      inputSchema: z.object({
+        documentId: z.string().min(1),
+      }),
+      execute: async (args) => {
+        try {
+          const entry = await backend({ documentId: args.documentId });
+          if (!entry) {
+            return {
+              queued: false as const,
+              error: `Document "${args.documentId}" not found in this project.`,
+            };
+          }
+          return entry;
+        } catch (error) {
+          return toolErrorResult(error);
+        }
+      },
+    });
+  }
+
   return tools;
 }
 
