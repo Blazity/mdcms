@@ -85,20 +85,6 @@
       "when": 1776124217943,
       "tag": "0011_optimal_valeria_richards",
       "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1778880341116,
-      "tag": "0012_motionless_the_hand",
-      "breakpoints": true
-    },
-    {
-      "idx": 13,
-      "version": "7",
-      "when": 1778880716036,
-      "tag": "0013_many_moonstone",
-      "breakpoints": true
     }
   ]
 }
