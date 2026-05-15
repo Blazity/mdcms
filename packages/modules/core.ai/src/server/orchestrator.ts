@@ -265,6 +265,10 @@ export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
             : {}),
         capabilities: call.capabilities,
         collected,
+        registeredTypeIds: (call.projectKnowledge?.registeredTypes ?? []).map(
+          (t) => t.type,
+        ),
+        supportedLocales: call.projectKnowledge?.supportedLocales ?? [],
       });
 
       const projectKnowledge: ProjectKnowledgeInput = {
