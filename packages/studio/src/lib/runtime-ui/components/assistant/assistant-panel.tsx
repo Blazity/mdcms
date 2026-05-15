@@ -36,7 +36,7 @@ import type {
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import { EmptyStarter } from "./empty-starter.js";
 import { KindGlyph } from "./kind-glyph.js";
-import { AppliedLogLine, ProposalCard } from "./proposal-card.js";
+import { AcceptedView, ProposalCard } from "./proposal-card.js";
 import { SendStopButton } from "./send-stop-button.js";
 import { SparkleMark } from "./sparkle-mark.js";
 import { useStudioApiConfig } from "../../app/admin/mount-info-context.js";
@@ -547,6 +547,13 @@ function TurnGroup({
   const allValid = proposals.every((p) => p.validation.status === "valid");
   const stale = proposals.some((p) => p.contentInvalidated);
   const acceptBlocked = !allValid || stale;
+  // Hide the batch action bar (Reject all / Accept all) once every
+  // row has been individually resolved — leaving "Accept all (3)"
+  // visible after the user already accepted all 3 reads as a stuck
+  // affordance. Rows remain on screen as their AcceptedView /
+  // logged-line history; the footer just gets out of the way.
+  const pendingProposals = proposals.filter((p) => !p.acceptedAt);
+  const hasPending = pendingProposals.length > 0;
   return (
     <div className="overflow-hidden rounded-lg border border-card-border bg-card">
       <ul className="m-0 list-none p-0">
@@ -563,12 +570,11 @@ function TurnGroup({
               )}
             >
               {isAccepted ? (
-                // Replace the full row with the same past-tense log
-                // line a single card would render, so a batched turn
-                // reads as a continuous strip of "applied" entries
-                // rather than a row vanishing the moment Accept fires.
+                // Hand the row off to the same accepted-view component
+                // a single card uses: 6s lime banner with countdown
+                // first, then morphs to the quiet past-tense log line.
                 <div className="px-3 py-2">
-                  <AppliedLogLine proposal={proposal} />
+                  <AcceptedView proposal={proposal} />
                 </div>
               ) : (
                 <>
@@ -597,18 +603,18 @@ function TurnGroup({
           );
         })}
       </ul>
-      {showReject ? (
+      {!hasPending ? null : showReject ? (
         <TurnRejectFeedback
           onCancel={() => setShowReject(false)}
           onSend={(feedback) => {
-            for (const p of proposals) onReject(p.proposalId, feedback);
+            for (const p of pendingProposals) onReject(p.proposalId, feedback);
             setShowReject(false);
           }}
         />
       ) : (
         <div className="flex items-center gap-2 border-t border-divider/40 bg-background-subtle px-3 py-2">
           <span className="flex-1 font-mono text-[10px] uppercase tracking-wider text-foreground-muted">
-            {proposals.length} proposals · this turn
+            {pendingProposals.length} of {proposals.length} pending
           </span>
           <button
             type="button"
@@ -623,7 +629,7 @@ function TurnGroup({
               acceptBlocked
                 ? undefined
                 : () => {
-                    for (const p of proposals) onAccept(p.proposalId);
+                    for (const p of pendingProposals) onAccept(p.proposalId);
                   }
             }
             disabled={acceptBlocked}
@@ -632,7 +638,7 @@ function TurnGroup({
               stale
                 ? "Source text changed — retry to regenerate"
                 : allValid
-                  ? `Apply all ${proposals.length} proposals`
+                  ? `Apply all ${pendingProposals.length} pending proposals`
                   : "Fix invalid proposals before accepting"
             }
             className={cn(
@@ -643,7 +649,7 @@ function TurnGroup({
             )}
           >
             <Check className="h-3 w-3" aria-hidden />
-            Accept all ({proposals.length})
+            Accept all ({pendingProposals.length})
           </button>
         </div>
       )}
