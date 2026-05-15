@@ -248,6 +248,78 @@ export function createServerRequestHandlerWithModules(
       : { id: userId, displayName: userId };
   };
 
+  const listEntries = async ({
+    project,
+    environment,
+    type,
+    query,
+    locale,
+    limit,
+  }: {
+    project: string;
+    environment: string;
+    type: string;
+    query?: string;
+    locale?: string;
+    limit?: number;
+  }) => {
+    const listResponse = await contentStore.list(
+      { project, environment },
+      {
+        type,
+        ...(query ? { q: query } : {}),
+        ...(locale ? { locale } : {}),
+        limit: String(limit ?? 10),
+        draft: "true",
+      },
+    );
+    return {
+      matches: listResponse.rows.map((row) => ({
+        documentId: row.documentId,
+        path: row.path,
+        type: row.type,
+        locale: row.locale,
+        ...(typeof row.frontmatter.title === "string"
+          ? { title: row.frontmatter.title }
+          : {}),
+        ...(typeof row.frontmatter.excerpt === "string"
+          ? { summary: row.frontmatter.excerpt.slice(0, 200) }
+          : {}),
+        updatedAt: row.updatedAt,
+        hasUnpublishedChanges: row.hasUnpublishedChanges,
+      })),
+      total: listResponse.total,
+    };
+  };
+
+  const getEntryBackend = async ({
+    project,
+    environment,
+    documentId,
+  }: {
+    project: string;
+    environment: string;
+    documentId: string;
+  }) => {
+    const doc = await contentStore.getById(
+      { project, environment },
+      documentId,
+      { draft: true },
+    );
+    if (!doc || doc.isDeleted) return undefined;
+    return {
+      documentId: doc.documentId,
+      path: doc.path,
+      type: doc.type,
+      locale: doc.locale,
+      draftRevision: doc.draftRevision,
+      hasUnpublishedChanges: doc.hasUnpublishedChanges,
+      publishedVersion: doc.publishedVersion,
+      frontmatter: doc.frontmatter,
+      body: doc.body,
+    };
+  };
+
   const aiModuleDeps: CoreAiServerDeps = {
     orchestrator: aiOrchestrator,
     proposalStore: aiProposalStore,
@@ -329,6 +401,8 @@ export function createServerRequestHandlerWithModules(
     contentTypesLookup,
     supportedLocalesLookup,
     userLookup,
+    listEntries,
+    getEntry: getEntryBackend,
   };
 
   const moduleDeps: ServerModuleAppDeps = {
