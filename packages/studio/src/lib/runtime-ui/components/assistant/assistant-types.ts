@@ -48,8 +48,7 @@ export type AssistantProposalKind =
   | "insert_block"
   | "update_frontmatter"
   | "create_document"
-  | "delete_document"
-  | "batch";
+  | "delete_document";
 
 type ProposalCommonFields = {
   proposalId: string;
@@ -133,40 +132,12 @@ export type AssistantProposalDelete = ProposalCommonFields & {
   };
 };
 
-export type AssistantBatchChild = {
-  /**
-   * Stable id of the underlying child proposal. Mirrors
-   * `AiProposal.proposalId` on the wire so the UI can route per-child
-   * accept/reject regeneration calls and surface which child failed
-   * when a batch is invalid.
-   */
-  proposalId?: string;
-  kind: Exclude<AssistantProposalKind, "batch">;
-  docPath: string;
-  locale: string;
-  summary: string;
-  /** Short MDX/markdown preview rendered inside the expanded child diff. */
-  preview?: string;
-  /**
-   * Optional per-child validation. When the batch as a whole is
-   * `invalid` the parent surfaces the count, but the UI also needs the
-   * per-child status to highlight the offending row(s).
-   */
-  validation?: AssistantValidation;
-};
-
-export type AssistantProposalBatch = ProposalCommonFields & {
-  kind: "batch";
-  children: AssistantBatchChild[];
-};
-
 export type AssistantProposal =
   | AssistantProposalEdit
   | AssistantProposalInsert
   | AssistantProposalFrontmatter
   | AssistantProposalCreate
-  | AssistantProposalDelete
-  | AssistantProposalBatch;
+  | AssistantProposalDelete;
 
 export type AssistantMessageRole = "user" | "assistant";
 
@@ -202,9 +173,27 @@ export type AssistantThread = {
   docCount: number;
 };
 
+/**
+ * Opaque wire-shape proposal envelope persisted by the client alongside
+ * the rendering-shaped `AssistantProposal`. The studio doesn't introspect
+ * this — it just round-trips it back to the server on accept/reject so
+ * the apply route doesn't depend on a server-side proposal store
+ * surviving a restart. The actual type is `StudioAiProposal` from
+ * `@mdcms/studio/lib/ai-route-api`; the assistant types stay
+ * decoupled from the route API by treating it as an opaque record.
+ */
+export type AssistantWireProposal = Record<string, unknown>;
+
 export type AssistantStore = {
   now: string;
   activeThreadId: string;
   threads: AssistantThread[];
   proposals: Record<string, AssistantProposal>;
+  /**
+   * Wire-shape proposals keyed by proposalId. The rendering layer reads
+   * from `proposals`; accept/reject reads from this map and posts the
+   * body back to the server. Both are populated when a chat turn
+   * returns proposals; both are persisted to localStorage.
+   */
+  wireProposals: Record<string, AssistantWireProposal>;
 };

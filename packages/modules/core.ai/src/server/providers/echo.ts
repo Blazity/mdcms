@@ -1,10 +1,24 @@
-import type { LanguageModelV3CallOptions } from "@ai-sdk/provider";
+import type {
+  LanguageModelV3CallOptions,
+  LanguageModelV3Content,
+} from "@ai-sdk/provider";
 import { MockLanguageModelV3 } from "ai/test";
 
 import type { AiProvider, AiProviderUsage } from "../provider.js";
 
 export const ECHO_PROVIDER_ID = "echo" as const;
 export const ECHO_PROVIDER_DEFAULT_MODEL = "echo-1" as const;
+
+export type EchoToolCall = {
+  toolName: string;
+  /** Stringified JSON args for the tool. */
+  input: string;
+  toolCallId?: string;
+};
+
+export type EchoStepResponse =
+  | { type: "text"; text: string }
+  | { type: "tool-calls"; calls: EchoToolCall[]; trailingText?: string };
 
 export type EchoAiProviderOptions = {
   model?: string;
@@ -15,6 +29,14 @@ export type EchoAiProviderOptions = {
    * malformed text to exercise the AI_OUTPUT_INVALID path.
    */
   respond?: (options: LanguageModelV3CallOptions) => string;
+  /**
+   * Scripted multi-step response — used by chat tool-calling tests.
+   * Each call to `doGenerate` consumes one entry, in order. Step 0
+   * is typically `{ type: "tool-calls", calls: [...] }`; step 1 the
+   * concluding text reply. If exhausted, falls through to `respond`
+   * / text-only behavior so existing callers keep working.
+   */
+  steps?: EchoStepResponse[];
   usage?: AiProviderUsage;
   /**
    * If set, every doGenerate call rejects with this error. Used in
@@ -26,12 +48,14 @@ export type EchoAiProviderOptions = {
 /**
  * Deterministic in-memory provider for unit tests and local
  * development. Wraps `MockLanguageModelV3` from the AI SDK and
- * lets callers control output text, usage, or failure injection.
+ * lets callers control output text, scripted tool-call sequences,
+ * usage, or failure injection.
  */
 export function createEchoAiProvider(
   options: EchoAiProviderOptions = {},
 ): AiProvider {
   const modelId = options.model ?? ECHO_PROVIDER_DEFAULT_MODEL;
+  let stepCursor = 0;
 
   const languageModel = new MockLanguageModelV3({
     provider: ECHO_PROVIDER_ID,
@@ -39,6 +63,50 @@ export function createEchoAiProvider(
     doGenerate: async (callOptions) => {
       if (options.throwOnGenerate) {
         throw options.throwOnGenerate;
+      }
+
+      // Scripted multi-step path — used by chat tool-calling tests.
+      if (options.steps && stepCursor < options.steps.length) {
+        const step = options.steps[stepCursor]!;
+        stepCursor += 1;
+        const content: LanguageModelV3Content[] = [];
+        let finishReasonRaw: "tool-calls" | "stop" = "stop";
+        if (step.type === "tool-calls") {
+          for (const call of step.calls) {
+            content.push({
+              type: "tool-call",
+              toolCallId:
+                call.toolCallId ?? `tc_${stepCursor}_${content.length + 1}`,
+              toolName: call.toolName,
+              input: call.input,
+            });
+          }
+          if (step.trailingText) {
+            content.push({ type: "text", text: step.trailingText });
+          }
+          finishReasonRaw = "tool-calls";
+        } else {
+          content.push({ type: "text", text: step.text });
+          finishReasonRaw = "stop";
+        }
+        return {
+          content,
+          finishReason: { unified: finishReasonRaw, raw: finishReasonRaw },
+          usage: {
+            inputTokens: {
+              total: options.usage?.inputTokens,
+              noCache: options.usage?.inputTokens,
+              cacheRead: undefined,
+              cacheWrite: undefined,
+            },
+            outputTokens: {
+              total: options.usage?.outputTokens,
+              text: options.usage?.outputTokens,
+              reasoning: undefined,
+            },
+          },
+          warnings: [],
+        };
       }
 
       const text = options.respond

@@ -5,9 +5,7 @@ import { AlertTriangle, Check, ChevronRight, Send, Trash2 } from "lucide-react";
 
 import { cn } from "../../lib/utils.js";
 import type {
-  AssistantBatchChild,
   AssistantProposal,
-  AssistantProposalBatch,
   AssistantProposalCreate,
   AssistantProposalDelete,
   AssistantProposalEdit,
@@ -21,7 +19,6 @@ const KIND_LABEL: Record<AssistantProposal["kind"], string> = {
   update_frontmatter: "Frontmatter",
   create_document: "New doc",
   delete_document: "Delete",
-  batch: "Batch",
 };
 
 type CardChromeProps = {
@@ -395,18 +392,22 @@ function CreateCard({
         {!hasBody && !isInvalid && (
           <div className="text-[13px] text-foreground">Create new document</div>
         )}
-        <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-md border border-divider/60 bg-background-subtle px-3 py-2.5">
-          {Object.entries(proposal.op.frontmatter).map(([k, v]) => (
-            <React.Fragment key={k}>
-              <div className="font-mono text-[10px] tracking-wide text-foreground-muted">
-                {k}
-              </div>
-              <div className="text-[12px] text-foreground">
-                {Array.isArray(v) ? v.map((t) => `#${t}`).join(" ") : String(v)}
-              </div>
-            </React.Fragment>
-          ))}
-        </div>
+        {Object.keys(proposal.op.frontmatter).length > 0 && (
+          <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-md border border-divider/60 bg-background-subtle px-3 py-2.5">
+            {Object.entries(proposal.op.frontmatter).map(([k, v]) => (
+              <React.Fragment key={k}>
+                <div className="font-mono text-[10px] tracking-wide text-foreground-muted">
+                  {k}
+                </div>
+                <div className="text-[12px] text-foreground">
+                  {Array.isArray(v)
+                    ? v.map((t) => `#${t}`).join(" ")
+                    : String(v)}
+                </div>
+              </React.Fragment>
+            ))}
+          </div>
+        )}
         {hasBody && !isInvalid && (
           <div className="relative max-h-36 overflow-hidden rounded-md border border-divider/60 bg-background-subtle px-3 py-2.5 font-mono text-[11.5px] leading-snug text-foreground-muted">
             <pre className="whitespace-pre-wrap break-words font-mono">
@@ -609,155 +610,6 @@ function DeleteCard({
   );
 }
 
-// ─── Batch — children collapsed by default, expand inline ───────────────
-function BatchChildRow({ child }: { child: AssistantBatchChild }) {
-  const [open, setOpen] = React.useState(false);
-  const isCreate = child.kind === "create_document";
-  return (
-    <li className="border-b border-divider/40 last:border-b-0">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-accent-subtle/40"
-      >
-        <ChevronRight
-          className={cn(
-            "h-3 w-3 shrink-0 text-foreground-muted transition-transform",
-            open && "rotate-90",
-          )}
-          aria-hidden
-        />
-        <span
-          className={cn(
-            "shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider",
-            isCreate
-              ? "bg-blue-100 text-primary"
-              : "bg-muted text-foreground-muted",
-          )}
-        >
-          {KIND_LABEL[child.kind]}
-        </span>
-        <span
-          className="shrink-0 font-mono text-[11px] text-foreground-muted"
-          title={child.docPath}
-        >
-          {child.docPath}
-        </span>
-        <span className="shrink-0 font-mono text-[10px] text-foreground-muted/80">
-          {child.locale}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground">
-          {child.summary}
-        </span>
-        <Check className="h-3 w-3 shrink-0 text-success" aria-hidden />
-      </button>
-      {open && (
-        <div className="bg-background-subtle px-3 py-2.5 pl-9">
-          <DiffBody
-            added={child.preview ?? child.summary}
-            emptyLeftLabel={
-              isCreate
-                ? "(no existing content — new document)"
-                : "(no existing content — new value)"
-            }
-          />
-        </div>
-      )}
-    </li>
-  );
-}
-
-function BatchCard({
-  proposal,
-  rejecting,
-  onAccept,
-  onReject,
-}: {
-  proposal: AssistantProposalBatch;
-  rejecting: boolean;
-  onAccept: () => void;
-  onReject: (feedback: string) => void;
-}) {
-  const [showReject, setShowReject] = React.useState(rejecting);
-  React.useEffect(() => setShowReject(rejecting), [rejecting]);
-
-  const ok = proposal.validation.status === "valid";
-  const stale = Boolean(proposal.contentInvalidated);
-  const acceptBlocked = !ok || stale;
-
-  return (
-    <CardChrome>
-      <div className="flex items-center gap-2.5 border-b border-divider/40 bg-gradient-to-b from-primary/[0.04] to-transparent px-3 py-2.5">
-        <span className="shrink-0 rounded-sm bg-sidebar px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-vibrant-green">
-          Batch · {proposal.children.length}
-        </span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">
-          {proposal.children.length} edits across {countDocs(proposal)} doc
-          {countDocs(proposal) === 1 ? "" : "s"}
-        </span>
-        <ValidBadge validation={proposal.validation} />
-      </div>
-      <ul className="m-0 list-none p-0">
-        {proposal.children.map((c, i) => (
-          <BatchChildRow key={c.proposalId ?? `${c.docPath}-${i}`} child={c} />
-        ))}
-      </ul>
-      {showReject ? (
-        <RejectFeedback
-          onCancel={() => setShowReject(false)}
-          onSend={(feedback) => {
-            onReject(feedback);
-            setShowReject(false);
-          }}
-        />
-      ) : (
-        <div className="flex items-center gap-2 border-t border-divider/40 bg-background-subtle px-3 py-2">
-          <span className="flex-1 font-mono text-[10px] text-foreground-muted">
-            {stale
-              ? "source text changed — retry"
-              : ok
-                ? "applies as one transaction"
-                : "fix invalid children before accepting"}
-          </span>
-          <button
-            type="button"
-            onClick={() => setShowReject(true)}
-            className="rounded border border-border bg-transparent px-2.5 py-1 font-mono text-[11px] font-medium text-foreground-muted transition-colors hover:bg-muted hover:text-foreground"
-          >
-            Reject all…
-          </button>
-          <button
-            type="button"
-            onClick={acceptBlocked ? undefined : onAccept}
-            disabled={acceptBlocked}
-            aria-disabled={acceptBlocked}
-            title={
-              stale
-                ? "Source text changed — retry to regenerate"
-                : ok
-                  ? "Apply all children as one transaction"
-                  : "Fix invalid children before accepting"
-            }
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
-              acceptBlocked
-                ? "cursor-not-allowed bg-muted text-foreground-muted"
-                : "bg-sidebar text-vibrant-green hover:bg-sidebar/90",
-            )}
-          >
-            <Check className="h-3 w-3" aria-hidden />
-            Accept all ({proposal.children.length})
-          </button>
-        </div>
-      )}
-    </CardChrome>
-  );
-}
-
-function countDocs(proposal: AssistantProposalBatch): number {
-  return new Set(proposal.children.map((c) => c.docPath)).size;
-}
-
 export type ProposalCardProps = {
   proposal: AssistantProposal;
   /** Force reject-feedback state (used in showcases). */
@@ -782,16 +634,6 @@ export function ProposalCard({
   if (proposal.kind === "delete_document") {
     return (
       <DeleteCard
-        proposal={proposal}
-        rejecting={rejecting}
-        onAccept={onAccept}
-        onReject={onReject}
-      />
-    );
-  }
-  if (proposal.kind === "batch") {
-    return (
-      <BatchCard
         proposal={proposal}
         rejecting={rejecting}
         onAccept={onAccept}

@@ -28,16 +28,18 @@ export function AssistantLauncher({ className }: { className?: string }) {
       aria-pressed={isOpen}
       aria-label={isOpen ? "Close AI assistant" : "Open AI assistant"}
       className={cn(
-        "inline-flex h-9 items-center gap-2 rounded-md border border-secondary px-3 font-mono text-[12px] font-semibold transition-colors",
+        "inline-flex h-9 items-center gap-2 rounded-md border px-3 font-mono text-[12px] font-semibold transition-colors",
         isOpen
-          ? "bg-secondary text-secondary-foreground"
-          : "bg-secondary text-secondary-foreground hover:bg-secondary/90",
+          ? "border-vibrant-green/40 bg-vibrant-green/10 text-vibrant-green"
+          : "border-border text-foreground hover:bg-muted",
         className,
       )}
     >
-      <SparkleMark size={12} />
-      <span>Ask AI</span>
-      <span className="font-mono text-[10px] font-medium opacity-70">⌘ K</span>
+      <SparkleMark size={12} className="text-vibrant-green" />
+      <span>Assistant</span>
+      <span className="rounded-sm bg-muted px-1 py-px font-mono text-[10px] font-medium text-foreground-muted">
+        ⌘ K
+      </span>
     </button>
   );
 }

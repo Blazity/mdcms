@@ -56,6 +56,11 @@ import {
 } from "../../ai-route-api.js";
 import { BreadcrumbTrail } from "../components/layout/page-header.js";
 import { AssistantLauncher } from "../components/assistant/assistant-launcher.js";
+import {
+  AssistantActiveDocumentProvider,
+  useAssistant,
+  type AssistantActiveDocument,
+} from "../components/assistant/assistant-context.js";
 import { Badge } from "../components/ui/badge.js";
 import { Button } from "../components/ui/button.js";
 import {
@@ -75,12 +80,12 @@ import {
   TooltipTrigger,
 } from "../components/ui/tooltip.js";
 import {
-  AlertCircle,
   Check,
   Globe,
   PanelRight,
   PanelRightClose,
   Send,
+  X,
 } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import {
@@ -1899,23 +1904,23 @@ function renderSchemaRecoveryBanner(input: {
   return (
     <section
       data-mdcms-schema-recovery-state="mismatch"
-      className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-foreground"
+      className="rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <p className="font-medium">Schema changes detected</p>
-          <p className="text-foreground-muted">
+          <p className="text-amber-900/80 dark:text-amber-100/80">
             {SCHEMA_MISMATCH_WRITE_MESSAGE}
           </p>
-          <div className="grid gap-2 text-xs text-foreground-muted sm:grid-cols-2">
+          <div className="grid gap-2 text-xs text-amber-900/80 dark:text-amber-100/80 sm:grid-cols-2">
             <p data-mdcms-schema-recovery-hash="local">
-              <span className="font-medium text-foreground">
+              <span className="font-medium text-amber-900 dark:text-amber-100">
                 Local schema hash
               </span>{" "}
               <code>{localSchemaHash}</code>
             </p>
             <p data-mdcms-schema-recovery-hash="server">
-              <span className="font-medium text-foreground">
+              <span className="font-medium text-amber-900 dark:text-amber-100">
                 Server schema hash
               </span>{" "}
               <code>{serverSchemaHash}</code>
@@ -2044,11 +2049,22 @@ function DocumentCanvasHeader({
         <span aria-hidden="true">📄</span>
         <span className="break-all">{fullPath}</span>
       </span>
-      <div className="flex flex-wrap gap-x-4 gap-y-1.5 border-y border-dashed border-border py-3 font-mono text-[11px] text-foreground-muted">
-        {fmEntries.map(([key, value]) => (
-          <span key={key} className="inline-flex gap-1.5">
-            <span className="text-primary">{key}</span>
-            <span className="text-foreground">{value}</span>
+      <div className="flex flex-wrap items-baseline border-y border-dashed border-border py-2.5">
+        {fmEntries.map(([key, value], index) => (
+          <span
+            key={key}
+            className={cn(
+              "inline-flex items-baseline gap-2 px-3.5 py-1",
+              index > 0 && "border-l border-dashed border-border",
+              index === 0 && "pl-0",
+            )}
+          >
+            <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-foreground-muted">
+              {key}
+            </span>
+            <span className="text-[13px] font-medium text-foreground">
+              {value}
+            </span>
           </span>
         ))}
       </div>
@@ -2492,6 +2508,7 @@ function ContentDocumentPageSidebar(props: {
   onFrontmatterFieldChange?: (fieldName: string, value: unknown) => void;
   onViewVersion?: (version: number) => void;
   onBackToDraft?: () => void;
+  onClose?: () => void;
 }) {
   const hasComponentTab = Boolean(props.context && props.activeMdxComponent);
   const [activeTab, setActiveTab] = useState<
@@ -2512,12 +2529,12 @@ function ContentDocumentPageSidebar(props: {
   return (
     <aside
       data-mdcms-editor-pane="sidebar"
-      className="flex w-80 shrink-0 flex-col border-l border-border bg-card"
+      className="flex h-full w-full shrink-0 flex-col border-l border-border bg-card"
     >
       {/* Tabs — mono uppercase, bottom-border accent on active.
           Stable tabs (Info, Properties, History) with a contextual
           Component tab when an MDX block is selected. */}
-      <div className="flex border-b border-border">
+      <div className="flex items-stretch border-b border-border">
         <SidebarTabButton
           label="Info"
           active={activeTab === "info"}
@@ -2540,6 +2557,16 @@ function ContentDocumentPageSidebar(props: {
           active={activeTab === "history"}
           onClick={() => setActiveTab("history")}
         />
+        {props.onClose ? (
+          <button
+            type="button"
+            onClick={props.onClose}
+            aria-label="Close properties (Esc)"
+            className="ml-auto flex shrink-0 items-center justify-center px-3 text-foreground-muted transition-colors hover:text-foreground"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+        ) : null}
       </div>
 
       {/* Tab content */}
@@ -2652,266 +2679,327 @@ export function ContentDocumentPageView({
     state.document.hasUnpublishedChanges &&
     state.publishState !== "publishing";
 
-  return (
-    <TooltipProvider>
-      <div
-        data-mdcms-editor-layout="document"
-        data-mdcms-document-state={state.status}
-        data-mdcms-document-write-state={writeState}
-        className="flex h-screen min-w-0 flex-col overflow-x-hidden"
-      >
-        <header className="sticky top-0 z-30 flex h-14 min-w-0 items-center gap-3 border-b border-border bg-card px-6">
-          <div className="flex min-w-0 flex-1 items-center gap-4">
-            <BreadcrumbTrail
-              className="flex-1"
-              breadcrumbs={[
-                { label: "Content", href: "/admin/content" },
-                {
-                  label: state.typeLabel,
-                  href: `/admin/content/${state.typeId}`,
-                },
-                { label: documentLabel },
-              ]}
-            />
+  const canSaveNow =
+    state.status === "ready" &&
+    state.canWrite &&
+    state.saveState === "unsaved" &&
+    state.publishState !== "publishing" &&
+    !state.viewingVersion;
 
-            <div className="flex shrink-0 items-center gap-2 text-sm">
-              {state.status === "ready" &&
-              state.document.hasUnpublishedChanges ? (
-                <span
-                  data-mdcms-document-unpublished-changes="true"
-                  className="rounded-sm bg-vibrant-green px-2 py-0.5 font-mono text-[10px] font-bold tracking-wider text-[#516600]"
-                >
-                  UNPUBLISHED CHANGES
-                </span>
-              ) : null}
-              {state.status === "ready" && state.saveState === "saved" ? (
-                <>
-                  <Check className="h-4 w-4 text-success" />
-                  <span className="text-foreground-muted">Saved</span>
-                </>
-              ) : null}
-              {state.status === "ready" && state.saveState === "saving" ? (
-                <span className="animate-pulse text-foreground-muted">
-                  Saving...
-                </span>
-              ) : null}
-              {state.status === "ready" && state.saveState === "unsaved" ? (
-                <>
-                  <AlertCircle className="h-4 w-4 text-warning" />
-                  <span className="text-warning">Unsaved changes</span>
-                </>
-              ) : null}
+  // The Properties pane renders as a docked column when the assistant
+  // is closed (3 columns: app rail · editor · properties) and as an
+  // overlay slide-over when the assistant is open (4 columns would
+  // squeeze the editor). The container auto-collapses Properties on
+  // assistant-open; the View just needs the bit to pick render mode.
+  const assistantOpen = useAssistant().isOpen;
+
+  useEffect(() => {
+    if (!canSaveNow) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "s" && event.key !== "S") return;
+      if (!(event.metaKey || event.ctrlKey)) return;
+      // Don't fire when a modal/composer captured the shortcut already.
+      if (event.defaultPrevented) return;
+      event.preventDefault();
+      onSaveNow?.();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [canSaveNow, onSaveNow]);
+
+  // Publish the active document to the assistant rail so the chat surface
+  // can attach the right document context + resolve the schema hash on
+  // accept. The chat-level selection UX is a future surface; for now we
+  // only thread document identity + schemaHash, which is what the apply
+  // route requires.
+  const assistantActiveDocument =
+    useMemo<AssistantActiveDocument | null>(() => {
+      if (state.status !== "ready") return null;
+      const schemaHash = resolveSchemaHashForAi(state.schemaState);
+      if (!schemaHash) return null;
+      const documentId = state.document.documentId;
+      if (!documentId) return null;
+      return {
+        documentId,
+        path: state.document.path,
+        schemaHash,
+        project: state.route.project,
+        environment: state.route.initialEnvironment,
+      };
+    }, [
+      state.status,
+      state.status === "ready" ? state.document.documentId : undefined,
+      state.status === "ready" ? state.document.path : undefined,
+      state.status === "ready" ? state.schemaState : undefined,
+      state.status === "ready" ? state.route.project : undefined,
+      state.status === "ready" ? state.route.initialEnvironment : undefined,
+    ]);
+
+  return (
+    <AssistantActiveDocumentProvider value={assistantActiveDocument}>
+      <TooltipProvider>
+        <div
+          data-mdcms-editor-layout="document"
+          data-mdcms-document-state={state.status}
+          data-mdcms-document-write-state={writeState}
+          className="flex h-screen min-w-0 flex-col overflow-x-hidden"
+        >
+          <header className="sticky top-0 z-30 flex h-14 min-w-0 items-center gap-3 border-b border-border bg-card px-6">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
+              <BreadcrumbTrail
+                className="flex-1"
+                breadcrumbs={[
+                  { label: "Content", href: "/admin/content" },
+                  {
+                    label: state.typeLabel,
+                    href: `/admin/content/${state.typeId}`,
+                  },
+                  { label: documentLabel },
+                ]}
+              />
+
               {state.status === "loading" ? (
-                <span className="text-foreground-muted">
+                <span className="shrink-0 text-sm text-foreground-muted">
                   Loading document draft...
                 </span>
               ) : null}
             </div>
-          </div>
 
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            {state.status === "ready" &&
-            state.localized &&
-            state.route.supportedLocales &&
-            state.route.supportedLocales.length > 0 ? (
-              <Select
-                value={state.variantCreation?.targetLocale ?? state.locale}
-                onValueChange={(value) => onLocaleSwitch?.(value)}
-                disabled={state.variantCreation?.status === "creating"}
-              >
-                <SelectTrigger className="h-8 w-auto min-w-[88px] gap-1.5 text-xs">
-                  <Globe className="h-3.5 w-3.5 shrink-0" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {filterLocaleOptions({
-                    supportedLocales: state.route.supportedLocales,
-                    translationVariants: state.translationVariants,
-                    canWrite: state.canWrite,
-                    variantsFetchFailed: state.variantsFetchFailed,
-                  }).map(({ locale: loc, hasVariant }) => (
-                    <SelectItem key={loc} value={loc}>
-                      {hasVariant ? loc : `+ ${loc}`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : null}
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              {state.status === "ready" &&
+              state.localized &&
+              state.route.supportedLocales &&
+              state.route.supportedLocales.length > 0 ? (
+                <Select
+                  value={state.variantCreation?.targetLocale ?? state.locale}
+                  onValueChange={(value) => onLocaleSwitch?.(value)}
+                  disabled={state.variantCreation?.status === "creating"}
+                >
+                  <SelectTrigger className="h-8 w-auto min-w-[88px] gap-1.5 text-xs">
+                    <Globe className="h-3.5 w-3.5 shrink-0" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filterLocaleOptions({
+                      supportedLocales: state.route.supportedLocales,
+                      translationVariants: state.translationVariants,
+                      canWrite: state.canWrite,
+                      variantsFetchFailed: state.variantsFetchFailed,
+                    }).map(({ locale: loc, hasVariant }) => (
+                      <SelectItem key={loc} value={loc}>
+                        {hasVariant ? loc : `+ ${loc}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
 
-            {state.status === "ready" && !state.canWrite ? (
-              <Badge variant="outline" className="text-xs">
-                Read-only
-              </Badge>
-            ) : null}
+              {state.status === "ready" && !state.canWrite ? (
+                <Badge variant="outline" className="text-xs">
+                  Read-only
+                </Badge>
+              ) : null}
 
-            <AssistantLauncher className="h-8 px-2.5 text-[11px]" />
+              <AssistantLauncher className="h-8 px-2.5 text-[11px]" />
 
-            {state.status === "ready" && state.canWrite ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={
-                  state.saveState !== "unsaved" ||
-                  state.publishState === "publishing" ||
-                  !!state.viewingVersion
-                }
-                onClick={() => onSaveNow?.()}
-                data-mdcms-document-save-now="true"
-              >
-                {state.saveState === "saving" ? "Saving..." : "Save draft"}
-              </Button>
-            ) : null}
-
-            {state.status === "ready" ? (
-              <Button
-                size="sm"
-                disabled={!canPublish}
-                onClick={() => onPublishDialogOpenChange?.(true)}
-              >
-                <Send className="mr-2 h-4 w-4" />
-                Publish
-              </Button>
-            ) : null}
-
-            <Tooltip>
-              <TooltipTrigger asChild>
+              {state.status === "ready" && state.canWrite ? (
                 <Button
                   variant="ghost"
-                  size="icon-sm"
-                  onClick={onToggleSidebar}
+                  size="sm"
+                  disabled={
+                    state.saveState !== "unsaved" ||
+                    state.publishState === "publishing" ||
+                    !!state.viewingVersion
+                  }
+                  onClick={() => onSaveNow?.()}
+                  data-mdcms-document-save-now="true"
+                  data-mdcms-document-save-state={state.saveState}
+                  aria-label={
+                    state.saveState === "saved"
+                      ? "Saved"
+                      : state.saveState === "saving"
+                        ? "Saving"
+                        : "Save draft"
+                  }
                 >
-                  {sidebarOpen ? (
-                    <PanelRightClose className="h-4 w-4" />
+                  {state.saveState === "saved" ? (
+                    <span className="inline-flex items-center gap-1.5 text-foreground-muted">
+                      <Check className="h-3.5 w-3.5 text-success" aria-hidden />
+                      Saved
+                    </span>
+                  ) : state.saveState === "saving" ? (
+                    <span className="inline-flex animate-pulse items-center text-foreground-muted">
+                      Saving…
+                    </span>
                   ) : (
-                    <PanelRight className="h-4 w-4" />
+                    <span className="inline-flex items-center gap-2">
+                      Save draft
+                      <span className="rounded-sm bg-muted px-1 py-px font-mono text-[10px] font-medium text-foreground-muted">
+                        ⌘ S
+                      </span>
+                    </span>
                   )}
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        </header>
+              ) : null}
 
-        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-          <div
-            data-mdcms-editor-pane="canvas"
-            className="flex min-w-0 flex-1 flex-col overflow-hidden"
-          >
-            {state.status !== "ready" ? (
-              <div className="overflow-y-auto p-6">
-                <div className="mx-auto max-w-4xl">
-                  <ContentDocumentPageStatusView
-                    state={state}
-                    onGoBack={onGoBack}
-                  />
-                </div>
-              </div>
-            ) : state.variantCreation ? (
-              <div className="flex flex-1 items-center justify-center p-6">
-                <div className="max-w-md text-center">
-                  <Globe className="mx-auto mb-4 h-10 w-10 text-foreground-muted" />
-                  <p className="mb-1 text-base font-medium">
-                    No {state.variantCreation.targetLocale} variant exists yet
-                  </p>
-                  <p className="mb-5 text-sm text-foreground-muted">
-                    Create a translation variant for this document to start
-                    editing in {state.variantCreation.targetLocale}.
-                  </p>
-                  {state.variantCreation.error ? (
-                    <div className="mb-4 rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                      {state.variantCreation.error}
-                    </div>
+              {state.status === "ready" ? (
+                <Button
+                  size="sm"
+                  disabled={!canPublish}
+                  onClick={() => onPublishDialogOpenChange?.(true)}
+                  data-mdcms-document-unpublished-changes={
+                    state.document.hasUnpublishedChanges ? "true" : undefined
+                  }
+                >
+                  <Send className="mr-2 h-4 w-4" />
+                  Publish
+                  {state.document.hasUnpublishedChanges ? (
+                    <span className="ml-2 rounded-sm bg-black/20 px-1.5 py-0.5 font-mono text-[10px] font-medium text-primary-foreground">
+                      unpublished
+                    </span>
                   ) : null}
-                  <div className="flex items-center justify-center gap-3">
-                    <Button
-                      variant="ghost"
-                      disabled={state.variantCreation.status === "creating"}
-                      onClick={() => onCreateVariant?.(false)}
-                    >
-                      Create empty
-                    </Button>
-                    <Button
-                      disabled={state.variantCreation.status === "creating"}
-                      onClick={() => onCreateVariant?.(true)}
-                    >
-                      {state.variantCreation.status === "creating"
-                        ? "Creating..."
-                        : `Pre-fill from ${state.variantCreation.sourceLocale}`}
-                    </Button>
+                </Button>
+              ) : null}
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={onToggleSidebar}
+                  >
+                    {sidebarOpen ? (
+                      <PanelRightClose className="h-4 w-4" />
+                    ) : (
+                      <PanelRight className="h-4 w-4" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </header>
+
+          <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+            <div
+              data-mdcms-editor-pane="canvas"
+              className="flex min-w-0 flex-1 flex-col overflow-hidden"
+            >
+              {state.status !== "ready" ? (
+                <div className="overflow-y-auto p-6">
+                  <div className="mx-auto max-w-4xl">
+                    <ContentDocumentPageStatusView
+                      state={state}
+                      onGoBack={onGoBack}
+                    />
                   </div>
                 </div>
-              </div>
-            ) : (
-              <TipTapEditor
-                ref={editorRef}
-                initialContent={state.draftBody}
-                context={context}
-                onChange={onDraftChange}
-                onActiveMdxComponentChange={onActiveMdxComponentChange}
-                onSelectionTextChange={onAiSelectionChange}
-                readOnly={!state.canWrite || !!state.viewingVersion}
-                forbidden={false}
-                canvasHeader={
-                  <div className="space-y-3 pb-1">
-                    {/* Path chip + dashed-border frontmatter mono row */}
-                    <DocumentCanvasHeader state={state} />
-
-                    {state.schemaState?.status === "project-mismatch"
-                      ? renderProjectMismatchBanner(state.schemaState)
-                      : hasSchemaRecoveryMismatch(state.schemaState)
-                        ? renderSchemaRecoveryBanner({
-                            state,
-                            onSchemaSync,
-                          })
-                        : null}
-
-                    {state.mutationError ? (
-                      <div
-                        data-mdcms-document-mutation-state="error"
-                        className="rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
-                      >
-                        {state.mutationError}
+              ) : state.variantCreation ? (
+                <div className="flex flex-1 items-center justify-center p-6">
+                  <div className="max-w-md text-center">
+                    <Globe className="mx-auto mb-4 h-10 w-10 text-foreground-muted" />
+                    <p className="mb-1 text-base font-medium">
+                      No {state.variantCreation.targetLocale} variant exists yet
+                    </p>
+                    <p className="mb-5 text-sm text-foreground-muted">
+                      Create a translation variant for this document to start
+                      editing in {state.variantCreation.targetLocale}.
+                    </p>
+                    {state.variantCreation.error ? (
+                      <div className="mb-4 rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                        {state.variantCreation.error}
                       </div>
                     ) : null}
-
-                    {!state.canWrite &&
-                    state.writeMessage &&
-                    !hasSchemaRecoveryMismatch(state.schemaState) &&
-                    state.schemaState?.status !== "project-mismatch" ? (
-                      <div className="rounded-md border border-border bg-background-subtle px-4 py-3 text-sm text-foreground-muted">
-                        {state.writeMessage}
-                      </div>
-                    ) : null}
-
-                    {state.publishError ? (
-                      <div
-                        data-mdcms-document-publish-state="error"
-                        className="rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+                    <div className="flex items-center justify-center gap-3">
+                      <Button
+                        variant="ghost"
+                        disabled={state.variantCreation.status === "creating"}
+                        onClick={() => onCreateVariant?.(false)}
                       >
-                        {state.publishError}
-                      </div>
-                    ) : null}
-
-                    {state.viewingVersion ? (
-                      <div
-                        data-mdcms-viewing-version={
-                          state.viewingVersion.version
-                        }
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/5 px-4 py-2.5"
+                        Create empty
+                      </Button>
+                      <Button
+                        disabled={state.variantCreation.status === "creating"}
+                        onClick={() => onCreateVariant?.(true)}
                       >
-                        <p className="text-sm font-medium">
-                          Viewing version {state.viewingVersion.version}
-                          {state.viewingVersion.status === "loading"
-                            ? " — Loading..."
-                            : null}
-                          {state.restoreVersionState === "restoring"
-                            ? " — Restoring..."
-                            : null}
-                        </p>
-                        <div className="flex items-center gap-1">
-                          {/* "Restore this version" copies the viewed
+                        {state.variantCreation.status === "creating"
+                          ? "Creating..."
+                          : `Pre-fill from ${state.variantCreation.sourceLocale}`}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <TipTapEditor
+                  ref={editorRef}
+                  initialContent={state.draftBody}
+                  context={context}
+                  onChange={onDraftChange}
+                  onActiveMdxComponentChange={onActiveMdxComponentChange}
+                  onSelectionTextChange={onAiSelectionChange}
+                  readOnly={!state.canWrite || !!state.viewingVersion}
+                  forbidden={false}
+                  canvasHeader={
+                    <div className="space-y-3 pb-1">
+                      {/* Path chip + dashed-border frontmatter mono row */}
+                      <DocumentCanvasHeader state={state} />
+
+                      {state.schemaState?.status === "project-mismatch"
+                        ? renderProjectMismatchBanner(state.schemaState)
+                        : hasSchemaRecoveryMismatch(state.schemaState)
+                          ? renderSchemaRecoveryBanner({
+                              state,
+                              onSchemaSync,
+                            })
+                          : null}
+
+                      {state.mutationError ? (
+                        <div
+                          data-mdcms-document-mutation-state="error"
+                          className="rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+                        >
+                          {state.mutationError}
+                        </div>
+                      ) : null}
+
+                      {!state.canWrite &&
+                      state.writeMessage &&
+                      !hasSchemaRecoveryMismatch(state.schemaState) &&
+                      state.schemaState?.status !== "project-mismatch" ? (
+                        <div className="rounded-md border border-border bg-background-subtle px-4 py-3 text-sm text-foreground-muted">
+                          {state.writeMessage}
+                        </div>
+                      ) : null}
+
+                      {state.publishError ? (
+                        <div
+                          data-mdcms-document-publish-state="error"
+                          className="rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+                        >
+                          {state.publishError}
+                        </div>
+                      ) : null}
+
+                      {state.viewingVersion ? (
+                        <div
+                          data-mdcms-viewing-version={
+                            state.viewingVersion.version
+                          }
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/5 px-4 py-2.5"
+                        >
+                          <p className="text-sm font-medium">
+                            Viewing version {state.viewingVersion.version}
+                            {state.viewingVersion.status === "loading"
+                              ? " — Loading..."
+                              : null}
+                            {state.restoreVersionState === "restoring"
+                              ? " — Restoring..."
+                              : null}
+                          </p>
+                          <div className="flex items-center gap-1">
+                            {/* "Restore this version" copies the viewed
                               version's body + frontmatter back into the
                               document as a new draft. The edit isn't
                               published until the user clicks Publish,
@@ -2919,156 +3007,200 @@ export function ContentDocumentPageView({
                               and keeping the content:write scope sufficient
                               (publish requires content:publish, which not
                               every editor has). */}
-                          {state.canWrite ? (
+                            {state.canWrite ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-xs"
+                                disabled={
+                                  state.viewingVersion.status !== "ready" ||
+                                  state.restoreVersionState === "restoring"
+                                }
+                                data-mdcms-restore-version={
+                                  state.viewingVersion.version
+                                }
+                                onClick={() => {
+                                  const v = state.viewingVersion?.version;
+                                  if (typeof v === "number") {
+                                    onRestoreVersion?.(v);
+                                  }
+                                }}
+                              >
+                                {state.restoreVersionState === "restoring"
+                                  ? "Restoring..."
+                                  : "Restore this version"}
+                              </Button>
+                            ) : null}
                             <Button
                               variant="ghost"
                               size="sm"
                               className="text-xs"
                               disabled={
-                                state.viewingVersion.status !== "ready" ||
                                 state.restoreVersionState === "restoring"
                               }
-                              data-mdcms-restore-version={
-                                state.viewingVersion.version
-                              }
-                              onClick={() => {
-                                const v = state.viewingVersion?.version;
-                                if (typeof v === "number") {
-                                  onRestoreVersion?.(v);
-                                }
-                              }}
+                              onClick={() => onBackToDraft?.()}
                             >
-                              {state.restoreVersionState === "restoring"
-                                ? "Restoring..."
-                                : "Restore this version"}
+                              View latest
                             </Button>
-                          ) : null}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs"
-                            disabled={state.restoreVersionState === "restoring"}
-                            onClick={() => onBackToDraft?.()}
-                          >
-                            View latest
-                          </Button>
+                          </div>
                         </div>
-                      </div>
-                    ) : null}
+                      ) : null}
 
-                    {state.viewingVersion?.status === "error" ? (
-                      <div className="rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                        {state.viewingVersion.error}
-                      </div>
-                    ) : null}
+                      {state.viewingVersion?.status === "error" ? (
+                        <div className="rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                          {state.viewingVersion.error}
+                        </div>
+                      ) : null}
 
-                    {state.restoreVersionError ? (
-                      <div
-                        data-mdcms-document-restore-version-state="error"
-                        className="rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
-                      >
-                        {state.restoreVersionError}
-                      </div>
-                    ) : null}
-                  </div>
+                      {state.restoreVersionError ? (
+                        <div
+                          data-mdcms-document-restore-version-state="error"
+                          className="rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+                        >
+                          {state.restoreVersionError}
+                        </div>
+                      ) : null}
+                    </div>
+                  }
+                />
+              )}
+            </div>
+
+            {state.status === "ready" && !sidebarOpen ? (
+              <button
+                type="button"
+                onClick={onToggleSidebar}
+                data-mdcms-document-properties-handle="true"
+                aria-label="Open properties"
+                className="absolute right-0 top-1/2 z-10 inline-flex -translate-y-1/2 items-center gap-2 rounded-l-md border border-r-0 border-border bg-card px-2.5 py-2 font-mono text-[11px] uppercase tracking-wider text-foreground shadow-[-4px_0_12px_-4px_rgba(0,0,0,0.25)] transition-colors hover:bg-muted"
+              >
+                <span
+                  className="inline-block h-1.5 w-1.5 rounded-full bg-primary"
+                  aria-hidden
+                />
+                Properties
+              </button>
+            ) : null}
+            {state.status === "ready" && sidebarOpen && assistantOpen ? (
+              <div
+                data-mdcms-document-properties-overlay="slide-over"
+                className="absolute inset-y-0 right-0 z-20 flex w-96 animate-in fade-in slide-in-from-right-4 duration-200 motion-reduce:animate-none"
+                style={{
+                  boxShadow: "-12px 0 32px -8px rgba(0,0,0,0.45)",
+                }}
+              >
+                <ContentDocumentPageSidebar
+                  state={state}
+                  context={context}
+                  activeMdxComponent={activeMdxComponent}
+                  onFrontmatterFieldChange={onFrontmatterFieldChange}
+                  onViewVersion={onViewVersion}
+                  onBackToDraft={onBackToDraft}
+                  onClose={onToggleSidebar}
+                />
+              </div>
+            ) : null}
+            {state.status === "ready" && sidebarOpen && !assistantOpen ? (
+              <div
+                data-mdcms-document-properties-overlay="docked"
+                className="relative flex w-80 shrink-0"
+              >
+                <ContentDocumentPageSidebar
+                  state={state}
+                  context={context}
+                  activeMdxComponent={activeMdxComponent}
+                  onFrontmatterFieldChange={onFrontmatterFieldChange}
+                  onViewVersion={onViewVersion}
+                  onBackToDraft={onBackToDraft}
+                />
+              </div>
+            ) : null}
+
+            {state.status === "ready" &&
+            aiApi &&
+            editorRef &&
+            !state.viewingVersion ? (
+              <InlineAiBubble
+                api={aiApi}
+                enabled={state.canAi === true}
+                selection={aiSelection ?? null}
+                editorRef={
+                  editorRef as React.RefObject<TipTapEditorHandle | null>
+                }
+                options={{
+                  documentId: state.documentId,
+                  schemaHash: resolveSchemaHashForAi(state.schemaState),
+                }}
+                onApplied={
+                  onAiProposalApplied
+                    ? ({ document }) =>
+                        onAiProposalApplied({ bodyAfter: document.body })
+                    : undefined
                 }
               />
-            )}
+            ) : null}
           </div>
 
-          {state.status === "ready" && sidebarOpen ? (
-            <ContentDocumentPageSidebar
-              state={state}
-              context={context}
-              activeMdxComponent={activeMdxComponent}
-              onFrontmatterFieldChange={onFrontmatterFieldChange}
-              onViewVersion={onViewVersion}
-              onBackToDraft={onBackToDraft}
-            />
-          ) : null}
-
-          {state.status === "ready" &&
-          aiApi &&
-          editorRef &&
-          !state.viewingVersion ? (
-            <InlineAiBubble
-              api={aiApi}
-              enabled={state.canAi === true}
-              selection={aiSelection ?? null}
-              editorRef={
-                editorRef as React.RefObject<TipTapEditorHandle | null>
-              }
-              options={{
-                documentId: state.documentId,
-                schemaHash: resolveSchemaHashForAi(state.schemaState),
-              }}
-              onApplied={
-                onAiProposalApplied
-                  ? ({ document }) =>
-                      onAiProposalApplied({ bodyAfter: document.body })
-                  : undefined
-              }
-            />
+          {state.status === "ready" ? (
+            <Dialog
+              open={state.publishDialogOpen}
+              onOpenChange={onPublishDialogOpenChange}
+            >
+              <DialogContent
+                forceMount={state.publishDialogOpen ? true : undefined}
+                data-mdcms-publish-dialog="open"
+              >
+                <DialogHeader>
+                  <DialogTitle>Publish document</DialogTitle>
+                  <DialogDescription>
+                    This creates a new immutable version from the current draft.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">
+                      Change summary (optional)
+                    </label>
+                    <Textarea
+                      value={state.publishChangeSummary}
+                      onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
+                        onPublishChangeSummaryChange?.(
+                          event.currentTarget.value,
+                        )
+                      }
+                      placeholder="Describe what changed..."
+                      rows={3}
+                    />
+                  </div>
+                  <p className="text-sm text-foreground-muted">
+                    Current published version:{" "}
+                    {state.document.publishedVersion === null
+                      ? "Not published"
+                      : `v${state.document.publishedVersion}`}
+                  </p>
+                </div>
+                <DialogFooter>
+                  <Button
+                    variant="ghost"
+                    onClick={() => onPublishDialogOpenChange?.(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    disabled={state.publishState === "publishing"}
+                    onClick={onPublishSubmit}
+                  >
+                    {state.publishState === "publishing"
+                      ? "Publishing..."
+                      : "Publish"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           ) : null}
         </div>
-
-        {state.status === "ready" ? (
-          <Dialog
-            open={state.publishDialogOpen}
-            onOpenChange={onPublishDialogOpenChange}
-          >
-            <DialogContent
-              forceMount={state.publishDialogOpen ? true : undefined}
-              data-mdcms-publish-dialog="open"
-            >
-              <DialogHeader>
-                <DialogTitle>Publish document</DialogTitle>
-                <DialogDescription>
-                  This creates a new immutable version from the current draft.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">
-                    Change summary (optional)
-                  </label>
-                  <Textarea
-                    value={state.publishChangeSummary}
-                    onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-                      onPublishChangeSummaryChange?.(event.currentTarget.value)
-                    }
-                    placeholder="Describe what changed..."
-                    rows={3}
-                  />
-                </div>
-                <p className="text-sm text-foreground-muted">
-                  Current published version:{" "}
-                  {state.document.publishedVersion === null
-                    ? "Not published"
-                    : `v${state.document.publishedVersion}`}
-                </p>
-              </div>
-              <DialogFooter>
-                <Button
-                  variant="ghost"
-                  onClick={() => onPublishDialogOpenChange?.(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  disabled={state.publishState === "publishing"}
-                  onClick={onPublishSubmit}
-                >
-                  {state.publishState === "publishing"
-                    ? "Publishing..."
-                    : "Publish"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        ) : null}
-      </div>
-    </TooltipProvider>
+      </TooltipProvider>
+    </AssistantActiveDocumentProvider>
   );
 }
 
@@ -3121,6 +3253,29 @@ export default function ContentDocumentPage({
         }),
   );
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // When the global assistant opens it claims the right-side column.
+  // Collapse Properties to the handle so the editor body isn't squeezed
+  // between two persistent panels. When the assistant closes, restore
+  // the docked Properties column. Manual user toggles still work; this
+  // only fires on the assistant.isOpen transition itself.
+  const assistant = useAssistant();
+  const assistantOpen = assistant.isOpen;
+  const prevAssistantOpenRef = useRef(assistantOpen);
+  useEffect(() => {
+    if (prevAssistantOpenRef.current === assistantOpen) return;
+    prevAssistantOpenRef.current = assistantOpen;
+    setSidebarOpen(!assistantOpen);
+  }, [assistantOpen]);
+  // Esc dismisses the slide-over (only meaningful when Properties is
+  // overlaying the canvas — i.e. the assistant is open).
+  useEffect(() => {
+    if (!sidebarOpen || !assistantOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSidebarOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [sidebarOpen, assistantOpen]);
   const editorRef = useRef<TipTapEditorHandle>(null);
   const [activeMdxComponent, setActiveMdxComponent] =
     useState<MdxPropsPanelSelection | null>(null);

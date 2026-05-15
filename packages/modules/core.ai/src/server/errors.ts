@@ -13,6 +13,7 @@ const DEFAULT_STATUS_BY_CODE: Record<AiErrorCode, number> = {
   AI_CONTEXT_TOO_LARGE: 413,
   AI_OUTPUT_INVALID: 422,
   AI_UNSUPPORTED_TASK: 400,
+  AI_UNSUPPORTED_ACTION: 403,
 };
 
 const AI_ERROR_CODE_SET: ReadonlySet<AiErrorCode> = new Set(AI_ERROR_CODES);
@@ -86,23 +87,48 @@ export function mapProviderError(error: unknown): RuntimeError {
   }
 
   if (APICallError.isInstance(error)) {
-    if (error.statusCode === 429) {
-      return aiError("AI_RATE_LIMITED", "AI provider rate limit exceeded.", {
+    // Capture provider response detail so server logs and the error
+    // surface in chat show what actually failed (rate-limit reason,
+    // schema rejection text, etc.) instead of a generic "request
+    // failed".
+    const providerDetail = (() => {
+      const body = (error as { responseBody?: unknown }).responseBody;
+      const text = typeof body === "string" ? body : undefined;
+      return {
         cause: error.name,
-      });
+        ...(typeof error.statusCode === "number"
+          ? { providerStatusCode: error.statusCode }
+          : {}),
+        ...(text ? { providerResponse: text.slice(0, 1000) } : {}),
+        providerMessage: error.message,
+      };
+    })();
+    if (error.statusCode === 429) {
+      return aiError(
+        "AI_RATE_LIMITED",
+        "AI provider rate limit exceeded.",
+        providerDetail,
+      );
     }
 
     if (error.statusCode === 413) {
       return aiError(
         "AI_CONTEXT_TOO_LARGE",
         "AI provider rejected the request as too large.",
-        { cause: error.name },
+        providerDetail,
       );
     }
 
-    return aiError("AI_PROVIDER_UNAVAILABLE", PROVIDER_FAILURE_MESSAGE, {
-      cause: error.name,
-    });
+    // Surface the provider's own message in the RuntimeError text so
+    // operators (and the user) see *why* the provider failed (e.g.
+    // strict-mode schema rejection details).
+    return aiError(
+      "AI_PROVIDER_UNAVAILABLE",
+      error.message
+        ? `AI provider request failed: ${error.message}`
+        : PROVIDER_FAILURE_MESSAGE,
+      providerDetail,
+    );
   }
 
   if (error instanceof Error) {

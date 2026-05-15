@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   AtSign,
+  ChevronRight,
   Maximize2,
   Minimize2,
   MoreHorizontal,
@@ -14,8 +15,17 @@ import {
 import { cn } from "../../lib/utils.js";
 import { Button } from "../ui/button.js";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu.js";
+import {
   ASSISTANT_COMPOSER_DATA_ATTR,
+  type AssistantActiveDocument,
   useAssistant,
+  useAssistantActiveDocument,
   relTime,
 } from "./assistant-context.js";
 import type {
@@ -25,6 +35,8 @@ import type {
 } from "./assistant-types.js";
 import { ProposalCard } from "./proposal-card.js";
 import { SparkleMark } from "./sparkle-mark.js";
+import { useStudioApiConfig } from "../../app/admin/mount-info-context.js";
+import { createStudioDocumentRouteApi } from "../../../document-route-api.js";
 
 export type AssistantPanelProps = {
   /** Hide the close (×) button — used when the surface chrome owns dismissal. */
@@ -41,10 +53,12 @@ function ThreadList({
   threads,
   activeId,
   onPick,
+  onCreate,
 }: {
   threads: AssistantThread[];
   activeId: string;
   onPick: (id: string) => void;
+  onCreate: () => void;
 }) {
   return (
     <div className="flex h-full w-[220px] shrink-0 flex-col border-r border-divider/40 bg-background-subtle">
@@ -53,9 +67,11 @@ function ThreadList({
           Conversations
         </span>
         <Button
+          type="button"
           variant="ghost"
           size="sm"
           className="h-6 gap-1 px-2 text-[11px]"
+          onClick={onCreate}
         >
           <Plus className="h-3 w-3" aria-hidden /> New
         </Button>
@@ -95,52 +111,77 @@ function ThreadList({
   );
 }
 
-type MentionCandidate = { path: string; type: string; locale: string };
+type MentionCandidate = {
+  documentId?: string;
+  path: string;
+  type: string;
+  locale: string;
+};
 
 /**
- * Build a candidate list for the @-mention picker. The list is sourced
- * from the active assistant store: every distinct document that already
- * appears as a thread context, attached selection, or proposal target
- * is a candidate. This keeps the picker fully self-contained while the
- * server-backed content-search endpoint for chat lands in a follow-up.
+ * Server-backed mention candidate fetch. Debounces the query so the
+ * picker doesn't fan out a request per keystroke, aborts in-flight
+ * requests when the user keeps typing, and exposes loading + error
+ * states for the dropdown to render. Scoped to the active studio
+ * project/environment via the mount info context.
  */
-function useMentionCandidates(): MentionCandidate[] {
-  const assistant = useAssistant();
-  return React.useMemo(() => {
-    const seen = new Map<string, MentionCandidate>();
-    const add = (
-      path: string | undefined,
-      type: string | undefined,
-      locale: string | undefined,
-    ) => {
-      if (!path || seen.has(path)) return;
-      seen.set(path, {
-        path,
-        type: type ?? "doc",
-        locale: locale ?? "en",
-      });
-    };
-    for (const thread of assistant.store.threads) {
-      for (const doc of thread.contextDocs) add(doc.path, doc.type, doc.locale);
-      add(
-        thread.attachedSelection?.path,
-        undefined,
-        thread.attachedSelection ? "en" : undefined,
+function useServerMentionCandidates(query: string): {
+  candidates: MentionCandidate[];
+  loading: boolean;
+  error: string | null;
+} {
+  const apiConfig = useStudioApiConfig();
+  const [state, setState] = React.useState<{
+    candidates: MentionCandidate[];
+    loading: boolean;
+    error: string | null;
+  }>({ candidates: [], loading: false, error: null });
+
+  React.useEffect(() => {
+    if (!apiConfig) {
+      setState({ candidates: [], loading: false, error: null });
+      return;
+    }
+    setState((s) => ({ ...s, loading: true, error: null }));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      const api = createStudioDocumentRouteApi(
+        apiConfig.config,
+        apiConfig.authOptions,
       );
-    }
-    for (const proposal of Object.values(assistant.store.proposals)) {
-      if (proposal.kind === "batch") {
-        for (const child of proposal.children) {
-          add(child.docPath, "doc", child.locale);
-        }
-      } else if ("docPath" in proposal) {
-        add(proposal.docPath, proposal.type, proposal.locale);
-      }
-    }
-    return Array.from(seen.values()).sort((a, b) =>
-      a.path.localeCompare(b.path),
-    );
-  }, [assistant.store]);
+      api
+        .listContent({
+          q: query.length > 0 ? query : undefined,
+          limit: 20,
+          signal: controller.signal,
+        })
+        .then((response) => {
+          if (controller.signal.aborted) return;
+          const mapped: MentionCandidate[] = response.data.map((doc) => ({
+            ...(doc.documentId ? { documentId: doc.documentId } : {}),
+            path: doc.path,
+            type: doc.type,
+            locale: doc.locale,
+          }));
+          setState({ candidates: mapped, loading: false, error: null });
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Failed to load documents.";
+          setState({ candidates: [], loading: false, error: message });
+        });
+    }, 200);
+
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [apiConfig, query]);
+
+  return state;
 }
 
 function MentionPicker({
@@ -151,17 +192,33 @@ function MentionPicker({
 }: {
   query: string;
   excludePaths: Set<string>;
-  onPick: (path: string, type: string, locale: string) => void;
+  onPick: (candidate: MentionCandidate) => void;
   onClose: () => void;
 }) {
-  const candidates = useMentionCandidates();
-  const filtered = React.useMemo(() => {
-    const q = query.toLowerCase();
-    return candidates
-      .filter((c) => !excludePaths.has(c.path))
-      .filter((c) => !q || c.path.toLowerCase().includes(q))
-      .slice(0, 8);
-  }, [candidates, query, excludePaths]);
+  const { candidates, loading, error } = useServerMentionCandidates(query);
+  const filtered = React.useMemo(
+    () => candidates.filter((c) => !excludePaths.has(c.path)).slice(0, 8),
+    [candidates, excludePaths],
+  );
+
+  if (error) {
+    return (
+      <div
+        role="listbox"
+        aria-label="Document picker"
+        className="absolute bottom-full left-3 right-3 mb-1 rounded-md border border-divider/60 bg-popover px-3 py-3 text-[12px] text-destructive shadow-lg"
+      >
+        Couldn't search documents — {error}.{" "}
+        <button
+          type="button"
+          onClick={onClose}
+          className="ml-1 underline hover:text-foreground"
+        >
+          dismiss
+        </button>
+      </div>
+    );
+  }
 
   if (filtered.length === 0) {
     return (
@@ -170,8 +227,15 @@ function MentionPicker({
         aria-label="Document picker"
         className="absolute bottom-full left-3 right-3 mb-1 rounded-md border border-divider/60 bg-popover px-3 py-3 text-[12px] text-foreground-muted shadow-lg"
       >
-        No documents match{" "}
-        {query ? <code className="font-mono">@{query}</code> : "yet"}.{" "}
+        {loading ? (
+          "Searching documents…"
+        ) : query ? (
+          <>
+            No documents match <code className="font-mono">@{query}</code>.{" "}
+          </>
+        ) : (
+          "Start typing to search documents. "
+        )}
         <button
           type="button"
           onClick={onClose}
@@ -197,7 +261,7 @@ function MentionPicker({
           key={c.path}
           type="button"
           role="option"
-          onClick={() => onPick(c.path, c.type, c.locale)}
+          onClick={() => onPick(c)}
           className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors hover:bg-accent-subtle"
         >
           <span className="shrink-0 rounded-sm bg-blue-100 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-primary">
@@ -217,30 +281,36 @@ function MentionPicker({
 
 function ContextChips({
   thread,
+  activeDocument,
   onClearSelection,
   onRemoveDoc,
 }: {
   thread: AssistantThread;
+  activeDocument: AssistantActiveDocument | null;
   onClearSelection: () => void;
   onRemoveDoc: (path: string) => void;
 }) {
-  const current = thread.contextDocs[0];
-  const others = thread.contextDocs.slice(1);
   const sel = thread.attachedSelection;
+  // Render mention-added context docs as `+` chips, skipping any that
+  // already represent the active editor doc (path-matched) so we don't
+  // double up if the user mentions the doc they're currently editing.
+  const extras = activeDocument
+    ? thread.contextDocs.filter((d) => d.path !== activeDocument.path)
+    : thread.contextDocs;
   return (
     <div className="-mb-px flex flex-wrap items-center gap-1.5 rounded-t-lg border border-b-0 border-divider/60 bg-card px-2.5 py-1.5">
       <span className="mr-0.5 font-mono text-[9px] uppercase tracking-wider text-foreground-muted">
         Context
       </span>
-      {current && (
+      {activeDocument && (
         <span
           className="inline-flex items-center gap-1.5 rounded-sm border border-divider/60 bg-card px-1.5 py-0.5 font-mono text-[10.5px] text-foreground-muted"
-          title={`Current document — ${current.path}`}
+          title={`Current document — ${activeDocument.path}`}
         >
           <span className="text-primary">◆</span> current
         </span>
       )}
-      {others.map((d) => (
+      {extras.map((d) => (
         <span
           key={d.path}
           className="inline-flex items-center gap-1.5 rounded-sm border border-divider/60 bg-card px-1.5 py-0.5 font-mono text-[10.5px] text-foreground-muted"
@@ -282,6 +352,29 @@ function ContextChips({
   );
 }
 
+function EmptyThreadHint() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 px-6 py-12 text-center text-foreground-muted">
+      <span className="text-primary">
+        <SparkleMark size={28} />
+      </span>
+      <div className="max-w-xs space-y-1.5">
+        <div className="text-[13.5px] font-semibold text-foreground">
+          Start a conversation
+        </div>
+        <div className="text-[12px] leading-snug">
+          Ask the assistant to edit the active draft, write a new post, or
+          delete a stale one. Use{" "}
+          <code className="rounded bg-muted px-1 font-mono text-[10.5px]">
+            @
+          </code>{" "}
+          to attach another document for context.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function UserBubble({ message }: { message: AssistantMessage }) {
   return (
     <div className="mb-4 flex justify-end">
@@ -306,7 +399,10 @@ function AssistantBubble({
   const proposalIds = message.proposals ?? [];
   const text = message.text?.trim();
   if (proposalIds.length === 0 && !text) return null;
-  const isSingleTurn = proposalIds.length === 1;
+  const proposals = proposalIds
+    .map((pid) => proposalsById[pid])
+    .filter((p): p is AssistantProposal => Boolean(p));
+  const isMultiTurn = proposals.length > 1;
   return (
     <div className="mb-5 space-y-2">
       {text && (
@@ -314,22 +410,308 @@ function AssistantBubble({
           {text}
         </div>
       )}
-      {proposalIds.map((pid, i) => {
-        const proposal = proposalsById[pid];
-        if (!proposal) return null;
-        // Single-suggestion turns expand by default; multi-proposal turns
-        // collapse all but the first to keep the conversation scannable.
-        const defaultCollapsed = !isSingleTurn && i > 0;
-        return (
+      {!isMultiTurn &&
+        proposals.map((proposal) => (
           <ProposalCard
-            key={pid}
+            key={proposal.proposalId}
             proposal={proposal}
-            defaultCollapsed={defaultCollapsed}
-            onAccept={() => onAccept(pid)}
-            onReject={(feedback) => onReject(pid, feedback)}
+            onAccept={() => onAccept(proposal.proposalId)}
+            onReject={(feedback) => onReject(proposal.proposalId, feedback)}
           />
-        );
-      })}
+        ))}
+      {isMultiTurn && (
+        <TurnGroup
+          proposals={proposals}
+          onAccept={onAccept}
+          onReject={onReject}
+        />
+      )}
+    </div>
+  );
+}
+
+const TURN_KIND_LABEL: Record<AssistantProposal["kind"], string> = {
+  replace_selection: "Edit",
+  insert_block: "Insert",
+  update_frontmatter: "Frontmatter",
+  create_document: "New doc",
+  delete_document: "Delete",
+};
+
+const TURN_KIND_TONE: Record<
+  AssistantProposal["kind"],
+  { bg: string; fg: string }
+> = {
+  replace_selection: {
+    bg: "bg-primary/15",
+    fg: "text-primary",
+  },
+  insert_block: {
+    bg: "bg-vibrant-green/15",
+    fg: "text-vibrant-green",
+  },
+  update_frontmatter: {
+    bg: "bg-primary/15",
+    fg: "text-primary",
+  },
+  create_document: {
+    bg: "bg-vibrant-green/15",
+    fg: "text-vibrant-green",
+  },
+  delete_document: {
+    bg: "bg-destructive/15",
+    fg: "text-destructive",
+  },
+};
+
+function diffStatsFor(proposal: AssistantProposal): {
+  added: number;
+  removed: number;
+} {
+  if (proposal.diffStats) return proposal.diffStats;
+  if (proposal.kind === "replace_selection") {
+    return {
+      added: proposal.op.replacementText.split("\n").length,
+      removed: proposal.op.originalText.split("\n").length,
+    };
+  }
+  if (proposal.kind === "insert_block") {
+    return { added: proposal.op.bodyMdx.split("\n").length, removed: 0 };
+  }
+  if (proposal.kind === "create_document") {
+    return { added: proposal.op.bodyLines, removed: 0 };
+  }
+  if (proposal.kind === "delete_document") {
+    return { added: 0, removed: 1 };
+  }
+  if (proposal.kind === "update_frontmatter") {
+    return { added: Object.keys(proposal.op.patch).length, removed: 0 };
+  }
+  return { added: 0, removed: 0 };
+}
+
+function expandedPreviewFor(proposal: AssistantProposal): React.ReactNode {
+  if (proposal.kind === "replace_selection") {
+    return (
+      <div className="space-y-1.5 font-mono text-[11.5px] leading-relaxed">
+        <div className="rounded-sm bg-destructive/10 px-2 py-1.5 text-destructive line-through decoration-destructive/40">
+          {proposal.op.originalText}
+        </div>
+        <div className="rounded-sm bg-vibrant-green/10 px-2 py-1.5 text-vibrant-green">
+          {proposal.op.replacementText}
+        </div>
+      </div>
+    );
+  }
+  if (proposal.kind === "insert_block") {
+    return (
+      <pre className="overflow-x-auto rounded-sm bg-vibrant-green/10 px-2 py-1.5 font-mono text-[11.5px] leading-relaxed text-vibrant-green">
+        {proposal.op.bodyMdx}
+      </pre>
+    );
+  }
+  if (proposal.kind === "create_document") {
+    return (
+      <pre className="overflow-x-auto rounded-sm bg-vibrant-green/10 px-2 py-1.5 font-mono text-[11.5px] leading-relaxed text-vibrant-green">
+        {proposal.op.bodyPreview}
+      </pre>
+    );
+  }
+  if (proposal.kind === "update_frontmatter") {
+    return (
+      <pre className="overflow-x-auto rounded-sm bg-primary/10 px-2 py-1.5 font-mono text-[11.5px] leading-relaxed text-primary">
+        {JSON.stringify(proposal.op.patch, null, 2)}
+      </pre>
+    );
+  }
+  if (proposal.kind === "delete_document") {
+    return (
+      <div className="rounded-sm bg-destructive/10 px-2 py-1.5 font-mono text-[11.5px] text-destructive">
+        rm {proposal.op.path}
+        {proposal.op.reason ? ` — ${proposal.op.reason}` : ""}
+      </div>
+    );
+  }
+  // All AssistantProposal kinds have a dedicated branch above; this
+  // fallback keeps the function total without referring to `never`.
+  return null;
+}
+
+function TurnGroup({
+  proposals,
+  onAccept,
+  onReject,
+}: {
+  proposals: AssistantProposal[];
+  onAccept: (proposalId: string) => void;
+  onReject: (proposalId: string, feedback: string) => void;
+}) {
+  const [expanded, setExpanded] = React.useState<Record<string, boolean>>({});
+  const [showReject, setShowReject] = React.useState(false);
+  const allValid = proposals.every((p) => p.validation.status === "valid");
+  const stale = proposals.some((p) => p.contentInvalidated);
+  const acceptBlocked = !allValid || stale;
+  return (
+    <div className="overflow-hidden rounded-lg border border-card-border bg-card">
+      <ul className="m-0 list-none p-0">
+        {proposals.map((proposal, i) => {
+          const isExpanded = !!expanded[proposal.proposalId];
+          const tone = TURN_KIND_TONE[proposal.kind];
+          const stats = diffStatsFor(proposal);
+          const valid = proposal.validation.status === "valid";
+          // Every AssistantProposal kind exposes docPath + locale, so
+          // this label is uniform — kept as a separate variable so it
+          // can be retitled per-kind if we ever want kind-specific UX.
+          const docLabel = `${proposal.docPath} · ${proposal.locale}`;
+          return (
+            <li
+              key={proposal.proposalId}
+              className={cn(
+                i < proposals.length - 1 && "border-b border-divider/40",
+              )}
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  setExpanded((prev) => ({
+                    ...prev,
+                    [proposal.proposalId]: !isExpanded,
+                  }))
+                }
+                className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/40"
+                aria-expanded={isExpanded}
+              >
+                <span
+                  className={cn(
+                    "shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider",
+                    tone.bg,
+                    tone.fg,
+                  )}
+                >
+                  {TURN_KIND_LABEL[proposal.kind]}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-foreground">
+                  {docLabel}
+                </span>
+                <span className="shrink-0 font-mono text-[10px]">
+                  <span className="text-success">+{stats.added}</span>{" "}
+                  <span className="text-destructive">−{stats.removed}</span>
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 text-[11px]",
+                    valid ? "text-success" : "text-destructive",
+                  )}
+                  aria-hidden
+                >
+                  {valid ? "✓" : "!"}
+                </span>
+                <ChevronRight
+                  className={cn(
+                    "h-3.5 w-3.5 shrink-0 text-foreground-muted transition-transform",
+                    isExpanded && "rotate-90",
+                  )}
+                  aria-hidden
+                />
+              </button>
+              {isExpanded && (
+                <div className="border-t border-divider/40 bg-background-subtle px-3 py-2.5">
+                  {expandedPreviewFor(proposal)}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {showReject ? (
+        <TurnRejectFeedback
+          onCancel={() => setShowReject(false)}
+          onSend={(feedback) => {
+            for (const p of proposals) onReject(p.proposalId, feedback);
+            setShowReject(false);
+          }}
+        />
+      ) : (
+        <div className="flex items-center gap-2 border-t border-divider/40 bg-background-subtle px-3 py-2">
+          <span className="flex-1 font-mono text-[10px] uppercase tracking-wider text-foreground-muted">
+            {proposals.length} proposals · this turn
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowReject(true)}
+            className="rounded border border-border bg-transparent px-2.5 py-1 font-mono text-[11px] font-medium text-foreground-muted transition-colors hover:bg-muted hover:text-foreground"
+          >
+            Reject all…
+          </button>
+          <button
+            type="button"
+            onClick={
+              acceptBlocked
+                ? undefined
+                : () => {
+                    for (const p of proposals) onAccept(p.proposalId);
+                  }
+            }
+            disabled={acceptBlocked}
+            aria-disabled={acceptBlocked}
+            title={
+              stale
+                ? "Source text changed — retry to regenerate"
+                : allValid
+                  ? `Apply all ${proposals.length} proposals`
+                  : "Fix invalid proposals before accepting"
+            }
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
+              acceptBlocked
+                ? "cursor-not-allowed bg-muted text-foreground-muted"
+                : "bg-sidebar text-vibrant-green hover:bg-sidebar/90",
+            )}
+          >
+            ✓ Accept all ({proposals.length})
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TurnRejectFeedback({
+  onCancel,
+  onSend,
+}: {
+  onCancel: () => void;
+  onSend: (feedback: string) => void;
+}) {
+  const [text, setText] = React.useState("");
+  return (
+    <div className="space-y-2 border-t border-divider/40 bg-background-subtle px-3 py-2.5">
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Why are you rejecting these? (optional — sent back to the model on regenerate)"
+        rows={2}
+        className="w-full resize-none rounded border border-border bg-card px-2 py-1.5 text-[12px] text-foreground placeholder:text-foreground-muted/60 focus:outline-none focus:ring-1 focus:ring-primary"
+      />
+      <div className="flex items-center gap-2">
+        <span className="flex-1 font-mono text-[10px] uppercase tracking-wider text-foreground-muted">
+          rejecting whole turn
+        </span>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded border border-border bg-transparent px-2.5 py-1 font-mono text-[11px] font-medium text-foreground-muted transition-colors hover:bg-muted hover:text-foreground"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => onSend(text.trim())}
+          className="inline-flex items-center gap-1.5 rounded bg-sidebar px-2.5 py-1 font-mono text-[11px] font-semibold text-vibrant-green transition-colors hover:bg-sidebar/90"
+        >
+          Send & retry
+        </button>
+      </div>
     </div>
   );
 }
@@ -344,12 +726,24 @@ function Composer({
   onRemoveDoc: (path: string) => void;
 }) {
   const assistant = useAssistant();
+  const activeDocument = useAssistantActiveDocument();
   const [draft, setDraft] = React.useState("");
   const [mention, setMention] = React.useState<{
     query: string;
     caret: number;
   } | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+
+  // Focus the composer on mount so opening the assistant lands the cursor
+  // ready-to-type. The Composer only mounts when the rail/fullscreen
+  // panel is open, so mount == open.
+  React.useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const end = ta.value.length;
+    ta.focus();
+    ta.setSelectionRange(end, end);
+  }, []);
 
   const submit = () => {
     if (!draft.trim()) return;
@@ -383,17 +777,35 @@ function Composer({
     setMention({ query: between, caret });
   };
 
-  const handlePick = (path: string, type: string, locale: string) => {
-    assistant.attachContextDoc({ path, type, locale });
+  const handlePick = (candidate: MentionCandidate) => {
+    assistant.attachContextDoc({
+      ...(candidate.documentId ? { documentId: candidate.documentId } : {}),
+      path: candidate.path,
+      type: candidate.type,
+      locale: candidate.locale,
+    });
+    let nextCaret: number | null = null;
     if (mention) {
       const before = draft.slice(0, mention.caret);
       const after = draft.slice(mention.caret);
       const atIndex = before.lastIndexOf("@");
-      const replaced = `${draft.slice(0, atIndex)}@${path}${after}`;
-      setDraft(replaced);
+      if (atIndex >= 0) {
+        const replaced = `${draft.slice(0, atIndex)}${after}`;
+        setDraft(replaced);
+        nextCaret = atIndex;
+      }
     }
     setMention(null);
-    textareaRef.current?.focus();
+    const ta = textareaRef.current;
+    if (ta) {
+      ta.focus();
+      if (nextCaret !== null) {
+        const caret = nextCaret;
+        requestAnimationFrame(() => {
+          ta.setSelectionRange(caret, caret);
+        });
+      }
+    }
   };
 
   return (
@@ -406,6 +818,7 @@ function Composer({
     >
       <ContextChips
         thread={thread}
+        activeDocument={activeDocument}
         onClearSelection={onClearSelection}
         onRemoveDoc={onRemoveDoc}
       />
@@ -438,7 +851,7 @@ function Composer({
         />
         <div className="mt-1.5 flex items-center gap-2">
           <span className="flex-1 font-mono text-[10px] text-foreground-muted">
-            ⌘ ↵ to send · @ to reference a doc · # to attach selection
+            ⌘ ↵ to send · @ to reference a doc
           </span>
           <button
             type="button"
@@ -482,7 +895,12 @@ function Composer({
       {mention && (
         <MentionPicker
           query={mention.query}
-          excludePaths={new Set(thread.contextDocs.map((d) => d.path))}
+          excludePaths={
+            new Set([
+              ...thread.contextDocs.map((d) => d.path),
+              ...(activeDocument ? [activeDocument.path] : []),
+            ])
+          }
           onPick={handlePick}
           onClose={() => setMention(null)}
         />
@@ -509,6 +927,7 @@ export function AssistantPanel({
           threads={assistant.store.threads}
           activeId={assistant.activeThread.id}
           onPick={assistant.selectThread}
+          onCreate={assistant.createThread}
         />
       )}
       <div className="flex min-w-0 flex-1 flex-col">
@@ -536,14 +955,38 @@ export function AssistantPanel({
               )}
             </button>
           )}
-          <button
-            type="button"
-            className="grid h-6 w-6 place-items-center rounded text-foreground-muted hover:bg-muted hover:text-foreground"
-            title="More"
-            aria-label="More actions"
-          >
-            <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="grid h-6 w-6 place-items-center rounded text-foreground-muted hover:bg-muted hover:text-foreground"
+                title="More"
+                aria-label="More actions"
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onSelect={() => assistant.createThread()}>
+                New conversation
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => assistant.toggleThreadPin(thread.id)}
+              >
+                {thread.pinned ? "Unpin conversation" : "Pin conversation"}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => assistant.deleteThread(thread.id)}
+                className="text-destructive focus:text-destructive"
+              >
+                Delete conversation
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => assistant.close()}>
+                Close assistant
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           {!hideClose && (
             <button
               type="button"
@@ -562,24 +1005,28 @@ export function AssistantPanel({
             variant === "fullscreen" && "px-8",
           )}
         >
-          {thread.messages.map((m) =>
-            m.role === "user" ? (
-              <UserBubble key={m.id} message={m} />
-            ) : (
-              <AssistantBubble
-                key={m.id}
-                message={m}
-                proposalsById={assistant.store.proposals}
-                onAccept={(pid) => {
-                  const p = assistant.store.proposals[pid];
-                  if (p) assistant.acceptProposal(p);
-                }}
-                onReject={(pid, feedback) => {
-                  const p = assistant.store.proposals[pid];
-                  if (p) assistant.rejectProposal(p, feedback);
-                }}
-              />
-            ),
+          {thread.messages.length === 0 ? (
+            <EmptyThreadHint />
+          ) : (
+            thread.messages.map((m) =>
+              m.role === "user" ? (
+                <UserBubble key={m.id} message={m} />
+              ) : (
+                <AssistantBubble
+                  key={m.id}
+                  message={m}
+                  proposalsById={assistant.store.proposals}
+                  onAccept={(pid) => {
+                    const p = assistant.store.proposals[pid];
+                    if (p) assistant.acceptProposal(p);
+                  }}
+                  onReject={(pid, feedback) => {
+                    const p = assistant.store.proposals[pid];
+                    if (p) assistant.rejectProposal(p, feedback);
+                  }}
+                />
+              ),
+            )
           )}
         </div>
         <Composer

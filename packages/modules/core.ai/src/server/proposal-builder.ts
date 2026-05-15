@@ -40,10 +40,14 @@ export type AiProposalCandidate = Omit<AiProposal, "validation">;
  * future endpoints that wire MDX/schema/frontmatter checks must pass
  * a real validator so Studio's accept/reject controls reflect actual
  * apply-time correctness.
+ *
+ * The validator is async because real implementations need to look up
+ * the project schema from the DB to decide whether the frontmatter is
+ * valid for the proposed content type.
  */
 export type AiProposalValidator = (
   candidate: AiProposalCandidate,
-) => AiProposalValidation;
+) => Promise<AiProposalValidation>;
 
 export type ProposalBuilderClock = () => Date;
 export type ProposalIdFactory = () => string;
@@ -74,6 +78,7 @@ const PROPOSAL_KIND_BY_OPERATION: Record<
   insert_block: "insert_block",
   update_frontmatter: "update_frontmatter",
   create_document: "create_document",
+  delete_document: "delete_document",
 };
 
 const SHAPE_VALID: AiProposalValidation = Object.freeze({
@@ -132,10 +137,10 @@ function applyAnchors(
  * accept/reject controls per surface (inline edit vs. frontmatter
  * edit vs. block insertion vs. new document).
  */
-export function buildProposalsFromOutput(
+export async function buildProposalsFromOutput(
   input: BuildProposalsInput,
   deps: AiProposalBuilderDeps,
-): AiProposal[] {
+): Promise<AiProposal[]> {
   if (input.output.operations.length === 0) {
     throw aiError("AI_OUTPUT_INVALID", "Task output produced no operations.");
   }
@@ -144,7 +149,8 @@ export function buildProposalsFromOutput(
   const stamped = applyAnchors(input.output.operations, input.anchors);
   const groups = groupOperationsByKind(stamped);
 
-  const proposals: AiProposal[] = groups.map((group) => {
+  const proposals: AiProposal[] = [];
+  for (const group of groups) {
     const kind = deriveProposalKind(group);
     // create_document targets a NEW document, so source-document
     // anchors from the envelope must not leak in. The other kinds
@@ -175,7 +181,9 @@ export function buildProposalsFromOutput(
         : {}),
     };
 
-    const validation = deps.validator ? deps.validator(candidate) : SHAPE_VALID;
+    const validation = deps.validator
+      ? await deps.validator(candidate)
+      : SHAPE_VALID;
     const proposal: AiProposal = { ...candidate, validation };
 
     const parsed = aiProposalSchema.safeParse(proposal);
@@ -194,8 +202,8 @@ export function buildProposalsFromOutput(
       );
     }
 
-    return parsed.data;
-  });
+    proposals.push(parsed.data);
+  }
 
   if (proposals.length === 0) {
     throw aiError(

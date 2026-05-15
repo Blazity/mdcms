@@ -108,10 +108,21 @@ export type StudioDocumentRouteApiOptions = {
   fetcher?: typeof fetch;
 };
 
+export type StudioDocumentRouteListInput = {
+  type?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+  signal?: AbortSignal;
+};
+
 export type StudioDocumentRouteApi = {
   loadDraft: (
     input: StudioDocumentRouteLoadInput,
   ) => Promise<ContentDocumentResponse>;
+  listContent: (
+    input: StudioDocumentRouteListInput,
+  ) => Promise<ApiPaginatedEnvelope<ContentDocumentResponse>>;
   bootstrapSessionCsrf: () => Promise<string | undefined>;
   updateDraft: (
     input: StudioDocumentRouteMutationInput & {
@@ -501,6 +512,31 @@ function toContentDocumentResponse(
   );
 }
 
+function toPaginatedContentDocumentResponse(
+  operation: string,
+  payload: unknown,
+  fallbackMessage: string,
+): ApiPaginatedEnvelope<ContentDocumentResponse> {
+  if (!isRecord(payload) || !Array.isArray(payload.data)) {
+    throw toInvalidRouteResponseError(operation, fallbackMessage, payload);
+  }
+
+  return {
+    data: payload.data.map((item) =>
+      validateContentDocumentResponseData(
+        operation,
+        { data: item },
+        fallbackMessage,
+      ),
+    ),
+    pagination: validatePagination(
+      operation,
+      payload.pagination,
+      fallbackMessage,
+    ),
+  };
+}
+
 function toContentVersionDocumentResponse(
   operation: string,
   payload: unknown,
@@ -775,6 +811,31 @@ export function createStudioDocumentRouteApi(
         "GET /api/v1/content/:documentId?draft=true",
         payload,
         "Failed to load document draft.",
+      );
+    },
+    async listContent(input) {
+      const payload = await requestContentRouteJson(
+        options,
+        buildUrl(config, "/api/v1/content", {
+          type: input.type,
+          q: input.q,
+          limit: input.limit,
+          offset: input.offset,
+          draft: "true",
+        }),
+        {
+          method: "GET",
+          signal: input.signal,
+          headers: mergeHeaders({
+            "x-mdcms-project": config.project,
+            "x-mdcms-environment": config.environment,
+          }),
+        },
+      );
+      return toPaginatedContentDocumentResponse(
+        "GET /api/v1/content",
+        payload,
+        "Failed to list documents.",
       );
     },
     async bootstrapSessionCsrf() {

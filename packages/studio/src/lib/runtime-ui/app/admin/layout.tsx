@@ -37,6 +37,11 @@ import {
 } from "../../components/assistant/assistant-rail.js";
 import { useAssistant } from "../../components/assistant/assistant-context.js";
 import { cn } from "../../lib/utils.js";
+import {
+  createStudioAiRouteApi,
+  type StudioAiRouteApi,
+} from "../../../ai-route-api.js";
+import { createStudioSchemaRouteApi } from "../../../schema-route-api.js";
 
 type AdminLayoutCapabilitiesLoadInput = {
   config: {
@@ -509,9 +514,53 @@ function AdminLayoutInner({
     supportedLocales: context.documentRoute?.supportedLocales,
   };
 
+  // Construct the AI route client once per (project, environment, auth)
+  // tuple so the assistant rail's chat / apply / reject calls share a
+  // stable fetcher with the rest of the studio.
+  const aiRouteApi: StudioAiRouteApi | undefined =
+    context.documentRoute && activeEnvironment
+      ? createStudioAiRouteApi(
+          {
+            project: context.documentRoute.project,
+            environment: activeEnvironment,
+            serverUrl: context.apiBaseUrl,
+          },
+          { auth: context.auth },
+        )
+      : undefined;
+
+  // The assistant's apply path needs the project schemaHash even when no
+  // document is open in the editor (e.g. accepting a `create_document`
+  // proposal from the standalone assistant page). The fetcher hits the
+  // schema list endpoint; the provider caches the result for the
+  // session.
+  const schemaHashFetcher: (() => Promise<string | null>) | undefined =
+    context.documentRoute && activeEnvironment
+      ? async () => {
+          const api = createStudioSchemaRouteApi(
+            {
+              project: context.documentRoute!.project,
+              environment: activeEnvironment!,
+              serverUrl: context.apiBaseUrl,
+            },
+            { auth: context.auth },
+          );
+          const response = await api.list();
+          return response.schemaHash ?? null;
+        }
+      : undefined;
+
   return (
     <ToastProvider>
-      <AssistantProvider>
+      <AssistantProvider
+        api={aiRouteApi}
+        schemaHashFetcher={schemaHashFetcher}
+        storageKey={
+          context.documentRoute && activeEnvironment
+            ? `mdcms-assistant-v1:${context.documentRoute.project}:${activeEnvironment}`
+            : undefined
+        }
+      >
         <div className="min-h-screen overflow-x-hidden bg-background">
           <AdminCapabilitiesProvider
             value={{

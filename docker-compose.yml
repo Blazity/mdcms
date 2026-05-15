@@ -37,6 +37,10 @@ services:
       SERVICE_NAME: ${SERVICE_NAME:-mdcms-server}
       MDCMS_STUDIO_ALLOWED_ORIGINS: ${MDCMS_STUDIO_ALLOWED_ORIGINS:-http://localhost:4173,http://127.0.0.1:4173}
       MDCMS_COLLAB_ALLOWED_ORIGINS: ${MDCMS_COLLAB_ALLOWED_ORIGINS:-http://localhost:4173,http://127.0.0.1:4173}
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      AI_MODEL: ${AI_MODEL:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_BASE_URL: ${GROQ_BASE_URL:-}
     healthcheck:
       test:
         [

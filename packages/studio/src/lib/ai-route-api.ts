@@ -54,6 +54,11 @@ export type StudioAiProposalOperation =
       format: "md" | "mdx";
       frontmatter: Record<string, unknown>;
       body: string;
+    }
+  | {
+      op: "delete_document";
+      path: string;
+      reason?: string;
     };
 
 export type StudioAiProposalValidation =
@@ -69,7 +74,8 @@ export type StudioAiProposal = {
     | "replace_selection"
     | "insert_block"
     | "update_frontmatter"
-    | "create_document";
+    | "create_document"
+    | "delete_document";
   project: string;
   environment: string;
   documentId?: string;
@@ -109,6 +115,13 @@ export type StudioAiApplyRequest = {
   proposalId: string;
   draftRevision?: number;
   schemaHash: string;
+  /**
+   * Full proposal body. The chat surface persists proposals client-side
+   * and sends the body back here so apply doesn't depend on the
+   * server's in-memory proposal store surviving a restart. Inline
+   * transforms omit this and rely on a proposalId lookup.
+   */
+  proposal?: StudioAiProposal;
   signal?: AbortSignal;
 };
 
@@ -119,7 +132,69 @@ export type StudioAiApplyResult = {
 
 export type StudioAiRejectRequest = {
   proposalId: string;
+  /**
+   * Full proposal body — same rationale as in `StudioAiApplyRequest`.
+   * When the chat surface rejects a client-owned proposal it sends the
+   * body here so the server doesn't need a store lookup.
+   */
+  proposal?: StudioAiProposal;
   signal?: AbortSignal;
+};
+
+export type StudioAiChatAllowedAction =
+  | "answer"
+  | "edit_document"
+  | "create_document"
+  | "delete_document";
+
+export type StudioAiChatAttachedSelection = {
+  documentId: string;
+  draftRevision: number;
+  selectionId: string;
+  text: string;
+};
+
+export type StudioAiChatConversationTurn = {
+  role: "user" | "assistant";
+  text: string;
+};
+
+export type StudioAiChatMessageRequest = {
+  message: string;
+  conversationId?: string;
+  attachedDocumentIds?: string[];
+  attachedSelection?: StudioAiChatAttachedSelection;
+  rejectedProposalId?: string;
+  /**
+   * Full body of the rejected proposal — sent so the regenerate flow
+   * doesn't depend on the server's in-memory proposal store.
+   */
+  rejectedProposal?: StudioAiProposal;
+  rejectionFeedback?: string;
+  allowedActions?: StudioAiChatAllowedAction[];
+  /**
+   * Prior conversation turns from the same thread, oldest first. The
+   * server is stateless per request — the client owns conversation
+   * memory — so we send a rolling window of recent turns alongside the
+   * new message so the model can resolve anaphora across the thread.
+   */
+  conversationHistory?: StudioAiChatConversationTurn[];
+  signal?: AbortSignal;
+};
+
+export type StudioAiChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  at: string;
+  text?: string;
+  proposals?: string[];
+  rejectedProposalId?: string;
+};
+
+export type StudioAiChatMessageResult = {
+  conversationId: string;
+  message: StudioAiChatMessage;
+  proposals?: StudioAiProposal[];
 };
 
 export type StudioAiRouteApi = {
@@ -130,6 +205,9 @@ export type StudioAiRouteApi = {
   rejectProposal(
     input: StudioAiRejectRequest,
   ): Promise<{ proposal: StudioAiProposal }>;
+  chatMessage(
+    input: StudioAiChatMessageRequest,
+  ): Promise<StudioAiChatMessageResult>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -233,6 +311,53 @@ async function fetchAi(
 }
 
 /**
+ * Bootstrap (and cache) the studio CSRF token used by state-changing
+ * AI endpoints: chat-message, apply, and reject all gate session-auth
+ * mutations on a valid `x-mdcms-csrf-token`. API-key auth is exempt
+ * server-side (the bearer header itself proves intent), so we skip the
+ * extra round-trip in that case.
+ *
+ * The token is fetched once per `createStudioAiRouteApi` lifetime and
+ * shared across all three endpoints — matching the cadence the
+ * document-route API uses for content mutations. If the session
+ * endpoint omits the token (e.g. on an unauthenticated cookie request)
+ * we return undefined and let the server respond with its own 403.
+ */
+function createCsrfTokenLoader(
+  config: StudioAiRouteConfig,
+  options: StudioAiRouteApiOptions,
+): () => Promise<string | undefined> {
+  let cachedPromise: Promise<string | undefined> | undefined;
+
+  return () => {
+    if (!options.auth || !isStudioCookieAuth(options.auth)) {
+      return Promise.resolve(undefined);
+    }
+    if (!cachedPromise) {
+      cachedPromise = (async () => {
+        try {
+          const url = buildAiUrl(config, "/api/v1/auth/session");
+          const response = await fetchAi(config, options, url, {
+            method: "GET",
+            headers: { "content-type": "application/json" },
+          });
+          if (!response.ok) return undefined;
+          const payload = await readJson(response);
+          if (!isRecord(payload) || !isRecord(payload.data)) return undefined;
+          const token = payload.data.csrfToken;
+          return typeof token === "string" && token.length > 0
+            ? token
+            : undefined;
+        } catch {
+          return undefined;
+        }
+      })();
+    }
+    return cachedPromise;
+  };
+}
+
+/**
  * createStudioAiRouteApi mirrors the `document-route-api.ts` factory but
  * targets `/api/v1/ai/*`. The proposal id returned from inline-transform
  * is opaque to callers — they pass it back to `applyProposal` or
@@ -242,6 +367,7 @@ export function createStudioAiRouteApi(
   config: StudioAiRouteConfig,
   options: StudioAiRouteApiOptions = {},
 ): StudioAiRouteApi {
+  const loadCsrfToken = createCsrfTokenLoader(config, options);
   return {
     async inlineTransform(input) {
       const url = buildAiUrl(config, "/api/v1/ai/inline-transform");
@@ -280,13 +406,18 @@ export function createStudioAiRouteApi(
         config,
         `/api/v1/ai/proposals/${encodeURIComponent(input.proposalId)}/apply`,
       );
+      const csrfToken = await loadCsrfToken();
       const response = await fetchAi(config, options, url, {
         method: "POST",
-        headers: targetHeaders(config),
+        headers: targetHeaders(
+          config,
+          csrfToken ? { "x-mdcms-csrf-token": csrfToken } : undefined,
+        ),
         signal: input.signal,
         body: JSON.stringify({
           draftRevision: input.draftRevision,
           schemaHash: input.schemaHash,
+          ...(input.proposal !== undefined ? { proposal: input.proposal } : {}),
         }),
       });
       const payload = await readJson(response);
@@ -310,11 +441,17 @@ export function createStudioAiRouteApi(
         config,
         `/api/v1/ai/proposals/${encodeURIComponent(input.proposalId)}/reject`,
       );
+      const csrfToken = await loadCsrfToken();
       const response = await fetchAi(config, options, url, {
         method: "POST",
-        headers: targetHeaders(config),
+        headers: targetHeaders(
+          config,
+          csrfToken ? { "x-mdcms-csrf-token": csrfToken } : undefined,
+        ),
         signal: input.signal,
-        body: "{}",
+        body: JSON.stringify(
+          input.proposal !== undefined ? { proposal: input.proposal } : {},
+        ),
       });
       const payload = await readJson(response);
 
@@ -329,6 +466,62 @@ export function createStudioAiRouteApi(
 
       return unwrapData<{ proposal: StudioAiProposal }>(
         "POST /api/v1/ai/proposals/:id/reject",
+        payload,
+      );
+    },
+    async chatMessage(input) {
+      const url = buildAiUrl(config, "/api/v1/ai/chat/messages");
+      const body: Record<string, unknown> = {
+        message: input.message,
+      };
+      if (input.conversationId !== undefined) {
+        body.conversationId = input.conversationId;
+      }
+      if (input.attachedDocumentIds && input.attachedDocumentIds.length > 0) {
+        body.attachedDocumentIds = input.attachedDocumentIds;
+      }
+      if (input.attachedSelection !== undefined) {
+        body.attachedSelection = input.attachedSelection;
+      }
+      if (input.rejectedProposalId !== undefined) {
+        body.rejectedProposalId = input.rejectedProposalId;
+      }
+      if (input.rejectedProposal !== undefined) {
+        body.rejectedProposal = input.rejectedProposal;
+      }
+      if (input.rejectionFeedback !== undefined) {
+        body.rejectionFeedback = input.rejectionFeedback;
+      }
+      if (input.allowedActions && input.allowedActions.length > 0) {
+        body.allowedActions = input.allowedActions;
+      }
+      if (input.conversationHistory && input.conversationHistory.length > 0) {
+        body.conversationHistory = input.conversationHistory;
+      }
+
+      const csrfToken = await loadCsrfToken();
+      const response = await fetchAi(config, options, url, {
+        method: "POST",
+        headers: targetHeaders(
+          config,
+          csrfToken ? { "x-mdcms-csrf-token": csrfToken } : undefined,
+        ),
+        signal: input.signal,
+        body: JSON.stringify(body),
+      });
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        throw failureFromResponse(
+          "POST /api/v1/ai/chat/messages",
+          response,
+          payload,
+          "Failed to send AI chat message.",
+        );
+      }
+
+      return unwrapData<StudioAiChatMessageResult>(
+        "POST /api/v1/ai/chat/messages",
         payload,
       );
     },
