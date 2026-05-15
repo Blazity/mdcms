@@ -108,6 +108,16 @@ export type AiChatInput = {
    * required.
    */
   projectKnowledge?: Omit<ProjectKnowledgeInput, "project" | "environment">;
+  /**
+   * Backends for the read-only chat tools (find_entries, get_entry).
+   * The route handler wires these from the contentStore; when absent,
+   * the tools are not registered (the model gracefully responds in
+   * text). `canReadEntries` is derived from `findEntries` presence.
+   */
+  toolBackends?: {
+    findEntries?: import("./chat-tools.js").ChatToolDeps["findEntriesBackend"];
+    getEntry?: import("./chat-tools.js").ChatToolDeps["getEntryBackend"];
+  };
 };
 
 export type AiChatResult = {
@@ -263,12 +273,21 @@ export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
           : validator
             ? { validator }
             : {}),
-        capabilities: call.capabilities,
+        capabilities: {
+          ...call.capabilities,
+          canReadEntries: Boolean(call.toolBackends?.findEntries),
+        },
         collected,
         registeredTypeIds: (call.projectKnowledge?.registeredTypes ?? []).map(
           (t) => t.type,
         ),
         supportedLocales: call.projectKnowledge?.supportedLocales ?? [],
+        ...(call.toolBackends?.findEntries
+          ? { findEntriesBackend: call.toolBackends.findEntries }
+          : {}),
+        ...(call.toolBackends?.getEntry
+          ? { getEntryBackend: call.toolBackends.getEntry }
+          : {}),
       });
 
       const projectKnowledge: ProjectKnowledgeInput = {

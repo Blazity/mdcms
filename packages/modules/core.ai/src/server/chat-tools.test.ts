@@ -5,7 +5,6 @@ import {
   buildChatTools,
   type ChatToolDeps,
   type FindEntriesResult,
-  type GetEntryResult,
 } from "./chat-tools.js";
 import type { AiProposal } from "@mdcms/shared";
 
