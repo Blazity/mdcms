@@ -10,14 +10,18 @@ const FAMILY_BY_KIND: Record<AssistantProposal["kind"], Family> = {
   update_frontmatter: "replacing",
 };
 
+// "structural" has no caller today — kept in the union + path table so
+// future move/restructure/reorder proposals can opt into the existing
+// glyph (mirrors the design's KindGlyph). Drop if it's still unused
+// when those proposal kinds land elsewhere.
 type Family = "additive" | "destructive" | "replacing" | "structural";
 
 /**
  * Tiny semantic glyph that pairs with the kind chip on a proposal row.
- * Color inherits from the chip's text color via `currentColor` — the
- * caller controls hue by wrapping with `text-primary` (blue) or
- * `text-accent-amber` (amber). Returns `null` for kinds without a
- * mapped family so renderers can fall through to the text label alone.
+ * Always renders an SVG — every `AssistantProposal["kind"]` is mapped
+ * in `FAMILY_BY_KIND`. Color inherits from the chip's text color via
+ * `currentColor`; the caller controls hue by wrapping with
+ * `text-primary` (blue) or `text-accent-amber` (amber).
  */
 export function KindGlyph({ kind }: { kind: AssistantProposal["kind"] }) {
   const family = FAMILY_BY_KIND[kind];
