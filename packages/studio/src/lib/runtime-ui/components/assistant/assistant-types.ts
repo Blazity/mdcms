@@ -63,6 +63,13 @@ type ProposalCommonFields = {
   contentInvalidated?: boolean;
   /** Optional pre-computed diff stats; the card falls back to line counts. */
   diffStats?: { added: number; removed: number };
+  /**
+   * ISO timestamp set when the user accepted the proposal and the apply
+   * call succeeded. The card morphs into a quiet past-tense log line
+   * (`Applied HH:MM — path (+N −M)`) when this is set instead of
+   * disappearing.
+   */
+  acceptedAt?: string;
 };
 
 export type AssistantProposalEdit = ProposalCommonFields & {
@@ -155,6 +162,14 @@ export type AssistantMessage = {
    * its predecessor for audit + cost accounting.
    */
   rejectedProposalId?: string;
+  /**
+   * Side-channel messages emitted by the client to give the model
+   * context the user never types — e.g. an "I accepted the proposal
+   * for blog/post-1" turn appended after Accept succeeds. The chat
+   * timeline filters these out of rendering but the conversation-
+   * history serializer includes them so the agent sees the signal.
+   */
+  hidden?: boolean;
 };
 
 export type AssistantThread = {

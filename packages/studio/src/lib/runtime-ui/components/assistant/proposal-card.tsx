@@ -643,6 +643,73 @@ export type ProposalCardProps = {
   onReject: (feedback: string) => void;
 };
 
+/**
+ * Past-tense log line that replaces the card after the user accepts a
+ * proposal and the apply call succeeds. Quieter than the full card so
+ * the chat rhythm reads as "happening now vs. already history" without
+ * the row vanishing. Matches the design's `LoggedLine` shape.
+ */
+export function AppliedLogLine({ proposal }: { proposal: AssistantProposal }) {
+  const docPath = "docPath" in proposal ? proposal.docPath : undefined;
+  const acceptedAt = proposal.acceptedAt
+    ? formatLoggedTime(proposal.acceptedAt)
+    : "";
+  const stats = inferDiffStats(proposal);
+  return (
+    <div className="flex items-center gap-2 px-1 py-1 font-mono text-[11px] text-foreground-muted">
+      <span aria-hidden className="opacity-70">
+        ·
+      </span>
+      <span>Applied {acceptedAt}</span>
+      {docPath && (
+        <>
+          <span aria-hidden>—</span>
+          <span
+            className="min-w-0 flex-1 truncate text-foreground"
+            title={docPath}
+            dir="rtl"
+          >
+            <bdi dir="ltr">{docPath}</bdi>
+          </span>
+        </>
+      )}
+      <span className="shrink-0 tabular-nums">
+        (<span className="text-success">+{stats.added}</span>{" "}
+        <span className="text-destructive">−{stats.removed}</span>)
+      </span>
+    </div>
+  );
+}
+
+function formatLoggedTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function inferDiffStats(p: AssistantProposal): {
+  added: number;
+  removed: number;
+} {
+  if (p.diffStats) return p.diffStats;
+  if (p.kind === "replace_selection") {
+    return {
+      added: p.op.replacementText.split("\n").length,
+      removed: p.op.originalText.split("\n").length,
+    };
+  }
+  if (p.kind === "insert_block") {
+    return { added: p.op.bodyMdx.split("\n").length, removed: 0 };
+  }
+  if (p.kind === "create_document") {
+    return { added: p.op.bodyLines, removed: 0 };
+  }
+  if (p.kind === "delete_document") {
+    return { added: 0, removed: 1 };
+  }
+  return { added: 0, removed: 0 };
+}
+
 export function ProposalCard({
   proposal,
   rejecting = false,
@@ -650,6 +717,12 @@ export function ProposalCard({
   onAccept,
   onReject,
 }: ProposalCardProps) {
+  // Once accepted, the card morphs into a quiet log line in place
+  // instead of vanishing — that's the "actual feedback that it was
+  // applied" the chat surface needs to read as continuous history.
+  if (proposal.acceptedAt) {
+    return <AppliedLogLine proposal={proposal} />;
+  }
   if (proposal.kind === "delete_document") {
     return (
       <DeleteCard

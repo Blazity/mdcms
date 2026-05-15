@@ -35,7 +35,7 @@ import type {
 } from "./assistant-types.js";
 import { EmptyStarter } from "./empty-starter.js";
 import { KindGlyph } from "./kind-glyph.js";
-import { ProposalCard } from "./proposal-card.js";
+import { AppliedLogLine, ProposalCard } from "./proposal-card.js";
 import { SendStopButton } from "./send-stop-button.js";
 import { SparkleMark } from "./sparkle-mark.js";
 import { useStudioApiConfig } from "../../app/admin/mount-info-context.js";
@@ -553,6 +553,7 @@ function TurnGroup({
           const isExpanded = !!expanded[proposal.proposalId];
           const stats = diffStatsFor(proposal);
           const valid = proposal.validation.status === "valid";
+          const isAccepted = Boolean(proposal.acceptedAt);
           return (
             <li
               key={proposal.proposalId}
@@ -560,24 +561,36 @@ function TurnGroup({
                 i < proposals.length - 1 && "border-b border-divider/40",
               )}
             >
-              <TurnRow
-                proposal={proposal}
-                stats={stats}
-                valid={valid}
-                isExpanded={isExpanded}
-                onToggle={() =>
-                  setExpanded((prev) => ({
-                    ...prev,
-                    [proposal.proposalId]: !isExpanded,
-                  }))
-                }
-                onAccept={() => onAccept(proposal.proposalId)}
-                onReject={() => onReject(proposal.proposalId, "")}
-              />
-              {isExpanded && (
-                <div className="border-t border-divider/40 bg-background-subtle px-3 py-2.5">
-                  {expandedPreviewFor(proposal)}
+              {isAccepted ? (
+                // Replace the full row with the same past-tense log
+                // line a single card would render, so a batched turn
+                // reads as a continuous strip of "applied" entries
+                // rather than a row vanishing the moment Accept fires.
+                <div className="px-3 py-2">
+                  <AppliedLogLine proposal={proposal} />
                 </div>
+              ) : (
+                <>
+                  <TurnRow
+                    proposal={proposal}
+                    stats={stats}
+                    valid={valid}
+                    isExpanded={isExpanded}
+                    onToggle={() =>
+                      setExpanded((prev) => ({
+                        ...prev,
+                        [proposal.proposalId]: !isExpanded,
+                      }))
+                    }
+                    onAccept={() => onAccept(proposal.proposalId)}
+                    onReject={() => onReject(proposal.proposalId, "")}
+                  />
+                  {isExpanded && (
+                    <div className="border-t border-divider/40 bg-background-subtle px-3 py-2.5">
+                      {expandedPreviewFor(proposal)}
+                    </div>
+                  )}
+                </>
               )}
             </li>
           );
@@ -1223,17 +1236,24 @@ export function AssistantPanel({
             />
           ) : (
             (() => {
+              // Filter out hidden side-channel messages (e.g. the
+              // "I accepted your proposal" turn the client appends so
+              // the model sees acceptances in conversation history)
+              // before laying out the timeline. The model still
+              // receives them via the conversationHistory serializer;
+              // the user just doesn't see them.
+              const visible = thread.messages.filter((m) => !m.hidden);
               // The streaming typing-indicator only renders for the
-              // most-recent assistant turn while the context is mid-
-              // stream. Compute once per render rather than scanning
-              // inside the map callback.
+              // most-recent visible assistant turn while the context
+              // is mid-stream. Compute once per render rather than
+              // scanning inside the map callback.
               const lastAssistantIdx = (() => {
-                for (let i = thread.messages.length - 1; i >= 0; i--) {
-                  if (thread.messages[i]?.role === "assistant") return i;
+                for (let i = visible.length - 1; i >= 0; i--) {
+                  if (visible[i]?.role === "assistant") return i;
                 }
                 return -1;
               })();
-              return thread.messages.map((m, idx) =>
+              return visible.map((m, idx) =>
                 m.role === "user" ? (
                   <UserBubble key={m.id} message={m} />
                 ) : (

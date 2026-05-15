@@ -40,6 +40,19 @@ type AssistantAction =
   | { type: "hydrate"; store: AssistantStore }
   | { type: "remove-proposal"; threadId: string; proposalId: string }
   | {
+      /**
+       * Apply succeeded. Stamps `acceptedAt` on the proposal so the
+       * card renders as a past-tense log line, and appends a hidden
+       * user turn describing the acceptance so the model sees the
+       * signal in the next conversation-history send.
+       */
+      type: "mark-proposal-accepted";
+      threadId: string;
+      proposalId: string;
+      acceptedAt: string;
+      hiddenMessage: AssistantMessage;
+    }
+  | {
       type: "reject-proposal";
       threadId: string;
       proposalId: string;
@@ -117,6 +130,31 @@ function extractInnerReason(error: unknown): string | undefined {
   if (!inner || typeof inner !== "object") return undefined;
   const reason = (inner as { reason?: unknown }).reason;
   return typeof reason === "string" && reason.length > 0 ? reason : undefined;
+}
+
+/**
+ * Build the side-channel text we hand to the model when the user
+ * accepts a proposal. The model receives this as a "user" turn in
+ * the next conversation-history window — phrased so it reads as the
+ * user reporting the acceptance rather than the system fabricating a
+ * message. The kind/docPath give the model enough context to
+ * acknowledge what landed without re-proposing it.
+ */
+function describeAcceptanceForAgent(proposal: AssistantProposal): string {
+  const path = "docPath" in proposal ? proposal.docPath : undefined;
+  const target = path ? ` for \`${path}\`` : "";
+  switch (proposal.kind) {
+    case "create_document":
+      return `(I accepted your proposal to create the document${target}. It's now a draft.)`;
+    case "delete_document":
+      return `(I accepted your proposal to delete the document${target}.)`;
+    case "replace_selection":
+      return `(I accepted your proposal to rewrite the selection${target}.)`;
+    case "insert_block":
+      return `(I accepted your proposal to insert a block${target}.)`;
+    case "update_frontmatter":
+      return `(I accepted your proposal to update the frontmatter${target}.)`;
+  }
 }
 
 function deriveThreadTitle(text: string): string {
@@ -617,6 +655,37 @@ function reducer(
           ),
         },
       };
+    case "mark-proposal-accepted": {
+      // Stamp `acceptedAt` on the proposal record so the bubble renders
+      // a past-tense log line in place of the full card, and append the
+      // hidden side-channel turn so the next conversationHistory send
+      // carries the acceptance signal.
+      const existing = state.store.proposals[action.proposalId];
+      const updatedProposals = existing
+        ? {
+            ...state.store.proposals,
+            [action.proposalId]: {
+              ...existing,
+              acceptedAt: action.acceptedAt,
+            },
+          }
+        : state.store.proposals;
+      return {
+        ...state,
+        store: {
+          ...state.store,
+          proposals: updatedProposals,
+          threads: state.store.threads.map((thread) => {
+            if (thread.id !== action.threadId) return thread;
+            return {
+              ...thread,
+              updatedAt: action.acceptedAt,
+              messages: [...thread.messages, action.hiddenMessage],
+            };
+          }),
+        },
+      };
+    }
     case "reject-proposal": {
       // Reject only strips the proposal from its host message. The
       // follow-up user turn (with rejectionFeedback + rejectedProposalId)
@@ -1243,10 +1312,28 @@ export function AssistantProvider({
               schemaHash,
               ...(wireProposal ? { proposal: wireProposal } : {}),
             });
+            const acceptedAt = new Date().toISOString();
+            // Hidden side-channel turn — the model needs to know the
+            // user accepted the proposal so it doesn't suggest the
+            // same change again and so its next reply can reference
+            // what landed. The UI filters `hidden: true` messages
+            // out of the timeline; the conversation-history
+            // serializer keeps them so the agent still sees the
+            // signal.
+            const acceptanceSignal = describeAcceptanceForAgent(proposal);
+            const hiddenMessage: AssistantMessage = {
+              id: `m-accept-signal-${Date.now().toString(36)}`,
+              role: "user",
+              at: acceptedAt,
+              text: acceptanceSignal,
+              hidden: true,
+            };
             dispatch({
-              type: "remove-proposal",
+              type: "mark-proposal-accepted",
               threadId: state.activeThreadId,
               proposalId: proposal.proposalId,
+              acceptedAt,
+              hiddenMessage,
             });
           } catch (error) {
             appendErrorTurn(placeholderUser, error);
