@@ -92,9 +92,12 @@ history across navigation, and may attach more than one document to a thread.
 The assistant is allowed to answer questions about any document the caller can
 read, propose edits to draft documents, propose new draft documents of existing
 content types, and propose deletions of draft or unpublished documents. A
-single assistant turn may produce a batch of related proposals across multiple
-documents (see `batch` below); each batch is applied as a single transactional
-unit so partial application cannot leave the workspace inconsistent.
+single assistant turn may produce multiple related proposals across multiple
+documents; the Studio surface groups them implicitly per assistant turn under a
+shared Accept all / Reject all footer and applies each child via the
+per-proposal apply route. Multi-document turns are best-effort: a partial
+failure leaves successfully-applied children in place and reports the per-child
+errors to the user.
 
 The assistant is not a general administration console. It cannot change
 schemas, environments, projects, roles, API keys, modules, provider settings,
@@ -119,8 +122,8 @@ draft proposal with explicit accept/reject controls. The proposal card shows
 the target document path, locale, kind chip, and a unified diff: removed lines
 (`−`) above added lines (`+`), with insert/create proposals rendered as a
 single-sided `+N / −0` diff. Single-suggestion turns expand the diff by
-default; batch turns collapse all children by default and let the user expand
-individual rows inline. Create-document proposals additionally show
+default; multi-proposal turns collapse all rows by default and let the user
+expand individual rows inline. Create-document proposals additionally show
 frontmatter and a body preview when present. Invalid proposals show the diff
 plus a list of validation errors below it and disable Accept until the user
 either retries or edits manually.
@@ -186,25 +189,28 @@ export type AiProposalKind =
   | "insert_block"
   | "update_frontmatter"
   | "create_document"
-  | "delete_document"
-  | "batch";
+  | "delete_document";
+
+// NOTE — historical `batch` kind retired: multi-document turns return
+// N individual proposals on one assistant message. The Studio chat
+// surface groups them implicitly per assistant turn (one shared Reject
+// all / Accept all (N) footer scoped to that message). Apply / reject
+// stay per-proposal — the client iterates over the message's
+// `proposals[]` and calls the existing single-proposal apply route
+// once per child. Multi-document atomicity is therefore best-effort:
+// partial-failure recovery is the caller's responsibility.
 
 export type AiProposal = {
   proposalId: string;
   kind: AiProposalKind;
   project: string;
   environment: string;
-  // documentId, baseDraftRevision, type, and locale are absent on `batch`
-  // proposals because a batch may span more than one document.
   documentId?: string;
   baseDraftRevision?: number;
-  type?: string;
-  locale?: string;
+  type: string;
+  locale: string;
   summary: string;
-  // `operations` is present on every kind except `batch`, which carries
-  // an ordered list of child proposals instead.
-  operations?: AiProposalOperation[];
-  children?: AiProposal[];
+  operations: AiProposalOperation[];
   validation: AiProposalValidation;
   expiresAt: string;
 };
@@ -262,13 +268,12 @@ export type AiProposalValidation =
     };
 ```
 
-A `batch` proposal carries no `operations` of its own; it bundles an ordered
-list of child proposals in `children`. Children must each be one of the
-non-`batch` kinds (no nested batches). The server validates and applies the
-batch atomically: every child must validate and every child must apply
-successfully, or none do. A child failing validation marks the entire batch
-`invalid` and Accept is disabled until the offending children are
-regenerated.
+Multi-document turns: there is no `batch` wire kind. When an assistant
+message produces N proposals (`proposals.length > 1`), each is a standalone
+single-operation proposal. The client groups them under a shared
+`Reject all / Accept all (N)` footer and applies each child via the
+per-proposal apply route. Validation, expiry, and conflict semantics are
+per-child; there is no all-or-nothing transactional apply.
 
 The `delete_document` kind targets a single draft or unpublished document
 identified by `documentId`. Deletion proposals must not target documents that
@@ -280,6 +285,41 @@ as `validation.errors` on failure.
 
 The implementation may store proposals server-side or encode them in signed
 proposal tokens, but clients must treat proposal identifiers as opaque.
+
+## Model Grounding
+
+The chat assistant grounds the model in real project data via three layers:
+
+**System prompt context (injected per turn):**
+
+- Content type catalog (names + per-type schema with field kinds, required flags, reference targets, enum options).
+- Supported locales for the project.
+- Current user identity (name + id).
+
+**Tools (model-callable lookups):**
+
+- `find_entries({ type, query?, locale?, limit? })` — search documents by type. The
+  `type` parameter is enum-constrained to the project's registered content types,
+  so the model cannot query for types that don't exist.
+- `get_entry({ documentId })` — fetch full body + frontmatter for a specific doc.
+
+Both tools are capability-gated on `content:read:draft`; absent capability removes
+the tool from the model's surface and the model gracefully responds in text.
+
+**Validator codes (server-side trust boundary):**
+
+- `UNKNOWN_CONTENT_TYPE` — proposed type not registered for the project.
+- `MISSING_REQUIRED_FRONTMATTER` — schema-required field absent.
+- `UNKNOWN_FRONTMATTER_FIELD` — frontmatter key not defined in the schema.
+- `INVALID_FRONTMATTER_TYPE` — value kind mismatches schema field kind.
+- `PATH_ALREADY_IN_USE` — proposed path collides with an existing non-deleted
+  document in the same project + environment.
+- `UNKNOWN_REFERENCE` — reference field's documentId does not resolve to a
+  non-deleted document in the project. Reference values are bare UUID strings;
+  the validator walks arrays and nested objects to find references at any depth.
+
+The validator is wired at orchestrator construction, so both inline-transform
+proposals and chat proposals share the same trust boundary.
 
 ## MDX Component Grounding
 
@@ -331,14 +371,13 @@ Minimum scopes:
 - Generating a delete-document proposal requires `ai:use` and
   `content:read:draft` for the target document; the chat turn is rejected
   before any model call if the caller lacks `content:delete`.
-- Generating a batch proposal requires the union of scopes needed for every
-  child kind; the caller must be authorized for each child at generation time.
 - Applying an edit proposal requires `content:write`.
 - Applying a create-document proposal requires `content:write`.
 - Applying a delete-document proposal requires `content:delete` and verifies
   the target has no published version.
-- Applying a batch proposal requires every child's apply scope; missing scopes
-  on any child fail the entire batch with `FORBIDDEN`.
+- Multi-document turns return N independent proposals on one assistant
+  message; the client applies each via the per-proposal apply route, so each
+  child carries its own scope check. There is no batch-level transaction.
 
 AI endpoints must not grant publish authority. Accepted AI edits update drafts
 only. Publishing remains owned by the content publish endpoints.
@@ -359,12 +398,12 @@ All AI write application paths must:
 
 This table is normative and follows the shared contract template in `SPEC-005`.
 
-| Method | Endpoint                                  | Auth mode          | Required scope                                                                       | Target routing                  | Request schema                                                                                                                                                                                                                                                                                             | Success response schema                                                  | Errors                                                                                                                                                                                                                                                                                                                                                         |
-| ------ | ----------------------------------------- | ------------------ | ------------------------------------------------------------------------------------ | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/api/v1/ai/inline-transform`             | session_or_api_key | `ai:use`, `content:read:draft`                                                       | required: `project_environment` | JSON: `{ documentId, draftRevision, selectionId, selectedText, action, instruction?, tone? }` — `selectedText` is the **markdown** serialization of the selected slice (block-level structure preserved).                                                                                                  | `200` `{ data: { proposals: AiProposal[] } }`                            | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `AI_DISABLED` (`403`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_CONTEXT_TOO_LARGE` (`413`), `AI_RATE_LIMITED` (`429`), `AI_PROVIDER_UNAVAILABLE` (`503`)                                                                            |
-| POST   | `/api/v1/ai/chat/messages`                | session_or_api_key | `ai:use`, `content:read:draft` for read/edit operations                              | required: `project_environment` | JSON: `{ message, conversationId?, attachedDocumentIds?: string[], attachedSelection?: { documentId, draftRevision, selectionId, text }, rejectedProposalId?: string, rejectionFeedback?: string, allowedActions?: ("answer" \| "edit_document" \| "create_document" \| "delete_document" \| "batch")[] }` | `200` `{ data: { conversationId, message, proposals? } }`                | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `AI_DISABLED` (`403`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_UNSUPPORTED_ACTION` (`400`), `AI_CONTEXT_TOO_LARGE` (`413`), `AI_RATE_LIMITED` (`429`), `AI_PROVIDER_UNAVAILABLE` (`503`)                                           |
-| POST   | `/api/v1/ai/proposals/:proposalId/apply`  | session_or_api_key | `content:write`; `content:delete` when the proposal targets a `delete_document` kind | required: `project_environment` | path `proposalId`, JSON: `{ draftRevision?, schemaHash, clientSelectionState? }`                                                                                                                                                                                                                           | `200` `{ data: { proposal: AiProposal, documents: ContentDocument[] } }` | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_PROPOSAL_EXPIRED` (`410`), `AI_PROPOSAL_CONFLICT` (`409`), `AI_OUTPUT_INVALID` (`422`), `AI_BATCH_PARTIAL_FAILURE` (`409`), `SCHEMA_HASH_REQUIRED` (`400`), `SCHEMA_HASH_MISMATCH` (`409`) |
-| POST   | `/api/v1/ai/proposals/:proposalId/reject` | session_or_api_key | `content:write`                                                                      | required: `project_environment` | path `proposalId`, JSON body optional and ignored                                                                                                                                                                                                                                                          | `200` `{ data: { proposal: AiProposal } }`                               | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_PROPOSAL_EXPIRED` (`410`), `AI_PROPOSAL_CONFLICT` (`409`)                                                                                                                                  |
+| Method | Endpoint                                  | Auth mode          | Required scope                                                                       | Target routing                  | Request schema                                                                                                                                                                                                                                                                                  | Success response schema                                                  | Errors                                                                                                                                                                                                                                                                                                                     |
+| ------ | ----------------------------------------- | ------------------ | ------------------------------------------------------------------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/v1/ai/inline-transform`             | session_or_api_key | `ai:use`, `content:read:draft`                                                       | required: `project_environment` | JSON: `{ documentId, draftRevision, selectionId, selectedText, action, instruction?, tone? }` — `selectedText` is the **markdown** serialization of the selected slice (block-level structure preserved).                                                                                       | `200` `{ data: { proposals: AiProposal[] } }`                            | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `AI_DISABLED` (`403`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_CONTEXT_TOO_LARGE` (`413`), `AI_RATE_LIMITED` (`429`), `AI_PROVIDER_UNAVAILABLE` (`503`)                                        |
+| POST   | `/api/v1/ai/chat/messages`                | session_or_api_key | `ai:use`, `content:read:draft` for read/edit operations                              | required: `project_environment` | JSON: `{ message, conversationId?, attachedDocumentIds?: string[], attachedSelection?: { documentId, draftRevision, selectionId, text }, rejectedProposalId?: string, rejectionFeedback?: string, allowedActions?: ("answer" \| "edit_document" \| "create_document" \| "delete_document")[] }` | `200` `{ data: { conversationId, message, proposals? } }`                | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `AI_DISABLED` (`403`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_UNSUPPORTED_ACTION` (`400`), `AI_CONTEXT_TOO_LARGE` (`413`), `AI_RATE_LIMITED` (`429`), `AI_PROVIDER_UNAVAILABLE` (`503`)       |
+| POST   | `/api/v1/ai/proposals/:proposalId/apply`  | session_or_api_key | `content:write`; `content:delete` when the proposal targets a `delete_document` kind | required: `project_environment` | path `proposalId`, JSON: `{ draftRevision?, schemaHash, clientSelectionState? }`                                                                                                                                                                                                                | `200` `{ data: { proposal: AiProposal, documents: ContentDocument[] } }` | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_PROPOSAL_EXPIRED` (`410`), `AI_PROPOSAL_CONFLICT` (`409`), `AI_OUTPUT_INVALID` (`422`), `SCHEMA_HASH_REQUIRED` (`400`), `SCHEMA_HASH_MISMATCH` (`409`) |
+| POST   | `/api/v1/ai/proposals/:proposalId/reject` | session_or_api_key | `content:write`                                                                      | required: `project_environment` | path `proposalId`, JSON body optional and ignored                                                                                                                                                                                                                                               | `200` `{ data: { proposal: AiProposal } }`                               | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_PROPOSAL_EXPIRED` (`410`), `AI_PROPOSAL_CONFLICT` (`409`)                                                                                              |
 
 `action` for inline transforms is an enum of selection-anchored copy edits:
 
@@ -391,7 +430,12 @@ proposal output. The default set is the full enum:
   caller can see in the schema
 - `delete_document` — `delete_document` proposals against draft or
   unpublished documents the caller has `content:delete` for
-- `batch` — `batch` proposals that wrap any combination of the above
+
+Multi-document turns are not modeled as a dedicated `allowedActions` value
+or wire kind. A single assistant message may return more than one proposal
+(`proposals: AiProposal[]`); the Studio chat surface groups them implicitly
+per assistant turn and the client applies each child via the per-proposal
+apply route.
 
 The chat response always echoes the `conversationId` so the client can persist
 threads across navigation. When `rejectedProposalId` and `rejectionFeedback`
@@ -400,12 +444,11 @@ turn: it loads the prior proposal, applies the user's feedback, and emits a
 fresh proposal that supersedes the rejected one. There is no separate
 "try again" endpoint — regeneration is a chat turn.
 
-The `apply` endpoint applies a single proposal, which may be a `batch`. For
-non-batch kinds it returns the affected document in `documents` (a
-single-element array); for `batch` it returns one entry per child in batch
-order. Apply is atomic for batches: any child failure aborts the entire
-operation with `AI_BATCH_PARTIAL_FAILURE` and no documents are written. The
-`reject` endpoint is unchanged and still discards a single proposal id.
+The `apply` endpoint applies a single proposal. It returns the affected
+document in `documents` (a single-element array). Multi-document turns are
+applied one child at a time; the client iterates over the assistant
+message's `proposals[]` and calls apply per child. The `reject` endpoint is
+unchanged and still discards a single proposal id.
 
 ## Provider and Orchestration Requirements
 
