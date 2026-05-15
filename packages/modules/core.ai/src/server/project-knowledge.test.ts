@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, test } from "bun:test";
 
+import type { SchemaRegistryTypeSnapshot } from "@mdcms/shared";
+
 import { renderProjectKnowledgeBlock } from "./project-knowledge.js";
 
 describe("renderProjectKnowledgeBlock", () => {
@@ -46,4 +48,51 @@ describe("renderProjectKnowledgeBlock", () => {
     assert.ok(!block.split("\n").some((l) => l.startsWith("## Injected")));
     assert.ok(block.includes("Project: okay ## Injected"));
   });
+});
+
+const POST_SCHEMA: SchemaRegistryTypeSnapshot = {
+  type: "post",
+  directory: "blog",
+  localized: true,
+  fields: {
+    title: { kind: "string", required: true, nullable: false },
+    date: { kind: "date", required: true, nullable: false },
+    published: { kind: "boolean", required: false, nullable: false },
+    excerpt: { kind: "string", required: false, nullable: true },
+  },
+};
+
+test("renders a content type with simple kinds", () => {
+  const block = renderProjectKnowledgeBlock({
+    project: "p",
+    environment: "e",
+    registeredTypes: [POST_SCHEMA],
+    supportedLocales: ["en"],
+  });
+  assert.ok(block.includes("- **post** (directory: blog, localized: yes)"));
+  assert.ok(block.includes("- title (string, required)"));
+  assert.ok(block.includes("- date (date, required)"));
+  assert.ok(block.includes("- published (boolean, optional)"));
+  assert.ok(block.includes("- excerpt (string, optional, nullable)"));
+});
+
+test("sorts types alphabetically for determinism", () => {
+  const block = renderProjectKnowledgeBlock({
+    project: "p",
+    environment: "e",
+    registeredTypes: [
+      { ...POST_SCHEMA, type: "post" },
+      {
+        ...POST_SCHEMA,
+        type: "author",
+        localized: false,
+        directory: "authors",
+      },
+    ],
+    supportedLocales: [],
+  });
+  const authorIdx = block.indexOf("- **author**");
+  const postIdx = block.indexOf("- **post**");
+  assert.ok(authorIdx > 0);
+  assert.ok(postIdx > authorIdx);
 });

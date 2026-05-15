@@ -35,8 +35,18 @@ export function renderProjectKnowledgeBlock(
       "No content types are registered yet — propose_create_document will fail until at least one is synced.",
     );
   } else {
-    // Filled in subsequent tasks.
-    lines.push("### Content types registered in this project");
+    lines.push(
+      "### Content types registered in this project",
+      "Use these exact `type` ids when calling propose_create_document. Anything else will fail validation. Path prefixes are conventions, not enforced.",
+      "",
+    );
+    const sortedTypes = [...input.registeredTypes].sort((a, b) =>
+      a.type.localeCompare(b.type),
+    );
+    for (const schema of sortedTypes) {
+      lines.push(...renderTypeEntry(schema));
+      lines.push("");
+    }
   }
 
   if (input.supportedLocales.length > 0) {
@@ -55,4 +65,40 @@ export function renderProjectKnowledgeBlock(
  */
 function sanitizeForPrompt(value: string): string {
   return value.replace(/[`\n\r]/g, " ").trim();
+}
+
+function renderTypeEntry(schema: SchemaRegistryTypeSnapshot): string[] {
+  const lines: string[] = [
+    `- **${schema.type}** (directory: ${schema.directory}, localized: ${schema.localized ? "yes" : "no"})`,
+  ];
+  const fieldEntries = Object.entries(schema.fields);
+  if (fieldEntries.length === 0) {
+    lines.push("  (no fields)");
+    return lines;
+  }
+  lines.push("  Fields:");
+  for (const [name, field] of fieldEntries) {
+    lines.push(`  - ${renderFieldLine(name, field, 0)}`);
+  }
+  return lines;
+}
+
+function renderFieldLine(
+  name: string,
+  field: import("@mdcms/shared").SchemaRegistryFieldSnapshot,
+  depth: number,
+): string {
+  const kindDescriptor = renderKindDescriptor(field, depth);
+  const flags: string[] = [field.required ? "required" : "optional"];
+  if (field.nullable) flags.push("nullable");
+  return `${name} (${kindDescriptor}, ${flags.join(", ")})`;
+}
+
+function renderKindDescriptor(
+  field: import("@mdcms/shared").SchemaRegistryFieldSnapshot,
+  _depth: number,
+): string {
+  // More elaborate rendering (enum, reference, array, object) lands in
+  // the next task. For now: just the kind name.
+  return field.kind;
 }
