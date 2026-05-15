@@ -155,6 +155,39 @@ export function createServerRequestHandlerWithModules(
     return row?.schemaHash;
   };
 
+  const aiPathExists = async ({
+    project,
+    environment,
+    path,
+  }: {
+    project: string;
+    environment: string;
+    path: string;
+  }) => {
+    const list = await contentStore.list(
+      { project, environment },
+      { path, limit: "1", draft: "true" },
+    );
+    return list.rows.length > 0 && list.rows[0]?.isDeleted === false;
+  };
+
+  const aiDocumentExists = async ({
+    project,
+    environment,
+    documentId,
+  }: {
+    project: string;
+    environment: string;
+    documentId: string;
+  }) => {
+    const doc = await contentStore.getById(
+      { project, environment },
+      documentId,
+      { draft: true },
+    );
+    return doc !== null && doc !== undefined && !doc.isDeleted;
+  };
+
   // Schema-aware proposal validator. The AI orchestrator's chat tools
   // and the inline-transform task path both run validator checks on
   // every proposal at build time; this is the place where we hand it
@@ -183,6 +216,8 @@ export function createServerRequestHandlerWithModules(
         | import("@mdcms/shared").SchemaRegistryTypeSnapshot
         | undefined;
     },
+    pathExists: aiPathExists,
+    documentExists: aiDocumentExists,
   });
 
   const aiOrchestrator = createAiOrchestratorFromEnv({
