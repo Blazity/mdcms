@@ -1033,6 +1033,61 @@ export function AssistantPanel({
   const [draft, setDraft] = React.useState("");
   const composerRef = React.useRef<HTMLTextAreaElement | null>(null);
 
+  // Sticky-at-bottom auto-scroll. Tracks whether the user is currently
+  // pinned to the latest message; we only auto-scroll on new content
+  // while they're stuck at the bottom. If they scroll up to read older
+  // turns we leave them alone, then re-engage when they scroll back
+  // near the bottom.
+  const scrollRef = React.useRef<HTMLDivElement | null>(null);
+  const stickyRef = React.useRef(true);
+
+  const isNearBottom = React.useCallback((el: HTMLElement) => {
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }, []);
+
+  const scrollToBottom = React.useCallback(
+    (behavior: ScrollBehavior = "smooth") => {
+      const el = scrollRef.current;
+      if (!el) return;
+      el.scrollTo({ top: el.scrollHeight, behavior });
+    },
+    [],
+  );
+
+  // Re-engage stickiness whenever the user manually scrolls back down,
+  // disengage when they scroll up. ResizeObserver covers proposal
+  // cards expanding mid-conversation (mid-scroll the height changes
+  // even though the user didn't touch the wheel).
+  React.useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      stickyRef.current = isNearBottom(el);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [isNearBottom]);
+
+  // Drive the actual scroll on every render where content might have
+  // grown — messages length, pending state (assistant is mid-stream),
+  // proposal map identity (proposal mutation morphs a row in place).
+  React.useEffect(() => {
+    if (!stickyRef.current) return;
+    scrollToBottom("smooth");
+  }, [
+    thread.messages.length,
+    assistant.isPending,
+    assistant.store.proposals,
+    scrollToBottom,
+  ]);
+
+  // First mount or thread switch — jump to bottom without animation so
+  // the user opens to the latest turn rather than the top of history.
+  React.useEffect(() => {
+    stickyRef.current = true;
+    scrollToBottom("auto");
+  }, [thread.id, scrollToBottom]);
+
   const fillFromExample = React.useCallback((prompt: string) => {
     setDraft(prompt);
     const ta = composerRef.current;
@@ -1132,6 +1187,7 @@ export function AssistantPanel({
           )}
         </div>
         <div
+          ref={scrollRef}
           className={cn(
             "scrollbar-thin flex-1 space-y-1 overflow-y-auto p-4",
             variant === "fullscreen" && "px-8",

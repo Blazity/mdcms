@@ -325,6 +325,25 @@ function emitAudit(
   }
 }
 
+/**
+ * Sanitize a raw error message for client-facing surfaces. Drizzle wraps
+ * postgres failures as `Failed query: <SQL>\nparams: <values>` which is
+ * unreadable in a chat bubble; collapse it to a short hint while the
+ * full SQL still lives in server logs via the audit pipeline.
+ */
+function sanitizeClientReason(raw: string): string {
+  if (raw.startsWith("Failed query:")) {
+    return "Database operation failed. See server logs for details.";
+  }
+  // Single-line cap so a chat bubble never grows past a sane size; the
+  // full text is still in the audit log for ops to inspect.
+  const firstLine = raw.split(/\r?\n/)[0]!;
+  if (firstLine.length > 240) {
+    return `${firstLine.slice(0, 240).trimEnd()}…`;
+  }
+  return firstLine;
+}
+
 function toRuntimeErrorResponse(error: unknown): Response {
   if (error instanceof RuntimeError) {
     return new Response(
@@ -341,13 +360,13 @@ function toRuntimeErrorResponse(error: unknown): Response {
     );
   }
 
-  const message =
+  const rawMessage =
     error instanceof Error ? error.message : "Internal server error.";
   return new Response(
     JSON.stringify({
       code: "INTERNAL_ERROR",
       message: "Internal server error.",
-      details: { reason: message },
+      details: { reason: sanitizeClientReason(rawMessage) },
       statusCode: 500,
     }),
     {
