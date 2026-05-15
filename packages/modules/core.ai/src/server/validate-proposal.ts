@@ -69,16 +69,13 @@ export function createSchemaAwareProposalValidator(input: {
   documentExists?: DocumentLookup;
 }): AiProposalValidator {
   const { schemaLookup, pathExists, documentExists } = input;
-  // documentExists is wired in T17; referenced here so TypeScript's
-  // noUnusedLocals does not reject the scaffolding.
-  void documentExists;
 
   return async (candidate: AiProposalCandidate): Promise<AiProposalValidation> => {
     switch (candidate.kind) {
       case "create_document":
-        return validateCreateDocument(candidate, schemaLookup, pathExists);
+        return validateCreateDocument(candidate, schemaLookup, pathExists, documentExists);
       case "update_frontmatter":
-        return validateUpdateFrontmatter(candidate, schemaLookup);
+        return validateUpdateFrontmatter(candidate, schemaLookup, documentExists);
       case "delete_document":
       case "replace_selection":
       case "insert_block":
@@ -101,6 +98,7 @@ async function validateCreateDocument(
   candidate: AiProposalCandidate,
   schemaLookup: SchemaLookup,
   pathExists: PathLookup | undefined,
+  documentExists: DocumentLookup | undefined,
 ): Promise<AiProposalValidation> {
   const errors: ValidationError[] = [];
 
@@ -155,6 +153,20 @@ async function validateCreateDocument(
     }
   }
 
+  if (documentExists) {
+    for (const [fieldName, field] of Object.entries(schema.fields)) {
+      const refErrors = await collectReferenceErrors({
+        value: frontmatter[fieldName],
+        field,
+        fieldPath: `frontmatter.${fieldName}`,
+        project: candidate.project,
+        environment: candidate.environment,
+        documentExists,
+      });
+      errors.push(...refErrors);
+    }
+  }
+
   return errors.length === 0
     ? { status: "valid" }
     : { status: "invalid", errors };
@@ -163,6 +175,7 @@ async function validateCreateDocument(
 async function validateUpdateFrontmatter(
   candidate: AiProposalCandidate,
   schemaLookup: SchemaLookup,
+  documentExists: DocumentLookup | undefined,
 ): Promise<AiProposalValidation> {
   const errors: ValidationError[] = [];
 
@@ -212,6 +225,22 @@ async function validateUpdateFrontmatter(
     if (typeError) errors.push(typeError);
   }
 
+  if (documentExists) {
+    for (const [key, value] of Object.entries(operation.patch)) {
+      const field = schema.fields[key];
+      if (!field) continue; // already flagged as UNKNOWN_FRONTMATTER_FIELD
+      const refErrors = await collectReferenceErrors({
+        value,
+        field,
+        fieldPath: `patch.${key}`,
+        project: candidate.project,
+        environment: candidate.environment,
+        documentExists,
+      });
+      errors.push(...refErrors);
+    }
+  }
+
   return errors.length === 0
     ? { status: "valid" }
     : { status: "invalid", errors };
@@ -252,6 +281,97 @@ function validateFrontmatterAgainstSchema(
       `frontmatter.${key}`,
     );
     if (typeError) errors.push(typeError);
+  }
+}
+
+async function collectReferenceErrors(input: {
+  value: unknown;
+  field: SchemaRegistryFieldSnapshot;
+  fieldPath: string;
+  project: string;
+  environment: string;
+  documentExists: DocumentLookup;
+}): Promise<ValidationError[]> {
+  const errors: ValidationError[] = [];
+  await walkReferences(input, errors);
+  return errors;
+}
+
+async function walkReferences(
+  input: {
+    value: unknown;
+    field: SchemaRegistryFieldSnapshot;
+    fieldPath: string;
+    project: string;
+    environment: string;
+    documentExists: DocumentLookup;
+  },
+  errors: ValidationError[],
+): Promise<void> {
+  const { value, field, fieldPath, project, environment, documentExists } =
+    input;
+
+  if (value === null || value === undefined) return;
+
+  if (field.reference && field.kind === "reference") {
+    if (typeof value !== "string") {
+      // Wrong-type errors are emitted by checkFieldType elsewhere.
+      return;
+    }
+    const exists = await documentExists({
+      project,
+      environment,
+      documentId: value,
+    });
+    if (!exists) {
+      errors.push({
+        code: "UNKNOWN_REFERENCE",
+        message: `Field "${fieldPath.replace(/^frontmatter\./, "")}" references documentId "${value}" which does not exist in this project.`,
+        path: fieldPath,
+      });
+    }
+    return;
+  }
+
+  if (field.kind === "array" && field.item && Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      await walkReferences(
+        {
+          value: value[index],
+          field: field.item,
+          fieldPath: `${fieldPath}[${index}]`,
+          project,
+          environment,
+          documentExists,
+        },
+        errors,
+      );
+    }
+    return;
+  }
+
+  if (
+    field.kind === "object" &&
+    field.fields &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    value !== null
+  ) {
+    const obj = value as Record<string, unknown>;
+    for (const [subName, subField] of Object.entries(field.fields)) {
+      await walkReferences(
+        {
+          value: obj[subName],
+          field: subField,
+          fieldPath: `${fieldPath}.${subName}`,
+          project,
+          environment,
+          documentExists,
+        },
+        errors,
+      );
+    }
+    return;
   }
 }
 

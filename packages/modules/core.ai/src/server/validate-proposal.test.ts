@@ -393,6 +393,225 @@ describe("createSchemaAwareProposalValidator — other kinds", () => {
   });
 });
 
+const POST_WITH_REF_SCHEMA: SchemaRegistryTypeSnapshot = {
+  type: "post",
+  directory: "blog",
+  localized: true,
+  fields: {
+    title: { kind: "string", required: true, nullable: false },
+    date: { kind: "date", required: true, nullable: false },
+    author: {
+      kind: "reference",
+      required: false,
+      nullable: true,
+      reference: { targetType: "author" },
+    },
+    coauthors: {
+      kind: "array",
+      required: false,
+      nullable: false,
+      item: {
+        kind: "reference",
+        required: true,
+        nullable: false,
+        reference: { targetType: "author" },
+      },
+    },
+  },
+};
+
+const REF_REGISTRY: Record<string, SchemaRegistryTypeSnapshot> = {
+  post: POST_WITH_REF_SCHEMA,
+};
+
+const refLookup: SchemaLookup = async ({ type }) => REF_REGISTRY[type];
+
+describe("createSchemaAwareProposalValidator — UNKNOWN_REFERENCE", () => {
+  test("flags create_document with a missing author reference", async () => {
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: refLookup,
+      documentExists: async ({ documentId }) => documentId === "doc_real",
+    });
+    const result = await validator(
+      createCandidate({
+        type: "post",
+        operations: [
+          {
+            op: "create_document",
+            path: "blog/x",
+            format: "md",
+            frontmatter: {
+              title: "x",
+              date: "2026-05-15",
+              author: "doc_fake",
+            },
+            body: "Body",
+          },
+        ],
+      }),
+    );
+    assert.equal(result.status, "invalid");
+    if (result.status === "invalid") {
+      const refErrors = result.errors.filter(
+        (e) => e.code === "UNKNOWN_REFERENCE",
+      );
+      assert.equal(refErrors.length, 1);
+      assert.equal(refErrors[0]?.path, "frontmatter.author");
+    }
+  });
+
+  test("allows create_document with a real reference", async () => {
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: refLookup,
+      documentExists: async ({ documentId }) => documentId === "doc_real",
+    });
+    const result = await validator(
+      createCandidate({
+        type: "post",
+        operations: [
+          {
+            op: "create_document",
+            path: "blog/x",
+            format: "md",
+            frontmatter: {
+              title: "x",
+              date: "2026-05-15",
+              author: "doc_real",
+            },
+            body: "Body",
+          },
+        ],
+      }),
+    );
+    assert.equal(result.status, "valid");
+  });
+
+  test("flags missing references inside array fields", async () => {
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: refLookup,
+      documentExists: async ({ documentId }) =>
+        documentId === "doc_real_1" || documentId === "doc_real_2",
+    });
+    const result = await validator(
+      createCandidate({
+        type: "post",
+        operations: [
+          {
+            op: "create_document",
+            path: "blog/x",
+            format: "md",
+            frontmatter: {
+              title: "x",
+              date: "2026-05-15",
+              coauthors: ["doc_real_1", "doc_fake", "doc_real_2"],
+            },
+            body: "Body",
+          },
+        ],
+      }),
+    );
+    assert.equal(result.status, "invalid");
+    if (result.status === "invalid") {
+      const refErrors = result.errors.filter(
+        (e) => e.code === "UNKNOWN_REFERENCE",
+      );
+      assert.equal(refErrors.length, 1);
+      assert.equal(refErrors[0]?.path, "frontmatter.coauthors[1]");
+    }
+  });
+
+  test("null on nullable reference field passes", async () => {
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: refLookup,
+      documentExists: async () => false,
+    });
+    const result = await validator(
+      createCandidate({
+        type: "post",
+        operations: [
+          {
+            op: "create_document",
+            path: "blog/x",
+            format: "md",
+            frontmatter: {
+              title: "x",
+              date: "2026-05-15",
+              author: null,
+            },
+            body: "Body",
+          },
+        ],
+      }),
+    );
+    if (result.status === "invalid") {
+      const refErrors = result.errors.filter(
+        (e) => e.code === "UNKNOWN_REFERENCE",
+      );
+      assert.equal(refErrors.length, 0);
+    }
+  });
+
+  test("flags UNKNOWN_REFERENCE on update_frontmatter patch", async () => {
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: refLookup,
+      documentExists: async () => false,
+    });
+    const result = await validator({
+      proposalId: "p1",
+      kind: "update_frontmatter",
+      project: "demo",
+      environment: "draft",
+      type: "post",
+      locale: "en",
+      summary: "update author",
+      operations: [
+        {
+          op: "update_frontmatter",
+          patch: { author: "doc_fake" },
+        },
+      ],
+      expiresAt: "2026-05-16T00:05:00.000Z",
+      provider: {
+        providerId: "echo",
+        model: "echo-1",
+        promptTemplateId: "chat_tools.v1",
+      },
+    });
+    assert.equal(result.status, "invalid");
+    if (result.status === "invalid") {
+      const refErrors = result.errors.filter(
+        (e) => e.code === "UNKNOWN_REFERENCE",
+      );
+      assert.equal(refErrors.length, 1);
+    }
+  });
+
+  test("skips ref check when documentExists is not provided", async () => {
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: refLookup,
+    });
+    const result = await validator(
+      createCandidate({
+        type: "post",
+        operations: [
+          {
+            op: "create_document",
+            path: "blog/x",
+            format: "md",
+            frontmatter: {
+              title: "x",
+              date: "2026-05-15",
+              author: "doc_anything",
+            },
+            body: "Body",
+          },
+        ],
+      }),
+    );
+    assert.equal(result.status, "valid");
+  });
+});
+
 describe("createSchemaAwareProposalValidator — PATH_ALREADY_IN_USE", () => {
   test("flags create_document with a taken path", async () => {
     const validator = createSchemaAwareProposalValidator({
