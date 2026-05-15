@@ -3252,7 +3252,6 @@ export default function ContentDocumentPage({
           message: "Studio document route context is unavailable.",
         }),
   );
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   // When the global assistant opens it claims the right-side column.
   // Collapse Properties to the handle so the editor body isn't squeezed
   // between two persistent panels. When the assistant closes, restore
@@ -3260,6 +3259,7 @@ export default function ContentDocumentPage({
   // only fires on the assistant.isOpen transition itself.
   const assistant = useAssistant();
   const assistantOpen = assistant.isOpen;
+  const [sidebarOpen, setSidebarOpen] = useState(!assistantOpen);
   const prevAssistantOpenRef = useRef(assistantOpen);
   useEffect(() => {
     if (prevAssistantOpenRef.current === assistantOpen) return;
@@ -3267,10 +3267,13 @@ export default function ContentDocumentPage({
     setSidebarOpen(!assistantOpen);
   }, [assistantOpen]);
   // Esc dismisses the slide-over (only meaningful when Properties is
-  // overlaying the canvas — i.e. the assistant is open).
+  // overlaying the canvas — i.e. the assistant is open). Skip when
+  // another surface already handled the event so dialogs/menus that
+  // consume Escape don't also collapse the sidebar.
   useEffect(() => {
     if (!sidebarOpen || !assistantOpen) return;
     const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       if (event.key === "Escape") setSidebarOpen(false);
     };
     document.addEventListener("keydown", onKey);

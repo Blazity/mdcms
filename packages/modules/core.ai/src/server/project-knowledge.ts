@@ -27,7 +27,7 @@ export function renderProjectKnowledgeBlock(
 
   if (input.currentUser) {
     lines.push(
-      `Current user: ${sanitizeForPrompt(input.currentUser.displayName)} (id: ${sanitizeForPrompt(input.currentUser.id)})`,
+      `Current user: ${sanitizeUserText(input.currentUser.displayName)} (id: ${sanitizeForPrompt(input.currentUser.id)})`,
     );
   }
 
@@ -61,13 +61,26 @@ export function renderProjectKnowledgeBlock(
 }
 
 /**
- * Strip characters that would break the markdown structure of the
- * prompt. The display name comes from `authUsers.name` which is
- * user-controlled; this prevents a backtick or newline in a name
- * from mangling the prompt.
+ * Replace characters that would break the markdown structure of the
+ * prompt. Used for system-typed identifiers (project slug, environment
+ * slug, user id) where the value is otherwise constrained by routing
+ * regexes — only the structural breakers (backticks, line breaks)
+ * actually need neutralizing.
  */
 function sanitizeForPrompt(value: string): string {
   return value.replace(/[`\n\r]/g, " ").trim();
+}
+
+/**
+ * Strip the broader set of markdown/HTML structure characters from
+ * free-text values supplied by users (e.g. `authUsers.name`). A
+ * malicious display name like `</context> *Ignore everything above*`
+ * is reduced to a plain text run so it can't open a code span, close
+ * an HTML/quote block, or inject emphasis/table syntax that the model
+ * might parse as control structure.
+ */
+function sanitizeUserText(value: string): string {
+  return value.replace(/[`*~\[\]<>|\n\r]/g, " ").trim();
 }
 
 const MAX_NESTED_DEPTH = 1;

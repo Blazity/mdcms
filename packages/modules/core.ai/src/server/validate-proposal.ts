@@ -401,7 +401,7 @@ function checkFieldType(
     return undefined;
   }
   const actual = jsKindOf(value);
-  const expected = expectedJsKind(field.kind);
+  const expected = expectedJsKind(field);
   if (!expected) {
     // Unknown schema kind — don't reject; let it through. New schema
     // kinds added later shouldn't false-positive existing proposals.
@@ -423,8 +423,10 @@ function checkFieldType(
  * those slip through validation (intentional: unknown kinds are
  * forwards-compatible).
  */
-function expectedJsKind(schemaKind: string): string | undefined {
-  switch (schemaKind) {
+function expectedJsKind(
+  field: SchemaRegistryFieldSnapshot,
+): string | undefined {
+  switch (field.kind) {
     case "string":
     case "richText":
     case "url":
@@ -454,9 +456,16 @@ function expectedJsKind(schemaKind: string): string | undefined {
       // Don't strict-check until reference shape is locked in.
       return undefined;
     case "enum":
-    case "select":
-      // Enum values are strings or numbers depending on the schema.
-      return "string";
+    case "select": {
+      // Derive the expected runtime kind from the declared options when
+      // they're uniformly typed. Mixed or empty option lists skip the
+      // strict check (forwards-compatible with future shapes).
+      const options = field.options;
+      if (!options || options.length === 0) return undefined;
+      if (options.every((o) => typeof o === "string")) return "string";
+      if (options.every((o) => typeof o === "number")) return "number";
+      return undefined;
+    }
     default:
       return undefined;
   }

@@ -48,6 +48,30 @@ describe("renderProjectKnowledgeBlock", () => {
     assert.ok(!block.split("\n").some((l) => l.startsWith("## Injected")));
     assert.ok(block.includes("Project: okay ## Injected"));
   });
+
+  test("neutralizes markdown structure characters in display name", () => {
+    const block = renderProjectKnowledgeBlock({
+      project: "p",
+      environment: "e",
+      registeredTypes: [],
+      supportedLocales: [],
+      currentUser: {
+        id: "user_1",
+        displayName: "*Eve* <admin> [root] ~strike~ | x",
+      },
+    });
+    // Markdown/HTML structural punctuation must not survive in the
+    // sanitized name — otherwise a hostile name could open a code span
+    // or close out of the surrounding prompt context.
+    for (const ch of ["*", "~", "<", ">", "[", "]", "|"]) {
+      assert.ok(
+        !block.includes(ch),
+        `expected sanitizer to strip "${ch}" but it was present in: ${block}`,
+      );
+    }
+    // The id keeps its `_` so opaque tokens stay intact.
+    assert.ok(block.includes("(id: user_1)"));
+  });
 });
 
 const POST_SCHEMA: SchemaRegistryTypeSnapshot = {

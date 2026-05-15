@@ -183,6 +183,43 @@ describe("createSchemaAwareProposalValidator — create_document", () => {
     }
   });
 
+  test("accepts numeric values for numeric-option enum fields", async () => {
+    const numericEnumSchema: SchemaRegistryTypeSnapshot = {
+      type: "rating",
+      directory: "ratings",
+      localized: false,
+      fields: {
+        title: { kind: "string", required: true, nullable: false },
+        score: {
+          kind: "enum",
+          required: true,
+          nullable: false,
+          options: [1, 2, 3, 4, 5],
+        },
+      },
+    };
+    const numericLookup: SchemaLookup = async ({ type }) =>
+      type === "rating" ? numericEnumSchema : undefined;
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: numericLookup,
+    });
+    const result = await validator(
+      createCandidate({
+        type: "rating",
+        operations: [
+          {
+            op: "create_document",
+            path: "ratings/test",
+            format: "md",
+            frontmatter: { title: "Hello", score: 4 },
+            body: "Body",
+          },
+        ],
+      }),
+    );
+    assert.equal(result.status, "valid");
+  });
+
   test("aggregates multiple errors", async () => {
     const validator = createSchemaAwareProposalValidator({
       schemaLookup: lookup,
