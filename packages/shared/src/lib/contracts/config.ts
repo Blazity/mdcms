@@ -196,6 +196,26 @@ export function reference(targetType: string) {
   });
 }
 
+/**
+ * readSupportedLocales safely extracts the set of supported locale codes
+ * from a raw config snapshot (as stored in schemaSyncs.rawConfigSnapshot).
+ * Returns a Set of locale strings, or undefined if parsing fails or the
+ * config uses an implicit (no locales defined) configuration.
+ */
+export function readSupportedLocales(
+  rawConfigSnapshot: unknown,
+): Set<string> | undefined {
+  try {
+    const parsed = parseMdcmsConfig(rawConfigSnapshot);
+    if (parsed.locales.implicit) {
+      return undefined;
+    }
+    return new Set(parsed.locales.supported);
+  } catch {
+    return undefined;
+  }
+}
+
 export function parseMdcmsConfig(raw: unknown): ParsedMdcmsConfig {
   const config = expectRecord(raw, "config");
   const types = parseTypes(config.types);

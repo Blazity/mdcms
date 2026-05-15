@@ -5,6 +5,7 @@ import {
 } from "./server.js";
 import {
   createConsoleLogger,
+  readSupportedLocales,
   resolveRequestTargetRouting,
   RuntimeError,
   type Logger,
@@ -43,7 +44,11 @@ import {
   createStudioRuntimePublication,
   type CreateStudioRuntimePublicationOptions,
 } from "./studio-bootstrap.js";
-import { authUsers, schemaSyncs } from "./db/schema.js";
+import {
+  authUsers,
+  schemaRegistryEntries,
+  schemaSyncs,
+} from "./db/schema.js";
 import { resolveProjectEnvironmentScope } from "./project-provisioning.js";
 
 import {
@@ -56,6 +61,7 @@ import {
 import {
   createAiOrchestratorFromEnv,
   createInMemoryAiProposalStore,
+  createSchemaAwareProposalValidator,
   type CoreAiServerDeps,
 } from "@mdcms/modules";
 
@@ -149,10 +155,98 @@ export function createServerRequestHandlerWithModules(
     return row?.schemaHash;
   };
 
+  // Schema-aware proposal validator. The AI orchestrator's chat tools
+  // and the inline-transform task path both run validator checks on
+  // every proposal at build time; this is the place where we hand it
+  // the project's actual schema registry so it can catch missing
+  // required frontmatter, unknown fields, and bad type ids. Without
+  // this, all proposals default to `{ status: "valid" }`.
+  const aiProposalValidator = createSchemaAwareProposalValidator({
+    schemaLookup: async ({ project, environment, type }) => {
+      const resolvedScope = await resolveProjectEnvironmentScope(
+        dbConnection.db,
+        { project, environment },
+      );
+      if (!resolvedScope) return undefined;
+      const row = await dbConnection.db.query.schemaRegistryEntries.findFirst({
+        where: and(
+          eq(schemaRegistryEntries.projectId, resolvedScope.project.id),
+          eq(schemaRegistryEntries.environmentId, resolvedScope.environment.id),
+          eq(schemaRegistryEntries.schemaType, type),
+        ),
+      });
+      // The `resolvedSchema` column is stored as JSON in the DB; the
+      // shape matches `SchemaRegistryTypeSnapshot` from @mdcms/shared.
+      // We cast rather than re-validate at every chat turn — the value
+      // was validated at schema-sync time.
+      return row?.resolvedSchema as
+        | import("@mdcms/shared").SchemaRegistryTypeSnapshot
+        | undefined;
+    },
+  });
+
   const aiOrchestrator = createAiOrchestratorFromEnv({
     env: rawEnv as Record<string, string | undefined>,
+    proposalValidator: aiProposalValidator,
   });
   const aiProposalStore = createInMemoryAiProposalStore();
+
+  const contentTypesLookup = async ({
+    project,
+    environment,
+  }: {
+    project: string;
+    environment: string;
+  }) => {
+    const resolvedScope = await resolveProjectEnvironmentScope(
+      dbConnection.db,
+      { project, environment },
+    );
+    if (!resolvedScope) return [];
+    const rows = await dbConnection.db.query.schemaRegistryEntries.findMany({
+      where: and(
+        eq(schemaRegistryEntries.projectId, resolvedScope.project.id),
+        eq(schemaRegistryEntries.environmentId, resolvedScope.environment.id),
+      ),
+    });
+    return rows.map(
+      (r) =>
+        r.resolvedSchema as import("@mdcms/shared").SchemaRegistryTypeSnapshot,
+    );
+  };
+
+  const supportedLocalesLookup = async ({
+    project,
+    environment,
+  }: {
+    project: string;
+    environment: string;
+  }) => {
+    const resolvedScope = await resolveProjectEnvironmentScope(
+      dbConnection.db,
+      { project, environment },
+    );
+    if (!resolvedScope) return [];
+    const row = await dbConnection.db.query.schemaSyncs.findFirst({
+      where: and(
+        eq(schemaSyncs.projectId, resolvedScope.project.id),
+        eq(schemaSyncs.environmentId, resolvedScope.environment.id),
+      ),
+    });
+    if (!row?.rawConfigSnapshot) return [];
+    const locales = readSupportedLocales(row.rawConfigSnapshot);
+    return locales ? Array.from(locales).sort() : [];
+  };
+
+  const userLookup = async ({ userId }: { userId: string }) => {
+    const row = await dbConnection.db.query.authUsers.findFirst({
+      where: eq(authUsers.id, userId),
+      columns: { id: true, name: true, email: true },
+    });
+    return row
+      ? { id: row.id, displayName: row.name || row.email }
+      : { id: userId, displayName: userId };
+  };
 
   const aiModuleDeps: CoreAiServerDeps = {
     orchestrator: aiOrchestrator,
@@ -164,6 +258,8 @@ export function createServerRequestHandlerWithModules(
         contentStore.update(scope, documentId, payload, opts),
       create: (scope, payload, opts) =>
         contentStore.create(scope, payload, opts),
+      softDelete: (scope, documentId) =>
+        contentStore.softDelete(scope, documentId),
     },
     contextResolver: {
       loadDraftContext: async ({
@@ -230,6 +326,9 @@ export function createServerRequestHandlerWithModules(
         errorCode: record.errorCode,
       });
     },
+    contentTypesLookup,
+    supportedLocalesLookup,
+    userLookup,
   };
 
   const moduleDeps: ServerModuleAppDeps = {
