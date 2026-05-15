@@ -7,6 +7,7 @@ import { domainContentModule } from "../domain.content/src/index.js";
 export {
   createAiOrchestratorFromEnv,
   createInMemoryAiProposalStore,
+  createSchemaAwareProposalValidator,
   type AiAuditEmitter,
   type AiAuditOutcome,
   type AiAuditRecord,
@@ -16,6 +17,7 @@ export {
   type AiCsrfProtector,
   type AiOrchestrator,
   type AiProposalRecord,
+  type AiProposalSchemaLookup,
   type AiProposalStatus,
   type AiProposalStore,
   type AiSchemaHashLookup,

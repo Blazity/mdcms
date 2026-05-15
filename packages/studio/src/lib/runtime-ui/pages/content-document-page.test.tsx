@@ -1599,7 +1599,7 @@ test("SidebarInfoTab derives truthful document status badges from live document 
   assert.doesNotMatch(draftMarkup, />Published</);
 });
 
-test("ContentDocumentPageView surfaces UNPUBLISHED CHANGES in the topbar when the doc has unpublished edits", () => {
+test("ContentDocumentPageView folds the unpublished-changes signal into the Publish button", () => {
   const changedMarkup = renderPageMarkup(createReadyState());
   const publishedMarkup = renderPageMarkup({
     ...createReadyState(),
@@ -1610,9 +1610,17 @@ test("ContentDocumentPageView surfaces UNPUBLISHED CHANGES in the topbar when th
     },
   });
 
-  assert.match(changedMarkup, /UNPUBLISHED CHANGES/);
+  // The standalone "UNPUBLISHED CHANGES" pill was retired; the Publish
+  // button itself carries the signal via a data attribute and an inline
+  // "unpublished" badge.
+  assert.doesNotMatch(changedMarkup, /UNPUBLISHED CHANGES/);
   assert.match(changedMarkup, /data-mdcms-document-unpublished-changes="true"/);
-  assert.doesNotMatch(publishedMarkup, /UNPUBLISHED CHANGES/);
+  assert.match(changedMarkup, />unpublished</);
+  assert.doesNotMatch(
+    publishedMarkup,
+    /data-mdcms-document-unpublished-changes="true"/,
+  );
+  assert.doesNotMatch(publishedMarkup, />unpublished</);
 });
 
 test("ContentDocumentPageView blocks writes when the local schema hash capability is unavailable", () => {

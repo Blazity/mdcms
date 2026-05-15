@@ -26,6 +26,7 @@ import { cn } from "../../lib/utils.js";
 import { useStudioSession } from "../../app/admin/session-context.js";
 import { useStudioMountInfo } from "../../app/admin/mount-info-context.js";
 import { createStudioSessionApi } from "../../../session-api.js";
+import { AssistantLauncher } from "../assistant/assistant-launcher.js";
 
 export type BreadcrumbItem = { label: string; href?: string };
 
@@ -220,6 +221,9 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
 
         {/* Right side - Controls */}
         <div className="flex items-center gap-3">
+          {/* AI assistant launcher */}
+          <AssistantLauncher />
+
           {/* Environment selector */}
           {mountInfo.environments.length > 1 ? (
             <Select

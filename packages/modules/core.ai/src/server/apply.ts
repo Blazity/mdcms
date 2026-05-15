@@ -48,6 +48,10 @@ export type AiApplyContentStore = {
     },
     options: { expectedSchemaHash: string },
   ): Promise<AiApplyContentDocument>;
+  softDelete(
+    scope: AiApplyContentScope,
+    documentId: string,
+  ): Promise<AiApplyContentDocument>;
 };
 
 export type AiApplyInput = {
@@ -240,6 +244,44 @@ export async function applyAiProposal(
         currentDraftRevision: existing.draftRevision,
       },
     );
+  }
+
+  if (proposal.kind === "delete_document") {
+    if (operation.op !== "delete_document") {
+      throw aiOutputInvalid(
+        "delete_document proposal must contain a delete_document operation.",
+        { proposalId: proposal.proposalId },
+      );
+    }
+
+    // SPEC-014 §Authorization: AI-mediated deletion only applies to
+    // draft or unpublished documents. A document with a publishedVersion
+    // must first be unpublished through the manual content endpoints,
+    // which keeps the AI surface from removing live content as a single
+    // accept-click. The proposal-builder also stamps an invalid
+    // validation in this case, but the apply path enforces it again so a
+    // stale proposal generated before publish can't be replayed.
+    if (
+      existing.publishedVersion !== null &&
+      existing.publishedVersion !== undefined
+    ) {
+      throw aiProposalConflict(
+        "Cannot delete a document with a published version. Unpublish it first via the content endpoints.",
+        {
+          proposalId: proposal.proposalId,
+          documentId: proposal.documentId,
+          publishedVersion: existing.publishedVersion,
+        },
+      );
+    }
+
+    // The proposal's `op.path` is a human-readable hint stamped at
+    // generation time; the authoritative target is `proposal.documentId`,
+    // already verified to exist above. We do not enforce path equality
+    // here because content paths can shift via rename without affecting
+    // identity, and we already proved we're deleting the doc the model
+    // intended via the existing draft load.
+    return await store.softDelete(scope, proposal.documentId);
   }
 
   let nextBody = existing.body;

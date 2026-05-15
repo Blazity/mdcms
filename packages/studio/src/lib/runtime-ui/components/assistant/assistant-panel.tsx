@@ -1,0 +1,1040 @@
+"use client";
+
+import * as React from "react";
+import {
+  AtSign,
+  ChevronRight,
+  Maximize2,
+  Minimize2,
+  MoreHorizontal,
+  Plus,
+  Send,
+  X,
+} from "lucide-react";
+
+import { cn } from "../../lib/utils.js";
+import { Button } from "../ui/button.js";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu.js";
+import {
+  ASSISTANT_COMPOSER_DATA_ATTR,
+  type AssistantActiveDocument,
+  useAssistant,
+  useAssistantActiveDocument,
+  relTime,
+} from "./assistant-context.js";
+import type {
+  AssistantMessage,
+  AssistantProposal,
+  AssistantThread,
+} from "./assistant-types.js";
+import { ProposalCard } from "./proposal-card.js";
+import { SparkleMark } from "./sparkle-mark.js";
+import { useStudioApiConfig } from "../../app/admin/mount-info-context.js";
+import { createStudioDocumentRouteApi } from "../../../document-route-api.js";
+
+export type AssistantPanelProps = {
+  /** Hide the close (×) button — used when the surface chrome owns dismissal. */
+  hideClose?: boolean;
+  /** Hide the thread list pane; collapse the panel to a single conversation. */
+  hideThreadList?: boolean;
+  /** Hide the Fullscreen toggle in the header. */
+  hideExpand?: boolean;
+  /** When true, render with the rail-mode width hint for chip overflow. */
+  variant?: "rail" | "fullscreen";
+};
+
+function ThreadList({
+  threads,
+  activeId,
+  onPick,
+  onCreate,
+}: {
+  threads: AssistantThread[];
+  activeId: string;
+  onPick: (id: string) => void;
+  onCreate: () => void;
+}) {
+  return (
+    <div className="flex h-full w-[220px] shrink-0 flex-col border-r border-divider/40 bg-background-subtle">
+      <div className="flex items-center gap-2 border-b border-divider/40 px-3 py-2.5">
+        <span className="flex-1 font-mono text-[10px] uppercase tracking-wider text-foreground-muted">
+          Conversations
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-6 gap-1 px-2 text-[11px]"
+          onClick={onCreate}
+        >
+          <Plus className="h-3 w-3" aria-hidden /> New
+        </Button>
+      </div>
+      <div className="scrollbar-thin flex-1 overflow-y-auto p-1.5">
+        {threads.map((t) => (
+          <button
+            type="button"
+            key={t.id}
+            onClick={() => onPick(t.id)}
+            aria-current={t.id === activeId ? "true" : undefined}
+            className={cn(
+              "mb-0.5 block w-full rounded-md border px-2.5 py-2 text-left transition-colors",
+              t.id === activeId
+                ? "border-divider/60 bg-card text-foreground"
+                : "border-transparent text-foreground hover:bg-card/60",
+            )}
+          >
+            <div className="mb-0.5 truncate text-[12.5px] font-semibold">
+              {t.pinned && <span className="mr-1.5 text-primary">●</span>}
+              {t.title}
+            </div>
+            <div className="flex gap-1.5 font-mono text-[10px] text-foreground-muted">
+              <span>{relTime(t.updatedAt)}</span>
+              <span>·</span>
+              <span>
+                {t.docCount} doc{t.docCount === 1 ? "" : "s"}
+              </span>
+            </div>
+            <div className="mt-1 line-clamp-2 text-[11px] leading-snug text-foreground-muted">
+              {t.preview}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+type MentionCandidate = {
+  documentId?: string;
+  path: string;
+  type: string;
+  locale: string;
+};
+
+/**
+ * Server-backed mention candidate fetch. Debounces the query so the
+ * picker doesn't fan out a request per keystroke, aborts in-flight
+ * requests when the user keeps typing, and exposes loading + error
+ * states for the dropdown to render. Scoped to the active studio
+ * project/environment via the mount info context.
+ */
+function useServerMentionCandidates(query: string): {
+  candidates: MentionCandidate[];
+  loading: boolean;
+  error: string | null;
+} {
+  const apiConfig = useStudioApiConfig();
+  const [state, setState] = React.useState<{
+    candidates: MentionCandidate[];
+    loading: boolean;
+    error: string | null;
+  }>({ candidates: [], loading: false, error: null });
+
+  React.useEffect(() => {
+    if (!apiConfig) {
+      setState({ candidates: [], loading: false, error: null });
+      return;
+    }
+    setState((s) => ({ ...s, loading: true, error: null }));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      const api = createStudioDocumentRouteApi(
+        apiConfig.config,
+        apiConfig.authOptions,
+      );
+      api
+        .listContent({
+          q: query.length > 0 ? query : undefined,
+          limit: 20,
+          signal: controller.signal,
+        })
+        .then((response) => {
+          if (controller.signal.aborted) return;
+          const mapped: MentionCandidate[] = response.data.map((doc) => ({
+            ...(doc.documentId ? { documentId: doc.documentId } : {}),
+            path: doc.path,
+            type: doc.type,
+            locale: doc.locale,
+          }));
+          setState({ candidates: mapped, loading: false, error: null });
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Failed to load documents.";
+          setState({ candidates: [], loading: false, error: message });
+        });
+    }, 200);
+
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [apiConfig, query]);
+
+  return state;
+}
+
+function MentionPicker({
+  query,
+  excludePaths,
+  onPick,
+  onClose,
+}: {
+  query: string;
+  excludePaths: Set<string>;
+  onPick: (candidate: MentionCandidate) => void;
+  onClose: () => void;
+}) {
+  const { candidates, loading, error } = useServerMentionCandidates(query);
+  const filtered = React.useMemo(
+    () => candidates.filter((c) => !excludePaths.has(c.path)).slice(0, 8),
+    [candidates, excludePaths],
+  );
+
+  if (error) {
+    return (
+      <div
+        role="listbox"
+        aria-label="Document picker"
+        className="absolute bottom-full left-3 right-3 mb-1 rounded-md border border-divider/60 bg-popover px-3 py-3 text-[12px] text-destructive shadow-lg"
+      >
+        Couldn't search documents — {error}.{" "}
+        <button
+          type="button"
+          onClick={onClose}
+          className="ml-1 underline hover:text-foreground"
+        >
+          dismiss
+        </button>
+      </div>
+    );
+  }
+
+  if (filtered.length === 0) {
+    return (
+      <div
+        role="listbox"
+        aria-label="Document picker"
+        className="absolute bottom-full left-3 right-3 mb-1 rounded-md border border-divider/60 bg-popover px-3 py-3 text-[12px] text-foreground-muted shadow-lg"
+      >
+        {loading ? (
+          "Searching documents…"
+        ) : query ? (
+          <>
+            No documents match <code className="font-mono">@{query}</code>.{" "}
+          </>
+        ) : (
+          "Start typing to search documents. "
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          className="ml-1 underline hover:text-foreground"
+        >
+          dismiss
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      role="listbox"
+      aria-label="Document picker"
+      className="absolute bottom-full left-3 right-3 mb-1 max-h-72 overflow-y-auto rounded-md border border-divider/60 bg-popover py-1 shadow-lg"
+    >
+      <div className="border-b border-divider/40 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-foreground-muted">
+        Attach document
+      </div>
+      {filtered.map((c) => (
+        <button
+          key={c.path}
+          type="button"
+          role="option"
+          onClick={() => onPick(c)}
+          className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors hover:bg-accent-subtle"
+        >
+          <span className="shrink-0 rounded-sm bg-blue-100 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-primary">
+            {c.type}
+          </span>
+          <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-foreground">
+            {c.path}
+          </span>
+          <span className="shrink-0 font-mono text-[10px] text-foreground-muted/80">
+            {c.locale}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ContextChips({
+  thread,
+  activeDocument,
+  onClearSelection,
+  onRemoveDoc,
+}: {
+  thread: AssistantThread;
+  activeDocument: AssistantActiveDocument | null;
+  onClearSelection: () => void;
+  onRemoveDoc: (path: string) => void;
+}) {
+  const sel = thread.attachedSelection;
+  // Render mention-added context docs as `+` chips, skipping any that
+  // already represent the active editor doc (path-matched) so we don't
+  // double up if the user mentions the doc they're currently editing.
+  const extras = activeDocument
+    ? thread.contextDocs.filter((d) => d.path !== activeDocument.path)
+    : thread.contextDocs;
+  return (
+    <div className="-mb-px flex flex-wrap items-center gap-1.5 rounded-t-lg border border-b-0 border-divider/60 bg-card px-2.5 py-1.5">
+      <span className="mr-0.5 font-mono text-[9px] uppercase tracking-wider text-foreground-muted">
+        Context
+      </span>
+      {activeDocument && (
+        <span
+          className="inline-flex items-center gap-1.5 rounded-sm border border-divider/60 bg-card px-1.5 py-0.5 font-mono text-[10.5px] text-foreground-muted"
+          title={`Current document — ${activeDocument.path}`}
+        >
+          <span className="text-primary">◆</span> current
+        </span>
+      )}
+      {extras.map((d) => (
+        <span
+          key={d.path}
+          className="inline-flex items-center gap-1.5 rounded-sm border border-divider/60 bg-card px-1.5 py-0.5 font-mono text-[10.5px] text-foreground-muted"
+          title={`Selected document — ${d.path}`}
+        >
+          <span className="text-foreground-muted">＋</span>
+          {d.path}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemoveDoc(d.path);
+            }}
+            className="-mr-0.5 ml-0.5 rounded text-foreground-muted hover:text-foreground"
+            aria-label={`Remove ${d.path} from context`}
+          >
+            <X className="h-2.5 w-2.5" />
+          </button>
+        </span>
+      ))}
+      {sel && (
+        <span
+          className="inline-flex items-center gap-1.5 rounded-sm border border-primary/30 bg-blue-100 px-1.5 py-0.5 font-mono text-[10.5px] text-primary"
+          title={sel.text}
+        >
+          <SparkleMark size={9} />
+          selected text
+          <button
+            type="button"
+            onClick={onClearSelection}
+            className="-mr-0.5 ml-0.5 rounded text-primary/80 hover:text-primary"
+            aria-label="Detach selection"
+          >
+            <X className="h-2.5 w-2.5" />
+          </button>
+        </span>
+      )}
+    </div>
+  );
+}
+
+function EmptyThreadHint() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 px-6 py-12 text-center text-foreground-muted">
+      <span className="text-primary">
+        <SparkleMark size={28} />
+      </span>
+      <div className="max-w-xs space-y-1.5">
+        <div className="text-[13.5px] font-semibold text-foreground">
+          Start a conversation
+        </div>
+        <div className="text-[12px] leading-snug">
+          Ask the assistant to edit the active draft, write a new post, or
+          delete a stale one. Use{" "}
+          <code className="rounded bg-muted px-1 font-mono text-[10.5px]">
+            @
+          </code>{" "}
+          to attach another document for context.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UserBubble({ message }: { message: AssistantMessage }) {
+  return (
+    <div className="mb-4 flex justify-end">
+      <div className="max-w-[80%] rounded-[12px_12px_2px_12px] bg-secondary px-3 py-2 text-[13px] leading-snug text-secondary-foreground">
+        {message.text}
+      </div>
+    </div>
+  );
+}
+
+function AssistantBubble({
+  message,
+  proposalsById,
+  onAccept,
+  onReject,
+}: {
+  message: AssistantMessage;
+  proposalsById: Record<string, AssistantProposal>;
+  onAccept: (proposalId: string) => void;
+  onReject: (proposalId: string, feedback: string) => void;
+}) {
+  const proposalIds = message.proposals ?? [];
+  const text = message.text?.trim();
+  if (proposalIds.length === 0 && !text) return null;
+  const proposals = proposalIds
+    .map((pid) => proposalsById[pid])
+    .filter((p): p is AssistantProposal => Boolean(p));
+  const isMultiTurn = proposals.length > 1;
+  return (
+    <div className="mb-5 space-y-2">
+      {text && (
+        <div className="max-w-[92%] text-[13.5px] leading-relaxed text-foreground">
+          {text}
+        </div>
+      )}
+      {!isMultiTurn &&
+        proposals.map((proposal) => (
+          <ProposalCard
+            key={proposal.proposalId}
+            proposal={proposal}
+            onAccept={() => onAccept(proposal.proposalId)}
+            onReject={(feedback) => onReject(proposal.proposalId, feedback)}
+          />
+        ))}
+      {isMultiTurn && (
+        <TurnGroup
+          proposals={proposals}
+          onAccept={onAccept}
+          onReject={onReject}
+        />
+      )}
+    </div>
+  );
+}
+
+const TURN_KIND_LABEL: Record<AssistantProposal["kind"], string> = {
+  replace_selection: "Edit",
+  insert_block: "Insert",
+  update_frontmatter: "Frontmatter",
+  create_document: "New doc",
+  delete_document: "Delete",
+};
+
+const TURN_KIND_TONE: Record<
+  AssistantProposal["kind"],
+  { bg: string; fg: string }
+> = {
+  replace_selection: {
+    bg: "bg-primary/15",
+    fg: "text-primary",
+  },
+  insert_block: {
+    bg: "bg-vibrant-green/15",
+    fg: "text-vibrant-green",
+  },
+  update_frontmatter: {
+    bg: "bg-primary/15",
+    fg: "text-primary",
+  },
+  create_document: {
+    bg: "bg-vibrant-green/15",
+    fg: "text-vibrant-green",
+  },
+  delete_document: {
+    bg: "bg-destructive/15",
+    fg: "text-destructive",
+  },
+};
+
+function diffStatsFor(proposal: AssistantProposal): {
+  added: number;
+  removed: number;
+} {
+  if (proposal.diffStats) return proposal.diffStats;
+  if (proposal.kind === "replace_selection") {
+    return {
+      added: proposal.op.replacementText.split("\n").length,
+      removed: proposal.op.originalText.split("\n").length,
+    };
+  }
+  if (proposal.kind === "insert_block") {
+    return { added: proposal.op.bodyMdx.split("\n").length, removed: 0 };
+  }
+  if (proposal.kind === "create_document") {
+    return { added: proposal.op.bodyLines, removed: 0 };
+  }
+  if (proposal.kind === "delete_document") {
+    return { added: 0, removed: 1 };
+  }
+  if (proposal.kind === "update_frontmatter") {
+    return { added: Object.keys(proposal.op.patch).length, removed: 0 };
+  }
+  return { added: 0, removed: 0 };
+}
+
+function expandedPreviewFor(proposal: AssistantProposal): React.ReactNode {
+  if (proposal.kind === "replace_selection") {
+    return (
+      <div className="space-y-1.5 font-mono text-[11.5px] leading-relaxed">
+        <div className="rounded-sm bg-destructive/10 px-2 py-1.5 text-destructive line-through decoration-destructive/40">
+          {proposal.op.originalText}
+        </div>
+        <div className="rounded-sm bg-vibrant-green/10 px-2 py-1.5 text-vibrant-green">
+          {proposal.op.replacementText}
+        </div>
+      </div>
+    );
+  }
+  if (proposal.kind === "insert_block") {
+    return (
+      <pre className="overflow-x-auto rounded-sm bg-vibrant-green/10 px-2 py-1.5 font-mono text-[11.5px] leading-relaxed text-vibrant-green">
+        {proposal.op.bodyMdx}
+      </pre>
+    );
+  }
+  if (proposal.kind === "create_document") {
+    return (
+      <pre className="overflow-x-auto rounded-sm bg-vibrant-green/10 px-2 py-1.5 font-mono text-[11.5px] leading-relaxed text-vibrant-green">
+        {proposal.op.bodyPreview}
+      </pre>
+    );
+  }
+  if (proposal.kind === "update_frontmatter") {
+    return (
+      <pre className="overflow-x-auto rounded-sm bg-primary/10 px-2 py-1.5 font-mono text-[11.5px] leading-relaxed text-primary">
+        {JSON.stringify(proposal.op.patch, null, 2)}
+      </pre>
+    );
+  }
+  if (proposal.kind === "delete_document") {
+    return (
+      <div className="rounded-sm bg-destructive/10 px-2 py-1.5 font-mono text-[11.5px] text-destructive">
+        rm {proposal.op.path}
+        {proposal.op.reason ? ` — ${proposal.op.reason}` : ""}
+      </div>
+    );
+  }
+  // All AssistantProposal kinds have a dedicated branch above; this
+  // fallback keeps the function total without referring to `never`.
+  return null;
+}
+
+function TurnGroup({
+  proposals,
+  onAccept,
+  onReject,
+}: {
+  proposals: AssistantProposal[];
+  onAccept: (proposalId: string) => void;
+  onReject: (proposalId: string, feedback: string) => void;
+}) {
+  const [expanded, setExpanded] = React.useState<Record<string, boolean>>({});
+  const [showReject, setShowReject] = React.useState(false);
+  const allValid = proposals.every((p) => p.validation.status === "valid");
+  const stale = proposals.some((p) => p.contentInvalidated);
+  const acceptBlocked = !allValid || stale;
+  return (
+    <div className="overflow-hidden rounded-lg border border-card-border bg-card">
+      <ul className="m-0 list-none p-0">
+        {proposals.map((proposal, i) => {
+          const isExpanded = !!expanded[proposal.proposalId];
+          const tone = TURN_KIND_TONE[proposal.kind];
+          const stats = diffStatsFor(proposal);
+          const valid = proposal.validation.status === "valid";
+          // Every AssistantProposal kind exposes docPath + locale, so
+          // this label is uniform — kept as a separate variable so it
+          // can be retitled per-kind if we ever want kind-specific UX.
+          const docLabel = `${proposal.docPath} · ${proposal.locale}`;
+          return (
+            <li
+              key={proposal.proposalId}
+              className={cn(
+                i < proposals.length - 1 && "border-b border-divider/40",
+              )}
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  setExpanded((prev) => ({
+                    ...prev,
+                    [proposal.proposalId]: !isExpanded,
+                  }))
+                }
+                className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/40"
+                aria-expanded={isExpanded}
+              >
+                <span
+                  className={cn(
+                    "shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider",
+                    tone.bg,
+                    tone.fg,
+                  )}
+                >
+                  {TURN_KIND_LABEL[proposal.kind]}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-foreground">
+                  {docLabel}
+                </span>
+                <span className="shrink-0 font-mono text-[10px]">
+                  <span className="text-success">+{stats.added}</span>{" "}
+                  <span className="text-destructive">−{stats.removed}</span>
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 text-[11px]",
+                    valid ? "text-success" : "text-destructive",
+                  )}
+                  aria-hidden
+                >
+                  {valid ? "✓" : "!"}
+                </span>
+                <ChevronRight
+                  className={cn(
+                    "h-3.5 w-3.5 shrink-0 text-foreground-muted transition-transform",
+                    isExpanded && "rotate-90",
+                  )}
+                  aria-hidden
+                />
+              </button>
+              {isExpanded && (
+                <div className="border-t border-divider/40 bg-background-subtle px-3 py-2.5">
+                  {expandedPreviewFor(proposal)}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {showReject ? (
+        <TurnRejectFeedback
+          onCancel={() => setShowReject(false)}
+          onSend={(feedback) => {
+            for (const p of proposals) onReject(p.proposalId, feedback);
+            setShowReject(false);
+          }}
+        />
+      ) : (
+        <div className="flex items-center gap-2 border-t border-divider/40 bg-background-subtle px-3 py-2">
+          <span className="flex-1 font-mono text-[10px] uppercase tracking-wider text-foreground-muted">
+            {proposals.length} proposals · this turn
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowReject(true)}
+            className="rounded border border-border bg-transparent px-2.5 py-1 font-mono text-[11px] font-medium text-foreground-muted transition-colors hover:bg-muted hover:text-foreground"
+          >
+            Reject all…
+          </button>
+          <button
+            type="button"
+            onClick={
+              acceptBlocked
+                ? undefined
+                : () => {
+                    for (const p of proposals) onAccept(p.proposalId);
+                  }
+            }
+            disabled={acceptBlocked}
+            aria-disabled={acceptBlocked}
+            title={
+              stale
+                ? "Source text changed — retry to regenerate"
+                : allValid
+                  ? `Apply all ${proposals.length} proposals`
+                  : "Fix invalid proposals before accepting"
+            }
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
+              acceptBlocked
+                ? "cursor-not-allowed bg-muted text-foreground-muted"
+                : "bg-sidebar text-vibrant-green hover:bg-sidebar/90",
+            )}
+          >
+            ✓ Accept all ({proposals.length})
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TurnRejectFeedback({
+  onCancel,
+  onSend,
+}: {
+  onCancel: () => void;
+  onSend: (feedback: string) => void;
+}) {
+  const [text, setText] = React.useState("");
+  return (
+    <div className="space-y-2 border-t border-divider/40 bg-background-subtle px-3 py-2.5">
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Why are you rejecting these? (optional — sent back to the model on regenerate)"
+        rows={2}
+        className="w-full resize-none rounded border border-border bg-card px-2 py-1.5 text-[12px] text-foreground placeholder:text-foreground-muted/60 focus:outline-none focus:ring-1 focus:ring-primary"
+      />
+      <div className="flex items-center gap-2">
+        <span className="flex-1 font-mono text-[10px] uppercase tracking-wider text-foreground-muted">
+          rejecting whole turn
+        </span>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded border border-border bg-transparent px-2.5 py-1 font-mono text-[11px] font-medium text-foreground-muted transition-colors hover:bg-muted hover:text-foreground"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => onSend(text.trim())}
+          className="inline-flex items-center gap-1.5 rounded bg-sidebar px-2.5 py-1 font-mono text-[11px] font-semibold text-vibrant-green transition-colors hover:bg-sidebar/90"
+        >
+          Send & retry
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Composer({
+  thread,
+  onClearSelection,
+  onRemoveDoc,
+}: {
+  thread: AssistantThread;
+  onClearSelection: () => void;
+  onRemoveDoc: (path: string) => void;
+}) {
+  const assistant = useAssistant();
+  const activeDocument = useAssistantActiveDocument();
+  const [draft, setDraft] = React.useState("");
+  const [mention, setMention] = React.useState<{
+    query: string;
+    caret: number;
+  } | null>(null);
+  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+
+  // Focus the composer on mount so opening the assistant lands the cursor
+  // ready-to-type. The Composer only mounts when the rail/fullscreen
+  // panel is open, so mount == open.
+  React.useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const end = ta.value.length;
+    ta.focus();
+    ta.setSelectionRange(end, end);
+  }, []);
+
+  const submit = () => {
+    if (!draft.trim()) return;
+    assistant.sendMessage(draft);
+    setDraft("");
+    setMention(null);
+  };
+
+  const onChange: React.ChangeEventHandler<HTMLTextAreaElement> = (e) => {
+    const next = e.target.value;
+    setDraft(next);
+    const caret = e.target.selectionStart ?? next.length;
+    const upToCaret = next.slice(0, caret);
+    const atIndex = upToCaret.lastIndexOf("@");
+    if (atIndex < 0) {
+      setMention(null);
+      return;
+    }
+    const between = upToCaret.slice(atIndex + 1);
+    // Only treat the @ as a mention if it sits at start-of-string or
+    // after a whitespace char, and the text after it has no whitespace.
+    const before = atIndex === 0 ? "" : upToCaret[atIndex - 1];
+    if (before && !/\s/.test(before)) {
+      setMention(null);
+      return;
+    }
+    if (/\s/.test(between)) {
+      setMention(null);
+      return;
+    }
+    setMention({ query: between, caret });
+  };
+
+  const handlePick = (candidate: MentionCandidate) => {
+    assistant.attachContextDoc({
+      ...(candidate.documentId ? { documentId: candidate.documentId } : {}),
+      path: candidate.path,
+      type: candidate.type,
+      locale: candidate.locale,
+    });
+    let nextCaret: number | null = null;
+    if (mention) {
+      const before = draft.slice(0, mention.caret);
+      const after = draft.slice(mention.caret);
+      const atIndex = before.lastIndexOf("@");
+      if (atIndex >= 0) {
+        const replaced = `${draft.slice(0, atIndex)}${after}`;
+        setDraft(replaced);
+        nextCaret = atIndex;
+      }
+    }
+    setMention(null);
+    const ta = textareaRef.current;
+    if (ta) {
+      ta.focus();
+      if (nextCaret !== null) {
+        const caret = nextCaret;
+        requestAnimationFrame(() => {
+          ta.setSelectionRange(caret, caret);
+        });
+      }
+    }
+  };
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+      className="relative border-t border-divider/40 bg-background-subtle px-3 pb-3 pt-2.5"
+    >
+      <ContextChips
+        thread={thread}
+        activeDocument={activeDocument}
+        onClearSelection={onClearSelection}
+        onRemoveDoc={onRemoveDoc}
+      />
+      <div
+        {...{ [ASSISTANT_COMPOSER_DATA_ATTR]: "" }}
+        className="rounded-b-lg border border-divider/60 bg-card px-3 py-2.5 transition-colors focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-primary/30"
+      >
+        <textarea
+          ref={textareaRef}
+          value={draft}
+          onChange={onChange}
+          rows={2}
+          placeholder="Ask about any doc, propose edits, draft new posts…"
+          className="w-full resize-none border-none bg-transparent text-[13.5px] leading-snug text-foreground outline-none placeholder:text-foreground-muted"
+          onKeyDown={(e) => {
+            if (mention && e.key === "Escape") {
+              e.preventDefault();
+              setMention(null);
+              return;
+            }
+            if (
+              (e.metaKey || e.ctrlKey) &&
+              e.key === "Enter" &&
+              !e.nativeEvent.isComposing
+            ) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+        />
+        <div className="mt-1.5 flex items-center gap-2">
+          <span className="flex-1 font-mono text-[10px] text-foreground-muted">
+            ⌘ ↵ to send · @ to reference a doc
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              const ta = textareaRef.current;
+              if (!ta) return;
+              ta.focus();
+              const caret = ta.selectionStart ?? draft.length;
+              const next =
+                draft.slice(0, caret) +
+                (caret > 0 && !/\s/.test(draft[caret - 1] ?? "") ? " @" : "@") +
+                draft.slice(caret);
+              setDraft(next);
+              const newCaret = next.length - draft.slice(caret).length;
+              setMention({ query: "", caret: newCaret });
+              window.setTimeout(() => {
+                ta.setSelectionRange(newCaret, newCaret);
+              }, 0);
+            }}
+            className="grid h-6 w-6 place-items-center rounded text-foreground-muted hover:bg-muted hover:text-foreground"
+            title="Attach document (@)"
+            aria-label="Attach document"
+          >
+            <AtSign className="h-3.5 w-3.5" aria-hidden />
+          </button>
+          <button
+            type="submit"
+            disabled={!draft.trim()}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
+              draft.trim()
+                ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                : "cursor-not-allowed bg-muted text-foreground-muted",
+            )}
+          >
+            <Send className="h-3 w-3" aria-hidden /> Send
+            <span className="font-mono text-[9px] opacity-70">⌘↵</span>
+          </button>
+        </div>
+      </div>
+      {mention && (
+        <MentionPicker
+          query={mention.query}
+          excludePaths={
+            new Set([
+              ...thread.contextDocs.map((d) => d.path),
+              ...(activeDocument ? [activeDocument.path] : []),
+            ])
+          }
+          onPick={handlePick}
+          onClose={() => setMention(null)}
+        />
+      )}
+    </form>
+  );
+}
+
+export function AssistantPanel({
+  hideClose = false,
+  hideThreadList = false,
+  hideExpand = false,
+  variant = "rail",
+}: AssistantPanelProps) {
+  const assistant = useAssistant();
+  const thread = assistant.activeThread;
+
+  const visibleThreadList = !hideThreadList;
+
+  return (
+    <div className="flex h-full min-h-0 overflow-hidden bg-card text-card-foreground">
+      {visibleThreadList && (
+        <ThreadList
+          threads={assistant.store.threads}
+          activeId={assistant.activeThread.id}
+          onPick={assistant.selectThread}
+          onCreate={assistant.createThread}
+        />
+      )}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-9 items-center gap-2 border-b border-divider/40 px-3 py-1.5">
+          <span className="text-primary">
+            <SparkleMark size={14} />
+          </span>
+          <div className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">
+            {thread.title}
+          </div>
+          {!hideExpand && (
+            <button
+              type="button"
+              onClick={assistant.toggleFullscreen}
+              className="grid h-6 w-6 place-items-center rounded text-foreground-muted hover:bg-muted hover:text-foreground"
+              title={assistant.isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+              aria-label={
+                assistant.isFullscreen ? "Exit fullscreen" : "Fullscreen"
+              }
+            >
+              {assistant.isFullscreen ? (
+                <Minimize2 className="h-3.5 w-3.5" aria-hidden />
+              ) : (
+                <Maximize2 className="h-3.5 w-3.5" aria-hidden />
+              )}
+            </button>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="grid h-6 w-6 place-items-center rounded text-foreground-muted hover:bg-muted hover:text-foreground"
+                title="More"
+                aria-label="More actions"
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onSelect={() => assistant.createThread()}>
+                New conversation
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => assistant.toggleThreadPin(thread.id)}
+              >
+                {thread.pinned ? "Unpin conversation" : "Pin conversation"}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => assistant.deleteThread(thread.id)}
+                className="text-destructive focus:text-destructive"
+              >
+                Delete conversation
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => assistant.close()}>
+                Close assistant
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {!hideClose && (
+            <button
+              type="button"
+              onClick={assistant.close}
+              className="grid h-6 w-6 place-items-center rounded text-foreground-muted hover:bg-muted hover:text-foreground"
+              title="Close"
+              aria-label="Close assistant"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          )}
+        </div>
+        <div
+          className={cn(
+            "scrollbar-thin flex-1 space-y-1 overflow-y-auto p-4",
+            variant === "fullscreen" && "px-8",
+          )}
+        >
+          {thread.messages.length === 0 ? (
+            <EmptyThreadHint />
+          ) : (
+            thread.messages.map((m) =>
+              m.role === "user" ? (
+                <UserBubble key={m.id} message={m} />
+              ) : (
+                <AssistantBubble
+                  key={m.id}
+                  message={m}
+                  proposalsById={assistant.store.proposals}
+                  onAccept={(pid) => {
+                    const p = assistant.store.proposals[pid];
+                    if (p) assistant.acceptProposal(p);
+                  }}
+                  onReject={(pid, feedback) => {
+                    const p = assistant.store.proposals[pid];
+                    if (p) assistant.rejectProposal(p, feedback);
+                  }}
+                />
+              ),
+            )
+          )}
+        </div>
+        <Composer
+          thread={thread}
+          onClearSelection={assistant.clearActiveSelection}
+          onRemoveDoc={assistant.removeContextDoc}
+        />
+      </div>
+    </div>
+  );
+}

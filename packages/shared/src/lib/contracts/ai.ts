@@ -10,6 +10,14 @@ export const AI_TASK_KINDS = [
   "new_document_draft",
 ] as const;
 
+/**
+ * Audit-only task kind. Chat turns produce a single audit record per
+ * turn regardless of how many tool calls the model made; the kind is
+ * `chat` so consumers can distinguish chat-driven proposals from
+ * direct task calls.
+ */
+export const AI_AUDIT_TASK_KIND_CHAT = "chat" as const;
+
 export type AiTaskKind = (typeof AI_TASK_KINDS)[number];
 
 export const AI_PROPOSAL_KINDS = [
@@ -17,6 +25,7 @@ export const AI_PROPOSAL_KINDS = [
   "insert_block",
   "update_frontmatter",
   "create_document",
+  "delete_document",
 ] as const;
 
 export type AiProposalKind = (typeof AI_PROPOSAL_KINDS)[number];
@@ -28,6 +37,7 @@ export const AI_ERROR_CODES = [
   "AI_CONTEXT_TOO_LARGE",
   "AI_OUTPUT_INVALID",
   "AI_UNSUPPORTED_TASK",
+  "AI_UNSUPPORTED_ACTION",
 ] as const;
 
 export type AiErrorCode = (typeof AI_ERROR_CODES)[number];
@@ -54,6 +64,11 @@ export type AiProposalOperation =
       format: "md" | "mdx";
       frontmatter: Record<string, unknown>;
       body: string;
+    }
+  | {
+      op: "delete_document";
+      path: string;
+      reason?: string;
     };
 
 export type AiProposalValidation =
@@ -135,11 +150,20 @@ export const createDocumentOperationSchema = z
   })
   .strict();
 
+export const deleteDocumentOperationSchema = z
+  .object({
+    op: z.literal("delete_document"),
+    path: nonEmptyString,
+    reason: nonEmptyString.optional(),
+  })
+  .strict();
+
 export const aiProposalOperationSchema = z.discriminatedUnion("op", [
   replaceSelectionOperationSchema,
   insertBlockOperationSchema,
   updateFrontmatterOperationSchema,
   createDocumentOperationSchema,
+  deleteDocumentOperationSchema,
 ]);
 
 /**
@@ -154,6 +178,7 @@ export const aiProposalOperationSchemaByOp = {
   insert_block: insertBlockOperationSchema,
   update_frontmatter: updateFrontmatterOperationSchema,
   create_document: createDocumentOperationSchema,
+  delete_document: deleteDocumentOperationSchema,
 } as const;
 
 export const aiProposalValidationSchema = z.discriminatedUnion("status", [
@@ -283,3 +308,117 @@ export function assertAiProposal(
 export function isAiProposal(value: unknown): value is AiProposal {
   return aiProposalSchema.safeParse(value).success;
 }
+
+// ───────────────────────────────────────────────────────────────────────
+// Chat-message endpoint — POST /api/v1/ai/chat/messages
+// ───────────────────────────────────────────────────────────────────────
+
+export const AI_CHAT_ALLOWED_ACTIONS = [
+  "answer",
+  "edit_document",
+  "create_document",
+  "delete_document",
+] as const;
+
+export type AiChatAllowedAction = (typeof AI_CHAT_ALLOWED_ACTIONS)[number];
+
+// Intentionally a free-form string, not z.enum: SPEC-014 §Authorization
+// requires the route to surface `AI_UNSUPPORTED_ACTION` (403) when a
+// client requests an action that is permanently denied (publish,
+// schema_change, env_change, role_change, provider_change, restore). If
+// this were an enum the request would be rejected as INVALID_INPUT (400)
+// before the route's hard denylist could fire, and clients would see the
+// wrong contract error code. The route still bounds the accepted set;
+// unknown strings just route through the denylist + capability check.
+export const aiChatAllowedActionSchema = nonEmptyString;
+
+export const aiChatAttachedSelectionSchema = z
+  .object({
+    documentId: nonEmptyString,
+    draftRevision: z.number().int().nonnegative(),
+    selectionId: nonEmptyString,
+    text: z.string(),
+  })
+  .strict();
+
+export type AiChatAttachedSelection = z.infer<
+  typeof aiChatAttachedSelectionSchema
+>;
+
+export const aiChatConversationTurnSchema = z
+  .object({
+    role: z.enum(["user", "assistant"]),
+    text: nonEmptyString,
+  })
+  .strict();
+
+export type AiChatConversationTurn = z.infer<
+  typeof aiChatConversationTurnSchema
+>;
+
+export const aiChatMessageRequestSchema = z
+  .object({
+    message: nonEmptyString,
+    conversationId: nonEmptyString.optional(),
+    attachedDocumentIds: z.array(nonEmptyString).optional(),
+    attachedSelection: aiChatAttachedSelectionSchema.optional(),
+    rejectedProposalId: nonEmptyString.optional(),
+    /**
+     * Full body of the rejected proposal, used by the regenerate flow.
+     * Chat proposals live in client localStorage, so the client posts
+     * the prior proposal back when asking the model to try again. The
+     * server falls back to a `rejectedProposalId` lookup against the
+     * in-memory store for non-chat callers.
+     */
+    rejectedProposal: aiProposalSchema.optional(),
+    rejectionFeedback: nonEmptyString.optional(),
+    allowedActions: z.array(aiChatAllowedActionSchema).optional(),
+    /**
+     * Prior turns from the same conversation, oldest first. The server is
+     * stateless per request — the client owns conversation memory — so it
+     * sends a rolling window of recent turns alongside the new message so
+     * the model can resolve anaphora ("make it shorter", "do the same to
+     * the other one") instead of acting on each turn in isolation.
+     */
+    conversationHistory: z.array(aiChatConversationTurnSchema).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    // rejectionFeedback only makes sense alongside rejectedProposalId.
+    if (value.rejectionFeedback && !value.rejectedProposalId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["rejectionFeedback"],
+        message:
+          "rejectionFeedback can only be set when rejectedProposalId is also provided.",
+      });
+    }
+  });
+
+export type AiChatMessageRequest = z.infer<typeof aiChatMessageRequestSchema>;
+
+export const AI_CHAT_MESSAGE_ROLES = ["user", "assistant"] as const;
+export type AiChatMessageRole = (typeof AI_CHAT_MESSAGE_ROLES)[number];
+
+export const aiChatMessageSchema = z
+  .object({
+    id: nonEmptyString,
+    role: z.enum(AI_CHAT_MESSAGE_ROLES),
+    at: isoDateString,
+    text: z.string().optional(),
+    proposals: z.array(nonEmptyString).optional(),
+    rejectedProposalId: nonEmptyString.optional(),
+  })
+  .strict();
+
+export type AiChatMessage = z.infer<typeof aiChatMessageSchema>;
+
+export const aiChatMessageResponseSchema = z
+  .object({
+    conversationId: nonEmptyString,
+    message: aiChatMessageSchema,
+    proposals: z.array(aiProposalSchema).optional(),
+  })
+  .strict();
+
+export type AiChatMessageResponse = z.infer<typeof aiChatMessageResponseSchema>;

@@ -28,9 +28,9 @@ const idFactory = () => {
 const deps = { clock: baseClock, idFactory, ttlMs: 5 * 60 * 1000 };
 
 describe("buildProposalsFromOutput", () => {
-  test("builds a replace_selection proposal", () => {
+  test("builds a replace_selection proposal", async () => {
     counter = 0;
-    const [proposal, ...rest] = buildProposalsFromOutput(
+    const [proposal, ...rest] = await buildProposalsFromOutput(
       {
         taskKind: "copy_improvement",
         promptTemplateId: "copy_improvement.v1",
@@ -64,9 +64,9 @@ describe("buildProposalsFromOutput", () => {
     assert.deepEqual(proposal.validation, { status: "valid" });
   });
 
-  test("builds a create_document proposal", () => {
+  test("builds a create_document proposal", async () => {
     counter = 0;
-    const [proposal] = buildProposalsFromOutput(
+    const [proposal] = await buildProposalsFromOutput(
       {
         taskKind: "new_document_draft",
         promptTemplateId: "new_document_draft.v1",
@@ -93,9 +93,9 @@ describe("buildProposalsFromOutput", () => {
     assert.equal(proposal.documentId, undefined);
   });
 
-  test("splits mixed operation kinds into one proposal each", () => {
+  test("splits mixed operation kinds into one proposal each", async () => {
     counter = 0;
-    const proposals = buildProposalsFromOutput(
+    const proposals = await buildProposalsFromOutput(
       {
         taskKind: "current_document_edit",
         promptTemplateId: "current_document_edit.v1",
@@ -127,8 +127,8 @@ describe("buildProposalsFromOutput", () => {
     assert.notEqual(proposals[0]?.proposalId, proposals[1]?.proposalId);
   });
 
-  test("throws AI_OUTPUT_INVALID for empty operations", () => {
-    assert.throws(
+  test("throws AI_OUTPUT_INVALID for empty operations", async () => {
+    await assert.rejects(
       () =>
         buildProposalsFromOutput(
           {
@@ -146,9 +146,9 @@ describe("buildProposalsFromOutput", () => {
     );
   });
 
-  test("anchors override the model's selectionId on replace_selection ops", () => {
+  test("anchors override the model's selectionId on replace_selection ops", async () => {
     counter = 0;
-    const [proposal] = buildProposalsFromOutput(
+    const [proposal] = await buildProposalsFromOutput(
       {
         taskKind: "copy_improvement",
         promptTemplateId: "copy_improvement.v1",
@@ -177,9 +177,9 @@ describe("buildProposalsFromOutput", () => {
     );
   });
 
-  test("create_document proposals drop source-document anchors from envelope", () => {
+  test("create_document proposals drop source-document anchors from envelope", async () => {
     counter = 0;
-    const [proposal] = buildProposalsFromOutput(
+    const [proposal] = await buildProposalsFromOutput(
       {
         taskKind: "new_document_draft",
         promptTemplateId: "new_document_draft.v1",
@@ -212,9 +212,9 @@ describe("buildProposalsFromOutput", () => {
     assert.equal(proposal.baseDraftRevision, undefined);
   });
 
-  test("mixed-kind output keeps source anchors only on the non-create_document proposal", () => {
+  test("mixed-kind output keeps source anchors only on the non-create_document proposal", async () => {
     counter = 0;
-    const proposals = buildProposalsFromOutput(
+    const proposals = await buildProposalsFromOutput(
       {
         taskKind: "current_document_edit",
         promptTemplateId: "current_document_edit.v1",
@@ -258,9 +258,9 @@ describe("buildProposalsFromOutput", () => {
     assert.equal(createProposal?.baseDraftRevision, undefined);
   });
 
-  test("anchors leave non-replace_selection ops untouched", () => {
+  test("anchors leave non-replace_selection ops untouched", async () => {
     counter = 0;
-    const [proposal] = buildProposalsFromOutput(
+    const [proposal] = await buildProposalsFromOutput(
       {
         taskKind: "new_document_draft",
         promptTemplateId: "new_document_draft.v1",
@@ -287,9 +287,9 @@ describe("buildProposalsFromOutput", () => {
     assert.equal(proposal.kind, "create_document");
   });
 
-  test("validator hook replaces validation status", () => {
+  test("validator hook replaces validation status", async () => {
     counter = 0;
-    const [proposal] = buildProposalsFromOutput(
+    const [proposal] = await buildProposalsFromOutput(
       {
         taskKind: "mdx_component_insertion",
         promptTemplateId: "mdx_component_insertion.v1",
@@ -308,7 +308,7 @@ describe("buildProposalsFromOutput", () => {
       },
       {
         ...deps,
-        validator: (candidate) => {
+        validator: async (candidate) => {
           assert.equal(candidate.kind, "insert_block");
           return {
             status: "invalid",
@@ -332,10 +332,10 @@ describe("buildProposalsFromOutput", () => {
     }
   });
 
-  test("validator hook can return valid for trusted operations", () => {
+  test("validator hook can return valid for trusted operations", async () => {
     counter = 0;
     let calls = 0;
-    const [proposal] = buildProposalsFromOutput(
+    const [proposal] = await buildProposalsFromOutput(
       {
         taskKind: "copy_improvement",
         promptTemplateId: "copy_improvement.v1",
@@ -356,7 +356,7 @@ describe("buildProposalsFromOutput", () => {
       },
       {
         ...deps,
-        validator: () => {
+        validator: async () => {
           calls += 1;
           return { status: "valid" };
         },

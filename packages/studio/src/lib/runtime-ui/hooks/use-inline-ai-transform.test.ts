@@ -103,6 +103,20 @@ function fakeApi(input: {
       const proposal = (input.proposals ?? [buildProposal()])[0]!;
       return { proposal: { ...proposal, proposalId } };
     },
+    async chatMessage({ message }) {
+      // Inline AI hook tests do not exercise the chat surface; stub it
+      // out with a minimal text-only response so the StudioAiRouteApi
+      // interface is satisfied.
+      return {
+        conversationId: "conv_stub",
+        message: {
+          id: "m_stub",
+          role: "assistant",
+          at: "2026-05-10T10:00:00.000Z",
+          text: `stub response to: ${message}`,
+        },
+      };
+    },
   };
 
   return Object.assign(api, { counts });

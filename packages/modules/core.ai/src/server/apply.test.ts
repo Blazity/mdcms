@@ -80,6 +80,7 @@ type StubStoreState = {
     payload: AiApplyWritePayload;
     options: { expectedSchemaHash: string };
   }>;
+  softDeleteCalls: Array<{ documentId: string }>;
 };
 
 function createStubStore(state: StubStoreState): AiApplyContentStore {
@@ -111,6 +112,10 @@ function createStubStore(state: StubStoreState): AiApplyContentStore {
         version: 0,
       };
     },
+    async softDelete(_scope, documentId) {
+      state.softDeleteCalls.push({ documentId });
+      return { ...state.document, isDeleted: true };
+    },
   };
 }
 
@@ -120,6 +125,7 @@ describe("applyAiProposal", () => {
       document: buildDocument(),
       updateCalls: [],
       createCalls: [],
+      softDeleteCalls: [],
     };
     const store = createStubStore(state);
 
@@ -145,6 +151,7 @@ describe("applyAiProposal", () => {
       document: buildDocument({ body: "Different body content." }),
       updateCalls: [],
       createCalls: [],
+      softDeleteCalls: [],
     };
     const store = createStubStore(state);
 
@@ -169,6 +176,7 @@ describe("applyAiProposal", () => {
       document: buildDocument({ draftRevision: 6 }),
       updateCalls: [],
       createCalls: [],
+      softDeleteCalls: [],
     };
     const store = createStubStore(state);
 
@@ -193,6 +201,7 @@ describe("applyAiProposal", () => {
       }),
       updateCalls: [],
       createCalls: [],
+      softDeleteCalls: [],
     };
     const store = createStubStore(state);
 
@@ -223,6 +232,7 @@ describe("applyAiProposal", () => {
       document: buildDocument(),
       updateCalls: [],
       createCalls: [],
+      softDeleteCalls: [],
     };
     const store = createStubStore(state);
 
@@ -254,5 +264,183 @@ describe("applyAiProposal", () => {
     assert.equal(call.payload.body, "Body of the new post.");
     assert.deepEqual(call.payload.frontmatter, { title: "New" });
     assert.equal(call.options.expectedSchemaHash, "hash_2");
+  });
+
+  test("delete_document calls store.softDelete and bypasses update", async () => {
+    const state: StubStoreState = {
+      document: buildDocument(),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    const document = await applyAiProposal({
+      proposal: buildProposal({
+        proposalId: "p_3",
+        kind: "delete_document",
+        operations: [
+          {
+            op: "delete_document",
+            path: "blog/welcome",
+            reason: "stale",
+          },
+        ],
+      }),
+      expectedSchemaHash: "hash_3",
+      actorId: "user_42",
+      store,
+    });
+
+    assert.equal(state.updateCalls.length, 0);
+    assert.equal(state.createCalls.length, 0);
+    assert.equal(state.softDeleteCalls.length, 1);
+    assert.equal(state.softDeleteCalls[0]!.documentId, "doc_1");
+    assert.equal(document.isDeleted, true);
+  });
+
+  test("delete_document fails when the document does not exist", async () => {
+    const state: StubStoreState = {
+      document: buildDocument(),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    await assert.rejects(
+      () =>
+        applyAiProposal({
+          proposal: buildProposal({
+            proposalId: "p_4",
+            kind: "delete_document",
+            documentId: "doc_missing",
+            operations: [
+              {
+                op: "delete_document",
+                path: "blog/missing",
+              },
+            ],
+          }),
+          expectedSchemaHash: "hash_4",
+          actorId: "user_42",
+          store,
+        }),
+      (error) =>
+        error instanceof RuntimeError &&
+        error.code === "NOT_FOUND" &&
+        error.statusCode === 404,
+    );
+
+    assert.equal(state.softDeleteCalls.length, 0);
+  });
+
+  test("delete_document refuses to delete a published document", async () => {
+    const state: StubStoreState = {
+      document: buildDocument({ publishedVersion: 3 }),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    await assert.rejects(
+      () =>
+        applyAiProposal({
+          proposal: buildProposal({
+            proposalId: "p_published",
+            kind: "delete_document",
+            operations: [
+              {
+                op: "delete_document",
+                path: "blog/welcome",
+              },
+            ],
+          }),
+          expectedSchemaHash: "hash_pub",
+          actorId: "user_42",
+          store,
+        }),
+      (error) =>
+        error instanceof RuntimeError &&
+        error.code === "AI_PROPOSAL_CONFLICT" &&
+        error.statusCode === 409,
+    );
+
+    assert.equal(state.softDeleteCalls.length, 0);
+  });
+
+  test("delete_document fails when the document is already deleted", async () => {
+    const state: StubStoreState = {
+      document: buildDocument({ isDeleted: true }),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    await assert.rejects(
+      () =>
+        applyAiProposal({
+          proposal: buildProposal({
+            proposalId: "p_5",
+            kind: "delete_document",
+            operations: [
+              {
+                op: "delete_document",
+                path: "blog/welcome",
+              },
+            ],
+          }),
+          expectedSchemaHash: "hash_5",
+          actorId: "user_42",
+          store,
+        }),
+      (error) =>
+        error instanceof RuntimeError &&
+        error.code === "NOT_FOUND" &&
+        error.statusCode === 404,
+    );
+
+    assert.equal(state.softDeleteCalls.length, 0);
+  });
+
+  test("delete_document requires documentId on the proposal", async () => {
+    const state: StubStoreState = {
+      document: buildDocument(),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    // buildProposal coalesces `undefined` overrides back to its default,
+    // so strip the field explicitly to exercise the missing-id guard.
+    const baseProposal = buildProposal({
+      proposalId: "p_6",
+      kind: "delete_document",
+      operations: [
+        {
+          op: "delete_document",
+          path: "blog/no-id",
+        },
+      ],
+    });
+    const { documentId: _ignored, ...withoutId } = baseProposal;
+    const proposalWithoutId = withoutId as AiProposal;
+
+    await assert.rejects(
+      () =>
+        applyAiProposal({
+          proposal: proposalWithoutId,
+          expectedSchemaHash: "hash_6",
+          actorId: "user_42",
+          store,
+        }),
+      (error) =>
+        error instanceof RuntimeError && error.code === "AI_OUTPUT_INVALID",
+    );
+
+    assert.equal(state.softDeleteCalls.length, 0);
   });
 });

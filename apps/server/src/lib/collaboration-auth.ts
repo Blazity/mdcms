@@ -115,6 +115,17 @@ function originIsAllowed(
   return allowedOrigins.has(origin);
 }
 
+/**
+ * Loopback origins implicitly trusted for the collaboration handshake
+ * when running outside production. Production deployments must rely on
+ * an explicit `MDCMS_COLLAB_ALLOWED_ORIGINS` allowlist so the dev-time
+ * convenience never leaks into a deployed environment.
+ */
+const COLLAB_LOOPBACK_DEV_ORIGINS = [
+  "http://127.0.0.1:4173",
+  "http://localhost:4173",
+] as const;
+
 export function resolveCollaborationAllowedOrigins(
   env: NodeJS.ProcessEnv,
 ): string[] {
@@ -126,8 +137,15 @@ export function resolveCollaborationAllowedOrigins(
   const fallback = env.MDCMS_SERVER_URL
     ? [new URL(env.MDCMS_SERVER_URL).origin]
     : [];
+  const includeLoopback = env.NODE_ENV !== "production";
 
-  return [...new Set([...origins, ...fallback, "http://127.0.0.1:4173"])];
+  return [
+    ...new Set([
+      ...origins,
+      ...fallback,
+      ...(includeLoopback ? COLLAB_LOOPBACK_DEV_ORIGINS : []),
+    ]),
+  ];
 }
 
 /**

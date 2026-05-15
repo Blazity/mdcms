@@ -5,6 +5,7 @@ import {
 } from "./server.js";
 import {
   createConsoleLogger,
+  readSupportedLocales,
   resolveRequestTargetRouting,
   RuntimeError,
   type Logger,
@@ -43,7 +44,7 @@ import {
   createStudioRuntimePublication,
   type CreateStudioRuntimePublicationOptions,
 } from "./studio-bootstrap.js";
-import { authUsers, schemaSyncs } from "./db/schema.js";
+import { authUsers, schemaRegistryEntries, schemaSyncs } from "./db/schema.js";
 import { resolveProjectEnvironmentScope } from "./project-provisioning.js";
 
 import {
@@ -56,6 +57,7 @@ import {
 import {
   createAiOrchestratorFromEnv,
   createInMemoryAiProposalStore,
+  createSchemaAwareProposalValidator,
   type CoreAiServerDeps,
 } from "@mdcms/modules";
 
@@ -149,10 +151,205 @@ export function createServerRequestHandlerWithModules(
     return row?.schemaHash;
   };
 
+  const aiPathExists = async ({
+    project,
+    environment,
+    path,
+  }: {
+    project: string;
+    environment: string;
+    path: string;
+  }) => {
+    const list = await contentStore.list(
+      { project, environment },
+      { path, limit: "1", draft: "true" },
+    );
+    return list.rows.length > 0 && list.rows[0]?.isDeleted === false;
+  };
+
+  const aiDocumentExists = async ({
+    project,
+    environment,
+    documentId,
+  }: {
+    project: string;
+    environment: string;
+    documentId: string;
+  }) => {
+    const doc = await contentStore.getById(
+      { project, environment },
+      documentId,
+      { draft: true },
+    );
+    return doc !== null && doc !== undefined && !doc.isDeleted;
+  };
+
+  // Schema-aware proposal validator. The AI orchestrator's chat tools
+  // and the inline-transform task path both run validator checks on
+  // every proposal at build time; this is the place where we hand it
+  // the project's actual schema registry so it can catch missing
+  // required frontmatter, unknown fields, and bad type ids. Without
+  // this, all proposals default to `{ status: "valid" }`.
+  const aiProposalValidator = createSchemaAwareProposalValidator({
+    schemaLookup: async ({ project, environment, type }) => {
+      const resolvedScope = await resolveProjectEnvironmentScope(
+        dbConnection.db,
+        { project, environment },
+      );
+      if (!resolvedScope) return undefined;
+      const row = await dbConnection.db.query.schemaRegistryEntries.findFirst({
+        where: and(
+          eq(schemaRegistryEntries.projectId, resolvedScope.project.id),
+          eq(schemaRegistryEntries.environmentId, resolvedScope.environment.id),
+          eq(schemaRegistryEntries.schemaType, type),
+        ),
+      });
+      // The `resolvedSchema` column is stored as JSON in the DB; the
+      // shape matches `SchemaRegistryTypeSnapshot` from @mdcms/shared.
+      // We cast rather than re-validate at every chat turn — the value
+      // was validated at schema-sync time.
+      return row?.resolvedSchema as
+        | import("@mdcms/shared").SchemaRegistryTypeSnapshot
+        | undefined;
+    },
+    pathExists: aiPathExists,
+    documentExists: aiDocumentExists,
+  });
+
   const aiOrchestrator = createAiOrchestratorFromEnv({
     env: rawEnv as Record<string, string | undefined>,
+    proposalValidator: aiProposalValidator,
   });
   const aiProposalStore = createInMemoryAiProposalStore();
+
+  const contentTypesLookup = async ({
+    project,
+    environment,
+  }: {
+    project: string;
+    environment: string;
+  }) => {
+    const resolvedScope = await resolveProjectEnvironmentScope(
+      dbConnection.db,
+      { project, environment },
+    );
+    if (!resolvedScope) return [];
+    const rows = await dbConnection.db.query.schemaRegistryEntries.findMany({
+      where: and(
+        eq(schemaRegistryEntries.projectId, resolvedScope.project.id),
+        eq(schemaRegistryEntries.environmentId, resolvedScope.environment.id),
+      ),
+    });
+    return rows.map(
+      (r) =>
+        r.resolvedSchema as import("@mdcms/shared").SchemaRegistryTypeSnapshot,
+    );
+  };
+
+  const supportedLocalesLookup = async ({
+    project,
+    environment,
+  }: {
+    project: string;
+    environment: string;
+  }) => {
+    const resolvedScope = await resolveProjectEnvironmentScope(
+      dbConnection.db,
+      { project, environment },
+    );
+    if (!resolvedScope) return [];
+    const row = await dbConnection.db.query.schemaSyncs.findFirst({
+      where: and(
+        eq(schemaSyncs.projectId, resolvedScope.project.id),
+        eq(schemaSyncs.environmentId, resolvedScope.environment.id),
+      ),
+    });
+    if (!row?.rawConfigSnapshot) return [];
+    const locales = readSupportedLocales(row.rawConfigSnapshot);
+    return locales ? Array.from(locales).sort() : [];
+  };
+
+  const userLookup = async ({ userId }: { userId: string }) => {
+    const row = await dbConnection.db.query.authUsers.findFirst({
+      where: eq(authUsers.id, userId),
+      columns: { id: true, name: true, email: true },
+    });
+    return row
+      ? { id: row.id, displayName: row.name || row.email }
+      : { id: userId, displayName: userId };
+  };
+
+  const listEntries = async ({
+    project,
+    environment,
+    type,
+    query,
+    locale,
+    limit,
+  }: {
+    project: string;
+    environment: string;
+    type: string;
+    query?: string;
+    locale?: string;
+    limit?: number;
+  }) => {
+    const listResponse = await contentStore.list(
+      { project, environment },
+      {
+        type,
+        ...(query ? { q: query } : {}),
+        ...(locale ? { locale } : {}),
+        limit: String(limit ?? 10),
+        draft: "true",
+      },
+    );
+    return {
+      matches: listResponse.rows.map((row) => ({
+        documentId: row.documentId,
+        path: row.path,
+        type: row.type,
+        locale: row.locale,
+        ...(typeof row.frontmatter.title === "string"
+          ? { title: row.frontmatter.title }
+          : {}),
+        ...(typeof row.frontmatter.excerpt === "string"
+          ? { summary: row.frontmatter.excerpt.slice(0, 200) }
+          : {}),
+        updatedAt: row.updatedAt,
+        hasUnpublishedChanges: row.hasUnpublishedChanges,
+      })),
+      total: listResponse.total,
+    };
+  };
+
+  const getEntryBackend = async ({
+    project,
+    environment,
+    documentId,
+  }: {
+    project: string;
+    environment: string;
+    documentId: string;
+  }) => {
+    const doc = await contentStore.getById(
+      { project, environment },
+      documentId,
+      { draft: true },
+    );
+    if (!doc || doc.isDeleted) return undefined;
+    return {
+      documentId: doc.documentId,
+      path: doc.path,
+      type: doc.type,
+      locale: doc.locale,
+      draftRevision: doc.draftRevision,
+      hasUnpublishedChanges: doc.hasUnpublishedChanges,
+      publishedVersion: doc.publishedVersion,
+      frontmatter: doc.frontmatter,
+      body: doc.body,
+    };
+  };
 
   const aiModuleDeps: CoreAiServerDeps = {
     orchestrator: aiOrchestrator,
@@ -164,6 +361,8 @@ export function createServerRequestHandlerWithModules(
         contentStore.update(scope, documentId, payload, opts),
       create: (scope, payload, opts) =>
         contentStore.create(scope, payload, opts),
+      softDelete: (scope, documentId) =>
+        contentStore.softDelete(scope, documentId),
     },
     contextResolver: {
       loadDraftContext: async ({
@@ -230,6 +429,11 @@ export function createServerRequestHandlerWithModules(
         errorCode: record.errorCode,
       });
     },
+    contentTypesLookup,
+    supportedLocalesLookup,
+    userLookup,
+    listEntries,
+    getEntry: getEntryBackend,
   };
 
   const moduleDeps: ServerModuleAppDeps = {

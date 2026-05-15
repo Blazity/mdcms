@@ -3,11 +3,15 @@ import { test } from "bun:test";
 
 import { RuntimeError } from "../runtime/error.js";
 import {
+  AI_ERROR_CODES,
   AI_PROPOSAL_KINDS,
+  aiChatMessageRequestSchema,
+  aiChatMessageResponseSchema,
   aiProposalOperationSchema,
   aiProposalSchema,
   aiProposalValidationSchema,
   assertAiProposal,
+  deleteDocumentOperationSchema,
   isAiProposal,
   type AiProposal,
 } from "./ai.js";
@@ -197,9 +201,10 @@ test("aiProposalSchema rejects heterogeneous operations", () => {
   assert.equal(parsed.success, false);
 });
 
-test("AI_PROPOSAL_KINDS exposes all four spec proposal kinds", () => {
+test("AI_PROPOSAL_KINDS exposes every spec proposal kind", () => {
   assert.deepEqual([...AI_PROPOSAL_KINDS].sort(), [
     "create_document",
+    "delete_document",
     "insert_block",
     "replace_selection",
     "update_frontmatter",
@@ -284,4 +289,190 @@ test("isAiProposal returns true for valid proposal", () => {
 
 test("isAiProposal returns false for malformed proposal", () => {
   assert.equal(isAiProposal({}), false);
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// delete_document kind + AI_UNSUPPORTED_ACTION error code
+// ───────────────────────────────────────────────────────────────────────
+
+test("AI_PROPOSAL_KINDS includes delete_document", () => {
+  assert.ok(AI_PROPOSAL_KINDS.includes("delete_document"));
+});
+
+test("AI_ERROR_CODES includes AI_UNSUPPORTED_ACTION", () => {
+  assert.ok(AI_ERROR_CODES.includes("AI_UNSUPPORTED_ACTION"));
+});
+
+test("deleteDocumentOperationSchema accepts a minimal delete op", () => {
+  const parsed = deleteDocumentOperationSchema.safeParse({
+    op: "delete_document",
+    path: "blog/legacy/2024-12-status.md",
+  });
+  assert.equal(parsed.success, true);
+});
+
+test("deleteDocumentOperationSchema accepts an optional reason", () => {
+  const parsed = deleteDocumentOperationSchema.safeParse({
+    op: "delete_document",
+    path: "blog/legacy/2024-12-status.md",
+    reason: "Superseded by /blog/shipping-mdcms-0-4",
+  });
+  assert.equal(parsed.success, true);
+});
+
+test("deleteDocumentOperationSchema rejects an empty path", () => {
+  const parsed = deleteDocumentOperationSchema.safeParse({
+    op: "delete_document",
+    path: "",
+  });
+  assert.equal(parsed.success, false);
+});
+
+test("aiProposalSchema accepts a delete_document proposal", () => {
+  const parsed = aiProposalSchema.safeParse({
+    ...validProposal,
+    kind: "delete_document",
+    operations: [
+      {
+        op: "delete_document",
+        path: "blog/legacy/2024-12-status.md",
+        reason: "stale",
+      },
+    ],
+  });
+  assert.equal(parsed.success, true);
+});
+
+test("aiProposalSchema rejects delete_document with a non-delete operation", () => {
+  const parsed = aiProposalSchema.safeParse({
+    ...validProposal,
+    kind: "delete_document",
+    operations: [
+      {
+        op: "replace_selection",
+        selectionId: "sel_1",
+        originalText: "a",
+        replacementText: "b",
+      },
+    ],
+  });
+  assert.equal(parsed.success, false);
+});
+
+test("aiProposalOperationSchema accepts the delete_document variant in the union", () => {
+  const parsed = aiProposalOperationSchema.safeParse({
+    op: "delete_document",
+    path: "blog/stale.md",
+  });
+  assert.equal(parsed.success, true);
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// Chat-message request/response schemas
+// ───────────────────────────────────────────────────────────────────────
+
+test("aiChatMessageRequestSchema accepts a minimal message", () => {
+  const parsed = aiChatMessageRequestSchema.safeParse({
+    message: "Tighten the lede",
+  });
+  assert.equal(parsed.success, true);
+});
+
+test("aiChatMessageRequestSchema accepts a fully populated request", () => {
+  const parsed = aiChatMessageRequestSchema.safeParse({
+    message: "Apply this across all drafts",
+    conversationId: "conv_1",
+    attachedDocumentIds: ["doc_1", "doc_2"],
+    attachedSelection: {
+      documentId: "doc_1",
+      draftRevision: 4,
+      selectionId: "sel_1",
+      text: "selected paragraph",
+    },
+    rejectedProposalId: "p_prev",
+    rejectionFeedback: "Keep the original tone please.",
+    allowedActions: ["answer", "edit_document"],
+  });
+  assert.equal(parsed.success, true);
+});
+
+test("aiChatMessageRequestSchema rejects rejectionFeedback without rejectedProposalId", () => {
+  const parsed = aiChatMessageRequestSchema.safeParse({
+    message: "regenerate",
+    rejectionFeedback: "try again",
+  });
+  assert.equal(parsed.success, false);
+});
+
+test("aiChatMessageRequestSchema accepts unknown allowedActions strings (route-level denylist owns rejection)", () => {
+  // The wire-level schema is intentionally permissive: SPEC-014 requires
+  // the chat route to surface `AI_UNSUPPORTED_ACTION` (403) for
+  // permanently-denied actions, which only fires if the action makes it
+  // past Zod parsing. The route-level `ALWAYS_DENIED_ACTIONS` set is
+  // what enforces the contract.
+  const parsed = aiChatMessageRequestSchema.safeParse({
+    message: "publish this",
+    allowedActions: ["publish"],
+  });
+  assert.equal(parsed.success, true);
+});
+
+test("aiChatMessageRequestSchema still rejects empty allowedActions strings", () => {
+  const parsed = aiChatMessageRequestSchema.safeParse({
+    message: "ok",
+    allowedActions: [""],
+  });
+  assert.equal(parsed.success, false);
+});
+
+test("aiChatMessageRequestSchema rejects empty message", () => {
+  const parsed = aiChatMessageRequestSchema.safeParse({ message: "" });
+  assert.equal(parsed.success, false);
+});
+
+test("aiChatMessageRequestSchema rejects unknown top-level keys", () => {
+  const parsed = aiChatMessageRequestSchema.safeParse({
+    message: "ok",
+    extra: true,
+  });
+  assert.equal(parsed.success, false);
+});
+
+test("aiChatMessageResponseSchema accepts a response without proposals", () => {
+  const parsed = aiChatMessageResponseSchema.safeParse({
+    conversationId: "conv_1",
+    message: {
+      id: "m_1",
+      role: "assistant",
+      at: "2026-05-10T10:00:00.000Z",
+      text: "Here you go.",
+    },
+  });
+  assert.equal(parsed.success, true);
+});
+
+test("aiChatMessageResponseSchema accepts a response with proposals", () => {
+  const parsed = aiChatMessageResponseSchema.safeParse({
+    conversationId: "conv_1",
+    message: {
+      id: "m_1",
+      role: "assistant",
+      at: "2026-05-10T10:00:00.000Z",
+      proposals: [validProposal.proposalId],
+    },
+    proposals: [validProposal],
+  });
+  assert.equal(parsed.success, true);
+});
+
+test("aiChatMessageResponseSchema rejects a malformed message role", () => {
+  const parsed = aiChatMessageResponseSchema.safeParse({
+    conversationId: "conv_1",
+    message: {
+      id: "m_1",
+      role: "system",
+      at: "2026-05-10T10:00:00.000Z",
+    },
+  });
+  assert.equal(parsed.success, false);
 });

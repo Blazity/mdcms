@@ -1,4 +1,4 @@
-import { generateObject } from "ai";
+import { generateObject, generateText, stepCountIs } from "ai";
 import {
   RuntimeError,
   type AiErrorCode,
@@ -6,8 +6,18 @@ import {
   type AiTaskKind,
 } from "@mdcms/shared";
 
-import { buildAuditRecord, type AiAuditRecord } from "./audit.js";
+import {
+  buildAuditRecord,
+  type AiAuditRecord,
+  type AiAuditTaskKind,
+} from "./audit.js";
+import {
+  buildChatTools,
+  CHAT_TOOL_PROMPT_TEMPLATE_ID,
+  type ChatToolCapabilities,
+} from "./chat-tools.js";
 import { aiError, isAiErrorCode, mapProviderError } from "./errors.js";
+import type { ProjectKnowledgeInput } from "./project-knowledge.js";
 import {
   buildProposalsFromOutput,
   type AiProposalEnvelope,
@@ -16,6 +26,10 @@ import {
 import type { AiProvider, AiProviderUsage } from "./provider.js";
 import {
   AI_TASK_DEFINITIONS,
+  buildChatSystemPrompt,
+  buildChatUserPrompt,
+  type AiTaskAdditionalContextDoc,
+  type AiTaskConversationTurn,
   type AiTaskDefinition,
   type AiTaskInput,
   type AiTaskOutput,
@@ -54,9 +68,79 @@ export type AiOrchestrationResult = {
   audit: AiAuditRecord;
 };
 
+export type AiChatActiveDocument = {
+  documentId: string;
+  path: string;
+  type: string;
+  locale: string;
+  draftRevision: number;
+  hasPublishedVersion: boolean;
+};
+
+export type AiChatAttachedSelection = {
+  selectionId: string;
+  text: string;
+};
+
+export type AiChatInput = {
+  /** The new user message for this turn. */
+  message: string;
+  /** Project + environment routing — required so proposals carry the right envelope. */
+  project: string;
+  environment: string;
+  /** When the request has an active document attached, its identity + a few flags the tools need. */
+  activeDocument?: AiChatActiveDocument;
+  attachedSelection?: AiChatAttachedSelection;
+  additionalContextDocs?: AiTaskAdditionalContextDoc[];
+  conversationHistory?: AiTaskConversationTurn[];
+  /** Capability gate — only tools the caller is allowed to invoke are exposed to the model. */
+  capabilities: ChatToolCapabilities;
+  /** Validator forwarded to the proposal builder used inside each tool's execute. */
+  proposalValidator?: AiProposalValidator;
+  /** Hard ceiling forwarded to the provider when supported. */
+  maxOutputTokens?: number;
+  /**
+   * Project-scoped knowledge injected into the system prompt so the
+   * model picks real content type ids, fills frontmatter against the
+   * actual schema, and addresses the current user by name. Built per
+   * turn by the route handler. Optional during the migration; once
+   * the route handler always provides it (Task 5), this can become
+   * required.
+   */
+  projectKnowledge?: Omit<ProjectKnowledgeInput, "project" | "environment">;
+  /**
+   * Backends for the read-only chat tools (find_entries, get_entry).
+   * The route handler wires these from the contentStore; when absent,
+   * the tools are not registered (the model gracefully responds in
+   * text). `canReadEntries` is derived from `findEntries` presence.
+   */
+  toolBackends?: {
+    findEntries?: import("./chat-tools.js").ChatToolDeps["findEntriesBackend"];
+    getEntry?: import("./chat-tools.js").ChatToolDeps["getEntryBackend"];
+  };
+};
+
+export type AiChatResult = {
+  /** Concluding text reply the model emits after any tool calls. */
+  text: string;
+  /** Proposals collected from this turn's tool calls (zero or more). */
+  proposals: AiProposal[];
+  audit: AiAuditRecord;
+};
+
 export type AiOrchestrator = {
   readonly providerId: string;
   runTask(input: AiOrchestrationInput): Promise<AiOrchestrationResult>;
+  /**
+   * Tool-calling chat turn. The model gets a capability-gated toolset
+   * (propose_edit_selection / insert_block / update_frontmatter /
+   * create_document / delete_document) plus the user's message and
+   * conversation history. It decides which tools, if any, to call —
+   * each tool's `execute` builds and collects a server-stamped
+   * `AiProposal`. The final text reply summarizes what was proposed
+   * (or just answers, if no tool was needed).
+   */
+  runChat(input: AiChatInput): Promise<AiChatResult>;
 };
 
 export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
@@ -97,7 +181,7 @@ export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
         usage: generation.usage,
       };
 
-      const proposals = buildProposals(
+      const proposals = await buildProposals(
         definition,
         generation.output,
         deps.provider.id,
@@ -124,6 +208,165 @@ export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
       });
 
       return { proposals, audit };
+    },
+    async runChat(call) {
+      const occurredAt = clock();
+      const baseContext: ErrorAuditContext = {
+        taskKind: "chat",
+        providerId: deps.provider.id,
+        promptTemplateId: CHAT_TOOL_PROMPT_TEMPLATE_ID,
+        occurredAt,
+      };
+
+      if (deps.provider.languageModel === null) {
+        throw new OrchestratorFailure(
+          aiError(
+            "AI_DISABLED",
+            "AI provider is not configured for this deployment.",
+          ),
+          buildAuditRecord({
+            ...baseContext,
+            outcome: "provider_error",
+            validation: { status: "valid" },
+            errorCode: "AI_DISABLED",
+            errorMessage: "AI provider is not configured for this deployment.",
+          }),
+        );
+      }
+
+      const collected: AiProposal[] = [];
+      const envelope: AiProposalEnvelope = {
+        project: call.project,
+        environment: call.environment,
+        type: call.activeDocument?.type ?? "page",
+        locale: call.activeDocument?.locale ?? "en",
+        ...(call.activeDocument?.documentId
+          ? { documentId: call.activeDocument.documentId }
+          : {}),
+        ...(call.activeDocument?.draftRevision !== undefined
+          ? { baseDraftRevision: call.activeDocument.draftRevision }
+          : {}),
+      };
+
+      const tools = buildChatTools({
+        envelope,
+        ...(call.attachedSelection
+          ? {
+              attachedSelection: {
+                selectionId: call.attachedSelection.selectionId,
+              },
+            }
+          : {}),
+        hasActiveDocument: !!call.activeDocument,
+        ...(call.activeDocument?.path
+          ? { activeDocumentPath: call.activeDocument.path }
+          : {}),
+        activeDocumentHasPublishedVersion:
+          call.activeDocument?.hasPublishedVersion ?? false,
+        providerId: deps.provider.id,
+        model: deps.provider.languageModel.modelId,
+        clock,
+        idFactory,
+        ttlMs,
+        ...(call.proposalValidator
+          ? { validator: call.proposalValidator }
+          : validator
+            ? { validator }
+            : {}),
+        capabilities: {
+          ...call.capabilities,
+          canReadEntries: Boolean(call.toolBackends?.findEntries),
+        },
+        collected,
+        registeredTypeIds: (call.projectKnowledge?.registeredTypes ?? []).map(
+          (t) => t.type,
+        ),
+        supportedLocales: call.projectKnowledge?.supportedLocales ?? [],
+        ...(call.toolBackends?.findEntries
+          ? { findEntriesBackend: call.toolBackends.findEntries }
+          : {}),
+        ...(call.toolBackends?.getEntry
+          ? { getEntryBackend: call.toolBackends.getEntry }
+          : {}),
+      });
+
+      const projectKnowledge: ProjectKnowledgeInput = {
+        project: call.project,
+        environment: call.environment,
+        registeredTypes: call.projectKnowledge?.registeredTypes ?? [],
+        supportedLocales: call.projectKnowledge?.supportedLocales ?? [],
+        ...(call.projectKnowledge?.currentUser
+          ? { currentUser: call.projectKnowledge.currentUser }
+          : {}),
+      };
+
+      try {
+        const result = await generateText({
+          model: deps.provider.languageModel,
+          system: buildChatSystemPrompt({
+            hasActiveDocument: !!call.activeDocument,
+            hasAttachedSelection: !!call.attachedSelection,
+            capabilities: call.capabilities,
+            registeredToolNames: Object.keys(tools),
+            projectKnowledge,
+          }),
+          prompt: buildChatUserPrompt({
+            message: call.message,
+            locale: call.activeDocument?.locale ?? "en",
+            activeDocument: call.activeDocument
+              ? {
+                  path: call.activeDocument.path,
+                  type: call.activeDocument.type,
+                  locale: call.activeDocument.locale,
+                }
+              : undefined,
+            additionalContextDocs: call.additionalContextDocs,
+            conversationHistory: call.conversationHistory,
+            attachedSelection: call.attachedSelection,
+          }),
+          tools,
+          // Allow the model to call one or more tools then emit a
+          // concluding text reply. Cap at 5 steps to bound runaway loops.
+          stopWhen: stepCountIs(5),
+          maxOutputTokens: call.maxOutputTokens,
+        });
+        const model = deps.provider.languageModel.modelId;
+        const usage = normalizeUsage(result.usage);
+        const audit = buildAuditRecord({
+          ...baseContext,
+          model,
+          outcome: "succeeded",
+          validation: aggregateValidation(collected),
+          proposals: collected,
+          ...(usage ? { usage } : {}),
+        });
+        return { text: result.text.trim(), proposals: collected, audit };
+      } catch (error) {
+        const mapped = mapProviderError(error);
+        const outcome: "invalid_output" | "provider_error" =
+          mapped.code === "AI_OUTPUT_INVALID"
+            ? "invalid_output"
+            : "provider_error";
+        throw new OrchestratorFailure(
+          mapped,
+          buildAuditRecord({
+            ...baseContext,
+            model: deps.provider.languageModel.modelId,
+            outcome,
+            validation:
+              outcome === "invalid_output"
+                ? {
+                    status: "invalid",
+                    errors: [{ code: mapped.code, message: mapped.message }],
+                  }
+                : { status: "valid" },
+            errorCode: isAiErrorCode(mapped.code)
+              ? (mapped.code as AiErrorCode)
+              : "AI_PROVIDER_UNAVAILABLE",
+            errorMessage: mapped.message,
+          }),
+        );
+      }
     },
   };
 }
@@ -197,7 +440,7 @@ function parseTaskInput(
 }
 
 type ErrorAuditContext = {
-  taskKind: AiTaskKind;
+  taskKind: AiAuditTaskKind;
   providerId: string;
   promptTemplateId: string;
   occurredAt: Date;
@@ -276,7 +519,7 @@ async function generateForTask(
   }
 }
 
-function buildProposals(
+async function buildProposals(
   definition: AiTaskDefinition,
   output: AiTaskOutput,
   providerId: string,
@@ -288,9 +531,9 @@ function buildProposals(
   ttlMs: number,
   validator: AiProposalValidator | undefined,
   context: ErrorAuditContext,
-): AiProposal[] {
+): Promise<AiProposal[]> {
   try {
-    return buildProposalsFromOutput(
+    return await buildProposalsFromOutput(
       {
         taskKind: definition.kind,
         promptTemplateId: definition.promptTemplateId,

@@ -148,4 +148,112 @@ describe("createStudioAiRouteApi", () => {
     assert.match(capturedUrl ?? "", /\/api\/v1\/ai\/proposals\/p_1\/reject$/);
     assert.equal(result.proposal.proposalId, "p_1");
   });
+
+  test("chatMessage sends target headers and unwraps the response", async () => {
+    let capturedUrl: string | undefined;
+    let capturedInit: RequestInit | undefined;
+    const fetcher: typeof fetch = async (input, init) => {
+      capturedUrl = String(input);
+      capturedInit = init;
+      return jsonResponse({
+        data: {
+          conversationId: "conv_1",
+          message: {
+            id: "m_1",
+            role: "assistant",
+            at: "2026-05-10T10:00:00.000Z",
+            proposals: ["p_chat_1"],
+          },
+          proposals: [
+            {
+              proposalId: "p_chat_1",
+              kind: "replace_selection",
+              operations: [],
+            },
+          ],
+        },
+      });
+    };
+
+    const api = createStudioAiRouteApi(config, { fetcher });
+    const result = await api.chatMessage({
+      message: "Tighten the lede",
+      conversationId: "conv_1",
+      attachedSelection: {
+        documentId: "doc_1",
+        draftRevision: 4,
+        selectionId: "sel_1",
+        text: "Welcome",
+      },
+      allowedActions: ["edit_document"],
+    });
+
+    assert.match(capturedUrl ?? "", /\/api\/v1\/ai\/chat\/messages$/);
+    const headers = (capturedInit?.headers ?? {}) as Record<string, string>;
+    assert.equal(headers["x-mdcms-project"], "demo");
+    assert.equal(headers["x-mdcms-environment"], "draft");
+
+    const sent = JSON.parse(String(capturedInit?.body ?? "{}")) as {
+      message: string;
+      conversationId: string;
+      attachedSelection?: { documentId: string };
+      allowedActions?: string[];
+    };
+    assert.equal(sent.message, "Tighten the lede");
+    assert.equal(sent.conversationId, "conv_1");
+    assert.equal(sent.attachedSelection?.documentId, "doc_1");
+    assert.deepEqual(sent.allowedActions, ["edit_document"]);
+
+    assert.equal(result.conversationId, "conv_1");
+    assert.equal(result.message.id, "m_1");
+    assert.equal(result.proposals?.[0]?.proposalId, "p_chat_1");
+  });
+
+  test("chatMessage surfaces AI_UNSUPPORTED_ACTION errors from the server", async () => {
+    const fetcher: typeof fetch = async () =>
+      jsonResponse(
+        {
+          code: "AI_UNSUPPORTED_ACTION",
+          message: "Caller is not allowed to propose document deletes.",
+        },
+        403,
+      );
+
+    const api = createStudioAiRouteApi(config, { fetcher });
+    await assert.rejects(
+      () =>
+        api.chatMessage({
+          message: "delete this draft",
+          attachedDocumentIds: ["doc_1"],
+        }),
+      (error) =>
+        error instanceof RuntimeError &&
+        error.code === "AI_UNSUPPORTED_ACTION" &&
+        error.statusCode === 403,
+    );
+  });
+
+  test("chatMessage omits optional fields from the request body", async () => {
+    let capturedBody: string | undefined;
+    const fetcher: typeof fetch = async (_url, init) => {
+      capturedBody = String(init?.body ?? "");
+      return jsonResponse({
+        data: {
+          conversationId: "conv_x",
+          message: {
+            id: "m_x",
+            role: "assistant",
+            at: "2026-05-10T10:00:00.000Z",
+            text: "ok",
+          },
+        },
+      });
+    };
+
+    const api = createStudioAiRouteApi(config, { fetcher });
+    await api.chatMessage({ message: "hello" });
+    const sent = JSON.parse(capturedBody ?? "{}") as Record<string, unknown>;
+    // Only `message` should be present when no other fields are supplied.
+    assert.deepEqual(Object.keys(sent), ["message"]);
+  });
 });

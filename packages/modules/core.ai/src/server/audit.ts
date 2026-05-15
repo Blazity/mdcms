@@ -18,8 +18,17 @@ export type AiAuditOutcome =
   | "apply_failed"
   | "validation_failed";
 
+/**
+ * Audit-only task kind union. The chat surface produces one audit
+ * record per turn regardless of how many tool calls the model made;
+ * we widen the taskKind here so chat turns can be distinguished from
+ * the per-task orchestration calls without polluting the public
+ * `AiTaskKind` enum used by `runTask`.
+ */
+export type AiAuditTaskKind = AiTaskKind | "chat";
+
 export type AiAuditRecord = {
-  taskKind: AiTaskKind;
+  taskKind: AiAuditTaskKind;
   providerId: string;
   /** Empty string when the call failed before the model identified itself. */
   model: string;
@@ -56,7 +65,7 @@ export type AiAuditRecord = {
 };
 
 export type BuildAuditRecordInput = {
-  taskKind: AiTaskKind;
+  taskKind: AiAuditTaskKind;
   providerId: string;
   model?: string;
   promptTemplateId: string;
