@@ -1,4 +1,7 @@
-import type { SchemaRegistryTypeSnapshot } from "@mdcms/shared";
+import type {
+  SchemaRegistryFieldSnapshot,
+  SchemaRegistryTypeSnapshot,
+} from "@mdcms/shared";
 
 export type ProjectKnowledgeInput = {
   project: string;
@@ -85,7 +88,7 @@ function renderTypeEntry(schema: SchemaRegistryTypeSnapshot): string[] {
 
 function renderFieldLine(
   name: string,
-  field: import("@mdcms/shared").SchemaRegistryFieldSnapshot,
+  field: SchemaRegistryFieldSnapshot,
   depth: number,
 ): string {
   const kindDescriptor = renderKindDescriptor(field, depth);
@@ -95,7 +98,7 @@ function renderFieldLine(
 }
 
 function renderKindDescriptor(
-  field: import("@mdcms/shared").SchemaRegistryFieldSnapshot,
+  field: SchemaRegistryFieldSnapshot,
   _depth: number,
 ): string {
   // More elaborate rendering (enum, reference, array, object) lands in
