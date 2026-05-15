@@ -69,15 +69,14 @@ export function createSchemaAwareProposalValidator(input: {
   documentExists?: DocumentLookup;
 }): AiProposalValidator {
   const { schemaLookup, pathExists, documentExists } = input;
-  // pathExists and documentExists are wired in T16/T17; referenced here
-  // so TypeScript's noUnusedLocals does not reject the scaffolding.
-  void pathExists;
+  // documentExists is wired in T17; referenced here so TypeScript's
+  // noUnusedLocals does not reject the scaffolding.
   void documentExists;
 
   return async (candidate: AiProposalCandidate): Promise<AiProposalValidation> => {
     switch (candidate.kind) {
       case "create_document":
-        return validateCreateDocument(candidate, schemaLookup);
+        return validateCreateDocument(candidate, schemaLookup, pathExists);
       case "update_frontmatter":
         return validateUpdateFrontmatter(candidate, schemaLookup);
       case "delete_document":
@@ -101,6 +100,7 @@ type ValidationError = {
 async function validateCreateDocument(
   candidate: AiProposalCandidate,
   schemaLookup: SchemaLookup,
+  pathExists: PathLookup | undefined,
 ): Promise<AiProposalValidation> {
   const errors: ValidationError[] = [];
 
@@ -139,6 +139,21 @@ async function validateCreateDocument(
 
   const frontmatter = operation.frontmatter ?? {};
   validateFrontmatterAgainstSchema(frontmatter, schema, errors);
+
+  if (pathExists) {
+    const taken = await pathExists({
+      project: candidate.project,
+      environment: candidate.environment,
+      path: operation.path,
+    });
+    if (taken) {
+      errors.push({
+        code: "PATH_ALREADY_IN_USE",
+        message: `Path "${operation.path}" is already used by another document — pick a different path or update the existing doc instead.`,
+        path: "operations[0].path",
+      });
+    }
+  }
 
   return errors.length === 0
     ? { status: "valid" }
