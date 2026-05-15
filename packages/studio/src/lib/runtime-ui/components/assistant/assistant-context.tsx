@@ -63,6 +63,25 @@ type AssistantAction =
 
 const NEW_THREAD_TITLE = "New conversation";
 
+/**
+ * Server 500s wrap the original exception's text inside
+ * `details.payload.details.reason` because the public `message` is
+ * forced to "Internal server error." Walk the nested envelope to
+ * surface the real reason so the user sees something more useful
+ * than the generic placeholder.
+ */
+function extractInnerReason(error: unknown): string | undefined {
+  if (!(error instanceof RuntimeError)) return undefined;
+  const details = error.details;
+  if (!details || typeof details !== "object") return undefined;
+  const payload = (details as { payload?: unknown }).payload;
+  if (!payload || typeof payload !== "object") return undefined;
+  const inner = (payload as { details?: unknown }).details;
+  if (!inner || typeof inner !== "object") return undefined;
+  const reason = (inner as { reason?: unknown }).reason;
+  return typeof reason === "string" && reason.length > 0 ? reason : undefined;
+}
+
 function deriveThreadTitle(text: string): string {
   const single = text.trim().replace(/\s+/g, " ");
   if (!single) return NEW_THREAD_TITLE;
@@ -752,11 +771,20 @@ export function AssistantProvider({
         error instanceof RuntimeError ? error.code : "AI_REQUEST_FAILED";
       const message =
         error instanceof Error ? error.message : "AI request failed.";
+      // Server 500s collapse to `code: "INTERNAL_ERROR", message:
+      // "Internal server error."` with the actual exception text under
+      // `details.payload.details.reason`. Surface that reason so the
+      // user sees something more useful than the generic placeholder.
+      const reason = extractInnerReason(error);
+      const text =
+        reason && message === "Internal server error."
+          ? `${code}: ${reason}`
+          : `${code}: ${message}`;
       const assistantMessage: AssistantMessage = {
         id: `m-err-${Date.now().toString(36)}`,
         role: "assistant",
         at: new Date().toISOString(),
-        text: `${code}: ${message}`,
+        text,
       };
       dispatch({
         type: "send-message",

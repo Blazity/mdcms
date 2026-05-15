@@ -172,7 +172,7 @@ function Footer({
             ? "cursor-not-allowed border-transparent bg-muted text-foreground-muted"
             : destructive
               ? "border-destructive bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              : "border-vibrant-green-border bg-vibrant-green text-foreground hover:bg-vibrant-green/90",
+              : "border-vibrant-green-border bg-vibrant-green text-vibrant-green-foreground hover:bg-vibrant-green/90",
         )}
         title={
           contentInvalidated

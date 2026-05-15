@@ -609,7 +609,7 @@ function TurnGroup({
               "inline-flex items-center gap-1.5 rounded border px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
               acceptBlocked
                 ? "cursor-not-allowed border-transparent bg-muted text-foreground-muted"
-                : "border-vibrant-green-border bg-vibrant-green text-foreground hover:bg-vibrant-green/90",
+                : "border-vibrant-green-border bg-vibrant-green text-vibrant-green-foreground hover:bg-vibrant-green/90",
             )}
           >
             <Check className="h-3 w-3" aria-hidden />

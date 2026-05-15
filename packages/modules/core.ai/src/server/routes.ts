@@ -582,7 +582,10 @@ function buildLifecycleAudit(input: {
   proposal: AiProposal;
   outcome: AiAuditRecord["outcome"];
   occurredAt: Date;
-  actorId: string;
+  // Optional because chat-surface failures may abort before
+  // authorize() resolves the actor — we still want the audit entry
+  // for ops visibility even without a known actor.
+  actorId?: string;
   errorCode?: string;
   errorMessage?: string;
 }): AiAuditRecord {
@@ -628,6 +631,9 @@ async function handleProposalApply(
 ): Promise<Response> {
   const occurredAt = new Date();
   let observedRecord: AiProposalRecord | undefined;
+  // Tracks the parsed proposal so the catch block can audit failures
+  // even when the proposal came from the chat body (no store record).
+  let parsedProposal: AiProposal | undefined;
 
   try {
     await options.requireCsrf(request);
@@ -674,6 +680,7 @@ async function handleProposalApply(
         });
       }
       proposal = parsed.data;
+      parsedProposal = parsed.data;
     } else {
       observedRecord = options.proposalStore.observe(proposalId);
       if (observedRecord && observedRecord.status === "expired") {
@@ -763,26 +770,43 @@ async function handleProposalApply(
       },
     );
   } catch (error) {
+    const code = error instanceof RuntimeError ? error.code : "INTERNAL_ERROR";
+    const isValidationFailure =
+      code === "AI_OUTPUT_INVALID" || code === "SCHEMA_HASH_MISMATCH";
+    const isAlreadyExpired = code === "AI_PROPOSAL_EXPIRED";
+    const lifecycleOutcome: AiAuditRecord["outcome"] = isAlreadyExpired
+      ? "expired"
+      : isValidationFailure
+        ? "validation_failed"
+        : "apply_failed";
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Prefer the store record when we have one (it carries the original
+    // createdByActorId); fall back to the chat-body proposal so a
+    // failed apply on a chat-surface proposal still emits an audit.
     if (observedRecord && observedRecord.status === "pending") {
-      const code =
-        error instanceof RuntimeError ? error.code : "INTERNAL_ERROR";
-      const isValidationFailure =
-        code === "AI_OUTPUT_INVALID" || code === "SCHEMA_HASH_MISMATCH";
-      const isAlreadyExpired = code === "AI_PROPOSAL_EXPIRED";
-      const lifecycleOutcome: AiAuditRecord["outcome"] = isAlreadyExpired
-        ? "expired"
-        : isValidationFailure
-          ? "validation_failed"
-          : "apply_failed";
-      const audit = buildLifecycleAudit({
-        proposal: observedRecord.proposal,
-        outcome: lifecycleOutcome,
-        occurredAt,
-        actorId: observedRecord.createdByActorId,
-        errorCode: code,
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
-      emitAudit(options.emitAudit, audit);
+      emitAudit(
+        options.emitAudit,
+        buildLifecycleAudit({
+          proposal: observedRecord.proposal,
+          outcome: lifecycleOutcome,
+          occurredAt,
+          actorId: observedRecord.createdByActorId,
+          errorCode: code,
+          errorMessage,
+        }),
+      );
+    } else if (parsedProposal) {
+      emitAudit(
+        options.emitAudit,
+        buildLifecycleAudit({
+          proposal: parsedProposal,
+          outcome: lifecycleOutcome,
+          occurredAt,
+          errorCode: code,
+          errorMessage,
+        }),
+      );
     }
 
     return toRuntimeErrorResponse(error);
