@@ -276,6 +276,15 @@ test("buildStudioRuntimeArtifacts inlines production runtime environment", async
   });
 });
 
+// Budget for the studio-runtime first-load bundle. Raised from 2.0 MB
+// to 2.5 MB when the assistant chat picked up `streamdown` for proper
+// markdown rendering (Sonia bullet — chat needs headings, lists, code
+// blocks, GFM). Streamdown pulls in shiki + mermaid transitively for
+// syntax highlighting and diagrams; both are deliberate features. A
+// future optimisation can split these out via dynamic import — track
+// in the assistant performance work.
+const STUDIO_RUNTIME_SIZE_BUDGET_BYTES = 2_500_000;
+
 test("buildStudioRuntimeArtifacts keeps the default browser runtime below the first-load size target", async () => {
   await withTempDir("studio-runtime-real-", async (directory) => {
     const outDir = join(directory, "dist");
@@ -299,7 +308,7 @@ test("buildStudioRuntimeArtifacts keeps the default browser runtime below the fi
         "console.log(JSON.stringify({",
         `  hasTypeScriptRuntime: emittedSource.includes("typescript.js"),`,
         `  hasCreateProgram: emittedSource.includes("createProgram"),`,
-        '  underSizeTarget: Buffer.byteLength(emittedSource, "utf8") < 2_000_000,',
+        `  underSizeTarget: Buffer.byteLength(emittedSource, "utf8") < ${STUDIO_RUNTIME_SIZE_BUDGET_BYTES},`,
         "}));",
         "",
       ].join("\n"),
