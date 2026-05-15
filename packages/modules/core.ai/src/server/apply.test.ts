@@ -140,7 +140,11 @@ describe("applyAiProposal", () => {
     const call = state.updateCalls[0]!;
     assert.equal(call.documentId, "doc_1");
     assert.equal(call.payload.body, "Hi there!");
-    assert.equal(call.payload.updatedBy, "user_99");
+    // `updatedBy` is intentionally NOT set on AI applies — the store
+    // falls through to its DEFAULT_ACTOR placeholder, matching the
+    // manual content endpoints. Real actor identity is recorded in
+    // the AI audit log instead.
+    assert.equal(call.payload.updatedBy, undefined);
     assert.equal(call.options.expectedDraftRevision, 4);
     assert.equal(call.options.expectedSchemaHash, "hash_1");
     assert.equal(result.body, "Hi there!");

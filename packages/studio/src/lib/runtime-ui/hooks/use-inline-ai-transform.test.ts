@@ -117,6 +117,10 @@ function fakeApi(input: {
         },
       };
     },
+    async *chatMessageStream() {
+      // Same rationale as chatMessage — not exercised by the inline
+      // transform hook tests; the stub satisfies the interface only.
+    },
   };
 
   return Object.assign(api, { counts });

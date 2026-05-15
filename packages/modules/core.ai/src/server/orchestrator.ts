@@ -1,4 +1,4 @@
-import { generateObject, generateText, stepCountIs } from "ai";
+import { generateObject, generateText, stepCountIs, streamText } from "ai";
 import {
   RuntimeError,
   type AiErrorCode,
@@ -36,6 +36,17 @@ import {
 } from "./tasks.js";
 
 export const DEFAULT_PROPOSAL_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Hard ceiling on the number of agentic steps the chat orchestrator
+ * lets the model take in a single turn. Each text-reply, tool-call, and
+ * tool-result counts as one step, so a "draft 5 posts" turn naturally
+ * needs at least 5 (tool calls) + 1 (final text reply) = 6 — with some
+ * headroom for the model to call `find_entries` ahead of references or
+ * emit interstitial reasoning. 20 gives that headroom without letting a
+ * runaway loop drain the provider budget.
+ */
+const DEFAULT_CHAT_STEP_LIMIT = 20;
 
 export type AiOrchestratorClock = () => Date;
 export type AiOrchestratorIdFactory = () => string;
@@ -128,6 +139,26 @@ export type AiChatResult = {
   audit: AiAuditRecord;
 };
 
+/**
+ * Streaming event produced by `runChatStream`. The orchestrator yields
+ * parsed events; the route handler is responsible for serialising them
+ * to SSE on the wire.
+ */
+export type AiChatStreamEvent =
+  | { type: "text-delta"; text: string }
+  | {
+      type: "done";
+      text: string;
+      proposals: AiProposal[];
+      audit: AiAuditRecord;
+    }
+  | {
+      type: "error";
+      code: AiErrorCode;
+      message: string;
+      audit: AiAuditRecord;
+    };
+
 export type AiOrchestrator = {
   readonly providerId: string;
   runTask(input: AiOrchestrationInput): Promise<AiOrchestrationResult>;
@@ -141,6 +172,13 @@ export type AiOrchestrator = {
    * (or just answers, if no tool was needed).
    */
   runChat(input: AiChatInput): Promise<AiChatResult>;
+  /**
+   * Streaming variant of `runChat`. The async iterable yields text
+   * deltas as the model produces them, then a final `done` event
+   * carrying the assembled proposals + audit. Errors surface as a
+   * single `error` event before the iterator closes.
+   */
+  runChatStream(input: AiChatInput): AsyncIterable<AiChatStreamEvent>;
 };
 
 export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
@@ -210,131 +248,39 @@ export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
       return { proposals, audit };
     },
     async runChat(call) {
-      const occurredAt = clock();
-      const baseContext: ErrorAuditContext = {
-        taskKind: "chat",
-        providerId: deps.provider.id,
-        promptTemplateId: CHAT_TOOL_PROMPT_TEMPLATE_ID,
-        occurredAt,
-      };
-
-      if (deps.provider.languageModel === null) {
-        throw new OrchestratorFailure(
-          aiError(
-            "AI_DISABLED",
-            "AI provider is not configured for this deployment.",
-          ),
-          buildAuditRecord({
-            ...baseContext,
-            outcome: "provider_error",
-            validation: { status: "valid" },
-            errorCode: "AI_DISABLED",
-            errorMessage: "AI provider is not configured for this deployment.",
-          }),
-        );
-      }
-
-      const collected: AiProposal[] = [];
-      const envelope: AiProposalEnvelope = {
-        project: call.project,
-        environment: call.environment,
-        type: call.activeDocument?.type ?? "page",
-        locale: call.activeDocument?.locale ?? "en",
-        ...(call.activeDocument?.documentId
-          ? { documentId: call.activeDocument.documentId }
-          : {}),
-        ...(call.activeDocument?.draftRevision !== undefined
-          ? { baseDraftRevision: call.activeDocument.draftRevision }
-          : {}),
-      };
-
-      const tools = buildChatTools({
-        envelope,
-        ...(call.attachedSelection
-          ? {
-              attachedSelection: {
-                selectionId: call.attachedSelection.selectionId,
-              },
-            }
-          : {}),
-        hasActiveDocument: !!call.activeDocument,
-        ...(call.activeDocument?.path
-          ? { activeDocumentPath: call.activeDocument.path }
-          : {}),
-        activeDocumentHasPublishedVersion:
-          call.activeDocument?.hasPublishedVersion ?? false,
-        providerId: deps.provider.id,
-        model: deps.provider.languageModel.modelId,
+      const setup = prepareChatRun(
+        call,
+        deps,
         clock,
         idFactory,
         ttlMs,
-        ...(call.proposalValidator
-          ? { validator: call.proposalValidator }
-          : validator
-            ? { validator }
-            : {}),
-        capabilities: {
-          ...call.capabilities,
-          canReadEntries: Boolean(call.toolBackends?.findEntries),
-        },
-        collected,
-        registeredTypeIds: (call.projectKnowledge?.registeredTypes ?? []).map(
-          (t) => t.type,
-        ),
-        supportedLocales: call.projectKnowledge?.supportedLocales ?? [],
-        ...(call.toolBackends?.findEntries
-          ? { findEntriesBackend: call.toolBackends.findEntries }
-          : {}),
-        ...(call.toolBackends?.getEntry
-          ? { getEntryBackend: call.toolBackends.getEntry }
-          : {}),
-      });
-
-      const projectKnowledge: ProjectKnowledgeInput = {
-        project: call.project,
-        environment: call.environment,
-        registeredTypes: call.projectKnowledge?.registeredTypes ?? [],
-        supportedLocales: call.projectKnowledge?.supportedLocales ?? [],
-        ...(call.projectKnowledge?.currentUser
-          ? { currentUser: call.projectKnowledge.currentUser }
-          : {}),
-      };
+        validator,
+      );
+      if ("failure" in setup) throw setup.failure;
+      const { collected, tools, system, prompt, languageModel, baseContext } =
+        setup;
 
       try {
         const result = await generateText({
-          model: deps.provider.languageModel,
-          system: buildChatSystemPrompt({
-            hasActiveDocument: !!call.activeDocument,
-            hasAttachedSelection: !!call.attachedSelection,
-            capabilities: call.capabilities,
-            registeredToolNames: Object.keys(tools),
-            projectKnowledge,
-          }),
-          prompt: buildChatUserPrompt({
-            message: call.message,
-            locale: call.activeDocument?.locale ?? "en",
-            activeDocument: call.activeDocument
-              ? {
-                  path: call.activeDocument.path,
-                  type: call.activeDocument.type,
-                  locale: call.activeDocument.locale,
-                }
-              : undefined,
-            additionalContextDocs: call.additionalContextDocs,
-            conversationHistory: call.conversationHistory,
-            attachedSelection: call.attachedSelection,
-          }),
+          model: languageModel,
+          system,
+          prompt,
           tools,
-          // Allow the model to call one or more tools then emit a
-          // concluding text reply. Cap at 5 steps to bound runaway loops.
-          stopWhen: stepCountIs(5),
+          stopWhen: stepCountIs(DEFAULT_CHAT_STEP_LIMIT),
           maxOutputTokens: call.maxOutputTokens,
         });
-        const model = deps.provider.languageModel.modelId;
         const usage = normalizeUsage(result.usage);
+        logChatDiagnostics({
+          path: "runChat",
+          modelId: languageModel.modelId,
+          finishReason: result.finishReason,
+          steps: result.steps,
+          totalUsage: usage,
+          proposalCount: collected.length,
+        });
         const audit = buildAuditRecord({
           ...baseContext,
-          model,
+          model: languageModel.modelId,
           outcome: "succeeded",
           validation: aggregateValidation(collected),
           proposals: collected,
@@ -342,33 +288,256 @@ export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
         });
         return { text: result.text.trim(), proposals: collected, audit };
       } catch (error) {
-        const mapped = mapProviderError(error);
-        const outcome: "invalid_output" | "provider_error" =
-          mapped.code === "AI_OUTPUT_INVALID"
-            ? "invalid_output"
-            : "provider_error";
-        throw new OrchestratorFailure(
-          mapped,
-          buildAuditRecord({
-            ...baseContext,
-            model: deps.provider.languageModel.modelId,
-            outcome,
-            validation:
-              outcome === "invalid_output"
-                ? {
-                    status: "invalid",
-                    errors: [{ code: mapped.code, message: mapped.message }],
-                  }
-                : { status: "valid" },
-            errorCode: isAiErrorCode(mapped.code)
-              ? (mapped.code as AiErrorCode)
-              : "AI_PROVIDER_UNAVAILABLE",
-            errorMessage: mapped.message,
-          }),
+        throw chatErrorToFailure(error, languageModel.modelId, baseContext);
+      }
+    },
+    async *runChatStream(call) {
+      const setup = prepareChatRun(
+        call,
+        deps,
+        clock,
+        idFactory,
+        ttlMs,
+        validator,
+      );
+      if ("failure" in setup) {
+        // Emit the AI_DISABLED (or other gate) condition as a single
+        // error event so the client surfaces it uniformly with any
+        // mid-stream provider failure.
+        const audit = setup.failure.audit;
+        yield {
+          type: "error",
+          code: setup.failure.cause.code as AiErrorCode,
+          message: setup.failure.cause.message,
+          audit,
+        };
+        return;
+      }
+      const { collected, tools, system, prompt, languageModel, baseContext } =
+        setup;
+      let accumulatedText = "";
+      try {
+        const result = streamText({
+          model: languageModel,
+          system,
+          prompt,
+          tools,
+          stopWhen: stepCountIs(DEFAULT_CHAT_STEP_LIMIT),
+          maxOutputTokens: call.maxOutputTokens,
+        });
+        for await (const part of result.fullStream) {
+          if (part.type === "text-delta") {
+            accumulatedText += part.text;
+            yield { type: "text-delta", text: part.text };
+          }
+        }
+        const usage = normalizeUsage(await result.usage);
+        logChatDiagnostics({
+          path: "runChatStream",
+          modelId: languageModel.modelId,
+          finishReason: await result.finishReason,
+          steps: await result.steps,
+          totalUsage: usage,
+          proposalCount: collected.length,
+        });
+        const audit = buildAuditRecord({
+          ...baseContext,
+          model: languageModel.modelId,
+          outcome: "succeeded",
+          validation: aggregateValidation(collected),
+          proposals: collected,
+          ...(usage ? { usage } : {}),
+        });
+        yield {
+          type: "done",
+          text: accumulatedText.trim(),
+          proposals: collected,
+          audit,
+        };
+      } catch (error) {
+        const failure = chatErrorToFailure(
+          error,
+          languageModel.modelId,
+          baseContext,
         );
+        yield {
+          type: "error",
+          code: failure.cause.code as AiErrorCode,
+          message: failure.cause.message,
+          audit: failure.audit,
+        };
       }
     },
   };
+}
+
+/**
+ * Shared chat-turn setup used by both `runChat` and `runChatStream`.
+ * Returns either the prepared call materials or a `{ failure }` shape
+ * the caller surfaces (throw vs. emit) according to its protocol.
+ */
+type ChatRunSetup = {
+  collected: AiProposal[];
+  tools: ReturnType<typeof buildChatTools>;
+  system: string;
+  prompt: string;
+  languageModel: NonNullable<AiProvider["languageModel"]>;
+  baseContext: ErrorAuditContext;
+};
+
+function prepareChatRun(
+  call: AiChatInput,
+  deps: AiOrchestratorDeps,
+  clock: AiOrchestratorClock,
+  idFactory: AiOrchestratorIdFactory,
+  ttlMs: number,
+  validator: AiProposalValidator | undefined,
+): ChatRunSetup | { failure: OrchestratorFailure } {
+  const occurredAt = clock();
+  const baseContext: ErrorAuditContext = {
+    taskKind: "chat",
+    providerId: deps.provider.id,
+    promptTemplateId: CHAT_TOOL_PROMPT_TEMPLATE_ID,
+    occurredAt,
+  };
+
+  if (deps.provider.languageModel === null) {
+    return {
+      failure: new OrchestratorFailure(
+        aiError(
+          "AI_DISABLED",
+          "AI provider is not configured for this deployment.",
+        ),
+        buildAuditRecord({
+          ...baseContext,
+          outcome: "provider_error",
+          validation: { status: "valid" },
+          errorCode: "AI_DISABLED",
+          errorMessage: "AI provider is not configured for this deployment.",
+        }),
+      ),
+    };
+  }
+
+  const languageModel = deps.provider.languageModel;
+  const collected: AiProposal[] = [];
+  const envelope: AiProposalEnvelope = {
+    project: call.project,
+    environment: call.environment,
+    type: call.activeDocument?.type ?? "page",
+    locale: call.activeDocument?.locale ?? "en",
+    ...(call.activeDocument?.documentId
+      ? { documentId: call.activeDocument.documentId }
+      : {}),
+    ...(call.activeDocument?.draftRevision !== undefined
+      ? { baseDraftRevision: call.activeDocument.draftRevision }
+      : {}),
+  };
+
+  const tools = buildChatTools({
+    envelope,
+    ...(call.attachedSelection
+      ? {
+          attachedSelection: {
+            selectionId: call.attachedSelection.selectionId,
+          },
+        }
+      : {}),
+    hasActiveDocument: !!call.activeDocument,
+    ...(call.activeDocument?.path
+      ? { activeDocumentPath: call.activeDocument.path }
+      : {}),
+    activeDocumentHasPublishedVersion:
+      call.activeDocument?.hasPublishedVersion ?? false,
+    providerId: deps.provider.id,
+    model: languageModel.modelId,
+    clock,
+    idFactory,
+    ttlMs,
+    ...(call.proposalValidator
+      ? { validator: call.proposalValidator }
+      : validator
+        ? { validator }
+        : {}),
+    capabilities: {
+      ...call.capabilities,
+      canReadEntries: Boolean(call.toolBackends?.findEntries),
+    },
+    collected,
+    registeredTypeIds: (call.projectKnowledge?.registeredTypes ?? []).map(
+      (t) => t.type,
+    ),
+    supportedLocales: call.projectKnowledge?.supportedLocales ?? [],
+    ...(call.toolBackends?.findEntries
+      ? { findEntriesBackend: call.toolBackends.findEntries }
+      : {}),
+    ...(call.toolBackends?.getEntry
+      ? { getEntryBackend: call.toolBackends.getEntry }
+      : {}),
+  });
+
+  const projectKnowledge: ProjectKnowledgeInput = {
+    project: call.project,
+    environment: call.environment,
+    registeredTypes: call.projectKnowledge?.registeredTypes ?? [],
+    supportedLocales: call.projectKnowledge?.supportedLocales ?? [],
+    ...(call.projectKnowledge?.currentUser
+      ? { currentUser: call.projectKnowledge.currentUser }
+      : {}),
+  };
+
+  const system = buildChatSystemPrompt({
+    hasActiveDocument: !!call.activeDocument,
+    hasAttachedSelection: !!call.attachedSelection,
+    capabilities: call.capabilities,
+    registeredToolNames: Object.keys(tools),
+    projectKnowledge,
+  });
+  const prompt = buildChatUserPrompt({
+    message: call.message,
+    locale: call.activeDocument?.locale ?? "en",
+    activeDocument: call.activeDocument
+      ? {
+          path: call.activeDocument.path,
+          type: call.activeDocument.type,
+          locale: call.activeDocument.locale,
+        }
+      : undefined,
+    additionalContextDocs: call.additionalContextDocs,
+    conversationHistory: call.conversationHistory,
+    attachedSelection: call.attachedSelection,
+  });
+
+  return { collected, tools, system, prompt, languageModel, baseContext };
+}
+
+function chatErrorToFailure(
+  error: unknown,
+  modelId: string,
+  baseContext: ErrorAuditContext,
+): OrchestratorFailure {
+  const mapped = mapProviderError(error);
+  const outcome: "invalid_output" | "provider_error" =
+    mapped.code === "AI_OUTPUT_INVALID" ? "invalid_output" : "provider_error";
+  return new OrchestratorFailure(
+    mapped,
+    buildAuditRecord({
+      ...baseContext,
+      model: modelId,
+      outcome,
+      validation:
+        outcome === "invalid_output"
+          ? {
+              status: "invalid",
+              errors: [{ code: mapped.code, message: mapped.message }],
+            }
+          : { status: "valid" },
+      errorCode: isAiErrorCode(mapped.code)
+        ? (mapped.code as AiErrorCode)
+        : "AI_PROVIDER_UNAVAILABLE",
+      errorMessage: mapped.message,
+    }),
+  );
 }
 
 function resolveTaskDefinitionOrFail(
@@ -639,6 +808,61 @@ function pascalCase(value: string): string {
       segment.length === 0 ? "" : segment[0].toUpperCase() + segment.slice(1),
     )
     .join("");
+}
+
+/**
+ * Per-turn diagnostic log: dumps the AI SDK's `finishReason`, per-step
+ * tool calls + token usage, and total usage so operators can see why
+ * a chat turn produced N proposals (e.g. `finishReason: "length"` →
+ * hit `maxOutputTokens`; `finishReason: "stop"` → model decided it
+ * was done). Written via `console.log` because the orchestrator
+ * doesn't take a logger dep — the host server pipes stdout through
+ * its structured logger.
+ */
+function logChatDiagnostics(input: {
+  path: "runChat" | "runChatStream";
+  modelId: string;
+  finishReason: unknown;
+  steps: unknown;
+  totalUsage: AiProviderUsage | undefined;
+  proposalCount: number;
+}): void {
+  const stepsArr = Array.isArray(input.steps)
+    ? (input.steps as Array<Record<string, unknown>>)
+    : [];
+  const stepSummary = stepsArr.map((step, idx) => {
+    const text = typeof step.text === "string" ? step.text : "";
+    const toolCalls = Array.isArray(step.toolCalls)
+      ? (step.toolCalls as Array<Record<string, unknown>>)
+      : [];
+    const usage = step.usage as Record<string, unknown> | undefined;
+    return {
+      idx,
+      finishReason: step.finishReason,
+      textLength: text.length,
+      textPreview: text.length > 0 ? text.slice(0, 80) : undefined,
+      toolCallNames: toolCalls
+        .map((c) => (typeof c.toolName === "string" ? c.toolName : "(unknown)"))
+        .filter((name): name is string => Boolean(name)),
+      usage: usage
+        ? {
+            input: usage.inputTokens,
+            output: usage.outputTokens,
+            total: usage.totalTokens,
+          }
+        : undefined,
+    };
+  });
+  // eslint-disable-next-line no-console
+  console.log("[ai.chat.diagnostic]", {
+    path: input.path,
+    model: input.modelId,
+    finishReason: input.finishReason,
+    proposalCount: input.proposalCount,
+    stepCount: stepsArr.length,
+    totalUsage: input.totalUsage,
+    steps: stepSummary,
+  });
 }
 
 /**

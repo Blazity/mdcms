@@ -46,9 +46,20 @@ export function renderProjectKnowledgeBlock(
     const sortedTypes = [...input.registeredTypes].sort((a, b) =>
       a.type.localeCompare(b.type),
     );
+    let hasReferenceField = false;
     for (const schema of sortedTypes) {
       lines.push(...renderTypeEntry(schema));
       lines.push("");
+      if (!hasReferenceField && schemaContainsReference(schema)) {
+        hasReferenceField = true;
+      }
+    }
+    if (hasReferenceField) {
+      lines.push(
+        "### Reference fields require real entry ids",
+        "When a field is `reference → <type>`, fill it with the documentId of an entry that already exists in this project. Use the `find_entries` tool to look up candidates by type, then copy the `documentId` from a result into the reference field. Do not invent ids and do not write a person's name or any other prose — apply will reject anything that isn't a real UUID, and the proposal-time validator emits UNKNOWN_REFERENCE before that.",
+        "",
+      );
     }
   }
 
@@ -84,6 +95,24 @@ function sanitizeUserText(value: string): string {
 }
 
 const MAX_NESTED_DEPTH = 1;
+
+function schemaContainsReference(schema: SchemaRegistryTypeSnapshot): boolean {
+  for (const field of Object.values(schema.fields)) {
+    if (fieldContainsReference(field)) return true;
+  }
+  return false;
+}
+
+function fieldContainsReference(field: SchemaRegistryFieldSnapshot): boolean {
+  if (field.kind === "reference") return true;
+  if (field.item && fieldContainsReference(field.item)) return true;
+  if (field.fields) {
+    for (const sub of Object.values(field.fields)) {
+      if (fieldContainsReference(sub)) return true;
+    }
+  }
+  return false;
+}
 
 function renderTypeEntry(schema: SchemaRegistryTypeSnapshot): string[] {
   const lines: string[] = [

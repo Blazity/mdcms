@@ -3,12 +3,12 @@
 import * as React from "react";
 import {
   AtSign,
+  Check,
   ChevronRight,
   Maximize2,
   Minimize2,
   MoreHorizontal,
   Plus,
-  Send,
   X,
 } from "lucide-react";
 
@@ -33,7 +33,11 @@ import type {
   AssistantProposal,
   AssistantThread,
 } from "./assistant-types.js";
-import { ProposalCard } from "./proposal-card.js";
+import { AssistantMarkdown } from "./assistant-markdown.js";
+import { EmptyStarter } from "./empty-starter.js";
+import { KindGlyph } from "./kind-glyph.js";
+import { AcceptedView, ProposalCard } from "./proposal-card.js";
+import { SendStopButton } from "./send-stop-button.js";
 import { SparkleMark } from "./sparkle-mark.js";
 import { useStudioApiConfig } from "../../app/admin/mount-info-context.js";
 import { createStudioDocumentRouteApi } from "../../../document-route-api.js";
@@ -352,80 +356,88 @@ function ContextChips({
   );
 }
 
-function EmptyThreadHint() {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 px-6 py-12 text-center text-foreground-muted">
-      <span className="text-primary">
-        <SparkleMark size={28} />
-      </span>
-      <div className="max-w-xs space-y-1.5">
-        <div className="text-[13.5px] font-semibold text-foreground">
-          Start a conversation
-        </div>
-        <div className="text-[12px] leading-snug">
-          Ask the assistant to edit the active draft, write a new post, or
-          delete a stale one. Use{" "}
-          <code className="rounded bg-muted px-1 font-mono text-[10.5px]">
-            @
-          </code>{" "}
-          to attach another document for context.
-        </div>
-      </div>
-    </div>
-  );
-}
-
+// User messages render as a quiet right-aligned quote — muted ink, no
+// fill, a thin right accent border the line sits flush against. The
+// asymmetric look pairs with the assistant's sparkle gutter so the eye
+// lands on assistant prose rather than bouncing back to the echo of
+// the user's own text.
 function UserBubble({ message }: { message: AssistantMessage }) {
   return (
-    <div className="mb-4 flex justify-end">
-      <div className="max-w-[80%] rounded-[12px_12px_2px_12px] bg-secondary px-3 py-2 text-[13px] leading-snug text-secondary-foreground">
+    <div className="mb-6 flex justify-end">
+      <div className="max-w-[70%] border-r-2 border-foreground/20 py-1.5 pl-2.5 pr-2.5 text-right text-[13px] leading-normal text-foreground/60">
         {message.text}
       </div>
     </div>
   );
 }
 
+// Assistant turns sit in a two-column layout: a fixed 24px gutter that
+// holds the blue ✦ identity glyph, and a flex content column with the
+// prose + proposal cards. The fixed gutter keeps proposals aligned to
+// a consistent left edge across an entire turn instead of just the
+// first prose paragraph.
 function AssistantBubble({
   message,
   proposalsById,
+  isStreamingPlaceholder,
   onAccept,
   onReject,
 }: {
   message: AssistantMessage;
   proposalsById: Record<string, AssistantProposal>;
+  /**
+   * True when this message is the most-recent assistant turn AND the
+   * context is mid-stream. Drives the typing-indicator render when
+   * text is still empty.
+   */
+  isStreamingPlaceholder: boolean;
   onAccept: (proposalId: string) => void;
   onReject: (proposalId: string, feedback: string) => void;
 }) {
   const proposalIds = message.proposals ?? [];
   const text = message.text?.trim();
-  if (proposalIds.length === 0 && !text) return null;
+  if (proposalIds.length === 0 && !text && !isStreamingPlaceholder) return null;
   const proposals = proposalIds
     .map((pid) => proposalsById[pid])
     .filter((p): p is AssistantProposal => Boolean(p));
   const isMultiTurn = proposals.length > 1;
   return (
-    <div className="mb-5 space-y-2">
-      {text && (
-        <div className="max-w-[92%] text-[13.5px] leading-relaxed text-foreground">
-          {text}
-        </div>
-      )}
-      {!isMultiTurn &&
-        proposals.map((proposal) => (
-          <ProposalCard
-            key={proposal.proposalId}
-            proposal={proposal}
-            onAccept={() => onAccept(proposal.proposalId)}
-            onReject={(feedback) => onReject(proposal.proposalId, feedback)}
+    <div className="mb-6 flex items-start gap-0">
+      <div className="w-6 shrink-0 pt-0.5 text-primary" aria-hidden="true">
+        <SparkleMark size={14} />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        {text ? (
+          <div className="max-w-[92%] py-0.5">
+            <AssistantMarkdown text={text} />
+          </div>
+        ) : isStreamingPlaceholder ? (
+          <div
+            className="inline-flex max-w-[92%] items-center gap-1 py-1.5 text-foreground-muted"
+            aria-label="Generating response"
+          >
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary [animation-delay:-0.2s]" />
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary [animation-delay:0.2s]" />
+          </div>
+        ) : null}
+        {!isMultiTurn &&
+          proposals.map((proposal) => (
+            <ProposalCard
+              key={proposal.proposalId}
+              proposal={proposal}
+              onAccept={() => onAccept(proposal.proposalId)}
+              onReject={(feedback) => onReject(proposal.proposalId, feedback)}
+            />
+          ))}
+        {isMultiTurn && (
+          <TurnGroup
+            proposals={proposals}
+            onAccept={onAccept}
+            onReject={onReject}
           />
-        ))}
-      {isMultiTurn && (
-        <TurnGroup
-          proposals={proposals}
-          onAccept={onAccept}
-          onReject={onReject}
-        />
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -438,31 +450,15 @@ const TURN_KIND_LABEL: Record<AssistantProposal["kind"], string> = {
   delete_document: "Delete",
 };
 
-const TURN_KIND_TONE: Record<
-  AssistantProposal["kind"],
-  { bg: string; fg: string }
-> = {
-  replace_selection: {
-    bg: "bg-primary/15",
-    fg: "text-primary",
-  },
-  insert_block: {
-    bg: "bg-vibrant-green/15",
-    fg: "text-vibrant-green",
-  },
-  update_frontmatter: {
-    bg: "bg-primary/15",
-    fg: "text-primary",
-  },
-  create_document: {
-    bg: "bg-vibrant-green/15",
-    fg: "text-vibrant-green",
-  },
-  delete_document: {
-    bg: "bg-destructive/15",
-    fg: "text-destructive",
-  },
-};
+// One blue family for every non-destructive operation, an amber family
+// reserved for the destructive kind. Keeping the chip palette to two
+// hues makes the destructive case unmistakable at a glance even when
+// the row is otherwise text-dense.
+function turnChipPaletteFor(kind: AssistantProposal["kind"]): string {
+  return kind === "delete_document"
+    ? "bg-accent-amber-tint text-accent-amber"
+    : "bg-primary/15 text-primary";
+}
 
 function diffStatsFor(proposal: AssistantProposal): {
   added: number;
@@ -551,18 +547,21 @@ function TurnGroup({
   const allValid = proposals.every((p) => p.validation.status === "valid");
   const stale = proposals.some((p) => p.contentInvalidated);
   const acceptBlocked = !allValid || stale;
+  // Hide the batch action bar (Reject all / Accept all) once every
+  // row has been individually resolved — leaving "Accept all (3)"
+  // visible after the user already accepted all 3 reads as a stuck
+  // affordance. Rows remain on screen as their AcceptedView /
+  // logged-line history; the footer just gets out of the way.
+  const pendingProposals = proposals.filter((p) => !p.acceptedAt);
+  const hasPending = pendingProposals.length > 0;
   return (
     <div className="overflow-hidden rounded-lg border border-card-border bg-card">
       <ul className="m-0 list-none p-0">
         {proposals.map((proposal, i) => {
           const isExpanded = !!expanded[proposal.proposalId];
-          const tone = TURN_KIND_TONE[proposal.kind];
           const stats = diffStatsFor(proposal);
           const valid = proposal.validation.status === "valid";
-          // Every AssistantProposal kind exposes docPath + locale, so
-          // this label is uniform — kept as a separate variable so it
-          // can be retitled per-kind if we ever want kind-specific UX.
-          const docLabel = `${proposal.docPath} · ${proposal.locale}`;
+          const isAccepted = Boolean(proposal.acceptedAt);
           return (
             <li
               key={proposal.proposalId}
@@ -570,71 +569,52 @@ function TurnGroup({
                 i < proposals.length - 1 && "border-b border-divider/40",
               )}
             >
-              <button
-                type="button"
-                onClick={() =>
-                  setExpanded((prev) => ({
-                    ...prev,
-                    [proposal.proposalId]: !isExpanded,
-                  }))
-                }
-                className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/40"
-                aria-expanded={isExpanded}
-              >
-                <span
-                  className={cn(
-                    "shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider",
-                    tone.bg,
-                    tone.fg,
-                  )}
-                >
-                  {TURN_KIND_LABEL[proposal.kind]}
-                </span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-foreground">
-                  {docLabel}
-                </span>
-                <span className="shrink-0 font-mono text-[10px]">
-                  <span className="text-success">+{stats.added}</span>{" "}
-                  <span className="text-destructive">−{stats.removed}</span>
-                </span>
-                <span
-                  className={cn(
-                    "shrink-0 text-[11px]",
-                    valid ? "text-success" : "text-destructive",
-                  )}
-                  aria-hidden
-                >
-                  {valid ? "✓" : "!"}
-                </span>
-                <ChevronRight
-                  className={cn(
-                    "h-3.5 w-3.5 shrink-0 text-foreground-muted transition-transform",
-                    isExpanded && "rotate-90",
-                  )}
-                  aria-hidden
-                />
-              </button>
-              {isExpanded && (
-                <div className="border-t border-divider/40 bg-background-subtle px-3 py-2.5">
-                  {expandedPreviewFor(proposal)}
+              {isAccepted ? (
+                // Hand the row off to the same accepted-view component
+                // a single card uses: 6s lime banner with countdown
+                // first, then morphs to the quiet past-tense log line.
+                <div className="px-3 py-2">
+                  <AcceptedView proposal={proposal} />
                 </div>
+              ) : (
+                <>
+                  <TurnRow
+                    proposal={proposal}
+                    stats={stats}
+                    valid={valid}
+                    isExpanded={isExpanded}
+                    onToggle={() =>
+                      setExpanded((prev) => ({
+                        ...prev,
+                        [proposal.proposalId]: !isExpanded,
+                      }))
+                    }
+                    onAccept={() => onAccept(proposal.proposalId)}
+                    onReject={() => onReject(proposal.proposalId, "")}
+                  />
+                  {isExpanded && (
+                    <div className="border-t border-divider/40 bg-background-subtle px-3 py-2.5">
+                      {expandedPreviewFor(proposal)}
+                    </div>
+                  )}
+                </>
               )}
             </li>
           );
         })}
       </ul>
-      {showReject ? (
+      {!hasPending ? null : showReject ? (
         <TurnRejectFeedback
           onCancel={() => setShowReject(false)}
           onSend={(feedback) => {
-            for (const p of proposals) onReject(p.proposalId, feedback);
+            for (const p of pendingProposals) onReject(p.proposalId, feedback);
             setShowReject(false);
           }}
         />
       ) : (
         <div className="flex items-center gap-2 border-t border-divider/40 bg-background-subtle px-3 py-2">
           <span className="flex-1 font-mono text-[10px] uppercase tracking-wider text-foreground-muted">
-            {proposals.length} proposals · this turn
+            {pendingProposals.length} of {proposals.length} pending
           </span>
           <button
             type="button"
@@ -649,7 +629,7 @@ function TurnGroup({
               acceptBlocked
                 ? undefined
                 : () => {
-                    for (const p of proposals) onAccept(p.proposalId);
+                    for (const p of pendingProposals) onAccept(p.proposalId);
                   }
             }
             disabled={acceptBlocked}
@@ -658,21 +638,174 @@ function TurnGroup({
               stale
                 ? "Source text changed — retry to regenerate"
                 : allValid
-                  ? `Apply all ${proposals.length} proposals`
+                  ? `Apply all ${pendingProposals.length} pending proposals`
                   : "Fix invalid proposals before accepting"
             }
             className={cn(
-              "inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
+              "inline-flex items-center gap-1.5 rounded border px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
               acceptBlocked
-                ? "cursor-not-allowed bg-muted text-foreground-muted"
-                : "bg-sidebar text-vibrant-green hover:bg-sidebar/90",
+                ? "cursor-not-allowed border-transparent bg-muted text-foreground-muted"
+                : "border-vibrant-green-border bg-vibrant-green text-vibrant-green-foreground hover:bg-vibrant-green/90",
             )}
           >
-            ✓ Accept all ({proposals.length})
+            <Check className="h-3 w-3" aria-hidden />
+            Accept all ({pendingProposals.length})
           </button>
         </div>
       )}
     </div>
+  );
+}
+
+// Two-line row: the document path sits as the headline, the operation
+// chip (blue / amber by kind) + ± stats + a validation flag share the
+// second line, and the row's trailing icon stack gives one-click
+// accept / reject without disclosing the expanded diff. The chevron
+// still toggles inline disclosure, but it lives at the far right where
+// it doesn't compete with the chip for first read.
+function TurnRow({
+  proposal,
+  stats,
+  valid,
+  isExpanded,
+  onToggle,
+  onAccept,
+  onReject,
+}: {
+  proposal: AssistantProposal;
+  stats: { added: number; removed: number };
+  valid: boolean;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onAccept: () => void;
+  onReject: () => void;
+}) {
+  const rowAria = `Proposal — ${TURN_KIND_LABEL[proposal.kind]} in ${
+    proposal.docPath
+  }, +${stats.added} −${stats.removed}`;
+  return (
+    <div
+      role="group"
+      aria-label={rowAria}
+      className="flex flex-col gap-1.5 px-3 py-2"
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        title={proposal.docPath}
+        aria-expanded={isExpanded}
+        className="block w-full truncate text-left font-mono text-[12px] text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        dir="rtl"
+      >
+        <bdi dir="ltr">{proposal.docPath}</bdi>
+      </button>
+      <div className="flex items-center gap-2.5">
+        <span
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1.5 rounded-sm px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider",
+            turnChipPaletteFor(proposal.kind),
+          )}
+        >
+          <KindGlyph kind={proposal.kind} />
+          {TURN_KIND_LABEL[proposal.kind]}
+        </span>
+        <span className="shrink-0 font-mono text-[10px] tabular-nums text-foreground-muted">
+          <span className="text-success">+{stats.added}</span>{" "}
+          <span className="text-destructive">−{stats.removed}</span>
+        </span>
+        {!valid && (
+          <span
+            aria-hidden
+            title="Invalid"
+            className="shrink-0 text-[11px] text-destructive"
+          >
+            ⚠
+          </span>
+        )}
+        <span className="flex-1" />
+        <RowIconButton
+          label="Reject"
+          tone="reject"
+          onClick={(e) => {
+            e.stopPropagation();
+            onReject();
+          }}
+        >
+          <X className="h-3.5 w-3.5" aria-hidden />
+        </RowIconButton>
+        <RowIconButton
+          label="Accept"
+          tone="accept"
+          disabled={!valid}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (valid) onAccept();
+          }}
+        >
+          <Check className="h-3.5 w-3.5" aria-hidden />
+        </RowIconButton>
+        <RowIconButton
+          label={isExpanded ? "Collapse details" : "Expand details"}
+          tone="neutral"
+          pressed={isExpanded}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+        >
+          <ChevronRight
+            className={cn(
+              "h-3.5 w-3.5 transition-transform",
+              isExpanded && "rotate-90",
+            )}
+            aria-hidden
+          />
+        </RowIconButton>
+      </div>
+    </div>
+  );
+}
+
+// 28×28 hit target with a tonal hover tint — `accept` warms toward
+// lime, `reject` toward destructive red, `neutral` stays grey. Stays
+// flat in the idle state so a row with three icons doesn't broadcast
+// as three buttons until the user actually points at one.
+function RowIconButton({
+  label,
+  tone,
+  pressed,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  tone: "accept" | "reject" | "neutral";
+  pressed?: boolean;
+  disabled?: boolean;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={pressed}
+      disabled={disabled}
+      onClick={onClick}
+      title={label}
+      className={cn(
+        "grid h-7 w-7 shrink-0 place-items-center rounded text-foreground-muted transition-colors",
+        disabled
+          ? "cursor-not-allowed opacity-40"
+          : tone === "accept"
+            ? "hover:bg-vibrant-green/25 hover:text-foreground"
+            : tone === "reject"
+              ? "hover:bg-destructive/15 hover:text-destructive"
+              : "hover:bg-muted hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -718,21 +851,25 @@ function TurnRejectFeedback({
 
 function Composer({
   thread,
+  draft,
+  setDraft,
+  textareaRef,
   onClearSelection,
   onRemoveDoc,
 }: {
   thread: AssistantThread;
+  draft: string;
+  setDraft: React.Dispatch<React.SetStateAction<string>>;
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   onClearSelection: () => void;
   onRemoveDoc: (path: string) => void;
 }) {
   const assistant = useAssistant();
   const activeDocument = useAssistantActiveDocument();
-  const [draft, setDraft] = React.useState("");
   const [mention, setMention] = React.useState<{
     query: string;
     caret: number;
   } | null>(null);
-  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
 
   // Focus the composer on mount so opening the assistant lands the cursor
   // ready-to-type. The Composer only mounts when the rail/fullscreen
@@ -743,7 +880,7 @@ function Composer({
     const end = ta.value.length;
     ta.focus();
     ta.setSelectionRange(end, end);
-  }, []);
+  }, [textareaRef]);
 
   const submit = () => {
     if (!draft.trim()) return;
@@ -831,9 +968,22 @@ function Composer({
           value={draft}
           onChange={onChange}
           rows={2}
-          placeholder="Ask about any doc, propose edits, draft new posts…"
-          className="w-full resize-none border-none bg-transparent text-[13.5px] leading-snug text-foreground outline-none placeholder:text-foreground-muted"
+          disabled={assistant.isPending}
+          placeholder={
+            assistant.isPending
+              ? "Generating response… Esc to stop"
+              : "Ask about any doc, propose edits, draft new posts…"
+          }
+          className={cn(
+            "w-full resize-none border-none bg-transparent text-[13.5px] leading-snug text-foreground outline-none placeholder:text-foreground-muted",
+            assistant.isPending && "cursor-not-allowed opacity-55",
+          )}
           onKeyDown={(e) => {
+            if (e.key === "Escape" && assistant.isPending) {
+              e.preventDefault();
+              assistant.cancelPending();
+              return;
+            }
             if (mention && e.key === "Escape") {
               e.preventDefault();
               setMention(null);
@@ -851,7 +1001,9 @@ function Composer({
         />
         <div className="mt-1.5 flex items-center gap-2">
           <span className="flex-1 font-mono text-[10px] text-foreground-muted">
-            ⌘ ↵ to send · @ to reference a doc
+            {assistant.isPending
+              ? "Streaming… Esc to stop"
+              : "⌘ ↵ to send · @ to reference a doc"}
           </span>
           <button
             type="button"
@@ -877,19 +1029,12 @@ function Composer({
           >
             <AtSign className="h-3.5 w-3.5" aria-hidden />
           </button>
-          <button
-            type="submit"
-            disabled={!draft.trim()}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
-              draft.trim()
-                ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                : "cursor-not-allowed bg-muted text-foreground-muted",
-            )}
-          >
-            <Send className="h-3 w-3" aria-hidden /> Send
-            <span className="font-mono text-[9px] opacity-70">⌘↵</span>
-          </button>
+          <SendStopButton
+            pending={assistant.isPending}
+            hasDraft={Boolean(draft.trim())}
+            onSend={submit}
+            onStop={assistant.cancelPending}
+          />
         </div>
       </div>
       {mention && (
@@ -916,7 +1061,90 @@ export function AssistantPanel({
   variant = "rail",
 }: AssistantPanelProps) {
   const assistant = useAssistant();
+  const activeDocument = useAssistantActiveDocument();
   const thread = assistant.activeThread;
+  // Lifted so the empty-state example cards can fill the same buffer
+  // the Composer renders. The Composer is otherwise a controlled
+  // textarea against this state.
+  const [draft, setDraft] = React.useState("");
+  const composerRef = React.useRef<HTMLTextAreaElement | null>(null);
+
+  // Sticky-at-bottom auto-scroll. Tracks whether the user is currently
+  // pinned to the latest message; we only auto-scroll on new content
+  // while they're stuck at the bottom. If they scroll up to read older
+  // turns we leave them alone, then re-engage when they scroll back
+  // near the bottom.
+  const scrollRef = React.useRef<HTMLDivElement | null>(null);
+  const stickyRef = React.useRef(true);
+
+  const isNearBottom = React.useCallback((el: HTMLElement) => {
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }, []);
+
+  const scrollToBottom = React.useCallback(
+    (behavior: ScrollBehavior = "smooth") => {
+      const el = scrollRef.current;
+      if (!el) return;
+      el.scrollTo({ top: el.scrollHeight, behavior });
+    },
+    [],
+  );
+
+  // Re-engage stickiness whenever the user manually scrolls back down,
+  // disengage when they scroll up. ResizeObserver covers proposal
+  // cards expanding mid-conversation (mid-scroll the height changes
+  // even though the user didn't touch the wheel).
+  React.useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      stickyRef.current = isNearBottom(el);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [isNearBottom]);
+
+  // Drive the actual scroll on every render where content might have
+  // grown — messages length, pending state (assistant is mid-stream),
+  // proposal map identity (proposal mutation morphs a row in place),
+  // AND the trailing message's text length so streaming deltas keep
+  // the bottom of the most recent turn in view.
+  const lastMessageTextLength =
+    thread.messages[thread.messages.length - 1]?.text?.length ?? 0;
+  React.useEffect(() => {
+    if (!stickyRef.current) return;
+    scrollToBottom("smooth");
+  }, [
+    thread.messages.length,
+    assistant.isPending,
+    assistant.store.proposals,
+    lastMessageTextLength,
+    scrollToBottom,
+  ]);
+
+  // First mount or thread switch — jump to bottom without animation so
+  // the user opens to the latest turn rather than the top of history.
+  React.useEffect(() => {
+    stickyRef.current = true;
+    scrollToBottom("auto");
+  }, [thread.id, scrollToBottom]);
+
+  const fillFromExample = React.useCallback((prompt: string) => {
+    setDraft(prompt);
+    const ta = composerRef.current;
+    if (!ta) return;
+    ta.focus();
+    // Wait one frame so the controlled value lands before we set the
+    // caret — otherwise React resets the selection on the next render.
+    requestAnimationFrame(() => {
+      try {
+        ta.setSelectionRange(prompt.length, prompt.length);
+      } catch {
+        // Some browsers (Safari with certain input types) reject
+        // setSelectionRange — non-fatal, the value still landed.
+      }
+    });
+  }, []);
 
   const visibleThreadList = !hideThreadList;
 
@@ -1000,37 +1228,68 @@ export function AssistantPanel({
           )}
         </div>
         <div
+          ref={scrollRef}
           className={cn(
             "scrollbar-thin flex-1 space-y-1 overflow-y-auto p-4",
             variant === "fullscreen" && "px-8",
           )}
         >
           {thread.messages.length === 0 ? (
-            <EmptyThreadHint />
+            <EmptyStarter
+              thread={thread}
+              activeDocument={activeDocument}
+              hasDraft={draft.trim().length > 0}
+              onPick={fillFromExample}
+            />
           ) : (
-            thread.messages.map((m) =>
-              m.role === "user" ? (
-                <UserBubble key={m.id} message={m} />
-              ) : (
-                <AssistantBubble
-                  key={m.id}
-                  message={m}
-                  proposalsById={assistant.store.proposals}
-                  onAccept={(pid) => {
-                    const p = assistant.store.proposals[pid];
-                    if (p) assistant.acceptProposal(p);
-                  }}
-                  onReject={(pid, feedback) => {
-                    const p = assistant.store.proposals[pid];
-                    if (p) assistant.rejectProposal(p, feedback);
-                  }}
-                />
-              ),
-            )
+            (() => {
+              // Filter out hidden side-channel messages (e.g. the
+              // "I accepted your proposal" turn the client appends so
+              // the model sees acceptances in conversation history)
+              // before laying out the timeline. The model still
+              // receives them via the conversationHistory serializer;
+              // the user just doesn't see them.
+              const visible = thread.messages.filter((m) => !m.hidden);
+              // The streaming typing-indicator only renders for the
+              // most-recent visible assistant turn while the context
+              // is mid-stream. Compute once per render rather than
+              // scanning inside the map callback.
+              const lastAssistantIdx = (() => {
+                for (let i = visible.length - 1; i >= 0; i--) {
+                  if (visible[i]?.role === "assistant") return i;
+                }
+                return -1;
+              })();
+              return visible.map((m, idx) =>
+                m.role === "user" ? (
+                  <UserBubble key={m.id} message={m} />
+                ) : (
+                  <AssistantBubble
+                    key={m.id}
+                    message={m}
+                    proposalsById={assistant.store.proposals}
+                    isStreamingPlaceholder={
+                      assistant.isPending && idx === lastAssistantIdx
+                    }
+                    onAccept={(pid) => {
+                      const p = assistant.store.proposals[pid];
+                      if (p) assistant.acceptProposal(p);
+                    }}
+                    onReject={(pid, feedback) => {
+                      const p = assistant.store.proposals[pid];
+                      if (p) assistant.rejectProposal(p, feedback);
+                    }}
+                  />
+                ),
+              );
+            })()
           )}
         </div>
         <Composer
           thread={thread}
+          draft={draft}
+          setDraft={setDraft}
+          textareaRef={composerRef}
           onClearSelection={assistant.clearActiveSelection}
           onRemoveDoc={assistant.removeContextDoc}
         />

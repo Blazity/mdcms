@@ -169,6 +169,29 @@ test("renders reference field with target type", () => {
     supportedLocales: [],
   });
   assert.ok(block.includes("author (reference → author, optional, nullable)"));
+  // Reference fields trigger the "use real UUIDs" guidance section so
+  // the model doesn't paste a display name into a reference field.
+  assert.ok(block.includes("### Reference fields require real entry ids"));
+  assert.ok(block.includes("find_entries"));
+});
+
+test("omits the reference-guidance section when no schema has a reference", () => {
+  const block = renderProjectKnowledgeBlock({
+    project: "p",
+    environment: "e",
+    registeredTypes: [
+      {
+        type: "page",
+        directory: "pages",
+        localized: false,
+        fields: {
+          title: { kind: "string", required: true, nullable: false },
+        },
+      },
+    ],
+    supportedLocales: [],
+  });
+  assert.ok(!block.includes("Reference fields require real entry ids"));
 });
 
 test("renders array field with item kind", () => {

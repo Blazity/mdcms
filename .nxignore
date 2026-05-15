@@ -1,0 +1,6 @@
+# Local git worktrees and CLI scratch dirs live under .claude/ and don't
+# represent real workspace projects. Without this Nx walks into the
+# worktrees, discovers their package.json files as additional projects,
+# and demands matching `references` entries in the root tsconfig.json.
+.claude/
+.worktrees/

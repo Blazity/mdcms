@@ -12,6 +12,7 @@ import type {
   AssistantProposalInsert,
   AssistantValidation,
 } from "./assistant-types.js";
+import { KindGlyph } from "./kind-glyph.js";
 
 const KIND_LABEL: Record<AssistantProposal["kind"], string> = {
   replace_selection: "Edit",
@@ -20,6 +21,16 @@ const KIND_LABEL: Record<AssistantProposal["kind"], string> = {
   create_document: "New doc",
   delete_document: "Delete",
 };
+
+// Chip palette: one blue family for every non-destructive operation, an
+// amber family that only the destructive kind uses. The single binary
+// keeps the chips legible at a glance — green/blue/red triple coding
+// blurred when the action types grew past three.
+function chipPaletteFor(kind: AssistantProposal["kind"]): string {
+  return kind === "delete_document"
+    ? "bg-accent-amber-tint text-accent-amber"
+    : "bg-primary/15 text-primary";
+}
 
 type CardChromeProps = {
   children: React.ReactNode;
@@ -64,6 +75,12 @@ type StandardHeaderProps = {
   dense?: boolean;
 };
 
+// Two-line header: the document path sits as the headline (font-mono,
+// truncating left-from-the-end so the leaf segment stays visible), and
+// the operation chip + locale + validation status share the second
+// line. Previously a single row tried to hold all four — the path got
+// squeezed before the chip did, which made the kind harder to scan
+// than the path it operated on.
 function StandardHeader({
   kind,
   docPath,
@@ -71,36 +88,38 @@ function StandardHeader({
   validation,
   dense,
 }: StandardHeaderProps) {
-  const isDelete = kind === "delete_document";
   return (
     <div
       className={cn(
-        "flex items-center gap-2.5 border-b border-divider/40 bg-gradient-to-b from-primary/[0.04] to-transparent",
+        "flex flex-col gap-1.5 border-b border-divider/40 bg-gradient-to-b from-primary/[0.04] to-transparent",
         dense ? "px-2.5 py-1.5" : "px-3 py-2.5",
       )}
     >
-      <span
-        className={cn(
-          "shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider",
-          isDelete
-            ? "bg-destructive/12 text-destructive"
-            : "bg-blue-100 text-primary",
-        )}
-      >
-        {KIND_LABEL[kind]}
-      </span>
-      <span
-        className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground-muted"
+      <div
+        className="truncate font-mono text-[12px] text-foreground"
         title={docPath}
+        dir="rtl"
       >
-        {docPath}
-      </span>
-      {locale && (
-        <span className="shrink-0 font-mono text-[10px] text-foreground-muted/80">
-          {locale}
+        <bdi dir="ltr">{docPath}</bdi>
+      </div>
+      <div className="flex items-center gap-2.5">
+        <span
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1.5 rounded-sm px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider",
+            chipPaletteFor(kind),
+          )}
+        >
+          <KindGlyph kind={kind} />
+          {KIND_LABEL[kind]}
         </span>
-      )}
-      <ValidBadge validation={validation} />
+        {locale && (
+          <span className="shrink-0 font-mono text-[10px] text-foreground-muted/80">
+            {locale}
+          </span>
+        )}
+        <span className="flex-1" />
+        <ValidBadge validation={validation} />
+      </div>
     </div>
   );
 }
@@ -148,12 +167,12 @@ function Footer({
         onClick={blocked ? undefined : onAccept}
         disabled={blocked}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
+          "inline-flex items-center gap-1.5 rounded border px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
           blocked
-            ? "cursor-not-allowed bg-muted text-foreground-muted"
+            ? "cursor-not-allowed border-transparent bg-muted text-foreground-muted"
             : destructive
-              ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              : "bg-sidebar text-vibrant-green hover:bg-sidebar/90",
+              ? "border-destructive bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              : "border-vibrant-green-border bg-vibrant-green text-vibrant-green-foreground hover:bg-vibrant-green/90",
         )}
         title={
           contentInvalidated
@@ -624,6 +643,267 @@ export type ProposalCardProps = {
   onReject: (feedback: string) => void;
 };
 
+/** 6-second window — Sonia's design + the AI Elements reference both use this. */
+export const UNDO_WINDOW_MS = 6000;
+
+/**
+ * Countdown timer that pauses on hover and when the tab is hidden.
+ * Returns a 1→0 progress value and calls `onExpire` exactly once when
+ * progress hits 0. The pause logic uses `performance.now()` so elapsed
+ * time stays accurate across tab visibility flips (rAF would throttle
+ * when backgrounded, which would silently extend the window).
+ */
+function useUndoCountdown(
+  durationMs: number,
+  acceptedAt: string,
+  paused: boolean,
+  onExpire: () => void,
+): number {
+  const [progress, setProgress] = React.useState(() => {
+    // Initial progress accounts for time elapsed since acceptedAt so
+    // a page reload during the window resumes the countdown cleanly
+    // instead of restarting it.
+    const elapsedAtMount = Date.now() - new Date(acceptedAt).getTime();
+    return Math.max(0, 1 - elapsedAtMount / durationMs);
+  });
+  const expiredRef = React.useRef(false);
+  const onExpireRef = React.useRef(onExpire);
+  React.useEffect(() => {
+    onExpireRef.current = onExpire;
+  }, [onExpire]);
+
+  // Tab-hidden detection so the timer doesn't burn through the
+  // window while the user can't see it.
+  const [tabHidden, setTabHidden] = React.useState(
+    typeof document !== "undefined" && document.visibilityState === "hidden",
+  );
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    const handle = () => setTabHidden(document.visibilityState === "hidden");
+    document.addEventListener("visibilitychange", handle);
+    return () => document.removeEventListener("visibilitychange", handle);
+  }, []);
+
+  const effectivePaused = paused || tabHidden;
+
+  React.useEffect(() => {
+    if (expiredRef.current) return;
+    if (effectivePaused) return;
+    const startedAtMs = performance.now();
+    const startProgress = progress;
+    const tick = () => {
+      const elapsed = performance.now() - startedAtMs;
+      const next = Math.max(0, startProgress - elapsed / durationMs);
+      setProgress(next);
+      if (next <= 0) {
+        expiredRef.current = true;
+        clearInterval(id);
+        onExpireRef.current();
+      }
+    };
+    const id = setInterval(tick, 80);
+    return () => clearInterval(id);
+    // We intentionally skip `progress` as a dep — re-running on every
+    // tick would keep restarting the timer. `progress` is read once
+    // when this effect mounts; from there the local closure drives it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [durationMs, effectivePaused]);
+
+  return progress;
+}
+
+export type AppliedBannerProps = {
+  proposal: AssistantProposal;
+  onUndo?: () => void;
+  onExpire: () => void;
+  /**
+   * Whether the undo affordance is actually wired up for this kind
+   * of proposal. When false the banner still shows the countdown but
+   * hides the Undo button so we don't promise a revert we can't
+   * deliver (anything other than `create_document` today).
+   */
+  canUndo: boolean;
+};
+
+/**
+ * Lime-tinted "Applied" banner with a 6s undo countdown. Renders in
+ * place of the full proposal card the moment the apply call
+ * succeeds, then morphs to the quiet `AppliedLogLine` when the
+ * window expires (via `onExpire`). Hover pauses the countdown;
+ * clicking Undo fires `onUndo` and dismisses the banner.
+ */
+export function AppliedBanner({
+  proposal,
+  onUndo,
+  onExpire,
+  canUndo,
+}: AppliedBannerProps) {
+  const [paused, setPaused] = React.useState(false);
+  const acceptedAt = proposal.acceptedAt;
+  // `acceptedAt` is required for this banner to render — the caller
+  // gates on it, but TypeScript needs the narrowing here so the hook
+  // doesn't see a possibly-undefined value.
+  const progress = useUndoCountdown(
+    UNDO_WINDOW_MS,
+    acceptedAt ?? new Date().toISOString(),
+    paused,
+    onExpire,
+  );
+  const secondsRemaining = Math.max(
+    1,
+    Math.ceil((progress * UNDO_WINDOW_MS) / 1000),
+  );
+  const docPath = "docPath" in proposal ? proposal.docPath : undefined;
+  const stats = inferDiffStats(proposal);
+  return (
+    <div
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      className="overflow-hidden rounded-md border border-divider/60 bg-vibrant-green/[0.08]"
+    >
+      <div className="flex items-center gap-2.5 px-3 py-2">
+        <span
+          aria-hidden
+          className="text-[13px] font-semibold text-vibrant-green-foreground/80"
+        >
+          ✓
+        </span>
+        <span className="text-[12.5px] text-foreground">Applied</span>
+        {docPath && (
+          <span
+            className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground-muted"
+            title={docPath}
+            dir="rtl"
+          >
+            <bdi dir="ltr">{docPath}</bdi>
+          </span>
+        )}
+        <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-foreground-muted">
+          <span className="text-success">+{stats.added}</span>{" "}
+          <span className="text-destructive">−{stats.removed}</span>
+        </span>
+        {canUndo && onUndo && (
+          <button
+            type="button"
+            onClick={onUndo}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded border border-divider/60 bg-transparent px-2.5 py-0.5 font-mono text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
+          >
+            <span>Undo</span>
+            <span className="font-mono text-[10.5px] text-foreground-muted tabular-nums">
+              ({secondsRemaining})
+            </span>
+          </button>
+        )}
+      </div>
+      <div
+        aria-hidden
+        className="relative h-0.5 overflow-hidden bg-transparent"
+      >
+        <div
+          className="absolute inset-y-0 left-0 bg-vibrant-green/60 transition-[width] duration-[80ms] ease-linear"
+          style={{ width: `${progress * 100}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Two-stage post-accept render: `AppliedBanner` (lime tint + countdown)
+ * for the 6s undo window, then `AppliedLogLine` for the quiet
+ * past-tense history entry. State is local to the component so a
+ * single accepted proposal lives in one DOM subtree that doesn't get
+ * remounted as the timer ticks. Page reloads inside the window resume
+ * the remaining time correctly; reloads after the window land
+ * straight in `AppliedLogLine`.
+ */
+export function AcceptedView({ proposal }: { proposal: AssistantProposal }) {
+  const acceptedAt = proposal.acceptedAt;
+  // Page-reload-safe initial state: if more than the window has
+  // elapsed since accept, jump straight to the quiet log line.
+  const startsExpired = acceptedAt
+    ? Date.now() - new Date(acceptedAt).getTime() >= UNDO_WINDOW_MS
+    : true;
+  const [expired, setExpired] = React.useState(startsExpired);
+  if (expired || !acceptedAt) {
+    return <AppliedLogLine proposal={proposal} />;
+  }
+  return (
+    <AppliedBanner
+      proposal={proposal}
+      onExpire={() => setExpired(true)}
+      canUndo={false}
+    />
+  );
+}
+
+/**
+ * Past-tense log line that replaces the card after the user accepts a
+ * proposal and the apply call succeeds. Quieter than the full card so
+ * the chat rhythm reads as "happening now vs. already history" without
+ * the row vanishing. Matches the design's `LoggedLine` shape.
+ */
+export function AppliedLogLine({ proposal }: { proposal: AssistantProposal }) {
+  const docPath = "docPath" in proposal ? proposal.docPath : undefined;
+  const acceptedAt = proposal.acceptedAt
+    ? formatLoggedTime(proposal.acceptedAt)
+    : "";
+  const stats = inferDiffStats(proposal);
+  return (
+    <div className="flex items-center gap-2 px-1 py-1 font-mono text-[11px] text-foreground-muted">
+      <span aria-hidden className="opacity-70">
+        ·
+      </span>
+      <span>Applied {acceptedAt}</span>
+      {docPath && (
+        <>
+          <span aria-hidden>—</span>
+          <span
+            className="min-w-0 flex-1 truncate text-foreground"
+            title={docPath}
+            dir="rtl"
+          >
+            <bdi dir="ltr">{docPath}</bdi>
+          </span>
+        </>
+      )}
+      <span className="shrink-0 tabular-nums">
+        (<span className="text-success">+{stats.added}</span>{" "}
+        <span className="text-destructive">−{stats.removed}</span>)
+      </span>
+    </div>
+  );
+}
+
+function formatLoggedTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function inferDiffStats(p: AssistantProposal): {
+  added: number;
+  removed: number;
+} {
+  if (p.diffStats) return p.diffStats;
+  if (p.kind === "replace_selection") {
+    return {
+      added: p.op.replacementText.split("\n").length,
+      removed: p.op.originalText.split("\n").length,
+    };
+  }
+  if (p.kind === "insert_block") {
+    return { added: p.op.bodyMdx.split("\n").length, removed: 0 };
+  }
+  if (p.kind === "create_document") {
+    return { added: p.op.bodyLines, removed: 0 };
+  }
+  if (p.kind === "delete_document") {
+    return { added: 0, removed: 1 };
+  }
+  return { added: 0, removed: 0 };
+}
+
 export function ProposalCard({
   proposal,
   rejecting = false,
@@ -631,6 +911,16 @@ export function ProposalCard({
   onAccept,
   onReject,
 }: ProposalCardProps) {
+  // Once accepted, the card morphs into a 6-second lime banner with a
+  // visible countdown — Sonia's bullet #3. After the window expires
+  // the same row settles into the quiet `AppliedLogLine`. We don't
+  // wire an Undo button yet — actual rollback for `replace_selection`
+  // / `insert_block` / `update_frontmatter` needs server-side revert
+  // support we don't have today, and a cosmetic-only Undo would lie
+  // about reversibility. Tracked separately.
+  if (proposal.acceptedAt) {
+    return <AcceptedView proposal={proposal} />;
+  }
   if (proposal.kind === "delete_document") {
     return (
       <DeleteCard

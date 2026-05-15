@@ -325,6 +325,25 @@ function emitAudit(
   }
 }
 
+/**
+ * Sanitize a raw error message for client-facing surfaces. Drizzle wraps
+ * postgres failures as `Failed query: <SQL>\nparams: <values>` which is
+ * unreadable in a chat bubble; collapse it to a short hint while the
+ * full SQL still lives in server logs via the audit pipeline.
+ */
+function sanitizeClientReason(raw: string): string {
+  if (raw.startsWith("Failed query:")) {
+    return "Database operation failed. See server logs for details.";
+  }
+  // Single-line cap so a chat bubble never grows past a sane size; the
+  // full text is still in the audit log for ops to inspect.
+  const firstLine = raw.split(/\r?\n/)[0]!;
+  if (firstLine.length > 240) {
+    return `${firstLine.slice(0, 240).trimEnd()}…`;
+  }
+  return firstLine;
+}
+
 function toRuntimeErrorResponse(error: unknown): Response {
   if (error instanceof RuntimeError) {
     return new Response(
@@ -341,13 +360,13 @@ function toRuntimeErrorResponse(error: unknown): Response {
     );
   }
 
-  const message =
+  const rawMessage =
     error instanceof Error ? error.message : "Internal server error.";
   return new Response(
     JSON.stringify({
       code: "INTERNAL_ERROR",
       message: "Internal server error.",
-      details: { reason: message },
+      details: { reason: sanitizeClientReason(rawMessage) },
       statusCode: 500,
     }),
     {
@@ -582,7 +601,10 @@ function buildLifecycleAudit(input: {
   proposal: AiProposal;
   outcome: AiAuditRecord["outcome"];
   occurredAt: Date;
-  actorId: string;
+  // Optional because chat-surface failures may abort before
+  // authorize() resolves the actor — we still want the audit entry
+  // for ops visibility even without a known actor.
+  actorId?: string;
   errorCode?: string;
   errorMessage?: string;
 }): AiAuditRecord {
@@ -628,6 +650,9 @@ async function handleProposalApply(
 ): Promise<Response> {
   const occurredAt = new Date();
   let observedRecord: AiProposalRecord | undefined;
+  // Tracks the parsed proposal so the catch block can audit failures
+  // even when the proposal came from the chat body (no store record).
+  let parsedProposal: AiProposal | undefined;
 
   try {
     await options.requireCsrf(request);
@@ -674,6 +699,7 @@ async function handleProposalApply(
         });
       }
       proposal = parsed.data;
+      parsedProposal = parsed.data;
     } else {
       observedRecord = options.proposalStore.observe(proposalId);
       if (observedRecord && observedRecord.status === "expired") {
@@ -763,26 +789,43 @@ async function handleProposalApply(
       },
     );
   } catch (error) {
+    const code = error instanceof RuntimeError ? error.code : "INTERNAL_ERROR";
+    const isValidationFailure =
+      code === "AI_OUTPUT_INVALID" || code === "SCHEMA_HASH_MISMATCH";
+    const isAlreadyExpired = code === "AI_PROPOSAL_EXPIRED";
+    const lifecycleOutcome: AiAuditRecord["outcome"] = isAlreadyExpired
+      ? "expired"
+      : isValidationFailure
+        ? "validation_failed"
+        : "apply_failed";
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Prefer the store record when we have one (it carries the original
+    // createdByActorId); fall back to the chat-body proposal so a
+    // failed apply on a chat-surface proposal still emits an audit.
     if (observedRecord && observedRecord.status === "pending") {
-      const code =
-        error instanceof RuntimeError ? error.code : "INTERNAL_ERROR";
-      const isValidationFailure =
-        code === "AI_OUTPUT_INVALID" || code === "SCHEMA_HASH_MISMATCH";
-      const isAlreadyExpired = code === "AI_PROPOSAL_EXPIRED";
-      const lifecycleOutcome: AiAuditRecord["outcome"] = isAlreadyExpired
-        ? "expired"
-        : isValidationFailure
-          ? "validation_failed"
-          : "apply_failed";
-      const audit = buildLifecycleAudit({
-        proposal: observedRecord.proposal,
-        outcome: lifecycleOutcome,
-        occurredAt,
-        actorId: observedRecord.createdByActorId,
-        errorCode: code,
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
-      emitAudit(options.emitAudit, audit);
+      emitAudit(
+        options.emitAudit,
+        buildLifecycleAudit({
+          proposal: observedRecord.proposal,
+          outcome: lifecycleOutcome,
+          occurredAt,
+          actorId: observedRecord.createdByActorId,
+          errorCode: code,
+          errorMessage,
+        }),
+      );
+    } else if (parsedProposal) {
+      emitAudit(
+        options.emitAudit,
+        buildLifecycleAudit({
+          proposal: parsedProposal,
+          outcome: lifecycleOutcome,
+          occurredAt,
+          errorCode: code,
+          errorMessage,
+        }),
+      );
     }
 
     return toRuntimeErrorResponse(error);
@@ -1035,6 +1078,307 @@ function buildRegenerateInstructionPrefix(
     ? ` The user rejected it with this feedback: ${feedback.trim()}.`
     : " The user rejected it without leaving feedback.";
   return `${priorSummary}${feedbackLine} Generate an alternative that addresses the feedback. User's regenerate prompt: `;
+}
+
+/**
+ * Result of `prepareChatTurn` — everything both the JSON handler and
+ * the SSE streaming handler need to drive the orchestrator and assemble
+ * the final assistant turn.
+ */
+type ChatTurnPreparation = {
+  body: AiChatMessageRequest;
+  project: string;
+  environment: string;
+  aiAuth: { actorId: string };
+  effectiveAllowed: Set<AiChatAllowedAction>;
+  attachedDocument: ContentDocumentResponse | undefined;
+  chatInput: import("./orchestrator.js").AiChatInput;
+};
+
+/**
+ * Shared chat-turn prep: CSRF, parsing, auth + capability probe,
+ * regenerate-prefix resolution, attached-doc loading, project-knowledge
+ * fetch, and final `AiChatInput` construction. Throws RuntimeError on
+ * any pre-orchestrator failure so the handler can return a normal HTTP
+ * error before opening a stream.
+ */
+async function prepareChatTurn(
+  request: Request,
+  options: MountAiRoutesOptions,
+): Promise<ChatTurnPreparation> {
+  await options.requireCsrf(request);
+  const routing = assertRequestTargetRouting(request, "project_environment");
+  const rawBody = await readJsonBody<unknown>(request);
+  const parsed = aiChatMessageRequestSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    const [first] = parsed.error.issues;
+    throw invalidInput(first?.message ?? "Invalid chat message payload.", {
+      field: first?.path?.join(".") ?? "body",
+      issues: parsed.error.issues,
+    });
+  }
+  const body: AiChatMessageRequest = parsed.data;
+
+  const project = routing.project as string;
+  const environment = routing.environment as string;
+
+  const aiAuth = await options.authorize(request, {
+    requiredScope: "ai:use",
+    project,
+    environment,
+  });
+
+  if (body.allowedActions) {
+    for (const requested of body.allowedActions) {
+      if (ALWAYS_DENIED_ACTIONS.has(requested)) {
+        throw unsupportedAction(
+          `Action "${requested}" is never allowed via the AI chat surface.`,
+          { requestedAction: requested },
+        );
+      }
+    }
+  }
+
+  const capabilities: ChatCapabilities = { canWrite: false, canDelete: false };
+  try {
+    await options.authorize(request, {
+      requiredScope: "content:write",
+      project,
+      environment,
+    });
+    capabilities.canWrite = true;
+  } catch (error) {
+    if (!(error instanceof RuntimeError) || error.statusCode !== 403)
+      throw error;
+  }
+  try {
+    await options.authorize(request, {
+      requiredScope: "content:delete",
+      project,
+      environment,
+    });
+    capabilities.canDelete = true;
+  } catch (error) {
+    if (!(error instanceof RuntimeError) || error.statusCode !== 403)
+      throw error;
+  }
+
+  const effectiveAllowed = resolveEffectiveAllowedActions(
+    body.allowedActions,
+    capabilities,
+  );
+
+  let priorProposal: AiProposal | undefined;
+  if (body.rejectedProposal) {
+    const parsedProposal = aiProposalSchema.safeParse(body.rejectedProposal);
+    if (!parsedProposal.success) {
+      throw new RuntimeError({
+        code: "INVALID_INPUT",
+        message: "rejectedProposal failed schema validation.",
+        statusCode: 400,
+        details: {
+          issues: parsedProposal.error.issues.map((issue) => ({
+            path: issue.path.join("."),
+            message: issue.message,
+          })),
+        },
+      });
+    }
+    priorProposal = parsedProposal.data;
+  } else if (body.rejectedProposalId) {
+    const priorRecord = options.proposalStore.peek(body.rejectedProposalId);
+    if (!priorRecord) {
+      throw new RuntimeError({
+        code: "NOT_FOUND",
+        message: "Rejected proposal not found.",
+        statusCode: 404,
+        details: { proposalId: body.rejectedProposalId },
+      });
+    }
+    priorProposal = priorRecord.proposal;
+  }
+  const regenerateInstructionPrefix = buildRegenerateInstructionPrefix(
+    priorProposal,
+    body.rejectionFeedback,
+  );
+
+  const primaryDocumentId =
+    body.attachedSelection?.documentId ??
+    (body.attachedDocumentIds && body.attachedDocumentIds.length > 0
+      ? body.attachedDocumentIds[0]
+      : undefined);
+
+  const additionalDocumentIds = (() => {
+    const ids = body.attachedDocumentIds ?? [];
+    const out: string[] = [];
+    for (const id of ids) {
+      if (id !== primaryDocumentId && !out.includes(id)) out.push(id);
+    }
+    return out;
+  })();
+
+  let attachedDocument: ContentDocumentResponse | undefined;
+  const additionalDocuments: ContentDocumentResponse[] = [];
+  if (primaryDocumentId || additionalDocumentIds.length > 0) {
+    await options.authorize(request, {
+      requiredScope: "content:read:draft",
+      project,
+      environment,
+    });
+    if (primaryDocumentId) {
+      const ctx = await options.contextResolver.loadDraftContext({
+        request,
+        project,
+        environment,
+        documentId: primaryDocumentId,
+      });
+      attachedDocument = ctx.document;
+      if (
+        body.attachedSelection &&
+        attachedDocument.draftRevision !== body.attachedSelection.draftRevision
+      ) {
+        throw new RuntimeError({
+          code: "AI_PROPOSAL_CONFLICT",
+          message:
+            "attachedSelection.draftRevision does not match the live draft revision.",
+          statusCode: 409,
+          details: {
+            documentId: primaryDocumentId,
+            providedDraftRevision: body.attachedSelection.draftRevision,
+            currentDraftRevision: attachedDocument.draftRevision,
+          },
+        });
+      }
+    }
+    for (const docId of additionalDocumentIds) {
+      try {
+        const ctx = await options.contextResolver.loadDraftContext({
+          request,
+          project,
+          environment,
+          documentId: docId,
+        });
+        additionalDocuments.push(ctx.document);
+      } catch {
+        // Skip silently. The proposal target is still the primary doc.
+      }
+    }
+  }
+
+  const additionalContextDocs =
+    additionalDocuments.length > 0
+      ? additionalDocuments.map((doc) => ({
+          path: doc.path,
+          type: doc.type,
+          locale: doc.locale,
+          ...(doc.body ? { body: doc.body } : {}),
+          ...(doc.frontmatter ? { frontmatter: doc.frontmatter } : {}),
+        }))
+      : undefined;
+
+  const conversationHistory =
+    body.conversationHistory && body.conversationHistory.length > 0
+      ? body.conversationHistory.map((turn) => ({
+          role: turn.role,
+          text: turn.text,
+        }))
+      : undefined;
+
+  const chatCapabilities = {
+    canEditDocument: effectiveAllowed.has("edit_document"),
+    canCreateDocument: effectiveAllowed.has("create_document"),
+    canDeleteDocument: effectiveAllowed.has("delete_document"),
+    canReadEntries: Boolean(options.listEntries),
+  };
+
+  const [registeredTypes, supportedLocales, currentUser] = await Promise.all([
+    options.contentTypesLookup
+      ? options.contentTypesLookup({ project, environment })
+      : Promise.resolve([]),
+    options.supportedLocalesLookup
+      ? options.supportedLocalesLookup({ project, environment })
+      : Promise.resolve<string[]>([]),
+    options.userLookup
+      ? options.userLookup({ userId: aiAuth.actorId }).catch(() => undefined)
+      : Promise.resolve(undefined),
+  ]);
+
+  const chatInput: import("./orchestrator.js").AiChatInput = {
+    message: `${regenerateInstructionPrefix}${body.message}`,
+    project,
+    environment,
+    ...(attachedDocument
+      ? {
+          activeDocument: {
+            documentId: attachedDocument.documentId,
+            path: attachedDocument.path,
+            type: attachedDocument.type,
+            locale: attachedDocument.locale,
+            draftRevision: attachedDocument.draftRevision,
+            hasPublishedVersion:
+              attachedDocument.publishedVersion !== null &&
+              attachedDocument.publishedVersion !== undefined,
+          },
+        }
+      : {}),
+    ...(body.attachedSelection
+      ? {
+          attachedSelection: {
+            selectionId: body.attachedSelection.selectionId,
+            text: body.attachedSelection.text,
+          },
+        }
+      : {}),
+    ...(additionalContextDocs ? { additionalContextDocs } : {}),
+    ...(conversationHistory ? { conversationHistory } : {}),
+    capabilities: chatCapabilities,
+    projectKnowledge: {
+      registeredTypes,
+      supportedLocales,
+      ...(currentUser ? { currentUser } : {}),
+    },
+    ...(options.listEntries || options.getEntry
+      ? {
+          toolBackends: {
+            ...(options.listEntries
+              ? {
+                  findEntries: (input: {
+                    type: string;
+                    query?: string;
+                    locale?: string;
+                    limit?: number;
+                  }) =>
+                    options.listEntries!({
+                      project,
+                      environment,
+                      ...input,
+                    }),
+                }
+              : {}),
+            ...(options.getEntry
+              ? {
+                  getEntry: (input: { documentId: string }) =>
+                    options.getEntry!({
+                      project,
+                      environment,
+                      documentId: input.documentId,
+                    }),
+                }
+              : {}),
+          },
+        }
+      : {}),
+  };
+
+  return {
+    body,
+    project,
+    environment,
+    aiAuth,
+    effectiveAllowed,
+    attachedDocument,
+    chatInput,
+  };
 }
 
 async function handleChatMessage(
@@ -1457,6 +1801,167 @@ async function handleChatMessage(
   }
 }
 
+/**
+ * Serialise an event as SSE: `event: <type>\ndata: <json>\n\n`. The
+ * client reads `event.type` to switch behaviour; the rest of the
+ * envelope rides as JSON inside `data:`.
+ */
+function encodeSse(event: string, payload: unknown): Uint8Array {
+  return new TextEncoder().encode(
+    `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`,
+  );
+}
+
+async function handleChatMessageStream(
+  request: Request,
+  options: MountAiRoutesOptions,
+): Promise<Response> {
+  const occurredAt = new Date();
+
+  // Pre-orchestrator failures (auth, parse, denied actions) propagate
+  // as a normal HTTP error before the stream opens — the client only
+  // commits to SSE consumption after seeing 200 + text/event-stream.
+  let prep: ChatTurnPreparation;
+  try {
+    prep = await prepareChatTurn(request, options);
+  } catch (error) {
+    if (!(error instanceof RuntimeError)) {
+      // eslint-disable-next-line no-console
+      console.error("[ai.chat] unexpected error in stream prep:", error);
+    }
+    return toRuntimeErrorResponse(error);
+  }
+  const {
+    body,
+    project,
+    environment,
+    aiAuth,
+    effectiveAllowed,
+    attachedDocument,
+    chatInput,
+  } = prep;
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const collectedProposals: AiProposal[] = [];
+      let assistantText = "";
+      let finalAudit: AiAuditRecord | undefined;
+      // SSE keepalive: fire a comment-only frame every 15s while the
+      // LLM is mid-think. Bun's per-connection idle timeout (default
+      // 10s, raised to 255s in http-server.ts) and most proxies
+      // (Nginx, Cloudflare, k8s ingress) close sockets that look
+      // idle — a `:keep-alive` line keeps the TCP turn fresh without
+      // affecting the parsed event stream (the client's SSE parser
+      // treats `:`-prefixed lines as no-ops).
+      const KEEPALIVE_MS = 15_000;
+      const keepalive = setInterval(() => {
+        try {
+          controller.enqueue(new TextEncoder().encode(`: keep-alive\n\n`));
+        } catch {
+          // Controller may be closed already — harmless, the interval
+          // is about to clear itself in the finally block.
+        }
+      }, KEEPALIVE_MS);
+      try {
+        for await (const event of options.orchestrator.runChatStream(
+          chatInput,
+        )) {
+          if (event.type === "text-delta") {
+            controller.enqueue(encodeSse("text-delta", { text: event.text }));
+          } else if (event.type === "done") {
+            assistantText = event.text;
+            collectedProposals.push(...event.proposals);
+            finalAudit = event.audit;
+          } else if (event.type === "error") {
+            finalAudit = event.audit;
+            controller.enqueue(
+              encodeSse("error", {
+                code: event.code,
+                message: event.message,
+              }),
+            );
+            // No `done` after an `error` — the client closes.
+            clearInterval(keepalive);
+            controller.close();
+            return;
+          }
+        }
+      } catch (error) {
+        // Defensive: yield an error event then close cleanly so the
+        // client can render a turn-level message even if the
+        // orchestrator threw outside of its own error event.
+        const code =
+          error instanceof RuntimeError ? error.code : "AI_REQUEST_FAILED";
+        const message =
+          error instanceof Error ? error.message : "AI request failed.";
+        // eslint-disable-next-line no-console
+        console.error("[ai.chat] unexpected stream error:", error);
+        controller.enqueue(encodeSse("error", { code, message }));
+        clearInterval(keepalive);
+        controller.close();
+        return;
+      }
+      clearInterval(keepalive);
+
+      // Belt-and-suspenders: enforce the caller's allowed actions on
+      // the proposals the model produced. Tools are capability-gated
+      // up front but this is the canonical filter the JSON handler
+      // also runs.
+      const filtered = collectedProposals.filter((p) =>
+        effectiveAllowed.has(PROPOSAL_KIND_TO_ACTION[p.kind]),
+      );
+
+      const messageId = `m-asst-${occurredAt.getTime().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+      const assistantMessage: AiChatMessage = {
+        id: messageId,
+        role: "assistant",
+        at: occurredAt.toISOString(),
+        ...(assistantText ? { text: assistantText.trim() } : {}),
+        ...(filtered.length > 0
+          ? { proposals: filtered.map((p) => p.proposalId) }
+          : {}),
+        ...(body.rejectedProposalId
+          ? { rejectedProposalId: body.rejectedProposalId }
+          : {}),
+      };
+
+      if (finalAudit) {
+        emitAudit(options.emitAudit, {
+          ...finalAudit,
+          project,
+          environment,
+          actorId: aiAuth.actorId,
+          ...(attachedDocument?.documentId
+            ? { documentId: attachedDocument.documentId }
+            : {}),
+        });
+      }
+
+      controller.enqueue(
+        encodeSse("done", {
+          message: assistantMessage,
+          proposals: filtered,
+          conversationId: body.conversationId,
+        }),
+      );
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      // Disable proxy buffering so deltas reach the browser as they
+      // arrive (Nginx + similar middleboxes will otherwise hold the
+      // stream until it closes).
+      "x-accel-buffering": "no",
+    },
+  });
+}
+
 export function mountAiRoutes(
   app: unknown,
   options: MountAiRoutesOptions,
@@ -1489,5 +1994,9 @@ export function mountAiRoutes(
 
   aiApp.post?.("/api/v1/ai/chat/messages", ({ request }: any) =>
     handleChatMessage(request, options),
+  );
+
+  aiApp.post?.("/api/v1/ai/chat/messages/stream", ({ request }: any) =>
+    handleChatMessageStream(request, options),
   );
 }

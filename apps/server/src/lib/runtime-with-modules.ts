@@ -416,7 +416,12 @@ export function createServerRequestHandlerWithModules(
     },
     requireCsrf: (request) => authService.requireCsrfProtection(request),
     emitAudit: (record) => {
-      logger.info("ai.audit", {
+      const isFailure =
+        record.outcome === "apply_failed" ||
+        record.outcome === "validation_failed" ||
+        record.outcome === "invalid_output" ||
+        record.outcome === "provider_error";
+      const payload = {
         outcome: record.outcome,
         taskKind: record.taskKind,
         provider: record.providerId,
@@ -427,7 +432,16 @@ export function createServerRequestHandlerWithModules(
         environment: record.environment,
         documentId: record.documentId,
         errorCode: record.errorCode,
-      });
+        ...(record.errorMessage ? { errorMessage: record.errorMessage } : {}),
+      };
+      // Lift failure audits to `error` level so they surface alongside
+      // request_failed logs — otherwise an apply that 500s leaves no
+      // breadcrumb at the default log level.
+      if (isFailure) {
+        logger.error("ai.audit", payload);
+      } else {
+        logger.info("ai.audit", payload);
+      }
     },
     contentTypesLookup,
     supportedLocalesLookup,
