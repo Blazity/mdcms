@@ -21,7 +21,11 @@ export const projects = pgTable("projects", {
   name: text().notNull(),
   slug: text().notNull().unique(),
   createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
-  createdBy: uuid().notNull(),
+  // `text()` to match `authUsers.id`, which Better-Auth generates as a
+  // mixed-case base62 string (e.g. `Cxk8R3FU5…`) — not a postgres UUID.
+  // A `uuid` column type would reject every Better-Auth session-based
+  // create attempt at the postgres layer.
+  createdBy: text().notNull(),
 });
 
 export const authUsers = pgTable(
@@ -277,7 +281,8 @@ export const environments = pgTable(
     name: text().notNull(),
     description: text(),
     createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
-    createdBy: uuid().notNull(),
+    // `text()` to match `authUsers.id` (Better-Auth string format).
+    createdBy: text().notNull(),
   },
   (table) => [
     unique("unique_environment_id_project").on(table.id, table.projectId),
@@ -384,7 +389,8 @@ export const documentVersions = pgTable(
     body: text().notNull(),
     frontmatter: jsonb().notNull(),
     version: integer().notNull(),
-    publishedBy: uuid().notNull(),
+    // `text()` to match `authUsers.id` — see projects.createdBy.
+    publishedBy: text().notNull(),
     publishedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
     changeSummary: text(),
   },
@@ -430,9 +436,10 @@ export const documents = pgTable(
     hasUnpublishedChanges: boolean().default(true).notNull(),
     publishedVersion: integer(),
     draftRevision: bigint({ mode: "number" }).default(1).notNull(),
-    createdBy: uuid().notNull(),
+    // `text()` to match `authUsers.id` — see projects.createdBy.
+    createdBy: text().notNull(),
     createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
-    updatedBy: uuid().notNull(),
+    updatedBy: text().notNull(),
     updatedAt: timestamp({ withTimezone: true }).defaultNow().notNull(),
   },
   (table): any => [
