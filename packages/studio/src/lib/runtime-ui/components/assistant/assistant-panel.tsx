@@ -8,7 +8,6 @@ import {
   Minimize2,
   MoreHorizontal,
   Plus,
-  Send,
   X,
 } from "lucide-react";
 
@@ -33,7 +32,9 @@ import type {
   AssistantProposal,
   AssistantThread,
 } from "./assistant-types.js";
+import { EmptyStarter } from "./empty-starter.js";
 import { ProposalCard } from "./proposal-card.js";
+import { SendStopButton } from "./send-stop-button.js";
 import { SparkleMark } from "./sparkle-mark.js";
 import { useStudioApiConfig } from "../../app/admin/mount-info-context.js";
 import { createStudioDocumentRouteApi } from "../../../document-route-api.js";
@@ -348,29 +349,6 @@ function ContextChips({
           </button>
         </span>
       )}
-    </div>
-  );
-}
-
-function EmptyThreadHint() {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 px-6 py-12 text-center text-foreground-muted">
-      <span className="text-primary">
-        <SparkleMark size={28} />
-      </span>
-      <div className="max-w-xs space-y-1.5">
-        <div className="text-[13.5px] font-semibold text-foreground">
-          Start a conversation
-        </div>
-        <div className="text-[12px] leading-snug">
-          Ask the assistant to edit the active draft, write a new post, or
-          delete a stale one. Use{" "}
-          <code className="rounded bg-muted px-1 font-mono text-[10.5px]">
-            @
-          </code>{" "}
-          to attach another document for context.
-        </div>
-      </div>
     </div>
   );
 }
@@ -718,21 +696,25 @@ function TurnRejectFeedback({
 
 function Composer({
   thread,
+  draft,
+  setDraft,
+  textareaRef,
   onClearSelection,
   onRemoveDoc,
 }: {
   thread: AssistantThread;
+  draft: string;
+  setDraft: React.Dispatch<React.SetStateAction<string>>;
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   onClearSelection: () => void;
   onRemoveDoc: (path: string) => void;
 }) {
   const assistant = useAssistant();
   const activeDocument = useAssistantActiveDocument();
-  const [draft, setDraft] = React.useState("");
   const [mention, setMention] = React.useState<{
     query: string;
     caret: number;
   } | null>(null);
-  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
 
   // Focus the composer on mount so opening the assistant lands the cursor
   // ready-to-type. The Composer only mounts when the rail/fullscreen
@@ -743,7 +725,7 @@ function Composer({
     const end = ta.value.length;
     ta.focus();
     ta.setSelectionRange(end, end);
-  }, []);
+  }, [textareaRef]);
 
   const submit = () => {
     if (!draft.trim()) return;
@@ -831,9 +813,22 @@ function Composer({
           value={draft}
           onChange={onChange}
           rows={2}
-          placeholder="Ask about any doc, propose edits, draft new posts…"
-          className="w-full resize-none border-none bg-transparent text-[13.5px] leading-snug text-foreground outline-none placeholder:text-foreground-muted"
+          disabled={assistant.isPending}
+          placeholder={
+            assistant.isPending
+              ? "Generating response… Esc to stop"
+              : "Ask about any doc, propose edits, draft new posts…"
+          }
+          className={cn(
+            "w-full resize-none border-none bg-transparent text-[13.5px] leading-snug text-foreground outline-none placeholder:text-foreground-muted",
+            assistant.isPending && "cursor-not-allowed opacity-55",
+          )}
           onKeyDown={(e) => {
+            if (e.key === "Escape" && assistant.isPending) {
+              e.preventDefault();
+              assistant.cancelPending();
+              return;
+            }
             if (mention && e.key === "Escape") {
               e.preventDefault();
               setMention(null);
@@ -851,7 +846,9 @@ function Composer({
         />
         <div className="mt-1.5 flex items-center gap-2">
           <span className="flex-1 font-mono text-[10px] text-foreground-muted">
-            ⌘ ↵ to send · @ to reference a doc
+            {assistant.isPending
+              ? "Streaming… Esc to stop"
+              : "⌘ ↵ to send · @ to reference a doc"}
           </span>
           <button
             type="button"
@@ -877,19 +874,12 @@ function Composer({
           >
             <AtSign className="h-3.5 w-3.5" aria-hidden />
           </button>
-          <button
-            type="submit"
-            disabled={!draft.trim()}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
-              draft.trim()
-                ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                : "cursor-not-allowed bg-muted text-foreground-muted",
-            )}
-          >
-            <Send className="h-3 w-3" aria-hidden /> Send
-            <span className="font-mono text-[9px] opacity-70">⌘↵</span>
-          </button>
+          <SendStopButton
+            pending={assistant.isPending}
+            hasDraft={Boolean(draft.trim())}
+            onSend={submit}
+            onStop={assistant.cancelPending}
+          />
         </div>
       </div>
       {mention && (
@@ -916,7 +906,30 @@ export function AssistantPanel({
   variant = "rail",
 }: AssistantPanelProps) {
   const assistant = useAssistant();
+  const activeDocument = useAssistantActiveDocument();
   const thread = assistant.activeThread;
+  // Lifted so the empty-state example cards can fill the same buffer
+  // the Composer renders. The Composer is otherwise a controlled
+  // textarea against this state.
+  const [draft, setDraft] = React.useState("");
+  const composerRef = React.useRef<HTMLTextAreaElement | null>(null);
+
+  const fillFromExample = React.useCallback((prompt: string) => {
+    setDraft(prompt);
+    const ta = composerRef.current;
+    if (!ta) return;
+    ta.focus();
+    // Wait one frame so the controlled value lands before we set the
+    // caret — otherwise React resets the selection on the next render.
+    requestAnimationFrame(() => {
+      try {
+        ta.setSelectionRange(prompt.length, prompt.length);
+      } catch {
+        // Some browsers (Safari with certain input types) reject
+        // setSelectionRange — non-fatal, the value still landed.
+      }
+    });
+  }, []);
 
   const visibleThreadList = !hideThreadList;
 
@@ -1006,7 +1019,12 @@ export function AssistantPanel({
           )}
         >
           {thread.messages.length === 0 ? (
-            <EmptyThreadHint />
+            <EmptyStarter
+              thread={thread}
+              activeDocument={activeDocument}
+              hasDraft={draft.trim().length > 0}
+              onPick={fillFromExample}
+            />
           ) : (
             thread.messages.map((m) =>
               m.role === "user" ? (
@@ -1031,6 +1049,9 @@ export function AssistantPanel({
         </div>
         <Composer
           thread={thread}
+          draft={draft}
+          setDraft={setDraft}
+          textareaRef={composerRef}
           onClearSelection={assistant.clearActiveSelection}
           onRemoveDoc={assistant.removeContextDoc}
         />

@@ -41,6 +41,9 @@
   --warning-subtle: #fffbeb;
   --blue-100: #eaedff;
   --vibrant-green: #caf240;
+  --vibrant-green-border: #a8cc34;
+  --accent-amber: #a05a0a;
+  --accent-amber-tint: rgba(217, 140, 40, 0.14);
   --neutral-grey: #e5e2e1;
   --light-blue: #e2e2f1;
   --code-bg: #f0edec;
@@ -98,6 +101,9 @@
   --warning-subtle: #422006;
   --blue-100: rgba(234, 237, 255, 0.1);
   --vibrant-green: #caf240;
+  --vibrant-green-border: #a8cc34;
+  --accent-amber: #f59e0b;
+  --accent-amber-tint: rgba(217, 140, 40, 0.22);
   --neutral-grey: #3a3938;
   --light-blue: rgba(226, 226, 241, 0.15);
   --code-bg: #2a2928;
@@ -200,6 +206,9 @@
   --color-chart-5: var(--chart-5);
   --color-blue-100: var(--blue-100);
   --color-vibrant-green: var(--vibrant-green);
+  --color-vibrant-green-border: var(--vibrant-green-border);
+  --color-accent-amber: var(--accent-amber);
+  --color-accent-amber-tint: var(--accent-amber-tint);
   --color-neutral-grey: var(--neutral-grey);
   --color-light-blue: var(--light-blue);
   --color-code-bg: var(--code-bg);

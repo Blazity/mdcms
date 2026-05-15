@@ -483,6 +483,12 @@ export type AssistantContextValue = {
   mode: RailMode;
   isOpen: boolean;
   isFullscreen: boolean;
+  /**
+   * True while a chat turn is in flight (network request hasn't resolved
+   * yet). The composer flips its Send affordance to Stop while this is
+   * true so the user can abort.
+   */
+  isPending: boolean;
   activeThread: AssistantThread;
   openRail: () => void;
   close: () => void;
@@ -501,6 +507,12 @@ export type AssistantContextValue = {
    * turn + proposals on success (or an inline error turn on failure).
    */
   sendMessage: (text: string) => void;
+  /**
+   * Abort an in-flight chat turn. No-op when nothing is pending. The
+   * server may still record the request, but the client drops the
+   * response and surfaces nothing further on the timeline.
+   */
+  cancelPending: () => void;
   /** Add a document to the active thread's context (used by @-mention). */
   attachContextDoc: (doc: AssistantContextDoc) => void;
   /** Create a new empty thread and select it as active. */
@@ -560,6 +572,8 @@ const FALLBACK_VALUE: AssistantContextValue = {
   acceptProposal: () => {},
   rejectProposal: () => {},
   sendMessage: () => {},
+  cancelPending: () => {},
+  isPending: false,
   attachContextDoc: () => {},
   createThread: () => {},
   deleteThread: () => {},
@@ -756,6 +770,21 @@ export function AssistantProvider({
     [state.activeThreadId],
   );
 
+  // Tracks the AbortController for the currently in-flight chat turn so
+  // the composer's Stop affordance can cancel it. Held in a ref (not
+  // state) so we don't re-render the provider tree on every flip; the
+  // user-facing `isPending` boolean below is the rendered projection.
+  const pendingControllerRef = React.useRef<AbortController | null>(null);
+  const [isPending, setIsPending] = React.useState(false);
+
+  const cancelPending = React.useCallback(() => {
+    const ctrl = pendingControllerRef.current;
+    if (!ctrl) return;
+    pendingControllerRef.current = null;
+    setIsPending(false);
+    ctrl.abort();
+  }, []);
+
   const runChatRequest = React.useCallback(
     async (input: {
       userMessage: AssistantMessage;
@@ -808,8 +837,17 @@ export function AssistantProvider({
         )
         .slice(-10);
 
+      // If a previous turn is still in flight (the user clicked Send twice
+      // in quick succession), abort it so we never end up with two
+      // overlapping requests racing to dispatch their results.
+      pendingControllerRef.current?.abort();
+      const controller = new AbortController();
+      pendingControllerRef.current = controller;
+      setIsPending(true);
+
       const request: StudioAiChatMessageRequest = {
         message: input.message,
+        signal: controller.signal,
         ...(input.conversationId
           ? { conversationId: input.conversationId }
           : {}),
@@ -829,6 +867,7 @@ export function AssistantProvider({
       try {
         const result: StudioAiChatMessageResult =
           await liveApi.chatMessage(request);
+        if (controller.signal.aborted) return;
         const wireProposals = result.proposals ?? [];
         const newProposals: AssistantProposal[] = [];
         const newWireProposals: Record<string, StudioAiProposal> = {};
@@ -864,7 +903,21 @@ export function AssistantProvider({
           newWireProposals,
         });
       } catch (error) {
-        appendErrorTurn(input.userMessage, error);
+        // User-initiated abort surfaces as a DOMException("AbortError")
+        // from fetch; swallow it so the timeline doesn't get a fake
+        // error turn. Anything else propagates as an inline error turn.
+        const isAbort =
+          error instanceof DOMException && error.name === "AbortError";
+        if (!isAbort) appendErrorTurn(input.userMessage, error);
+      } finally {
+        // Clear pending state only if this controller is still the
+        // active one — a fresh sendMessage call may have already
+        // installed a new controller while we were awaiting, in which
+        // case the new turn owns the spinner.
+        if (pendingControllerRef.current === controller) {
+          pendingControllerRef.current = null;
+          setIsPending(false);
+        }
       }
     },
     [appendErrorTurn, state.activeThreadId],
@@ -876,6 +929,8 @@ export function AssistantProvider({
       mode: state.mode,
       isOpen: state.mode !== "closed",
       isFullscreen: state.mode === "fullscreen",
+      isPending,
+      cancelPending,
       activeThread,
       openRail: () => dispatch({ type: "open-rail" }),
       close: () => dispatch({ type: "close" }),
@@ -1029,7 +1084,15 @@ export function AssistantProvider({
         dispatch({ type: "delete-thread", threadId });
       },
     }),
-    [state, activeThread, appendErrorTurn, runChatRequest, resolveSchemaHash],
+    [
+      state,
+      activeThread,
+      appendErrorTurn,
+      runChatRequest,
+      resolveSchemaHash,
+      isPending,
+      cancelPending,
+    ],
   );
 
   // Persist the store to localStorage whenever it changes — best-effort.
