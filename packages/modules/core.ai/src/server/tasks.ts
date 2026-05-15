@@ -7,6 +7,24 @@ import {
   type AiTaskKind,
 } from "@mdcms/shared";
 
+import {
+  renderProjectKnowledgeBlock,
+  type ProjectKnowledgeInput,
+} from "./project-knowledge.js";
+
+export type AiTaskAdditionalContextDoc = {
+  path: string;
+  type: string;
+  locale: string;
+  body?: string;
+  frontmatter?: Record<string, unknown>;
+};
+
+export type AiTaskConversationTurn = {
+  role: "user" | "assistant";
+  text: string;
+};
+
 export type AiTaskInput = {
   /**
    * Free-form caller-supplied instruction or topic. Required for chat
@@ -30,6 +48,19 @@ export type AiTaskInput = {
   locale: string;
   /** Tone hint for tone-changing copy edits. */
   tone?: string;
+  /**
+   * Additional documents (`@`-mentioned in the chat composer) that the
+   * model should treat as read-only context for the active edit. Path
+   * + body excerpt let the model reference them in proposal text but
+   * never propose direct writes to them.
+   */
+  additionalContextDocs?: AiTaskAdditionalContextDoc[];
+  /**
+   * Prior conversation turns, oldest first, so the model can resolve
+   * anaphora across multi-turn chats. The orchestrator caps how many
+   * turns it sends to keep the prompt budget bounded.
+   */
+  conversationHistory?: AiTaskConversationTurn[];
 };
 
 export type AiTaskOutput = {
@@ -48,6 +79,23 @@ export type AiTaskDefinition = {
   outputSchema: z.ZodType<AiTaskOutput>;
 };
 
+const additionalContextDocSchema = z
+  .object({
+    path: z.string().trim().min(1),
+    type: z.string().trim().min(1),
+    locale: z.string().trim().min(1),
+    body: z.string().optional(),
+    frontmatter: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
+
+const conversationTurnSchema = z
+  .object({
+    role: z.enum(["user", "assistant"]),
+    text: z.string().trim().min(1),
+  })
+  .strict();
+
 const baseInputSchema = z
   .object({
     instruction: z.string().trim().min(1).optional(),
@@ -57,6 +105,8 @@ const baseInputSchema = z
     frontmatter: z.record(z.string(), z.unknown()).optional(),
     locale: z.string().trim().min(1),
     tone: z.string().trim().min(1).optional(),
+    additionalContextDocs: z.array(additionalContextDocSchema).optional(),
+    conversationHistory: z.array(conversationTurnSchema).optional(),
   })
   .strict();
 
@@ -179,6 +229,36 @@ const newDocumentDraftInputSchema = baseInputSchema.refine(
 const formatLocaleHint = (input: AiTaskInput): string =>
   `Target locale: ${input.locale}.`;
 
+const MAX_ADDITIONAL_DOC_BODY = 1500;
+const MAX_CONVERSATION_HISTORY_TURNS = 10;
+
+const formatConversationHistory = (input: AiTaskInput): string | null => {
+  const history = input.conversationHistory;
+  if (!history || history.length === 0) return null;
+  const recent = history.slice(-MAX_CONVERSATION_HISTORY_TURNS);
+  const lines = recent.map((turn) => {
+    const speaker = turn.role === "user" ? "User" : "Assistant";
+    return `${speaker}: ${turn.text}`;
+  });
+  return ["Prior conversation:", ...lines].join("\n");
+};
+
+const formatAdditionalContextDocs = (input: AiTaskInput): string | null => {
+  const docs = input.additionalContextDocs;
+  if (!docs || docs.length === 0) return null;
+  const blocks = docs.map((doc) => {
+    const header = `- ${doc.path} (${doc.type}, ${doc.locale})`;
+    const bodySnippet = doc.body
+      ? `\n  Excerpt:\n  ${doc.body.slice(0, MAX_ADDITIONAL_DOC_BODY).replace(/\n/g, "\n  ")}`
+      : "";
+    return `${header}${bodySnippet}`;
+  });
+  return [
+    "Additional documents referenced in this conversation (read-only context, do not propose writes against these):",
+    ...blocks,
+  ].join("\n");
+};
+
 const definitions: Record<AiTaskKind, AiTaskDefinition> = {
   copy_improvement: {
     kind: "copy_improvement",
@@ -244,19 +324,21 @@ const definitions: Record<AiTaskKind, AiTaskDefinition> = {
     kind: "current_document_edit",
     promptTemplateId: "current_document_edit.v1",
     system:
-      "You propose edits to the current draft document. Return JSON with replace_selection, insert_block, or update_frontmatter operations. The replace_selection target is the caller's selectionId; do not address other locations.",
+      "You propose edits to the current draft document. Return JSON with replace_selection, insert_block, or update_frontmatter operations. The replace_selection target is the caller's selectionId; do not address other locations. When the conversation includes prior turns, resolve anaphora (e.g. \"it\", \"the same\") against them.",
     // selectionId is required by currentDocumentEditInputSchema, so
     // every replace_selection operation gets a server-trusted
     // anchor stamped by the proposal builder.
     buildUserPrompt: (input) =>
       [
         formatLocaleHint(input),
+        formatConversationHistory(input),
         input.instruction ? `Instruction: ${input.instruction}.` : null,
         input.selectionText ? `Selection:\n${input.selectionText}` : null,
         input.documentBody ? `Body:\n${input.documentBody}` : null,
+        formatAdditionalContextDocs(input),
       ]
         .filter((line): line is string => line !== null)
-        .join("\n"),
+        .join("\n\n"),
     allowedOperationOps: [
       "replace_selection",
       "insert_block",
@@ -273,11 +355,16 @@ const definitions: Record<AiTaskKind, AiTaskDefinition> = {
     kind: "new_document_draft",
     promptTemplateId: "new_document_draft.v1",
     system:
-      "You draft a new MDCMS document from a brief. Output a single create_document operation as JSON. Do not include unsupported frontmatter fields.",
+      "You draft a new MDCMS document from a brief. Output a single create_document operation as JSON. Do not include unsupported frontmatter fields. When the conversation includes prior turns, resolve anaphora and follow-up requests against them.",
     buildUserPrompt: (input) =>
-      [formatLocaleHint(input), `Instruction: ${input.instruction ?? ""}`].join(
-        "\n",
-      ),
+      [
+        formatLocaleHint(input),
+        formatConversationHistory(input),
+        `Instruction: ${input.instruction ?? ""}`,
+        formatAdditionalContextDocs(input),
+      ]
+        .filter((line): line is string => line !== null)
+        .join("\n\n"),
     allowedOperationOps: ["create_document"],
     inputSchema: newDocumentDraftInputSchema,
     outputSchema: makeOutputSchema(["create_document"]),
@@ -287,6 +374,186 @@ const definitions: Record<AiTaskKind, AiTaskDefinition> = {
 export const AI_TASK_DEFINITIONS: Readonly<
   Record<AiTaskKind, AiTaskDefinition>
 > = Object.freeze(definitions);
+
+/**
+ * Tool-calling chat mode — used by `AiOrchestrator.runChat`. The model
+ * gets a capability-gated toolset (see `chat-tools.ts`) and decides
+ * which tool, if any, to invoke. The prompt template id is recorded
+ * in audit records the same way task-driven calls are.
+ */
+export function buildChatSystemPrompt(input: {
+  hasActiveDocument: boolean;
+  hasAttachedSelection: boolean;
+  capabilities: {
+    canEditDocument: boolean;
+    canCreateDocument: boolean;
+    canDeleteDocument: boolean;
+  };
+  registeredToolNames: string[];
+  projectKnowledge: ProjectKnowledgeInput;
+}): string {
+  const lines: string[] = [
+    "You are the MDCMS Studio AI assistant — an in-product helper for content editors.",
+    "",
+    "Decide what the user wants and act:",
+    "- If they want a content change, call the matching tool (one tool per change, multiple tools allowed per turn).",
+    "- If they're chatting or asking a question, just reply in text. Never call a tool the user didn't ask for.",
+    "",
+  ];
+
+  // Project knowledge: the real list of content types + their
+  // schemas + supported locales + current user identity. Cache-friendly
+  // position: the static portion of the system prompt lands first for
+  // future provider-level prompt caching.
+  lines.push(renderProjectKnowledgeBlock(input.projectKnowledge), "");
+
+  if (input.registeredToolNames.length > 0) {
+    lines.push("Tools available this turn:");
+    for (const name of input.registeredToolNames) {
+      lines.push(`- ${name}`);
+    }
+    lines.push("");
+  } else {
+    lines.push(
+      "No content-change tools are available this turn — answer the user in text only.",
+      "",
+    );
+  }
+
+  // Per-action capability + context block. Each row tells the model
+  // exactly WHY the corresponding tool is or isn't available so the
+  // model can explain the situation when the user asks for something
+  // it can't do (e.g., "delete this draft" → no `content:delete` cap
+  // → model says "you don't have delete permissions" instead of a
+  // generic refusal). Order matters: capability denial wins over
+  // missing context because the user can't fix the capability
+  // themselves; missing-context messages are actionable.
+  const reasons: string[] = [];
+
+  // Edit (replace_selection)
+  if (!input.capabilities.canEditDocument) {
+    reasons.push(
+      "- Edit selection (`propose_edit_selection`): UNAVAILABLE — the signed-in user does not have edit permission (`content:write`). If they ask to rewrite/tighten/edit content, explain they need write access and suggest contacting an admin or switching to a role that has it.",
+    );
+  } else if (!input.hasActiveDocument) {
+    reasons.push(
+      "- Edit selection (`propose_edit_selection`): UNAVAILABLE — no document is attached this turn. Ask them to `@`-mention a document or open one in the editor.",
+    );
+  } else if (!input.hasAttachedSelection) {
+    reasons.push(
+      "- Edit selection (`propose_edit_selection`): UNAVAILABLE — no text is currently selected. Ask them to highlight the span they want rewritten. For whole-document edits use `propose_insert_block` / `propose_update_frontmatter` instead.",
+    );
+  } else {
+    reasons.push(
+      "- Edit selection (`propose_edit_selection`): available. Rewrites the highlighted span; the selectionId is server-supplied — don't invent one.",
+    );
+  }
+
+  // Insert / update frontmatter
+  if (!input.capabilities.canEditDocument) {
+    reasons.push(
+      "- Insert block / update frontmatter: UNAVAILABLE — same reason as edit (no `content:write`). If the user asks to add content or change metadata, explain the permission gap.",
+    );
+  } else if (!input.hasActiveDocument) {
+    reasons.push(
+      "- Insert block / update frontmatter: UNAVAILABLE — no document attached. Ask them to `@`-mention or open one.",
+    );
+  } else {
+    reasons.push(
+      "- Insert block / update frontmatter: available against the active draft.",
+    );
+  }
+
+  // Create
+  if (!input.capabilities.canCreateDocument) {
+    reasons.push(
+      "- Create document (`propose_create_document`): UNAVAILABLE — the signed-in user does not have create permission (`content:write`). Explain the permission gap if asked to draft a new post.",
+    );
+  } else {
+    reasons.push(
+      "- Create document (`propose_create_document`): available. Use for new posts/articles/docs — don't use it for edits to existing drafts.",
+    );
+  }
+
+  // Delete
+  if (!input.capabilities.canDeleteDocument) {
+    reasons.push(
+      "- Delete document (`propose_delete_document`): UNAVAILABLE — the signed-in user does not have delete permission (`content:delete`). If they ask to delete/remove/archive content, say so plainly: \"You don't have delete permission in this role — ask an editor with `content:delete` or have an admin grant the capability.\" Do not propose any other destructive action as a substitute.",
+    );
+  } else if (!input.hasActiveDocument) {
+    reasons.push(
+      "- Delete document (`propose_delete_document`): UNAVAILABLE this turn — no document attached. Ask the user to open the draft they want deleted.",
+    );
+  } else {
+    reasons.push(
+      "- Delete document (`propose_delete_document`): available. Use ONLY when the user explicitly asks to delete THIS draft. Documents with a published version cannot be deleted.",
+    );
+  }
+
+  lines.push("Per-action availability + reasons:");
+  for (const r of reasons) lines.push(r);
+  lines.push("");
+
+  lines.push(
+    "Hard limits (the server does not expose tools for these — they are out of scope for the assistant entirely, regardless of role):",
+    "- Publishing or unpublishing drafts.",
+    "- Schema, role/permission, environment, project, or provider changes.",
+    "- Browsing or searching the document library autonomously (no such tool yet — direct the user to `@`-mention).",
+    "",
+    "When you cannot act (any UNAVAILABLE above): explain the SPECIFIC reason from the per-action list, in one short sentence. Do not pretend you can do it, do not call a different tool as a workaround, and do not invent permission names not listed here.",
+    "",
+    "Tone: short, helpful, conversational. No emoji. Never claim you've DONE something — your tool calls create proposals that the user accepts manually. After calling a tool, follow up with one short sentence summarizing what you proposed.",
+  );
+
+  return lines.join("\n");
+}
+
+export function buildChatUserPrompt(input: {
+  message: string;
+  locale: string;
+  activeDocument?: {
+    path: string;
+    type: string;
+    locale: string;
+  };
+  attachedSelection?: { selectionId: string; text: string };
+  additionalContextDocs?: AiTaskAdditionalContextDoc[];
+  conversationHistory?: AiTaskConversationTurn[];
+}): string {
+  const lines: (string | null)[] = [
+    `Target locale: ${input.locale}.`,
+  ];
+
+  if (input.activeDocument) {
+    lines.push(
+      `Active draft: ${input.activeDocument.path} (${input.activeDocument.type}, ${input.activeDocument.locale}).`,
+    );
+  }
+
+  if (input.attachedSelection) {
+    lines.push(
+      `Selected text:\n${input.attachedSelection.text}`,
+    );
+  }
+
+  lines.push(
+    formatConversationHistory({
+      locale: input.locale,
+      conversationHistory: input.conversationHistory,
+    }),
+  );
+  lines.push(
+    formatAdditionalContextDocs({
+      locale: input.locale,
+      additionalContextDocs: input.additionalContextDocs,
+    }),
+  );
+  lines.push(`User: ${input.message}`);
+
+  return lines
+    .filter((line): line is string => line !== null && line.length > 0)
+    .join("\n\n");
+}
 
 export function getAiTaskDefinition(
   kind: AiTaskKind,

@@ -109,3 +109,11 @@ export type {
   AiProviderFactoryDeps,
   AiProviderUsage,
 } from "./server/provider.js";
+export {
+  createSchemaAwareProposalValidator,
+  type SchemaLookup as AiProposalSchemaLookup,
+} from "./server/validate-proposal.js";
+export {
+  renderProjectKnowledgeBlock,
+  type ProjectKnowledgeInput,
+} from "./server/project-knowledge.js";
