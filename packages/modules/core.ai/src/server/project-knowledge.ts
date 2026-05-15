@@ -18,13 +18,13 @@ export function renderProjectKnowledgeBlock(
   const lines: string[] = [
     "## Project knowledge",
     "",
-    `Project: ${input.project}`,
-    `Environment: ${input.environment}`,
+    `Project: ${sanitizeForPrompt(input.project)}`,
+    `Environment: ${sanitizeForPrompt(input.environment)}`,
   ];
 
   if (input.currentUser) {
     lines.push(
-      `Current user: ${sanitizeForPrompt(input.currentUser.displayName)} (id: ${input.currentUser.id})`,
+      `Current user: ${sanitizeForPrompt(input.currentUser.displayName)} (id: ${sanitizeForPrompt(input.currentUser.id)})`,
     );
   }
 

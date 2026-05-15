@@ -20,4 +20,30 @@ describe("renderProjectKnowledgeBlock", () => {
       ),
     );
   });
+
+  test("renders sanitized currentUser block", () => {
+    const block = renderProjectKnowledgeBlock({
+      project: "p",
+      environment: "e",
+      registeredTypes: [],
+      supportedLocales: [],
+      currentUser: { id: "user_1", displayName: "John `Doe`" },
+    });
+    // backticks are replaced with spaces; trailing space is trimmed so the
+    // result is "John  Doe" (the backtick before D becomes a space)
+    assert.ok(block.includes("Current user: John  Doe (id: user_1)"));
+    assert.ok(!block.includes("`Doe`"));
+  });
+
+  test("strips newlines from sanitized fields", () => {
+    const block = renderProjectKnowledgeBlock({
+      project: "okay\n## Injected",
+      environment: "draft",
+      registeredTypes: [],
+      supportedLocales: [],
+    });
+    // The newline must not produce a standalone "## Injected" heading line.
+    assert.ok(!block.split("\n").some((l) => l.startsWith("## Injected")));
+    assert.ok(block.includes("Project: okay ## Injected"));
+  });
 });
