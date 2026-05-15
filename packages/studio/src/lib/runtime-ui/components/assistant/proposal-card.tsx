@@ -12,6 +12,7 @@ import type {
   AssistantProposalInsert,
   AssistantValidation,
 } from "./assistant-types.js";
+import { KindGlyph } from "./kind-glyph.js";
 
 const KIND_LABEL: Record<AssistantProposal["kind"], string> = {
   replace_selection: "Edit",
@@ -20,6 +21,16 @@ const KIND_LABEL: Record<AssistantProposal["kind"], string> = {
   create_document: "New doc",
   delete_document: "Delete",
 };
+
+// Chip palette: one blue family for every non-destructive operation, an
+// amber family that only the destructive kind uses. The single binary
+// keeps the chips legible at a glance — green/blue/red triple coding
+// blurred when the action types grew past three.
+function chipPaletteFor(kind: AssistantProposal["kind"]): string {
+  return kind === "delete_document"
+    ? "bg-accent-amber-tint text-accent-amber"
+    : "bg-primary/15 text-primary";
+}
 
 type CardChromeProps = {
   children: React.ReactNode;
@@ -64,6 +75,12 @@ type StandardHeaderProps = {
   dense?: boolean;
 };
 
+// Two-line header: the document path sits as the headline (font-mono,
+// truncating left-from-the-end so the leaf segment stays visible), and
+// the operation chip + locale + validation status share the second
+// line. Previously a single row tried to hold all four — the path got
+// squeezed before the chip did, which made the kind harder to scan
+// than the path it operated on.
 function StandardHeader({
   kind,
   docPath,
@@ -71,36 +88,38 @@ function StandardHeader({
   validation,
   dense,
 }: StandardHeaderProps) {
-  const isDelete = kind === "delete_document";
   return (
     <div
       className={cn(
-        "flex items-center gap-2.5 border-b border-divider/40 bg-gradient-to-b from-primary/[0.04] to-transparent",
+        "flex flex-col gap-1.5 border-b border-divider/40 bg-gradient-to-b from-primary/[0.04] to-transparent",
         dense ? "px-2.5 py-1.5" : "px-3 py-2.5",
       )}
     >
-      <span
-        className={cn(
-          "shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider",
-          isDelete
-            ? "bg-destructive/12 text-destructive"
-            : "bg-blue-100 text-primary",
-        )}
-      >
-        {KIND_LABEL[kind]}
-      </span>
-      <span
-        className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground-muted"
+      <div
+        className="truncate font-mono text-[12px] text-foreground"
         title={docPath}
+        dir="rtl"
       >
-        {docPath}
-      </span>
-      {locale && (
-        <span className="shrink-0 font-mono text-[10px] text-foreground-muted/80">
-          {locale}
+        <bdi dir="ltr">{docPath}</bdi>
+      </div>
+      <div className="flex items-center gap-2.5">
+        <span
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1.5 rounded-sm px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider",
+            chipPaletteFor(kind),
+          )}
+        >
+          <KindGlyph kind={kind} />
+          {KIND_LABEL[kind]}
         </span>
-      )}
-      <ValidBadge validation={validation} />
+        {locale && (
+          <span className="shrink-0 font-mono text-[10px] text-foreground-muted/80">
+            {locale}
+          </span>
+        )}
+        <span className="flex-1" />
+        <ValidBadge validation={validation} />
+      </div>
     </div>
   );
 }
@@ -148,12 +167,12 @@ function Footer({
         onClick={blocked ? undefined : onAccept}
         disabled={blocked}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
+          "inline-flex items-center gap-1.5 rounded border px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
           blocked
-            ? "cursor-not-allowed bg-muted text-foreground-muted"
+            ? "cursor-not-allowed border-transparent bg-muted text-foreground-muted"
             : destructive
-              ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              : "bg-sidebar text-vibrant-green hover:bg-sidebar/90",
+              ? "border-destructive bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              : "border-vibrant-green-border bg-vibrant-green text-foreground hover:bg-vibrant-green/90",
         )}
         title={
           contentInvalidated

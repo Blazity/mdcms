@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   AtSign,
+  Check,
   ChevronRight,
   Maximize2,
   Minimize2,
@@ -33,6 +34,7 @@ import type {
   AssistantThread,
 } from "./assistant-types.js";
 import { EmptyStarter } from "./empty-starter.js";
+import { KindGlyph } from "./kind-glyph.js";
 import { ProposalCard } from "./proposal-card.js";
 import { SendStopButton } from "./send-stop-button.js";
 import { SparkleMark } from "./sparkle-mark.js";
@@ -431,31 +433,15 @@ const TURN_KIND_LABEL: Record<AssistantProposal["kind"], string> = {
   delete_document: "Delete",
 };
 
-const TURN_KIND_TONE: Record<
-  AssistantProposal["kind"],
-  { bg: string; fg: string }
-> = {
-  replace_selection: {
-    bg: "bg-primary/15",
-    fg: "text-primary",
-  },
-  insert_block: {
-    bg: "bg-vibrant-green/15",
-    fg: "text-vibrant-green",
-  },
-  update_frontmatter: {
-    bg: "bg-primary/15",
-    fg: "text-primary",
-  },
-  create_document: {
-    bg: "bg-vibrant-green/15",
-    fg: "text-vibrant-green",
-  },
-  delete_document: {
-    bg: "bg-destructive/15",
-    fg: "text-destructive",
-  },
-};
+// One blue family for every non-destructive operation, an amber family
+// reserved for the destructive kind. Keeping the chip palette to two
+// hues makes the destructive case unmistakable at a glance even when
+// the row is otherwise text-dense.
+function turnChipPaletteFor(kind: AssistantProposal["kind"]): string {
+  return kind === "delete_document"
+    ? "bg-accent-amber-tint text-accent-amber"
+    : "bg-primary/15 text-primary";
+}
 
 function diffStatsFor(proposal: AssistantProposal): {
   added: number;
@@ -549,13 +535,8 @@ function TurnGroup({
       <ul className="m-0 list-none p-0">
         {proposals.map((proposal, i) => {
           const isExpanded = !!expanded[proposal.proposalId];
-          const tone = TURN_KIND_TONE[proposal.kind];
           const stats = diffStatsFor(proposal);
           const valid = proposal.validation.status === "valid";
-          // Every AssistantProposal kind exposes docPath + locale, so
-          // this label is uniform — kept as a separate variable so it
-          // can be retitled per-kind if we ever want kind-specific UX.
-          const docLabel = `${proposal.docPath} · ${proposal.locale}`;
           return (
             <li
               key={proposal.proposalId}
@@ -563,50 +544,20 @@ function TurnGroup({
                 i < proposals.length - 1 && "border-b border-divider/40",
               )}
             >
-              <button
-                type="button"
-                onClick={() =>
+              <TurnRow
+                proposal={proposal}
+                stats={stats}
+                valid={valid}
+                isExpanded={isExpanded}
+                onToggle={() =>
                   setExpanded((prev) => ({
                     ...prev,
                     [proposal.proposalId]: !isExpanded,
                   }))
                 }
-                className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/40"
-                aria-expanded={isExpanded}
-              >
-                <span
-                  className={cn(
-                    "shrink-0 rounded-sm px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider",
-                    tone.bg,
-                    tone.fg,
-                  )}
-                >
-                  {TURN_KIND_LABEL[proposal.kind]}
-                </span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-foreground">
-                  {docLabel}
-                </span>
-                <span className="shrink-0 font-mono text-[10px]">
-                  <span className="text-success">+{stats.added}</span>{" "}
-                  <span className="text-destructive">−{stats.removed}</span>
-                </span>
-                <span
-                  className={cn(
-                    "shrink-0 text-[11px]",
-                    valid ? "text-success" : "text-destructive",
-                  )}
-                  aria-hidden
-                >
-                  {valid ? "✓" : "!"}
-                </span>
-                <ChevronRight
-                  className={cn(
-                    "h-3.5 w-3.5 shrink-0 text-foreground-muted transition-transform",
-                    isExpanded && "rotate-90",
-                  )}
-                  aria-hidden
-                />
-              </button>
+                onAccept={() => onAccept(proposal.proposalId)}
+                onReject={() => onReject(proposal.proposalId, "")}
+              />
               {isExpanded && (
                 <div className="border-t border-divider/40 bg-background-subtle px-3 py-2.5">
                   {expandedPreviewFor(proposal)}
@@ -655,17 +606,170 @@ function TurnGroup({
                   : "Fix invalid proposals before accepting"
             }
             className={cn(
-              "inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
+              "inline-flex items-center gap-1.5 rounded border px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors",
               acceptBlocked
-                ? "cursor-not-allowed bg-muted text-foreground-muted"
-                : "bg-sidebar text-vibrant-green hover:bg-sidebar/90",
+                ? "cursor-not-allowed border-transparent bg-muted text-foreground-muted"
+                : "border-vibrant-green-border bg-vibrant-green text-foreground hover:bg-vibrant-green/90",
             )}
           >
-            ✓ Accept all ({proposals.length})
+            <Check className="h-3 w-3" aria-hidden />
+            Accept all ({proposals.length})
           </button>
         </div>
       )}
     </div>
+  );
+}
+
+// Two-line row: the document path sits as the headline, the operation
+// chip (blue / amber by kind) + ± stats + a validation flag share the
+// second line, and the row's trailing icon stack gives one-click
+// accept / reject without disclosing the expanded diff. The chevron
+// still toggles inline disclosure, but it lives at the far right where
+// it doesn't compete with the chip for first read.
+function TurnRow({
+  proposal,
+  stats,
+  valid,
+  isExpanded,
+  onToggle,
+  onAccept,
+  onReject,
+}: {
+  proposal: AssistantProposal;
+  stats: { added: number; removed: number };
+  valid: boolean;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onAccept: () => void;
+  onReject: () => void;
+}) {
+  const rowAria = `Proposal — ${TURN_KIND_LABEL[proposal.kind]} in ${
+    proposal.docPath
+  }, +${stats.added} −${stats.removed}`;
+  return (
+    <div
+      role="group"
+      aria-label={rowAria}
+      className="flex flex-col gap-1.5 px-3 py-2"
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        title={proposal.docPath}
+        aria-expanded={isExpanded}
+        className="block w-full truncate text-left font-mono text-[12px] text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        dir="rtl"
+      >
+        <bdi dir="ltr">{proposal.docPath}</bdi>
+      </button>
+      <div className="flex items-center gap-2.5">
+        <span
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1.5 rounded-sm px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider",
+            turnChipPaletteFor(proposal.kind),
+          )}
+        >
+          <KindGlyph kind={proposal.kind} />
+          {TURN_KIND_LABEL[proposal.kind]}
+        </span>
+        <span className="shrink-0 font-mono text-[10px] tabular-nums text-foreground-muted">
+          <span className="text-success">+{stats.added}</span>{" "}
+          <span className="text-destructive">−{stats.removed}</span>
+        </span>
+        {!valid && (
+          <span
+            aria-hidden
+            title="Invalid"
+            className="shrink-0 text-[11px] text-destructive"
+          >
+            ⚠
+          </span>
+        )}
+        <span className="flex-1" />
+        <RowIconButton
+          label="Reject"
+          tone="reject"
+          onClick={(e) => {
+            e.stopPropagation();
+            onReject();
+          }}
+        >
+          <X className="h-3.5 w-3.5" aria-hidden />
+        </RowIconButton>
+        <RowIconButton
+          label="Accept"
+          tone="accept"
+          disabled={!valid}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (valid) onAccept();
+          }}
+        >
+          <Check className="h-3.5 w-3.5" aria-hidden />
+        </RowIconButton>
+        <RowIconButton
+          label={isExpanded ? "Collapse details" : "Expand details"}
+          tone="neutral"
+          pressed={isExpanded}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+        >
+          <ChevronRight
+            className={cn(
+              "h-3.5 w-3.5 transition-transform",
+              isExpanded && "rotate-90",
+            )}
+            aria-hidden
+          />
+        </RowIconButton>
+      </div>
+    </div>
+  );
+}
+
+// 28×28 hit target with a tonal hover tint — `accept` warms toward
+// lime, `reject` toward destructive red, `neutral` stays grey. Stays
+// flat in the idle state so a row with three icons doesn't broadcast
+// as three buttons until the user actually points at one.
+function RowIconButton({
+  label,
+  tone,
+  pressed,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  tone: "accept" | "reject" | "neutral";
+  pressed?: boolean;
+  disabled?: boolean;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={pressed}
+      disabled={disabled}
+      onClick={onClick}
+      title={label}
+      className={cn(
+        "grid h-7 w-7 shrink-0 place-items-center rounded text-foreground-muted transition-colors",
+        disabled
+          ? "cursor-not-allowed opacity-40"
+          : tone === "accept"
+            ? "hover:bg-vibrant-green/25 hover:text-foreground"
+            : tone === "reject"
+              ? "hover:bg-destructive/15 hover:text-destructive"
+              : "hover:bg-muted hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
