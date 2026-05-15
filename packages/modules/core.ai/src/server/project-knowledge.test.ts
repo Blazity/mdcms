@@ -96,3 +96,177 @@ test("sorts types alphabetically for determinism", () => {
   assert.ok(authorIdx > 0);
   assert.ok(postIdx > authorIdx);
 });
+
+test("renders enum field with options", () => {
+  const block = renderProjectKnowledgeBlock({
+    project: "p",
+    environment: "e",
+    registeredTypes: [
+      {
+        type: "campaign",
+        directory: "campaigns",
+        localized: false,
+        fields: {
+          status: {
+            kind: "enum",
+            required: true,
+            nullable: false,
+            options: ["planned", "live", "archived"],
+          },
+        },
+      },
+    ],
+    supportedLocales: [],
+  });
+  assert.ok(
+    block.includes('status (enum: "planned" | "live" | "archived", required)'),
+  );
+});
+
+test("renders reference field with target type", () => {
+  const block = renderProjectKnowledgeBlock({
+    project: "p",
+    environment: "e",
+    registeredTypes: [
+      {
+        type: "post",
+        directory: "blog",
+        localized: true,
+        fields: {
+          author: {
+            kind: "reference",
+            required: false,
+            nullable: true,
+            reference: { targetType: "author" },
+          },
+        },
+      },
+    ],
+    supportedLocales: [],
+  });
+  assert.ok(block.includes("author (reference → author, optional, nullable)"));
+});
+
+test("renders array field with item kind", () => {
+  const block = renderProjectKnowledgeBlock({
+    project: "p",
+    environment: "e",
+    registeredTypes: [
+      {
+        type: "post",
+        directory: "blog",
+        localized: true,
+        fields: {
+          tags: {
+            kind: "array",
+            required: false,
+            nullable: false,
+            item: { kind: "string", required: true, nullable: false },
+          },
+        },
+      },
+    ],
+    supportedLocales: [],
+  });
+  assert.ok(block.includes("tags (array of string, optional)"));
+});
+
+test("renders nested object up to depth 2; deeper collapses", () => {
+  const block = renderProjectKnowledgeBlock({
+    project: "p",
+    environment: "e",
+    registeredTypes: [
+      {
+        type: "page",
+        directory: "pages",
+        localized: false,
+        fields: {
+          seo: {
+            kind: "object",
+            required: false,
+            nullable: false,
+            fields: {
+              title: { kind: "string", required: false, nullable: false },
+              og: {
+                kind: "object",
+                required: false,
+                nullable: false,
+                fields: {
+                  image: {
+                    kind: "object",
+                    required: false,
+                    nullable: false,
+                    fields: {
+                      url: {
+                        kind: "string",
+                        required: false,
+                        nullable: false,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    ],
+    supportedLocales: [],
+  });
+  // Depth-1 nested object renders its sub-bullets:
+  assert.ok(block.includes("seo (object, optional)"));
+  assert.ok(block.includes("    - title (string, optional)"));
+  // Depth-2 collapses to <nested object> hint:
+  assert.ok(block.includes("og (<nested object>"));
+});
+
+test("snapshot: marketing-site fixture", () => {
+  const block = renderProjectKnowledgeBlock({
+    project: "marketing-site",
+    environment: "staging",
+    currentUser: { id: "user_1", displayName: "Karol Chudzik" },
+    supportedLocales: ["en", "pl"],
+    registeredTypes: [
+      {
+        type: "author",
+        directory: "authors",
+        localized: false,
+        fields: {
+          name: { kind: "string", required: true, nullable: false },
+          bio: { kind: "string", required: false, nullable: true },
+        },
+      },
+      {
+        type: "post",
+        directory: "blog",
+        localized: true,
+        fields: {
+          title: { kind: "string", required: true, nullable: false },
+          date: { kind: "date", required: true, nullable: false },
+          author: {
+            kind: "reference",
+            required: false,
+            nullable: true,
+            reference: { targetType: "author" },
+          },
+          tags: {
+            kind: "array",
+            required: false,
+            nullable: false,
+            item: { kind: "string", required: true, nullable: false },
+          },
+        },
+      },
+    ],
+  });
+  assert.ok(block.startsWith("## Project knowledge"));
+  assert.ok(block.includes("Project: marketing-site"));
+  assert.ok(block.includes("Current user: Karol Chudzik (id: user_1)"));
+  assert.ok(block.includes("- **author**"));
+  assert.ok(block.includes("- **post**"));
+  assert.ok(block.includes("author (reference → author"));
+  assert.ok(block.includes("tags (array of string"));
+  assert.ok(block.includes("### Supported locales"));
+  assert.ok(block.includes("en, pl"));
+  assert.ok(block.indexOf("- **author**") < block.indexOf("- **post**"));
+});

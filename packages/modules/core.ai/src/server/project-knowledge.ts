@@ -70,6 +70,8 @@ function sanitizeForPrompt(value: string): string {
   return value.replace(/[`\n\r]/g, " ").trim();
 }
 
+const MAX_NESTED_DEPTH = 1;
+
 function renderTypeEntry(schema: SchemaRegistryTypeSnapshot): string[] {
   const lines: string[] = [
     `- **${schema.type}** (directory: ${schema.directory}, localized: ${schema.localized ? "yes" : "no"})`,
@@ -81,27 +83,51 @@ function renderTypeEntry(schema: SchemaRegistryTypeSnapshot): string[] {
   }
   lines.push("  Fields:");
   for (const [name, field] of fieldEntries) {
-    lines.push(`  - ${renderFieldLine(name, field, 0)}`);
+    lines.push(...renderFieldLines(name, field, 1));
   }
   return lines;
 }
 
-function renderFieldLine(
+function renderFieldLines(
   name: string,
   field: SchemaRegistryFieldSnapshot,
   depth: number,
-): string {
-  const kindDescriptor = renderKindDescriptor(field, depth);
+): string[] {
+  const indent = "  ".repeat(depth);
+  const descriptor = renderKindDescriptor(field, depth);
   const flags: string[] = [field.required ? "required" : "optional"];
   if (field.nullable) flags.push("nullable");
-  return `${name} (${kindDescriptor}, ${flags.join(", ")})`;
+  const lines = [`${indent}- ${name} (${descriptor}, ${flags.join(", ")})`];
+
+  // Inline-expand nested objects up to MAX_NESTED_DEPTH; deeper levels
+  // were already collapsed to "<nested object>" by renderKindDescriptor.
+  if (field.kind === "object" && field.fields && depth <= MAX_NESTED_DEPTH) {
+    for (const [subName, subField] of Object.entries(field.fields)) {
+      lines.push(...renderFieldLines(subName, subField, depth + 1));
+    }
+  }
+
+  return lines;
 }
 
 function renderKindDescriptor(
   field: SchemaRegistryFieldSnapshot,
-  _depth: number,
+  depth: number,
 ): string {
-  // More elaborate rendering (enum, reference, array, object) lands in
-  // the next task. For now: just the kind name.
+  if (field.kind === "enum" && field.options) {
+    const formatted = field.options
+      .map((option) => JSON.stringify(option))
+      .join(" | ");
+    return `enum: ${formatted}`;
+  }
+  if (field.kind === "reference" && field.reference) {
+    return `reference → ${field.reference.targetType}`;
+  }
+  if (field.kind === "array" && field.item) {
+    return `array of ${renderKindDescriptor(field.item, depth)}`;
+  }
+  if (field.kind === "object" && depth > MAX_NESTED_DEPTH) {
+    return "<nested object> — call get_entry on a sibling for the full shape";
+  }
   return field.kind;
 }
