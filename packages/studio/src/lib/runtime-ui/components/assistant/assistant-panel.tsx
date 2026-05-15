@@ -353,16 +353,26 @@ function ContextChips({
   );
 }
 
+// User messages render as a quiet right-aligned quote — muted ink, no
+// fill, a thin right accent border the line sits flush against. The
+// asymmetric look pairs with the assistant's sparkle gutter so the eye
+// lands on assistant prose rather than bouncing back to the echo of
+// the user's own text.
 function UserBubble({ message }: { message: AssistantMessage }) {
   return (
-    <div className="mb-4 flex justify-end">
-      <div className="max-w-[80%] rounded-[12px_12px_2px_12px] bg-secondary px-3 py-2 text-[13px] leading-snug text-secondary-foreground">
+    <div className="mb-6 flex justify-end">
+      <div className="max-w-[70%] border-r-2 border-foreground/20 py-1.5 pl-2.5 pr-2.5 text-right text-[13px] leading-normal text-foreground/60">
         {message.text}
       </div>
     </div>
   );
 }
 
+// Assistant turns sit in a two-column layout: a fixed 24px gutter that
+// holds the blue ✦ identity glyph, and a flex content column with the
+// prose + proposal cards. The fixed gutter keeps proposals aligned to
+// a consistent left edge across an entire turn instead of just the
+// first prose paragraph.
 function AssistantBubble({
   message,
   proposalsById,
@@ -382,28 +392,33 @@ function AssistantBubble({
     .filter((p): p is AssistantProposal => Boolean(p));
   const isMultiTurn = proposals.length > 1;
   return (
-    <div className="mb-5 space-y-2">
-      {text && (
-        <div className="max-w-[92%] text-[13.5px] leading-relaxed text-foreground">
-          {text}
-        </div>
-      )}
-      {!isMultiTurn &&
-        proposals.map((proposal) => (
-          <ProposalCard
-            key={proposal.proposalId}
-            proposal={proposal}
-            onAccept={() => onAccept(proposal.proposalId)}
-            onReject={(feedback) => onReject(proposal.proposalId, feedback)}
+    <div className="mb-6 flex items-start gap-0">
+      <div className="w-6 shrink-0 pt-0.5 text-primary" aria-hidden="true">
+        <SparkleMark size={14} />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        {text && (
+          <div className="max-w-[92%] py-0.5 text-[13.5px] leading-relaxed text-foreground">
+            {text}
+          </div>
+        )}
+        {!isMultiTurn &&
+          proposals.map((proposal) => (
+            <ProposalCard
+              key={proposal.proposalId}
+              proposal={proposal}
+              onAccept={() => onAccept(proposal.proposalId)}
+              onReject={(feedback) => onReject(proposal.proposalId, feedback)}
+            />
+          ))}
+        {isMultiTurn && (
+          <TurnGroup
+            proposals={proposals}
+            onAccept={onAccept}
+            onReject={onReject}
           />
-        ))}
-      {isMultiTurn && (
-        <TurnGroup
-          proposals={proposals}
-          onAccept={onAccept}
-          onReject={onReject}
-        />
-      )}
+        )}
+      </div>
     </div>
   );
 }
