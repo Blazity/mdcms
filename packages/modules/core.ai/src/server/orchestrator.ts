@@ -270,6 +270,14 @@ export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
           maxOutputTokens: call.maxOutputTokens,
         });
         const usage = normalizeUsage(result.usage);
+        logChatDiagnostics({
+          path: "runChat",
+          modelId: languageModel.modelId,
+          finishReason: result.finishReason,
+          steps: result.steps,
+          totalUsage: usage,
+          proposalCount: collected.length,
+        });
         const audit = buildAuditRecord({
           ...baseContext,
           model: languageModel.modelId,
@@ -324,6 +332,14 @@ export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
           }
         }
         const usage = normalizeUsage(await result.usage);
+        logChatDiagnostics({
+          path: "runChatStream",
+          modelId: languageModel.modelId,
+          finishReason: await result.finishReason,
+          steps: await result.steps,
+          totalUsage: usage,
+          proposalCount: collected.length,
+        });
         const audit = buildAuditRecord({
           ...baseContext,
           model: languageModel.modelId,
@@ -792,6 +808,63 @@ function pascalCase(value: string): string {
       segment.length === 0 ? "" : segment[0].toUpperCase() + segment.slice(1),
     )
     .join("");
+}
+
+/**
+ * Per-turn diagnostic log: dumps the AI SDK's `finishReason`, per-step
+ * tool calls + token usage, and total usage so operators can see why
+ * a chat turn produced N proposals (e.g. `finishReason: "length"` →
+ * hit `maxOutputTokens`; `finishReason: "stop"` → model decided it
+ * was done). Written via `console.log` because the orchestrator
+ * doesn't take a logger dep — the host server pipes stdout through
+ * its structured logger.
+ */
+function logChatDiagnostics(input: {
+  path: "runChat" | "runChatStream";
+  modelId: string;
+  finishReason: unknown;
+  steps: unknown;
+  totalUsage: AiProviderUsage | undefined;
+  proposalCount: number;
+}): void {
+  const stepsArr = Array.isArray(input.steps)
+    ? (input.steps as Array<Record<string, unknown>>)
+    : [];
+  const stepSummary = stepsArr.map((step, idx) => {
+    const text = typeof step.text === "string" ? step.text : "";
+    const toolCalls = Array.isArray(step.toolCalls)
+      ? (step.toolCalls as Array<Record<string, unknown>>)
+      : [];
+    const usage = step.usage as Record<string, unknown> | undefined;
+    return {
+      idx,
+      finishReason: step.finishReason,
+      textLength: text.length,
+      textPreview: text.length > 0 ? text.slice(0, 80) : undefined,
+      toolCallNames: toolCalls
+        .map((c) =>
+          typeof c.toolName === "string" ? c.toolName : "(unknown)",
+        )
+        .filter((name): name is string => Boolean(name)),
+      usage: usage
+        ? {
+            input: usage.inputTokens,
+            output: usage.outputTokens,
+            total: usage.totalTokens,
+          }
+        : undefined,
+    };
+  });
+  // eslint-disable-next-line no-console
+  console.log("[ai.chat.diagnostic]", {
+    path: input.path,
+    model: input.modelId,
+    finishReason: input.finishReason,
+    proposalCount: input.proposalCount,
+    stepCount: stepsArr.length,
+    totalUsage: input.totalUsage,
+    steps: stepSummary,
+  });
 }
 
 /**
