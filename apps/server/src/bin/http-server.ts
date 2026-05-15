@@ -9,6 +9,11 @@ type BunRuntime = {
   serve: (options: {
     port: number;
     fetch: (request: Request) => Response | Promise<Response>;
+    /** Per-connection idle timeout in seconds. Bun defaults to 10s, which
+     * is far too short for SSE chat streams that sit awaiting the next
+     * token from the LLM — we set it to Bun's maximum (255s) so any
+     * realistic generation completes before the socket gets closed. */
+    idleTimeout?: number;
   }) => BunServer;
 };
 
@@ -22,6 +27,7 @@ const { handler } = await prepareServerRequestHandlerWithModules({
 const server = Bun.serve({
   port: env.PORT,
   fetch: handler,
+  idleTimeout: 255,
 });
 
 let isShuttingDown = false;

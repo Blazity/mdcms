@@ -1846,6 +1846,22 @@ async function handleChatMessageStream(
       const collectedProposals: AiProposal[] = [];
       let assistantText = "";
       let finalAudit: AiAuditRecord | undefined;
+      // SSE keepalive: fire a comment-only frame every 15s while the
+      // LLM is mid-think. Bun's per-connection idle timeout (default
+      // 10s, raised to 255s in http-server.ts) and most proxies
+      // (Nginx, Cloudflare, k8s ingress) close sockets that look
+      // idle — a `:keep-alive` line keeps the TCP turn fresh without
+      // affecting the parsed event stream (the client's SSE parser
+      // treats `:`-prefixed lines as no-ops).
+      const KEEPALIVE_MS = 15_000;
+      const keepalive = setInterval(() => {
+        try {
+          controller.enqueue(new TextEncoder().encode(`: keep-alive\n\n`));
+        } catch {
+          // Controller may be closed already — harmless, the interval
+          // is about to clear itself in the finally block.
+        }
+      }, KEEPALIVE_MS);
       try {
         for await (const event of options.orchestrator.runChatStream(
           chatInput,
@@ -1865,6 +1881,7 @@ async function handleChatMessageStream(
               }),
             );
             // No `done` after an `error` — the client closes.
+            clearInterval(keepalive);
             controller.close();
             return;
           }
@@ -1880,9 +1897,11 @@ async function handleChatMessageStream(
         // eslint-disable-next-line no-console
         console.error("[ai.chat] unexpected stream error:", error);
         controller.enqueue(encodeSse("error", { code, message }));
+        clearInterval(keepalive);
         controller.close();
         return;
       }
+      clearInterval(keepalive);
 
       // Belt-and-suspenders: enforce the caller's allowed actions on
       // the proposals the model produced. Tools are capability-gated
