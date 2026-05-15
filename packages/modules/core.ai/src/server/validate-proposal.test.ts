@@ -494,7 +494,8 @@ describe("createSchemaAwareProposalValidator — UNKNOWN_REFERENCE", () => {
   test("flags create_document with a missing author reference", async () => {
     const validator = createSchemaAwareProposalValidator({
       schemaLookup: refLookup,
-      documentExists: async ({ documentId }) => documentId === "doc_real",
+      documentExists: async ({ documentId }) =>
+        documentId === "33333333-3333-4333-8333-333333333333",
     });
     const result = await validator(
       createCandidate({
@@ -507,7 +508,7 @@ describe("createSchemaAwareProposalValidator — UNKNOWN_REFERENCE", () => {
             frontmatter: {
               title: "x",
               date: "2026-05-15",
-              author: "doc_fake",
+              author: "99999999-9999-4999-8999-999999999999",
             },
             body: "Body",
           },
@@ -527,7 +528,8 @@ describe("createSchemaAwareProposalValidator — UNKNOWN_REFERENCE", () => {
   test("allows create_document with a real reference", async () => {
     const validator = createSchemaAwareProposalValidator({
       schemaLookup: refLookup,
-      documentExists: async ({ documentId }) => documentId === "doc_real",
+      documentExists: async ({ documentId }) =>
+        documentId === "33333333-3333-4333-8333-333333333333",
     });
     const result = await validator(
       createCandidate({
@@ -540,7 +542,7 @@ describe("createSchemaAwareProposalValidator — UNKNOWN_REFERENCE", () => {
             frontmatter: {
               title: "x",
               date: "2026-05-15",
-              author: "doc_real",
+              author: "33333333-3333-4333-8333-333333333333",
             },
             body: "Body",
           },
@@ -554,7 +556,8 @@ describe("createSchemaAwareProposalValidator — UNKNOWN_REFERENCE", () => {
     const validator = createSchemaAwareProposalValidator({
       schemaLookup: refLookup,
       documentExists: async ({ documentId }) =>
-        documentId === "doc_real_1" || documentId === "doc_real_2",
+        documentId === "11111111-1111-4111-8111-111111111111" ||
+        documentId === "22222222-2222-4222-8222-222222222222",
     });
     const result = await validator(
       createCandidate({
@@ -567,7 +570,11 @@ describe("createSchemaAwareProposalValidator — UNKNOWN_REFERENCE", () => {
             frontmatter: {
               title: "x",
               date: "2026-05-15",
-              coauthors: ["doc_real_1", "doc_fake", "doc_real_2"],
+              coauthors: [
+                "11111111-1111-4111-8111-111111111111",
+                "99999999-9999-4999-8999-999999999999",
+                "22222222-2222-4222-8222-222222222222",
+              ],
             },
             body: "Body",
           },
@@ -581,6 +588,90 @@ describe("createSchemaAwareProposalValidator — UNKNOWN_REFERENCE", () => {
       );
       assert.equal(refErrors.length, 1);
       assert.equal(refErrors[0]?.path, "frontmatter.coauthors[1]");
+    }
+  });
+
+  test("flags non-UUID reference values without calling the lookup", async () => {
+    // Regression: the model sometimes writes a human-readable name
+    // (e.g. "Demo User") into a reference field. The validator must
+    // catch this up front rather than handing a malformed id to a
+    // uuid-typed lookup whose driver-level behaviour can mask the
+    // problem (silent zero rows look like "exists: true" on a happy
+    // path that doesn't actually exist).
+    let lookupCalls = 0;
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: refLookup,
+      documentExists: async () => {
+        lookupCalls += 1;
+        return true;
+      },
+    });
+    const result = await validator(
+      createCandidate({
+        type: "post",
+        operations: [
+          {
+            op: "create_document",
+            path: "blog/x",
+            format: "md",
+            frontmatter: {
+              title: "x",
+              date: "2026-05-15",
+              author: "Demo User",
+            },
+            body: "Body",
+          },
+        ],
+      }),
+    );
+    assert.equal(lookupCalls, 0);
+    assert.equal(result.status, "invalid");
+    if (result.status === "invalid") {
+      const refErrors = result.errors.filter(
+        (e) => e.code === "UNKNOWN_REFERENCE",
+      );
+      assert.equal(refErrors.length, 1);
+      assert.match(
+        refErrors[0]?.message ?? "",
+        /must be a UUID string referencing "author"/,
+      );
+    }
+  });
+
+  test("treats a lookup failure as 'does not exist'", async () => {
+    // If the underlying lookup throws (transient DB error, driver
+    // coercion issue, etc.) the validator should still produce a
+    // useful UNKNOWN_REFERENCE rather than crashing the whole turn.
+    const validator = createSchemaAwareProposalValidator({
+      schemaLookup: refLookup,
+      documentExists: async () => {
+        throw new Error("simulated DB outage");
+      },
+    });
+    const result = await validator(
+      createCandidate({
+        type: "post",
+        operations: [
+          {
+            op: "create_document",
+            path: "blog/x",
+            format: "md",
+            frontmatter: {
+              title: "x",
+              date: "2026-05-15",
+              author: "33333333-3333-4333-8333-333333333333",
+            },
+            body: "Body",
+          },
+        ],
+      }),
+    );
+    assert.equal(result.status, "invalid");
+    if (result.status === "invalid") {
+      const refErrors = result.errors.filter(
+        (e) => e.code === "UNKNOWN_REFERENCE",
+      );
+      assert.equal(refErrors.length, 1);
     }
   });
 
@@ -631,7 +722,7 @@ describe("createSchemaAwareProposalValidator — UNKNOWN_REFERENCE", () => {
       operations: [
         {
           op: "update_frontmatter",
-          patch: { author: "doc_fake" },
+          patch: { author: "99999999-9999-4999-8999-999999999999" },
         },
       ],
       expiresAt: "2026-05-16T00:05:00.000Z",

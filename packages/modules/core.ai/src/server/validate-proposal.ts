@@ -105,6 +105,10 @@ type ValidationError = {
   path?: string;
 };
 
+/** RFC4122-ish UUID literal — mirrors the apply-time check in `reference-validation.ts`. */
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 async function validateCreateDocument(
   candidate: AiProposalCandidate,
   schemaLookup: SchemaLookup,
@@ -324,11 +328,36 @@ async function walkReferences(
       // Wrong-type errors are emitted by checkFieldType elsewhere.
       return;
     }
-    const exists = await documentExists({
-      project,
-      environment,
-      documentId: value,
-    });
+    // Fast-path: reference values must look like a documentId (UUID).
+    // The model occasionally writes a display name (e.g. "Demo User")
+    // into a reference field; without this guard we'd hand a non-UUID
+    // to a uuid-typed column lookup, which either crashes the
+    // validator or — depending on the driver — silently returns no
+    // rows and gets reported as "doc not found" rather than what it
+    // actually is (a malformed reference). Mirrors the apply-time
+    // check in `apps/server/src/lib/content-api/reference-validation.ts`.
+    if (!UUID_PATTERN.test(value)) {
+      errors.push({
+        code: "UNKNOWN_REFERENCE",
+        message: `Field "${fieldPath.replace(/^frontmatter\./, "")}" must be a UUID string referencing "${field.reference.targetType}". Use the find_entries tool to look up a real document id; "${value}" is not a valid documentId.`,
+        path: fieldPath,
+      });
+      return;
+    }
+    let exists = false;
+    try {
+      exists = await documentExists({
+        project,
+        environment,
+        documentId: value,
+      });
+    } catch {
+      // Treat lookup failures as "doesn't exist" so a transient DB
+      // error or driver-level type coercion doesn't crash the whole
+      // validator. The UNKNOWN_REFERENCE error below is still the
+      // right surface — the model needs to try a different id.
+      exists = false;
+    }
     if (!exists) {
       errors.push({
         code: "UNKNOWN_REFERENCE",
