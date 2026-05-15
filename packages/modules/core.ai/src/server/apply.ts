@@ -57,6 +57,14 @@ export type AiApplyContentStore = {
 export type AiApplyInput = {
   proposal: AiProposal;
   expectedSchemaHash: string;
+  /**
+   * Authenticated caller for audit purposes. Document writes pass
+   * through the content store WITHOUT this id — `createdBy`/`updatedBy`
+   * fall through to the store's `DEFAULT_ACTOR` placeholder, matching
+   * the behaviour of the manual content endpoints. The real actor is
+   * captured in the AI audit record instead. See
+   * `core.ai/server/apply.ts` create/update branches for context.
+   */
   actorId: string;
   store: AiApplyContentStore;
 };
@@ -181,7 +189,12 @@ function mergeFrontmatter(
 export async function applyAiProposal(
   input: AiApplyInput,
 ): Promise<AiApplyContentDocument> {
-  const { proposal, expectedSchemaHash, actorId, store } = input;
+  const { proposal, expectedSchemaHash, store } = input;
+  // `actorId` is intentionally not destructured into a local — the
+  // store calls below fall through to DEFAULT_ACTOR for createdBy/
+  // updatedBy. The id is still part of the input shape because the
+  // route handler uses it for audit-record emission.
+  void input.actorId;
   const scope: AiApplyContentScope = {
     project: proposal.project,
     environment: proposal.environment,
@@ -205,8 +218,12 @@ export async function applyAiProposal(
         format: operation.format,
         frontmatter: operation.frontmatter,
         body: operation.body,
-        createdBy: actorId,
-        updatedBy: actorId,
+        // Intentionally omit `createdBy`/`updatedBy` so the store
+        // falls through to the same DEFAULT_ACTOR placeholder the
+        // manual content endpoints use. The real actor identity is
+        // captured in the AI audit record — the underlying document
+        // attribution gap is shared with the manual UI flow and is
+        // tracked separately as a follow-up.
       },
       { expectedSchemaHash },
     );
@@ -306,7 +323,8 @@ export async function applyAiProposal(
     {
       body: nextBody,
       frontmatter: nextFrontmatter,
-      updatedBy: actorId,
+      // Omit `updatedBy` so the store falls through to DEFAULT_ACTOR
+      // — same path the manual `PUT /api/v1/content/:id` route takes.
     },
     {
       expectedSchemaHash,
