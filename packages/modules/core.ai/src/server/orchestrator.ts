@@ -37,6 +37,17 @@ import {
 
 export const DEFAULT_PROPOSAL_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * Hard ceiling on the number of agentic steps the chat orchestrator
+ * lets the model take in a single turn. Each text-reply, tool-call, and
+ * tool-result counts as one step, so a "draft 5 posts" turn naturally
+ * needs at least 5 (tool calls) + 1 (final text reply) = 6 — with some
+ * headroom for the model to call `find_entries` ahead of references or
+ * emit interstitial reasoning. 20 gives that headroom without letting a
+ * runaway loop drain the provider budget.
+ */
+const DEFAULT_CHAT_STEP_LIMIT = 20;
+
 export type AiOrchestratorClock = () => Date;
 export type AiOrchestratorIdFactory = () => string;
 
@@ -255,7 +266,7 @@ export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
           system,
           prompt,
           tools,
-          stopWhen: stepCountIs(5),
+          stopWhen: stepCountIs(DEFAULT_CHAT_STEP_LIMIT),
           maxOutputTokens: call.maxOutputTokens,
         });
         const usage = normalizeUsage(result.usage);
@@ -303,7 +314,7 @@ export function createAiOrchestrator(deps: AiOrchestratorDeps): AiOrchestrator {
           system,
           prompt,
           tools,
-          stopWhen: stepCountIs(5),
+          stopWhen: stepCountIs(DEFAULT_CHAT_STEP_LIMIT),
           maxOutputTokens: call.maxOutputTokens,
         });
         for await (const part of result.fullStream) {
