@@ -1284,4 +1284,69 @@ describe("mountAiRoutes — chat-message", () => {
     };
     assert.equal(payload.data.message.text, "Found one match: John Doe.");
   });
+
+  test("propose_create_document at taken path returns PATH_ALREADY_IN_USE", async () => {
+    const validator: AiProposalValidator = async (candidate) => {
+      if (candidate.kind !== "create_document") return { status: "valid" };
+      const op = candidate.operations[0];
+      if (!op || op.op !== "create_document") return { status: "valid" };
+      if (op.path === "blog/taken") {
+        return {
+          status: "invalid",
+          errors: [
+            {
+              code: "PATH_ALREADY_IN_USE",
+              message: `Path "${op.path}" is already used.`,
+              path: "operations[0].path",
+            },
+          ],
+        };
+      }
+      return { status: "valid" };
+    };
+    const { app } = createTestSetup({
+      authorize: authorizeWithScopes(
+        new Set(["ai:use", "content:read:draft", "content:write"]),
+      ),
+      proposalValidator: validator,
+      echoSteps: [
+        {
+          type: "tool-calls",
+          calls: [
+            {
+              toolName: "propose_create_document",
+              input: JSON.stringify({
+                summary: "create",
+                path: "blog/taken",
+                type: "blog",
+                format: "md",
+                frontmatter: '{"title":"x","date":"2026-05-15"}',
+                body: "Body",
+              }),
+            },
+          ],
+        },
+        { type: "text", text: "Proposed." },
+      ],
+    });
+    const response = await app.fetch(
+      "POST",
+      "https://test.local/api/v1/ai/chat/messages",
+      {
+        method: "POST",
+        headers: TARGET_HEADERS,
+        body: JSON.stringify({ message: "make a doc at blog/taken" }),
+      },
+    );
+    assert.equal(response.status, 200);
+    const payload = (await response.json()) as {
+      data: { proposals?: AiProposal[] };
+    };
+    const proposal = payload.data.proposals?.[0]!;
+    assert.equal(proposal.validation.status, "invalid");
+    if (proposal.validation.status === "invalid") {
+      const codes = proposal.validation.errors.map((e) => e.code);
+      assert.ok(codes.includes("PATH_ALREADY_IN_USE"));
+    }
+  });
 });
