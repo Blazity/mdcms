@@ -1251,6 +1251,9 @@ async function handleChatMessage(
       canEditDocument: effectiveAllowed.has("edit_document"),
       canCreateDocument: effectiveAllowed.has("create_document"),
       canDeleteDocument: effectiveAllowed.has("delete_document"),
+      // canReadEntries is wired to a real value in T11 (findEntriesBackend).
+      // Default to false until the route is fully wired.
+      canReadEntries: false,
     };
 
     // Gather per-turn project knowledge in parallel with the existing

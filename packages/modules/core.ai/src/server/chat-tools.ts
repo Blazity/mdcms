@@ -66,6 +66,7 @@ export type ChatToolCapabilities = {
   canEditDocument: boolean;
   canCreateDocument: boolean;
   canDeleteDocument: boolean;
+  canReadEntries: boolean;
 };
 
 export type ChatToolDeps = {
@@ -434,6 +435,43 @@ export function buildChatTools(deps: ChatToolDeps): Record<string, Tool> {
                 }
               : {}),
           };
+        } catch (error) {
+          return toolErrorResult(error);
+        }
+      },
+    });
+  }
+
+  if (deps.capabilities.canReadEntries && deps.findEntriesBackend) {
+    const backend = deps.findEntriesBackend;
+    tools.find_entries = tool({
+      description:
+        "Search the project's documents by content type with an optional text query. Use this when:\n" +
+        "1. Filling a reference field on a proposal — e.g. setting `author` on a new post. Call `find_entries({ type: 'author', query: '<name>' })` and pick the right `documentId` from the results.\n" +
+        "2. Checking what already exists before proposing a new draft to avoid duplicates.\n" +
+        "Returns up to `limit` matches (default 10, max 25), most-recently-updated first. The `type` parameter is enum-constrained to the project's registered content types; passing anything else fails the call. Do not use this for editing — combine with the propose_* tools after picking a result.",
+      inputSchema: z.object({
+        type:
+          deps.registeredTypeIds.length > 0
+            ? z.enum(deps.registeredTypeIds as [string, ...string[]])
+            : z.string().min(1),
+        query: z.string().optional(),
+        locale:
+          deps.supportedLocales.length > 0
+            ? z
+                .enum(deps.supportedLocales as [string, ...string[]])
+                .optional()
+            : z.string().optional(),
+        limit: z.number().int().min(1).max(25).optional(),
+      }),
+      execute: async (args) => {
+        try {
+          return await backend({
+            type: args.type,
+            ...(args.query ? { query: args.query } : {}),
+            ...(args.locale ? { locale: args.locale } : {}),
+            ...(args.limit ? { limit: args.limit } : {}),
+          });
         } catch (error) {
           return toolErrorResult(error);
         }
