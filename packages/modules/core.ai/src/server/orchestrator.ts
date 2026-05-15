@@ -842,9 +842,7 @@ function logChatDiagnostics(input: {
       textLength: text.length,
       textPreview: text.length > 0 ? text.slice(0, 80) : undefined,
       toolCallNames: toolCalls
-        .map((c) =>
-          typeof c.toolName === "string" ? c.toolName : "(unknown)",
-        )
+        .map((c) => (typeof c.toolName === "string" ? c.toolName : "(unknown)"))
         .filter((name): name is string => Boolean(name)),
       usage: usage
         ? {
