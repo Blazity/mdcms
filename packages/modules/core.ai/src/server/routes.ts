@@ -647,14 +647,6 @@ async function handleProposalApply(
     let proposal: AiProposal;
     let proposalFromStore = false;
     if (body.proposal !== undefined) {
-      // Temporary debug log — surfaces what the client sent for apply
-      // so we can audit chat-emitted proposal bodies. Remove once the
-      // create-document shape is stable.
-      // eslint-disable-next-line no-console
-      console.log(
-        "[ai.apply] proposal body from client:",
-        JSON.stringify(body.proposal, null, 2),
-      );
       const parsed = aiProposalSchema.safeParse(body.proposal);
       if (!parsed.success) {
         throw new RuntimeError({
