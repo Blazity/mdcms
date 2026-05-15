@@ -6,7 +6,6 @@ import { RuntimeError } from "@mdcms/shared";
 
 import type {
   StudioAiChatMessageRequest,
-  StudioAiChatMessageResult,
   StudioAiProposal,
   StudioAiRouteApi,
 } from "../../../ai-route-api.js";
@@ -59,6 +58,44 @@ type AssistantAction =
        * store on the server side.
        */
       newWireProposals: Record<string, StudioAiProposal>;
+    }
+  /**
+   * Begin a streaming turn — adds the user message + an empty
+   * assistant placeholder whose text grows via subsequent
+   * `append-stream-delta` dispatches and is finalised by
+   * `commit-stream-turn` (or replaced by an error turn on failure).
+   */
+  | {
+      type: "begin-stream-turn";
+      threadId: string;
+      userMessage: AssistantMessage;
+      placeholderId: string;
+      placeholderAt: string;
+    }
+  | {
+      type: "append-stream-delta";
+      threadId: string;
+      placeholderId: string;
+      delta: string;
+    }
+  | {
+      type: "commit-stream-turn";
+      threadId: string;
+      placeholderId: string;
+      finalMessage: AssistantMessage;
+      newProposals: AssistantProposal[];
+      newWireProposals: Record<string, StudioAiProposal>;
+    }
+  | {
+      /**
+       * Replace the streaming placeholder with an inline error turn
+       * carrying the wire-level code so the UI can render it the same
+       * way a non-streaming failure would.
+       */
+      type: "abort-stream-turn";
+      threadId: string;
+      placeholderId: string;
+      errorText: string;
     };
 
 const NEW_THREAD_TITLE = "New conversation";
@@ -380,6 +417,123 @@ function reducer(
                 action.userMessage,
                 action.assistantMessage,
               ],
+            };
+          }),
+        },
+      };
+    }
+    case "begin-stream-turn": {
+      // Appends the user message + an empty assistant placeholder. The
+      // placeholder is a normal AssistantMessage with text === "" — the
+      // bubble renders a typing indicator while text is empty AND the
+      // context is in `isPending` state.
+      return {
+        ...state,
+        store: {
+          ...state.store,
+          threads: state.store.threads.map((thread) => {
+            if (thread.id !== action.threadId) return thread;
+            const isFirstUserTurn =
+              thread.title === NEW_THREAD_TITLE &&
+              !thread.messages.some((m) => m.role === "user") &&
+              action.userMessage.role === "user" &&
+              !!action.userMessage.text;
+            const nextTitle = isFirstUserTurn
+              ? deriveThreadTitle(action.userMessage.text ?? "")
+              : thread.title;
+            const nextPreview = action.userMessage.text?.trim()
+              ? action.userMessage.text.trim().slice(0, 120)
+              : thread.preview;
+            const placeholder: AssistantMessage = {
+              id: action.placeholderId,
+              role: "assistant",
+              at: action.placeholderAt,
+              text: "",
+            };
+            return {
+              ...thread,
+              title: nextTitle,
+              preview: nextPreview,
+              updatedAt: action.placeholderAt,
+              messages: [...thread.messages, action.userMessage, placeholder],
+            };
+          }),
+        },
+      };
+    }
+    case "append-stream-delta": {
+      // O(n) per delta — the messages array is short (≤20 turns in
+      // practice), so we accept the cost for the simplicity of a flat
+      // map over messages.
+      return {
+        ...state,
+        store: {
+          ...state.store,
+          threads: state.store.threads.map((thread) => {
+            if (thread.id !== action.threadId) return thread;
+            return {
+              ...thread,
+              messages: thread.messages.map((m) =>
+                m.id === action.placeholderId
+                  ? { ...m, text: (m.text ?? "") + action.delta }
+                  : m,
+              ),
+            };
+          }),
+        },
+      };
+    }
+    case "commit-stream-turn": {
+      // Replace the placeholder with the final message and merge in
+      // the proposal map updates the JSON handler used to atomically
+      // deliver via send-message.
+      const proposalDelta = Object.fromEntries(
+        action.newProposals.map((p) => [p.proposalId, p]),
+      );
+      return {
+        ...state,
+        store: {
+          ...state.store,
+          proposals: { ...state.store.proposals, ...proposalDelta },
+          wireProposals: {
+            ...state.store.wireProposals,
+            ...action.newWireProposals,
+          },
+          threads: state.store.threads.map((thread) => {
+            if (thread.id !== action.threadId) return thread;
+            const docCount = new Set([
+              ...thread.contextDocs.map((d) => d.path),
+              ...action.newProposals.flatMap((p) => collectProposalDocPaths(p)),
+            ]).size;
+            return {
+              ...thread,
+              docCount: Math.max(thread.docCount, docCount),
+              updatedAt: action.finalMessage.at,
+              messages: thread.messages.map((m) =>
+                m.id === action.placeholderId ? action.finalMessage : m,
+              ),
+            };
+          }),
+        },
+      };
+    }
+    case "abort-stream-turn": {
+      // The placeholder becomes an error turn carrying the wire-level
+      // code in its text so the UI renders it the same way a
+      // non-streaming failure would.
+      return {
+        ...state,
+        store: {
+          ...state.store,
+          threads: state.store.threads.map((thread) => {
+            if (thread.id !== action.threadId) return thread;
+            return {
+              ...thread,
+              messages: thread.messages.map((m) =>
+                m.id === action.placeholderId
+                  ? { ...m, text: action.errorText }
+                  : m,
+              ),
             };
           }),
         },
@@ -892,51 +1046,114 @@ export function AssistantProvider({
         ...(conversationHistory.length > 0 ? { conversationHistory } : {}),
       };
 
+      const placeholderId = `m-asst-stream-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+      const placeholderAt = new Date().toISOString();
+      dispatch({
+        type: "begin-stream-turn",
+        threadId: state.activeThreadId,
+        userMessage: input.userMessage,
+        placeholderId,
+        placeholderAt,
+      });
+
+      let sawDone = false;
       try {
-        const result: StudioAiChatMessageResult =
-          await liveApi.chatMessage(request);
-        if (controller.signal.aborted) return;
-        const wireProposals = result.proposals ?? [];
-        const newProposals: AssistantProposal[] = [];
-        const newWireProposals: Record<string, StudioAiProposal> = {};
-        for (const wp of wireProposals) {
-          const mapped = studioProposalFromWire(wp);
-          if (mapped) {
-            newProposals.push(mapped);
-            // Persist the original wire shape so accept/reject can post
-            // it back to the server intact. The render-time studio shape
-            // is a lossy projection (e.g. body → bodyPreview), so we
-            // can't reconstruct the wire body from the rendered one.
-            newWireProposals[wp.proposalId] = wp;
+        for await (const event of liveApi.chatMessageStream(request)) {
+          if (controller.signal.aborted) return;
+          if (event.type === "text-delta") {
+            dispatch({
+              type: "append-stream-delta",
+              threadId: state.activeThreadId,
+              placeholderId,
+              delta: event.text,
+            });
+          } else if (event.type === "done") {
+            sawDone = true;
+            const wireProposals = event.proposals ?? [];
+            const newProposals: AssistantProposal[] = [];
+            const newWireProposals: Record<string, StudioAiProposal> = {};
+            for (const wp of wireProposals) {
+              const mapped = studioProposalFromWire(wp);
+              if (mapped) {
+                newProposals.push(mapped);
+                newWireProposals[wp.proposalId] = wp;
+              }
+            }
+            const finalMessage: AssistantMessage = {
+              id: event.message.id,
+              role: "assistant",
+              at: event.message.at,
+              ...(event.message.text ? { text: event.message.text } : {}),
+              ...(newProposals.length > 0
+                ? { proposals: newProposals.map((p) => p.proposalId) }
+                : {}),
+              ...(event.message.rejectedProposalId
+                ? { rejectedProposalId: event.message.rejectedProposalId }
+                : {}),
+            };
+            dispatch({
+              type: "commit-stream-turn",
+              threadId: state.activeThreadId,
+              placeholderId,
+              finalMessage,
+              newProposals,
+              newWireProposals,
+            });
+          } else if (event.type === "error") {
+            // Replace the placeholder with an inline error turn so the
+            // user gets the same surface as a non-streaming failure.
+            sawDone = true;
+            dispatch({
+              type: "abort-stream-turn",
+              threadId: state.activeThreadId,
+              placeholderId,
+              errorText: `${event.code}: ${event.message}`,
+            });
           }
         }
-        const assistantMessage: AssistantMessage = {
-          id: result.message.id,
-          role: "assistant",
-          at: result.message.at,
-          ...(result.message.text ? { text: result.message.text } : {}),
-          ...(newProposals.length > 0
-            ? { proposals: newProposals.map((p) => p.proposalId) }
-            : {}),
-          ...(result.message.rejectedProposalId
-            ? { rejectedProposalId: result.message.rejectedProposalId }
-            : {}),
-        };
-        dispatch({
-          type: "send-message",
-          threadId: state.activeThreadId,
-          userMessage: input.userMessage,
-          assistantMessage,
-          newProposals,
-          newWireProposals,
-        });
+        if (!sawDone && !controller.signal.aborted) {
+          // The stream closed without a terminal event — treat as an
+          // unexpected truncation and surface a placeholder error so
+          // the user isn't stuck with a frozen typing indicator.
+          dispatch({
+            type: "abort-stream-turn",
+            threadId: state.activeThreadId,
+            placeholderId,
+            errorText: "AI_REQUEST_FAILED: stream closed without response.",
+          });
+        }
       } catch (error) {
-        // User-initiated abort surfaces as a DOMException("AbortError")
-        // from fetch; swallow it so the timeline doesn't get a fake
-        // error turn. Anything else propagates as an inline error turn.
         const isAbort =
           error instanceof DOMException && error.name === "AbortError";
-        if (!isAbort) appendErrorTurn(input.userMessage, error);
+        if (isAbort) {
+          // The user clicked Stop or sent again — drop the placeholder
+          // by replacing its text with an empty (non-rendered) state.
+          // The reducer keeps the placeholder in messages; the bubble
+          // will simply not render an empty message that's no longer
+          // pending. (See AssistantBubble early-return.)
+          dispatch({
+            type: "abort-stream-turn",
+            threadId: state.activeThreadId,
+            placeholderId,
+            errorText: "",
+          });
+        } else {
+          const code =
+            error instanceof RuntimeError ? error.code : "AI_REQUEST_FAILED";
+          const message =
+            error instanceof Error ? error.message : "AI request failed.";
+          const reason = extractInnerReason(error);
+          const text =
+            reason && message === "Internal server error."
+              ? `${code}: ${reason}`
+              : `${code}: ${message}`;
+          dispatch({
+            type: "abort-stream-turn",
+            threadId: state.activeThreadId,
+            placeholderId,
+            errorText: text,
+          });
+        }
       } finally {
         // Clear pending state only if this controller is still the
         // active one — a fresh sendMessage call may have already

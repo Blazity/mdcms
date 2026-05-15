@@ -197,6 +197,22 @@ export type StudioAiChatMessageResult = {
   proposals?: StudioAiProposal[];
 };
 
+/**
+ * Wire-shape of a Server-Sent Event emitted by the chat stream
+ * endpoint. The client accumulates `text-delta` events into the
+ * pending assistant message, then commits the final shape on `done`
+ * (or renders a turn-level error on `error`).
+ */
+export type StudioAiChatStreamEvent =
+  | { type: "text-delta"; text: string }
+  | {
+      type: "done";
+      message: StudioAiChatMessage;
+      proposals: StudioAiProposal[];
+      conversationId?: string;
+    }
+  | { type: "error"; code: string; message: string };
+
 export type StudioAiRouteApi = {
   inlineTransform(
     input: StudioAiInlineTransformRequest,
@@ -208,6 +224,15 @@ export type StudioAiRouteApi = {
   chatMessage(
     input: StudioAiChatMessageRequest,
   ): Promise<StudioAiChatMessageResult>;
+  /**
+   * Streaming counterpart of `chatMessage`. Returns an AsyncIterable
+   * that yields parsed SSE events as the server emits them. The caller
+   * is responsible for cleaning up via the input's `signal` if it
+   * needs to interrupt the read.
+   */
+  chatMessageStream(
+    input: StudioAiChatMessageRequest,
+  ): AsyncIterable<StudioAiChatStreamEvent>;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -525,5 +550,137 @@ export function createStudioAiRouteApi(
         payload,
       );
     },
+    async *chatMessageStream(input) {
+      const url = buildAiUrl(config, "/api/v1/ai/chat/messages/stream");
+      const body: Record<string, unknown> = { message: input.message };
+      if (input.conversationId !== undefined) {
+        body.conversationId = input.conversationId;
+      }
+      if (input.attachedDocumentIds && input.attachedDocumentIds.length > 0) {
+        body.attachedDocumentIds = input.attachedDocumentIds;
+      }
+      if (input.attachedSelection !== undefined) {
+        body.attachedSelection = input.attachedSelection;
+      }
+      if (input.rejectedProposalId !== undefined) {
+        body.rejectedProposalId = input.rejectedProposalId;
+      }
+      if (input.rejectedProposal !== undefined) {
+        body.rejectedProposal = input.rejectedProposal;
+      }
+      if (input.rejectionFeedback !== undefined) {
+        body.rejectionFeedback = input.rejectionFeedback;
+      }
+      if (input.allowedActions && input.allowedActions.length > 0) {
+        body.allowedActions = input.allowedActions;
+      }
+      if (input.conversationHistory && input.conversationHistory.length > 0) {
+        body.conversationHistory = input.conversationHistory;
+      }
+
+      const csrfToken = await loadCsrfToken();
+      const response = await fetchAi(config, options, url, {
+        method: "POST",
+        headers: {
+          ...targetHeaders(
+            config,
+            csrfToken ? { "x-mdcms-csrf-token": csrfToken } : undefined,
+          ),
+          accept: "text/event-stream",
+        },
+        signal: input.signal,
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const payload = await readJson(response);
+        throw failureFromResponse(
+          "POST /api/v1/ai/chat/messages/stream",
+          response,
+          payload,
+          "Failed to open AI chat stream.",
+        );
+      }
+      if (!response.body) {
+        throw new RuntimeError({
+          code: "AI_REQUEST_FAILED",
+          message: "AI chat stream response has no body.",
+          statusCode: 500,
+        });
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          // SSE events are delimited by a blank line — accept both LF
+          // and CRLF terminators so we don't lose events behind a
+          // middlebox that rewrites line endings.
+          let boundary: number;
+          while ((boundary = findEventBoundary(buffer)) >= 0) {
+            const block = buffer.slice(0, boundary);
+            buffer = buffer.slice(boundary + 2);
+            const event = parseSseBlock(block);
+            if (event) yield event;
+          }
+        }
+        // Flush any remaining buffered block when the server closes
+        // without a trailing blank line (rare but tolerated).
+        const trailing = parseSseBlock(buffer);
+        if (trailing) yield trailing;
+      } finally {
+        // Releasing the reader cancels the underlying fetch body so
+        // an early-terminated AsyncIterable (e.g. user hit Stop) tears
+        // down the connection promptly.
+        try {
+          reader.releaseLock();
+        } catch {
+          // Already released — fine.
+        }
+      }
+    },
   };
+}
+
+/**
+ * Find the next SSE event boundary (\n\n or \r\n\r\n) inside the
+ * buffer; returns the index of the FIRST terminator newline, with
+ * the slice [0, idx] being the block and [idx + 2 / + 4] being the
+ * remainder. Returns -1 when no full event is buffered yet.
+ */
+function findEventBoundary(buf: string): number {
+  const lf = buf.indexOf("\n\n");
+  const crlf = buf.indexOf("\r\n\r\n");
+  if (lf === -1) return crlf;
+  if (crlf === -1) return lf;
+  return Math.min(lf, crlf);
+}
+
+function parseSseBlock(block: string): StudioAiChatStreamEvent | null {
+  const trimmed = block.replace(/\r\n/g, "\n").trim();
+  if (!trimmed) return null;
+  let eventType = "";
+  const dataLines: string[] = [];
+  for (const line of trimmed.split("\n")) {
+    if (line.startsWith("event:")) {
+      eventType = line.slice("event:".length).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice("data:".length).trim());
+    }
+  }
+  if (!eventType || dataLines.length === 0) return null;
+  try {
+    const data = JSON.parse(dataLines.join("\n"));
+    if (typeof data !== "object" || data === null) return null;
+    return {
+      type: eventType,
+      ...(data as Record<string, unknown>),
+    } as StudioAiChatStreamEvent | null;
+  } catch {
+    return null;
+  }
 }

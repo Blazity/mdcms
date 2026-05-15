@@ -378,17 +378,24 @@ function UserBubble({ message }: { message: AssistantMessage }) {
 function AssistantBubble({
   message,
   proposalsById,
+  isStreamingPlaceholder,
   onAccept,
   onReject,
 }: {
   message: AssistantMessage;
   proposalsById: Record<string, AssistantProposal>;
+  /**
+   * True when this message is the most-recent assistant turn AND the
+   * context is mid-stream. Drives the typing-indicator render when
+   * text is still empty.
+   */
+  isStreamingPlaceholder: boolean;
   onAccept: (proposalId: string) => void;
   onReject: (proposalId: string, feedback: string) => void;
 }) {
   const proposalIds = message.proposals ?? [];
   const text = message.text?.trim();
-  if (proposalIds.length === 0 && !text) return null;
+  if (proposalIds.length === 0 && !text && !isStreamingPlaceholder) return null;
   const proposals = proposalIds
     .map((pid) => proposalsById[pid])
     .filter((p): p is AssistantProposal => Boolean(p));
@@ -399,11 +406,20 @@ function AssistantBubble({
         <SparkleMark size={14} />
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-2">
-        {text && (
+        {text ? (
           <div className="max-w-[92%] py-0.5 text-[13.5px] leading-relaxed text-foreground">
             {text}
           </div>
-        )}
+        ) : isStreamingPlaceholder ? (
+          <div
+            className="inline-flex max-w-[92%] items-center gap-1 py-1.5 text-foreground-muted"
+            aria-label="Generating response"
+          >
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary [animation-delay:-0.2s]" />
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary [animation-delay:0.2s]" />
+          </div>
+        ) : null}
         {!isMultiTurn &&
           proposals.map((proposal) => (
             <ProposalCard
@@ -1070,7 +1086,11 @@ export function AssistantPanel({
 
   // Drive the actual scroll on every render where content might have
   // grown — messages length, pending state (assistant is mid-stream),
-  // proposal map identity (proposal mutation morphs a row in place).
+  // proposal map identity (proposal mutation morphs a row in place),
+  // AND the trailing message's text length so streaming deltas keep
+  // the bottom of the most recent turn in view.
+  const lastMessageTextLength =
+    thread.messages[thread.messages.length - 1]?.text?.length ?? 0;
   React.useEffect(() => {
     if (!stickyRef.current) return;
     scrollToBottom("smooth");
@@ -1078,6 +1098,7 @@ export function AssistantPanel({
     thread.messages.length,
     assistant.isPending,
     assistant.store.proposals,
+    lastMessageTextLength,
     scrollToBottom,
   ]);
 
@@ -1201,25 +1222,40 @@ export function AssistantPanel({
               onPick={fillFromExample}
             />
           ) : (
-            thread.messages.map((m) =>
-              m.role === "user" ? (
-                <UserBubble key={m.id} message={m} />
-              ) : (
-                <AssistantBubble
-                  key={m.id}
-                  message={m}
-                  proposalsById={assistant.store.proposals}
-                  onAccept={(pid) => {
-                    const p = assistant.store.proposals[pid];
-                    if (p) assistant.acceptProposal(p);
-                  }}
-                  onReject={(pid, feedback) => {
-                    const p = assistant.store.proposals[pid];
-                    if (p) assistant.rejectProposal(p, feedback);
-                  }}
-                />
-              ),
-            )
+            (() => {
+              // The streaming typing-indicator only renders for the
+              // most-recent assistant turn while the context is mid-
+              // stream. Compute once per render rather than scanning
+              // inside the map callback.
+              const lastAssistantIdx = (() => {
+                for (let i = thread.messages.length - 1; i >= 0; i--) {
+                  if (thread.messages[i]?.role === "assistant") return i;
+                }
+                return -1;
+              })();
+              return thread.messages.map((m, idx) =>
+                m.role === "user" ? (
+                  <UserBubble key={m.id} message={m} />
+                ) : (
+                  <AssistantBubble
+                    key={m.id}
+                    message={m}
+                    proposalsById={assistant.store.proposals}
+                    isStreamingPlaceholder={
+                      assistant.isPending && idx === lastAssistantIdx
+                    }
+                    onAccept={(pid) => {
+                      const p = assistant.store.proposals[pid];
+                      if (p) assistant.acceptProposal(p);
+                    }}
+                    onReject={(pid, feedback) => {
+                      const p = assistant.store.proposals[pid];
+                      if (p) assistant.rejectProposal(p, feedback);
+                    }}
+                  />
+                ),
+              );
+            })()
           )}
         </div>
         <Composer
