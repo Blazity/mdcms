@@ -272,9 +272,7 @@ function createErrorState(input: {
 }
 
 function sortEntries(entries: StudioContentOverviewEntry[]) {
-  return [...entries].sort((left, right) =>
-    left.type.localeCompare(right.type),
-  );
+  return entries.toSorted((left, right) => left.type.localeCompare(right.type));
 }
 
 async function loadEntryMetrics(input: {

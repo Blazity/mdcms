@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Settings, Key, Plus, ShieldOff } from "lucide-react";
 import { useApiKeyList } from "../../hooks/use-api-key-list.js";
 import { ApiKeyCreateDialog } from "../../components/api-key-create-dialog.js";
@@ -23,6 +23,47 @@ const settingsTabs = [
   { id: "general", label: "General", icon: Settings },
   { id: "api-keys", label: "API Keys", icon: Key },
 ];
+
+function formatClientDate(value: string | null | undefined): string {
+  if (!value) return "";
+  return new Date(value).toLocaleDateString();
+}
+
+function ApiKeyStatusBadge({
+  expiresAt,
+  revokedAt,
+}: {
+  expiresAt: string | null;
+  revokedAt: string | null;
+}) {
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    setNow(Date.now());
+    // Refresh once a minute so a key crossing its expiry while this page
+    // is open flips from Active → Expired without a manual reload.
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const isExpired =
+    now !== null && expiresAt !== null && new Date(expiresAt).getTime() < now;
+  const label =
+    revokedAt !== null ? "Revoked" : isExpired ? "Expired" : "Active";
+  const isActive = label === "Active";
+  return (
+    <Badge
+      variant="outline"
+      suppressHydrationWarning
+      className={cn(
+        "text-xs",
+        isActive
+          ? "bg-success/10 text-success border-success/20"
+          : "bg-destructive/10 text-destructive border-destructive/20",
+      )}
+    >
+      {label}
+    </Badge>
+  );
+}
 
 export default function SettingsPage({
   initialTab = "general",
@@ -50,7 +91,7 @@ export default function SettingsPage({
       <div className="min-h-screen">
         <PageHeader breadcrumbs={[{ label: "Settings" }]} />
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <ShieldOff className="mb-4 h-8 w-8 text-foreground-muted" />
+          <ShieldOff className="mb-4 size-8 text-foreground-muted" />
           <h3 className="mb-2 text-lg font-semibold">Access denied</h3>
           <p className="text-sm text-foreground-muted">
             You don&apos;t have permission to manage settings.
@@ -79,7 +120,7 @@ export default function SettingsPage({
                     : "text-foreground-muted hover:bg-background-subtle hover:text-foreground",
                 )}
               >
-                <tab.icon className="h-4 w-4" />
+                <tab.icon className="size-4" />
                 {tab.label}
               </button>
             ))}
@@ -133,13 +174,13 @@ export default function SettingsPage({
                   </p>
                 </div>
                 <Button onClick={() => setCreateDialogOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
+                  <Plus className="mr-2 size-4" />
                   Create API Key
                 </Button>
               </div>
 
               {apiKeysStatus === "loading" && (
-                <p className="text-sm text-foreground-muted">Loading...</p>
+                <p className="text-sm text-foreground-muted">Loading…</p>
               )}
 
               {apiKeysStatus === "error" && (
@@ -214,42 +255,24 @@ export default function SettingsPage({
                             </div>
                           </TableCell>
                           <TableCell className="text-sm text-foreground-muted">
-                            <div>
-                              {new Date(key.createdAt).toLocaleDateString()}
+                            <div suppressHydrationWarning>
+                              {formatClientDate(key.createdAt)}
                             </div>
                             <div className="text-xs">{key.createdByUserId}</div>
                           </TableCell>
-                          <TableCell className="text-sm text-foreground-muted">
+                          <TableCell
+                            className="text-sm text-foreground-muted"
+                            suppressHydrationWarning
+                          >
                             {key.expiresAt
-                              ? new Date(key.expiresAt).toLocaleDateString()
+                              ? formatClientDate(key.expiresAt)
                               : "Never"}
                           </TableCell>
                           <TableCell>
-                            {(() => {
-                              const isExpired =
-                                key.expiresAt &&
-                                new Date(key.expiresAt).getTime() < Date.now();
-                              const label =
-                                key.revokedAt !== null
-                                  ? "Revoked"
-                                  : isExpired
-                                    ? "Expired"
-                                    : "Active";
-                              const isActive = label === "Active";
-                              return (
-                                <Badge
-                                  variant="outline"
-                                  className={cn(
-                                    "text-xs",
-                                    isActive
-                                      ? "bg-success/10 text-success border-success/20"
-                                      : "bg-destructive/10 text-destructive border-destructive/20",
-                                  )}
-                                >
-                                  {label}
-                                </Badge>
-                              );
-                            })()}
+                            <ApiKeyStatusBadge
+                              expiresAt={key.expiresAt}
+                              revokedAt={key.revokedAt}
+                            />
                           </TableCell>
                           <TableCell>
                             <Button

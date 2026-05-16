@@ -336,7 +336,7 @@ export function AssistantActiveDocumentProvider({
 }
 
 export function useAssistantActiveDocument(): AssistantActiveDocument | null {
-  return React.useContext(AssistantActiveDocumentContext);
+  return React.use(AssistantActiveDocumentContext);
 }
 
 function reducer(
@@ -1062,30 +1062,27 @@ export function AssistantProvider({
         return;
       }
 
-      const attachedDocumentIds: string[] = [];
+      const attachedDocumentIdSet = new Set<string>();
       if (liveDoc?.documentId) {
-        attachedDocumentIds.push(liveDoc.documentId);
+        attachedDocumentIdSet.add(liveDoc.documentId);
       }
       for (const ctx of liveThread.contextDocs) {
-        if (ctx.documentId && !attachedDocumentIds.includes(ctx.documentId)) {
-          attachedDocumentIds.push(ctx.documentId);
+        if (ctx.documentId) {
+          attachedDocumentIdSet.add(ctx.documentId);
         }
       }
+      const attachedDocumentIds = Array.from(attachedDocumentIdSet);
 
       // Build a rolling window of prior conversation turns so the server
       // can resolve anaphora across the thread. Skip empty assistant
       // turns (proposal-only with no text) since they carry no signal
       // the model can resolve against without seeing the proposal body.
       const conversationHistory = liveThread.messages
-        .map((m) => {
+        .flatMap((m) => {
           const text = m.text?.trim();
-          if (!text) return undefined;
-          return { role: m.role, text };
+          if (!text) return [];
+          return [{ role: m.role, text }];
         })
-        .filter(
-          (t): t is { role: "user" | "assistant"; text: string } =>
-            t !== undefined,
-        )
         .slice(-10);
 
       // If a previous turn is still in flight (the user clicked Send twice
@@ -1530,7 +1527,7 @@ export function AssistantProvider({
 }
 
 export function useAssistant(): AssistantContextValue {
-  return React.useContext(AssistantContext);
+  return React.use(AssistantContext);
 }
 
 /**
@@ -1539,7 +1536,7 @@ export function useAssistant(): AssistantContextValue {
  * this to hide themselves entirely outside the provider.
  */
 export function useAssistantMounted(): boolean {
-  return React.useContext(AssistantMountedContext);
+  return React.use(AssistantMountedContext);
 }
 
 export function relTime(iso: string, nowIso?: string): string {

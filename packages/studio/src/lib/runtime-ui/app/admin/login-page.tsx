@@ -22,6 +22,8 @@ function stripAdminPrefix(path: string): string {
   return path.startsWith("/admin") ? path.slice("/admin".length) : path;
 }
 
+const EMPTY_SSO_PROVIDERS: SsoProvider[] = [];
+
 export default function LoginPage() {
   const router = useRouter();
   const basePath = useBasePath();
@@ -33,8 +35,12 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ssoProviders, setSsoProviders] = useState<SsoProvider[]>([]);
-  const [ssoLoading, setSsoLoading] = useState(true);
+  const [ssoState, setSsoState] = useState<
+    { status: "loading" } | { status: "ready"; providers: SsoProvider[] }
+  >({ status: "loading" });
+  const ssoProviders =
+    ssoState.status === "ready" ? ssoState.providers : EMPTY_SSO_PROVIDERS;
+  const ssoLoading = ssoState.status === "loading";
 
   useEffect(() => {
     if (sessionState.status === "authenticated") {
@@ -44,7 +50,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!mountInfo.apiBaseUrl) {
-      setSsoLoading(false);
+      setSsoState({ status: "ready", providers: EMPTY_SSO_PROVIDERS });
       return;
     }
 
@@ -55,14 +61,12 @@ export default function LoginPage() {
       .getSsoProviders()
       .then((providers) => {
         if (!cancelled) {
-          setSsoProviders(providers);
-          setSsoLoading(false);
+          setSsoState({ status: "ready", providers });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setSsoProviders([]);
-          setSsoLoading(false);
+          setSsoState({ status: "ready", providers: EMPTY_SSO_PROVIDERS });
         }
       });
 
@@ -194,7 +198,6 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
-              autoFocus
             />
           </div>
 

@@ -2,8 +2,8 @@
 
 import {
   createContext,
+  use,
   useCallback,
-  useContext,
   useMemo,
   useState,
   type ReactNode,
@@ -53,7 +53,7 @@ const MdxComponentCollapseContext =
   createContext<MdxComponentCollapseSnapshot>(defaultSnapshot);
 
 export function useMdxComponentCollapseSnapshot(): MdxComponentCollapseSnapshot {
-  return useContext(MdxComponentCollapseContext);
+  return use(MdxComponentCollapseContext);
 }
 
 export function MdxComponentCollapseProvider(props: {

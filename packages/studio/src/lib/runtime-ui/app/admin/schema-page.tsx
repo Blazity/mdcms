@@ -105,9 +105,10 @@ function describeSchemaFieldConstraints(field: SchemaFieldSnapshot): string[] {
 
   if (field.checks?.length) {
     constraints.push(
-      ...field.checks
-        .map((check) => describeCheckDefinition(check))
-        .filter((summary): summary is string => summary !== null),
+      ...field.checks.flatMap((check) => {
+        const summary = describeCheckDefinition(check);
+        return summary !== null ? [summary] : [];
+      }),
     );
   }
 
@@ -125,7 +126,7 @@ const KIND_CHIP_CLASSES: Record<string, string> = {
   object: "bg-code-bg text-foreground",
 };
 
-function renderKindChip(field: SchemaFieldSnapshot): ReactNode {
+function SchemaKindChip({ field }: { field: SchemaFieldSnapshot }): ReactNode {
   const baseClass =
     "inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 font-mono text-[11px]";
   if (field.reference) {
@@ -157,7 +158,11 @@ function renderKindChip(field: SchemaFieldSnapshot): ReactNode {
   );
 }
 
-function renderConstraintFlags(field: SchemaFieldSnapshot): ReactNode {
+function SchemaConstraintFlags({
+  field,
+}: {
+  field: SchemaFieldSnapshot;
+}): ReactNode {
   const constraints = describeSchemaFieldConstraints(field);
   return (
     <div className="space-y-1.5">
@@ -232,9 +237,7 @@ function createSchemaPageMissingRouteState(): StudioSchemaState {
 }
 
 function sortEntries(entries: SchemaRegistryEntry[]): SchemaRegistryEntry[] {
-  return [...entries].sort((left, right) =>
-    left.type.localeCompare(right.type),
-  );
+  return entries.toSorted((left, right) => left.type.localeCompare(right.type));
 }
 
 function sortFields(fields: SchemaRegistryEntry["resolvedSchema"]["fields"]) {
@@ -294,7 +297,7 @@ export function SchemaPageView({ state }: { state: StudioSchemaState }) {
 
         {/* Registry strip — always visible, surfaces sync state + read-only marker */}
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-primary/60 bg-card px-4 py-2.5 font-mono text-[11px] text-foreground-muted">
-          <span className="h-2 w-2 shrink-0 rounded-full bg-success" />
+          <span className="size-2 shrink-0 rounded-full bg-success" />
           <span className="text-foreground-muted">schemaHash</span>
           <span className="text-foreground">
             {sharedSyncSummary?.schemaHash ?? "—"}
@@ -441,7 +444,7 @@ function SchemaSplitPane({ entries }: { entries: SchemaRegistryEntry[] }) {
                 >
                   <span
                     className={cn(
-                      "grid h-6 w-6 shrink-0 place-items-center rounded font-mono text-[11px] font-bold",
+                      "grid size-6 shrink-0 place-items-center rounded font-mono text-[11px] font-bold",
                       isActive
                         ? "bg-primary text-primary-foreground"
                         : "bg-code-bg text-foreground-muted",
@@ -476,7 +479,7 @@ function SchemaSplitPane({ entries }: { entries: SchemaRegistryEntry[] }) {
       >
         <div className="flex items-start gap-4 border-b border-divider px-7 py-6">
           <div className="min-w-0 flex-1">
-            <h2 className="font-heading text-[28px] font-bold leading-[1.1] tracking-tight text-foreground">
+            <h2 className="font-heading text-[28px] font-semibold leading-[1.1] tracking-tight text-foreground">
               {entry.type}
             </h2>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-foreground-muted">
@@ -559,10 +562,10 @@ function SchemaSplitPane({ entries }: { entries: SchemaRegistryEntry[] }) {
                       </div>
                     </td>
                     <td className="border-t border-divider/60 px-7 py-3.5 align-top">
-                      {renderKindChip(field)}
+                      <SchemaKindChip field={field} />
                     </td>
                     <td className="border-t border-divider/60 px-7 py-3.5 align-top">
-                      {renderConstraintFlags(field)}
+                      <SchemaConstraintFlags field={field} />
                     </td>
                   </tr>
                 ))}

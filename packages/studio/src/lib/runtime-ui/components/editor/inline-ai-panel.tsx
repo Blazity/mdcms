@@ -118,7 +118,7 @@ function StateMessage(props: {
           "border-destructive/30 bg-destructive/10 text-destructive",
       )}
     >
-      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+      <AlertCircle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
       <span className="leading-snug">{props.children}</span>
     </div>
   );
@@ -155,7 +155,7 @@ export function InlineAiResultBody(props: InlineAiResultBodyProps) {
         aria-live="polite"
         className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
       >
-        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+        <Loader2 className="size-3.5 animate-spin" aria-hidden />
         Generating…
       </div>
     );
@@ -181,9 +181,9 @@ export function InlineAiResultBody(props: InlineAiResultBodyProps) {
         </StateMessage>
         {errorList.length > 0 ? (
           <ul className="list-disc space-y-0.5 pl-5 text-[11px] text-muted-foreground">
-            {errorList.map((entry, index) => (
-              <li key={index}>
-                <span className="font-medium">{entry.code}</span> —{" "}
+            {errorList.map((entry) => (
+              <li key={`${entry.code}:${entry.message}`}>
+                <span className="font-medium">{entry.code}</span>:{" "}
                 {entry.message}
               </li>
             ))}
@@ -201,7 +201,7 @@ export function InlineAiResultBody(props: InlineAiResultBodyProps) {
         aria-live="polite"
         className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
       >
-        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+        <Loader2 className="size-3.5 animate-spin" aria-hidden />
         Applying…
       </div>
     );
@@ -237,7 +237,7 @@ export function InlineAiResultBody(props: InlineAiResultBodyProps) {
       <div className="space-y-2">
         <StateMessage tone="error">
           <span>
-            <span className="font-medium">{state.code}</span> — {state.message}
+            <span className="font-medium">{state.code}</span>: {state.message}
           </span>
         </StateMessage>
         <DismissRetry onRetry={onRetry} onDismiss={onReject} />
@@ -252,7 +252,7 @@ export function InlineAiResultBody(props: InlineAiResultBodyProps) {
     return (
       <div className="space-y-2">
         <StateMessage tone="info">
-          Proposal ready — awaiting Accept / Reject.
+          Proposal ready: awaiting Accept / Reject.
         </StateMessage>
         <div className="flex gap-1.5">
           <Button size="sm" onClick={onAccept} className="h-7 px-2.5">
@@ -278,7 +278,7 @@ function DismissRetry(props: { onRetry: () => void; onDismiss: () => void }) {
   return (
     <div className="flex gap-1.5">
       <Button size="sm" onClick={props.onRetry} className="h-7 px-2.5">
-        <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden />
+        <RefreshCw className="mr-1 size-3.5" aria-hidden />
         Try again
       </Button>
       <Button
@@ -430,13 +430,13 @@ function ActionRow(props: {
               : "text-muted-foreground group-hover:text-primary",
           )}
         >
-          <Icon className="h-4 w-4" aria-hidden />
+          <Icon className="size-4" aria-hidden />
         </span>
         <span className="flex-1 truncate">{meta.label}</span>
         {meta.flyout ? (
           <ChevronRight
             className={cn(
-              "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+              "size-3.5 shrink-0 text-muted-foreground transition-transform",
               expanded && "translate-x-0.5 text-primary",
             )}
             aria-hidden
@@ -583,7 +583,7 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
     >
       <header className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
         <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
-          <Sparkles className="h-3 w-3 text-primary" aria-hidden />
+          <Sparkles className="size-3 text-primary" aria-hidden />
           AI · edit selection
         </div>
         {onClose ? (
@@ -594,19 +594,19 @@ export function InlineAiPanel(props: InlineAiPanelProps) {
             className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:bg-muted"
             data-testid="inline-ai-close"
           >
-            <X className="h-3.5 w-3.5" aria-hidden />
+            <X className="size-3.5" aria-hidden />
           </button>
         ) : null}
       </header>
 
       {!hasSelection ? (
-        <div className="px-3 py-3">
+        <div className="p-3">
           <StateMessage tone="info">
             Select editor text first, then pick an action.
           </StateMessage>
         </div>
       ) : showStatus ? (
-        <div className="px-3 py-3">
+        <div className="p-3">
           <InlineAiResultBody
             state={maskedState}
             onAccept={transform.accept}

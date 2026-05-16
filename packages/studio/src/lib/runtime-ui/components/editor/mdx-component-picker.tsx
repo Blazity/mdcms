@@ -118,7 +118,7 @@ export function MdxComponentPicker({
                   }
                 }}
                 className={cn(
-                  "group flex w-full items-center gap-2.5 rounded-sm px-2 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                  "group flex w-full items-center gap-2.5 rounded-sm p-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60",
                   isHighlighted
                     ? "bg-blue-100 text-foreground"
                     : "text-foreground hover:bg-accent-subtle",

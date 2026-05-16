@@ -204,10 +204,10 @@ export function AppSidebar({
         </nav>
 
         {/* Account / collapse */}
-        <div className="border-t border-sidebar-border px-2 py-2 space-y-1">
+        <div className="border-t border-sidebar-border p-2 space-y-1">
           {!collapsed && session && (
-            <div className="flex items-center gap-2.5 px-2 py-2">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent font-heading text-[11px] font-bold text-accent-foreground">
+            <div className="flex items-center gap-2.5 p-2">
+              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-accent font-heading text-[11px] font-bold text-accent-foreground">
                 {accountInitials}
               </span>
               <div className="min-w-0 flex-1 leading-tight">
@@ -233,10 +233,10 @@ export function AppSidebar({
                 )}
               >
                 {collapsed ? (
-                  <ChevronsRight className="h-5 w-5" />
+                  <ChevronsRight className="size-5" />
                 ) : (
                   <>
-                    <ChevronsLeft className="h-5 w-5" />
+                    <ChevronsLeft className="size-5" />
                     <span>Collapse</span>
                   </>
                 )}
@@ -281,7 +281,7 @@ function SidebarNavLink({
       className={className}
       data-active={isActive ? "true" : undefined}
     >
-      <item.icon className="h-[18px] w-[18px] shrink-0" />
+      <item.icon className="size-[18px] shrink-0" />
       {!collapsed && (
         <>
           <span className="flex-1 truncate">{item.label}</span>

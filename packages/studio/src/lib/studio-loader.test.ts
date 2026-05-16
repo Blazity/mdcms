@@ -1457,10 +1457,10 @@ test("loadStudioRuntime surfaces remote mount failures", async () => {
 
 test("loadStudioRuntime retries bootstrap once on integrity rejection and mounts the fallback runtime", async () => {
   await withTempDir("studio-loader-", async (directory) => {
-    const activeFixture = await createRuntimeFixture(join(directory, "active"));
-    const fallbackFixture = await createRuntimeFixture(
-      join(directory, "fallback"),
-    );
+    const [activeFixture, fallbackFixture] = await Promise.all([
+      createRuntimeFixture(join(directory, "active")),
+      createRuntimeFixture(join(directory, "fallback")),
+    ]);
     const fetchLog: string[] = [];
     const importedUrls: string[] = [];
 
@@ -1569,10 +1569,10 @@ test("loadStudioRuntime retries bootstrap once on integrity rejection and mounts
 
 test("loadStudioRuntime stops after one retry when the fallback runtime is also rejected", async () => {
   await withTempDir("studio-loader-", async (directory) => {
-    const activeFixture = await createRuntimeFixture(join(directory, "active"));
-    const fallbackFixture = await createRuntimeFixture(
-      join(directory, "fallback"),
-    );
+    const [activeFixture, fallbackFixture] = await Promise.all([
+      createRuntimeFixture(join(directory, "active")),
+      createRuntimeFixture(join(directory, "fallback")),
+    ]);
     const fetchLog: string[] = [];
     let importCount = 0;
 

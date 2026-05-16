@@ -398,12 +398,9 @@ function areJsonValuesEqual(left: unknown, right: unknown): boolean {
       return false;
     }
 
-    if (left.length !== right.length) {
-      return false;
-    }
-
-    return left.every((entry, index) =>
-      areJsonValuesEqual(entry, right[index]),
+    return (
+      left.length === right.length &&
+      left.every((entry, index) => areJsonValuesEqual(entry, right[index]))
     );
   }
 
@@ -1792,10 +1789,10 @@ function formatDocumentLabel(path: string, documentId: string): string {
   return segments[segments.length - 1] ?? trimmedPath;
 }
 
-function renderStatusContent(state: ContentDocumentPageState): string {
+function describeStatusContent(state: ContentDocumentPageState): string {
   switch (state.status) {
     case "loading":
-      return "Loading document draft...";
+      return "Loading document draft…";
     case "forbidden":
     case "not-found":
     case "error":
@@ -1820,7 +1817,7 @@ function ContentDocumentPageStatusView(props: {
     <div className="flex min-h-[320px] items-center justify-center p-6">
       <div className="max-w-md text-center">
         <p className="mb-3 text-sm text-foreground-muted">
-          {renderStatusContent(props.state)}
+          {describeStatusContent(props.state)}
         </p>
         {props.state.status !== "loading" ? (
           <Button variant="ghost" onClick={() => props.onGoBack?.()}>
@@ -2442,7 +2439,7 @@ function SidebarHistoryTab(props: {
               }
             }}
           >
-            <div className="absolute -left-[21px] top-2.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-primary" />
+            <div className="absolute -left-[21px] top-2.5 size-2.5 rounded-full border-2 border-background bg-primary" />
             <p className="text-sm font-medium">
               Latest
               {isViewingLatest ? (
@@ -2477,7 +2474,7 @@ function SidebarHistoryTab(props: {
                   }
                 }}
               >
-                <div className="absolute -left-[21px] top-2.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-primary" />
+                <div className="absolute -left-[21px] top-2.5 size-2.5 rounded-full border-2 border-background bg-primary" />
                 <p className="text-sm font-medium">
                   v{version.version}
                   {isViewing ? (
@@ -2529,7 +2526,7 @@ function ContentDocumentPageSidebar(props: {
   return (
     <aside
       data-mdcms-editor-pane="sidebar"
-      className="flex h-full w-full shrink-0 flex-col border-l border-border bg-card"
+      className="flex size-full shrink-0 flex-col border-l border-border bg-card"
     >
       {/* Tabs — mono uppercase, bottom-border accent on active.
           Stable tabs (Info, Properties, History) with a contextual
@@ -2564,7 +2561,7 @@ function ContentDocumentPageSidebar(props: {
             aria-label="Close properties (Esc)"
             className="ml-auto flex shrink-0 items-center justify-center px-3 text-foreground-muted transition-colors hover:text-foreground"
           >
-            <X className="h-4 w-4" aria-hidden />
+            <X className="size-4" aria-hidden />
           </button>
         ) : null}
       </div>
@@ -2603,15 +2600,13 @@ export function filterLocaleOptions(input: {
   canWrite: boolean;
   variantsFetchFailed: boolean;
 }): Array<{ locale: string; hasVariant: boolean }> {
-  return input.supportedLocales
-    .map((loc) => ({
-      locale: loc,
-      hasVariant: input.translationVariants.some((v) => v.locale === loc),
-    }))
-    .filter(
-      (item) =>
-        item.hasVariant || (input.canWrite && !input.variantsFetchFailed),
-    );
+  return input.supportedLocales.flatMap((loc) => {
+    const hasVariant = input.translationVariants.some((v) => v.locale === loc);
+    if (!hasVariant && !(input.canWrite && !input.variantsFetchFailed)) {
+      return [];
+    }
+    return [{ locale: loc, hasVariant }];
+  });
 }
 
 export function resolveActiveDocumentRouteContext(
@@ -2693,6 +2688,9 @@ export function ContentDocumentPageView({
   // assistant-open; the View just needs the bit to pick render mode.
   const assistantOpen = useAssistant().isOpen;
 
+  const triggerSaveShortcut = useEffectEvent(() => {
+    onSaveNow?.();
+  });
   useEffect(() => {
     if (!canSaveNow) return;
     const onKey = (event: KeyboardEvent) => {
@@ -2701,11 +2699,11 @@ export function ContentDocumentPageView({
       // Don't fire when a modal/composer captured the shortcut already.
       if (event.defaultPrevented) return;
       event.preventDefault();
-      onSaveNow?.();
+      triggerSaveShortcut();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [canSaveNow, onSaveNow]);
+  }, [canSaveNow]);
 
   // Publish the active document to the assistant rail so the chat surface
   // can attach the right document context + resolve the schema hash on
@@ -2760,7 +2758,7 @@ export function ContentDocumentPageView({
 
               {state.status === "loading" ? (
                 <span className="shrink-0 text-sm text-foreground-muted">
-                  Loading document draft...
+                  Loading document draft…
                 </span>
               ) : null}
             </div>
@@ -2776,7 +2774,7 @@ export function ContentDocumentPageView({
                   disabled={state.variantCreation?.status === "creating"}
                 >
                   <SelectTrigger className="h-8 w-auto min-w-[88px] gap-1.5 text-xs">
-                    <Globe className="h-3.5 w-3.5 shrink-0" />
+                    <Globe className="size-3.5 shrink-0" />
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -2824,7 +2822,7 @@ export function ContentDocumentPageView({
                 >
                   {state.saveState === "saved" ? (
                     <span className="inline-flex items-center gap-1.5 text-foreground-muted">
-                      <Check className="h-3.5 w-3.5 text-success" aria-hidden />
+                      <Check className="size-3.5 text-success" aria-hidden />
                       Saved
                     </span>
                   ) : state.saveState === "saving" ? (
@@ -2851,7 +2849,7 @@ export function ContentDocumentPageView({
                     state.document.hasUnpublishedChanges ? "true" : undefined
                   }
                 >
-                  <Send className="mr-2 h-4 w-4" />
+                  <Send className="mr-2 size-4" />
                   Publish
                   {state.document.hasUnpublishedChanges ? (
                     <span className="ml-2 rounded-sm bg-black/20 px-1.5 py-0.5 font-mono text-[10px] font-medium text-primary-foreground">
@@ -2869,9 +2867,9 @@ export function ContentDocumentPageView({
                     onClick={onToggleSidebar}
                   >
                     {sidebarOpen ? (
-                      <PanelRightClose className="h-4 w-4" />
+                      <PanelRightClose className="size-4" />
                     ) : (
-                      <PanelRight className="h-4 w-4" />
+                      <PanelRight className="size-4" />
                     )}
                   </Button>
                 </TooltipTrigger>
@@ -2899,7 +2897,7 @@ export function ContentDocumentPageView({
               ) : state.variantCreation ? (
                 <div className="flex flex-1 items-center justify-center p-6">
                   <div className="max-w-md text-center">
-                    <Globe className="mx-auto mb-4 h-10 w-10 text-foreground-muted" />
+                    <Globe className="mx-auto mb-4 size-10 text-foreground-muted" />
                     <p className="mb-1 text-base font-medium">
                       No {state.variantCreation.targetLocale} variant exists yet
                     </p>
@@ -3075,7 +3073,7 @@ export function ContentDocumentPageView({
                 className="absolute right-0 top-1/2 z-10 inline-flex -translate-y-1/2 items-center gap-2 rounded-l-md border border-r-0 border-border bg-card px-2.5 py-2 font-mono text-[11px] uppercase tracking-wider text-foreground shadow-[-4px_0_12px_-4px_rgba(0,0,0,0.25)] transition-colors hover:bg-muted"
               >
                 <span
-                  className="inline-block h-1.5 w-1.5 rounded-full bg-primary"
+                  className="inline-block size-1.5 rounded-full bg-primary"
                   aria-hidden
                 />
                 Properties
@@ -3158,10 +3156,14 @@ export function ContentDocumentPageView({
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">
+                    <label
+                      htmlFor="publish-change-summary"
+                      className="text-sm font-medium"
+                    >
                       Change summary (optional)
                     </label>
                     <Textarea
+                      id="publish-change-summary"
                       value={state.publishChangeSummary}
                       onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
                         onPublishChangeSummaryChange?.(

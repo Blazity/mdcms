@@ -1,6 +1,6 @@
 import {
   createContext,
-  useContext,
+  use,
   type AnchorHTMLAttributes,
   type MouseEvent,
   type PropsWithChildren,
@@ -20,7 +20,7 @@ const StudioNavigationContext = createContext<
 >(undefined);
 
 function useStudioNavigationContext(): StudioNavigationValue {
-  const value = useContext(StudioNavigationContext);
+  const value = use(StudioNavigationContext);
 
   if (!value) {
     throw new Error(

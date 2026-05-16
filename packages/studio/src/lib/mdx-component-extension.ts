@@ -297,8 +297,9 @@ export function serializeMdxJsxAttributes(
   input: Record<string, unknown>,
 ): string {
   return Object.entries(input)
-    .filter(([, value]) => value !== undefined)
-    .map(([name, value]) => `${name}=${formatAttributeValue(value)}`)
+    .flatMap(([name, value]) =>
+      value === undefined ? [] : [`${name}=${formatAttributeValue(value)}`],
+    )
     .join(" ");
 }
 

@@ -33,10 +33,13 @@ function findMetricValue(
   return entry.metrics.find((metric) => metric.id === metricId)?.value;
 }
 
-function renderCard(
-  entry: StudioContentOverviewEntry,
-  basePath: string,
-): ReactNode {
+function ContentTypeCard({
+  entry,
+  basePath,
+}: {
+  entry: StudioContentOverviewEntry;
+  basePath: string;
+}): ReactNode {
   const totalCount = findMetricValue(entry, "documents") ?? 0;
   const publishedCount = findMetricValue(entry, "published") ?? 0;
   const draftCount = findMetricValue(entry, "withDrafts") ?? 0;
@@ -63,11 +66,11 @@ function renderCard(
     >
       {/* Head: letter mark + name/dir + i18n */}
       <div className="flex items-center gap-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-blue-100 font-heading text-base font-bold text-primary">
+        <span className="grid size-9 shrink-0 place-items-center rounded-md bg-blue-100 font-heading text-base font-bold text-primary">
           {initial}
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="font-heading text-[18px] font-bold leading-[1.1] tracking-tight text-foreground">
+          <h2 className="font-heading text-[18px] font-semibold leading-[1.1] tracking-tight text-foreground">
             {entry.type}
           </h2>
           <p className="mt-0.5 truncate font-mono text-[11px] text-foreground-muted">
@@ -171,13 +174,18 @@ function CardStat({
   );
 }
 
-function renderCardGrid(
-  entries: StudioContentOverviewEntry[],
-  basePath: string,
-) {
+function ContentCardGrid({
+  entries,
+  basePath,
+}: {
+  entries: StudioContentOverviewEntry[];
+  basePath: string;
+}) {
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {entries.map((entry) => renderCard(entry, basePath))}
+      {entries.map((entry) => (
+        <ContentTypeCard key={entry.type} entry={entry} basePath={basePath} />
+      ))}
     </div>
   );
 }
@@ -270,7 +278,7 @@ export function ContentPageView({
                 className="rounded-lg border border-card-border bg-card p-5"
               >
                 <div className="flex items-start gap-3">
-                  <Skeleton className="h-9 w-9 rounded-md" />
+                  <Skeleton className="size-9 rounded-md" />
                   <div className="flex-1 space-y-2">
                     <Skeleton className="h-5 w-28" />
                     <Skeleton className="h-3 w-36" />
@@ -329,11 +337,11 @@ export function ContentPageView({
               <Badge variant="outline">Limited access</Badge>
               <p className="text-sm text-muted-foreground">{state.message}</p>
             </section>
-            {renderCardGrid(state.entries, basePath)}
+            <ContentCardGrid entries={state.entries} basePath={basePath} />
           </div>
         ) : (
           <div data-mdcms-content-page-state="ready" className="space-y-4">
-            {renderCardGrid(state.entries, basePath)}
+            <ContentCardGrid entries={state.entries} basePath={basePath} />
           </div>
         )}
       </div>

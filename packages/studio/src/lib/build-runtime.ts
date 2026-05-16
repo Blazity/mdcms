@@ -317,13 +317,10 @@ export async function buildStudioRuntimeArtifacts(
   const studioVersion =
     options.studioVersion ?? (process.env.APP_VERSION?.trim() || "0.0.0");
 
-  const bundledEntry = await bundleRuntimeEntry({
-    projectRoot,
-    sourceFile,
-  });
-  const stylesheetResult = await compileRuntimeStylesheet({
-    projectRoot,
-  });
+  const [bundledEntry, stylesheetResult] = await Promise.all([
+    bundleRuntimeEntry({ projectRoot, sourceFile }),
+    compileRuntimeStylesheet({ projectRoot }),
+  ]);
 
   const entryBytes = new TextEncoder().encode(bundledEntry);
   const integritySha256 = sha256Hex(entryBytes);

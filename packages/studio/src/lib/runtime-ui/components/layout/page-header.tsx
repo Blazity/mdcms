@@ -30,6 +30,8 @@ import { AssistantLauncher } from "../assistant/assistant-launcher.js";
 
 export type BreadcrumbItem = { label: string; href?: string };
 
+const EMPTY_BREADCRUMBS: BreadcrumbItem[] = [];
+
 // Page Title Section Components
 interface PageTitleSectionProps extends React.HTMLAttributes<HTMLDivElement> {
   children?: React.ReactNode;
@@ -98,7 +100,7 @@ interface AppHeaderProps {
 }
 
 export function BreadcrumbTrail({
-  breadcrumbs = [],
+  breadcrumbs = EMPTY_BREADCRUMBS,
   className,
 }: {
   breadcrumbs?: BreadcrumbItem[];
@@ -108,11 +110,11 @@ export function BreadcrumbTrail({
     <nav className={cn("flex min-w-0 items-center gap-1.5", className)}>
       {breadcrumbs.map((crumb, index) => (
         <div
-          key={`${crumb.label}-${index}`}
+          key={`${crumb.href ?? crumb.label}-${index}`}
           className="flex min-w-0 items-center gap-1.5"
         >
           {index > 0 && (
-            <ChevronRight className="h-4 w-4 shrink-0 text-foreground-muted" />
+            <ChevronRight className="size-4 shrink-0 text-foreground-muted" />
           )}
           {crumb.href && index < breadcrumbs.length - 1 ? (
             <Link
@@ -155,8 +157,8 @@ export function ThemePickerMenu() {
           aria-label="Theme"
           data-testid="mdcms-theme-picker-trigger"
         >
-          <Sun className="h-5 w-5 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" />
-          <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
+          <Sun className="size-5 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" />
+          <Moon className="absolute size-5 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
           <span className="sr-only">Theme</span>
         </Button>
       </DropdownMenuTrigger>
@@ -171,9 +173,9 @@ export function ThemePickerMenu() {
               aria-checked={selected}
               role="menuitemradio"
             >
-              <Icon className="mr-2 h-4 w-4" />
+              <Icon className="mr-2 size-4" />
               <span className="flex-1">{label}</span>
-              {selected ? <Check className="h-4 w-4" /> : null}
+              {selected ? <Check className="size-4" /> : null}
             </DropdownMenuItem>
           );
         })}
@@ -191,7 +193,7 @@ function deriveInitials(email: string): string {
   return local.slice(0, 2).toUpperCase();
 }
 
-export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
+export function AppHeader({ breadcrumbs = EMPTY_BREADCRUMBS }: AppHeaderProps) {
   const sessionState = useStudioSession();
   const mountInfo = useStudioMountInfo();
 
@@ -262,7 +264,7 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="rounded-full">
-                  <Avatar className="h-8 w-8">
+                  <Avatar className="size-8">
                     <AvatarFallback className="text-sm">
                       {deriveInitials(sessionState.session.email)}
                     </AvatarFallback>
@@ -271,7 +273,7 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel className="font-normal">
-                  <div className="flex flex-col space-y-1">
+                  <div className="flex flex-col gap-y-1">
                     <p className="text-sm font-medium">
                       {sessionState.session.email}
                     </p>
@@ -279,13 +281,13 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onClick={handleSignOut}>
-                  <LogOut className="mr-2 h-4 w-4" />
+                  <LogOut className="mr-2 size-4" />
                   Sign out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Avatar className="h-8 w-8">
+            <Avatar className="size-8">
               <AvatarFallback className="text-sm">?</AvatarFallback>
             </Avatar>
           )}

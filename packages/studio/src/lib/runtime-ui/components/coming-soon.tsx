@@ -17,12 +17,12 @@ export function ComingSoon({
   return (
     <div className="relative flex flex-col items-center justify-center py-24">
       {/* Large watermark icon */}
-      <Icon className="absolute h-64 w-64 text-foreground/[0.02] pointer-events-none" />
+      <Icon className="absolute size-64 text-foreground/[0.02] pointer-events-none" />
 
       {/* Content */}
       <div className="relative z-10 flex flex-col items-center text-center max-w-md">
-        <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
-          <Icon className="h-6 w-6 text-primary" />
+        <div className="mb-5 flex size-12 items-center justify-center rounded-lg bg-primary/10">
+          <Icon className="size-6 text-primary" />
         </div>
         <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
         <p className="mt-2 text-sm text-muted-foreground leading-relaxed">

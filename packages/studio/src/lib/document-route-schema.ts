@@ -133,7 +133,7 @@ function resolveEnvironmentFieldTargets(
   const result = Object.fromEntries(
     Array.from(fieldTargets.entries())
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([typeName, typeFieldTargets]) => {
+      .flatMap(([typeName, typeFieldTargets]) => {
         const scopedFields = Object.fromEntries(
           Array.from(typeFieldTargets.entries())
             .sort(([left], [right]) => left.localeCompare(right))
@@ -148,9 +148,9 @@ function resolveEnvironmentFieldTargets(
             }),
         );
 
-        return [typeName, scopedFields] as const;
-      })
-      .filter(([, scopedFields]) => Object.keys(scopedFields).length > 0),
+        if (Object.keys(scopedFields).length === 0) return [];
+        return [[typeName, scopedFields] as const];
+      }),
   );
 
   return result;

@@ -50,11 +50,10 @@ function isEqualValue(left: unknown, right: unknown): boolean {
   }
 
   if (Array.isArray(left) && Array.isArray(right)) {
-    if (left.length !== right.length) {
-      return false;
-    }
-
-    return left.every((entry, index) => isEqualValue(entry, right[index]));
+    return (
+      left.length === right.length &&
+      left.every((entry, index) => isEqualValue(entry, right[index]))
+    );
   }
 
   if (isRecord(left) && isRecord(right)) {

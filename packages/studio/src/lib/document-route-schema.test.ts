@@ -189,60 +189,59 @@ test("prepared document route metadata includes per-environment hashes and field
 });
 
 test("equivalent authored config data yields the same schema hash", async () => {
-  const left = await resolveStudioDocumentRouteSchemaCapability(
-    defineConfig({
-      project: "marketing-site",
-      serverUrl: "http://localhost:4000",
-      environment: "staging",
-      contentDirectories: ["content"],
-      locales: {
-        default: "en",
-        supported: ["en", "fr"],
-        aliases: {
-          "en-us": "en",
-          "fr-ca": "fr",
-        },
-      },
-      types: [
-        defineType("Article", {
-          directory: "content/articles",
-          fields: {
-            title: reference("Article"),
-            body: reference("Article"),
-          },
-        }),
-        defineType("Author", {
-          directory: "content/authors",
-          fields: {
-            bio: reference("Author"),
-            name: reference("Author"),
-          },
-        }),
-      ],
-      environments: {
-        staging: {
-          extends: "production",
-          types: {
-            Author: {
-              modify: {
-                bio: reference("Author"),
-              },
-            },
-            Article: {
-              add: {
-                summary: reference("Article"),
-              },
-            },
+  const [left, right] = await Promise.all([
+    resolveStudioDocumentRouteSchemaCapability(
+      defineConfig({
+        project: "marketing-site",
+        serverUrl: "http://localhost:4000",
+        environment: "staging",
+        contentDirectories: ["content"],
+        locales: {
+          default: "en",
+          supported: ["en", "fr"],
+          aliases: {
+            "en-us": "en",
+            "fr-ca": "fr",
           },
         },
-        production: {},
-      },
-    }),
-  );
-
-  const right = await resolveStudioDocumentRouteSchemaCapability(
-    createAuthoredConfig(),
-  );
+        types: [
+          defineType("Article", {
+            directory: "content/articles",
+            fields: {
+              title: reference("Article"),
+              body: reference("Article"),
+            },
+          }),
+          defineType("Author", {
+            directory: "content/authors",
+            fields: {
+              bio: reference("Author"),
+              name: reference("Author"),
+            },
+          }),
+        ],
+        environments: {
+          staging: {
+            extends: "production",
+            types: {
+              Author: {
+                modify: {
+                  bio: reference("Author"),
+                },
+              },
+              Article: {
+                add: {
+                  summary: reference("Article"),
+                },
+              },
+            },
+          },
+          production: {},
+        },
+      }),
+    ),
+    resolveStudioDocumentRouteSchemaCapability(createAuthoredConfig()),
+  ]);
 
   assert.equal(left.canWrite, true);
   assert.equal(right.canWrite, true);

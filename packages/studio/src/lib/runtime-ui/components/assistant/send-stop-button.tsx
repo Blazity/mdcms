@@ -50,7 +50,7 @@ export function SendStopButton({
           pending ? "pointer-events-none absolute opacity-0" : "opacity-100",
         )}
       >
-        <Send className="h-3 w-3" aria-hidden /> Send
+        <Send className="size-3" aria-hidden /> Send
         <span className="font-mono text-[9px] opacity-70">⌘↵</span>
       </span>
       <span
@@ -61,7 +61,7 @@ export function SendStopButton({
       >
         <span
           aria-hidden
-          className="inline-block h-2 w-2 rounded-[1px] bg-background"
+          className="inline-block size-2 rounded-[1px] bg-background"
         />
         Stop
       </span>
