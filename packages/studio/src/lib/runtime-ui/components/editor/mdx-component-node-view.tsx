@@ -93,7 +93,7 @@ export function MdxComponentNodeFrame(props: {
       >
         {props.readOnly || props.forbidden ? (
           <span className="rounded p-0.5 text-foreground-muted/50">
-            <GripVertical className="h-4 w-4" />
+            <GripVertical className="size-4" />
           </span>
         ) : (
           <span
@@ -103,7 +103,7 @@ export function MdxComponentNodeFrame(props: {
             title="Drag to reorder"
             className="cursor-grab rounded p-0.5 text-foreground-muted hover:bg-background-subtle hover:text-foreground active:cursor-grabbing"
           >
-            <GripVertical className="h-4 w-4" />
+            <GripVertical className="size-4" />
           </span>
         )}
       </div>
@@ -136,7 +136,7 @@ export function MdxComponentNodeFrame(props: {
               aria-expanded={!collapsed}
               title={collapsed ? "Expand component" : "Collapse component"}
               className={cn(
-                "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-foreground-muted hover:bg-background-subtle hover:text-foreground",
+                "inline-flex size-5 shrink-0 items-center justify-center rounded text-foreground-muted hover:bg-background-subtle hover:text-foreground",
                 "transition-opacity duration-150",
                 collapsed || props.selected
                   ? "opacity-100"
@@ -144,9 +144,9 @@ export function MdxComponentNodeFrame(props: {
               )}
             >
               {collapsed ? (
-                <ChevronRight className="h-3.5 w-3.5" />
+                <ChevronRight className="size-3.5" />
               ) : (
-                <ChevronDown className="h-3.5 w-3.5" />
+                <ChevronDown className="size-3.5" />
               )}
             </button>
           ) : null}
@@ -199,9 +199,9 @@ export function MdxComponentNodeFrame(props: {
               onClick={props.onEditProps}
               aria-label={`Edit ${props.componentName} props`}
               title="Edit props"
-              className="inline-flex h-6 w-6 items-center justify-center rounded text-foreground-muted hover:bg-background-subtle hover:text-foreground"
+              className="inline-flex size-6 items-center justify-center rounded text-foreground-muted hover:bg-background-subtle hover:text-foreground"
             >
-              <Settings className="h-3.5 w-3.5" />
+              <Settings className="size-3.5" />
             </button>
           ) : null}
           {props.onDelete ? (
@@ -210,9 +210,9 @@ export function MdxComponentNodeFrame(props: {
               onClick={props.onDelete}
               aria-label={`Delete ${props.componentName}`}
               title="Delete component"
-              className="inline-flex h-6 w-6 items-center justify-center rounded text-foreground-muted hover:bg-destructive/10 hover:text-destructive"
+              className="inline-flex size-6 items-center justify-center rounded text-foreground-muted hover:bg-destructive/10 hover:text-destructive"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="size-3.5" />
             </button>
           ) : null}
         </div>
@@ -275,6 +275,11 @@ export function createMdxComponentPreviewProps(input: {
     return input.props;
   }
 
+  // The HTML is extracted from the TipTap editor's own preview surface
+  // (see getMdxComponentPreviewChildrenHtml). It originates from the same
+  // user who is authoring and viewing the document, and TipTap's schema
+  // sanitization runs on input. This is the preview pane only; the
+  // published output goes through the MDX pipeline, not this path.
   return {
     ...input.props,
     children: createElement("div", {
@@ -452,7 +457,7 @@ export function MdxComponentNodeView(
             <NodeViewContent
               as="div"
               data-placeholder="Type content here..."
-              className="prose prose-sm max-w-none min-h-[3rem] rounded-md bg-background px-3 py-3 text-sm before:pointer-events-none before:float-left before:h-0 before:text-sm before:text-foreground-muted/60 before:content-[attr(data-placeholder)] has-[>:first-child:not(.is-empty)]:before:content-none"
+              className="prose prose-sm max-w-none min-h-[3rem] rounded-md bg-background p-3 text-sm before:pointer-events-none before:float-left before:h-0 before:text-sm before:text-foreground-muted/60 before:content-[attr(data-placeholder)] has-[>:first-child:not(.is-empty)]:before:content-none"
             />
           </div>
         )}

@@ -248,11 +248,11 @@ export function MdxPropsEditorHost({
 
       return (
         <PropsEditorRenderBoundary componentName={component.name}>
-          {renderReadyMdxPropsEditor({
-            componentName: component.name,
-            editor: state.editor as PropsEditorComponent<PropsEditorValue>,
-            bindings,
-          })}
+          <ReadyMdxPropsEditor
+            componentName={component.name}
+            editor={state.editor as PropsEditorComponent<PropsEditorValue>}
+            bindings={bindings}
+          />
         </PropsEditorRenderBoundary>
       );
     }
@@ -313,7 +313,7 @@ function createFallbackState(
       : { status: "empty" };
 }
 
-export function renderReadyMdxPropsEditor(input: {
+export function ReadyMdxPropsEditor(input: {
   componentName: string;
   editor: PropsEditorComponent<PropsEditorValue>;
   bindings: PropsEditorComponentProps<PropsEditorValue>;
@@ -369,20 +369,20 @@ function renderAutoFormFields(
               {formatAutoFormFieldTypeHint(field)}
             </span>
           </label>
-          {renderAutoFormFieldControl({
-            componentName,
-            field,
-            value: value[field.name],
-            onChange,
-            readOnly,
-          })}
+          <AutoFormFieldControl
+            componentName={componentName}
+            field={field}
+            value={value[field.name]}
+            onChange={onChange}
+            readOnly={readOnly}
+          />
         </div>
       ))}
     </div>
   );
 }
 
-function renderAutoFormFieldControl(input: {
+function AutoFormFieldControl(input: {
   componentName: string;
   field: MdxAutoFormField;
   value: unknown;
@@ -703,19 +703,19 @@ function formatAutoFormListValue(value: unknown): string {
 }
 
 function parseAutoFormStringListValue(value: string): string[] | undefined {
-  const items = value
-    .split("\n")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
+  const items = value.split("\n").flatMap((entry) => {
+    const trimmed = entry.trim();
+    return trimmed.length > 0 ? [trimmed] : [];
+  });
 
   return items.length > 0 ? items : undefined;
 }
 
 function parseAutoFormNumberListValue(value: string): number[] | undefined {
-  const items = value
-    .split("\n")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
+  const items = value.split("\n").flatMap((entry) => {
+    const trimmed = entry.trim();
+    return trimmed.length > 0 ? [trimmed] : [];
+  });
 
   if (items.length === 0) {
     return undefined;

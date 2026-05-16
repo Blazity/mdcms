@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, type PropsWithChildren } from "react";
+import { createContext, use, type PropsWithChildren } from "react";
 
 import type { StudioSessionInfo } from "../../../session-api.js";
 
@@ -33,5 +33,5 @@ export function StudioSessionProvider({
 }
 
 export function useStudioSession(): StudioSessionState {
-  return useContext(StudioSessionContext);
+  return use(StudioSessionContext);
 }

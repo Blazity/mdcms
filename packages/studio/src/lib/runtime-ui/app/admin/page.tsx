@@ -153,7 +153,7 @@ export default function DashboardPage() {
       <div className="min-h-screen">
         <PageHeader breadcrumbs={[{ label: "Dashboard" }]} />
         <div className="flex flex-col items-center justify-center gap-3 p-24 text-center">
-          <ShieldAlert className="h-8 w-8 text-foreground-muted" />
+          <ShieldAlert className="size-8 text-foreground-muted" />
           <h2 className="text-lg font-semibold">Access denied</h2>
           <p className="text-sm text-foreground-muted max-w-md">
             You do not have permission to view this dashboard. Contact an
@@ -169,7 +169,7 @@ export default function DashboardPage() {
       <div className="min-h-screen">
         <PageHeader breadcrumbs={[{ label: "Dashboard" }]} />
         <div className="flex flex-col items-center justify-center gap-3 p-24 text-center">
-          <AlertCircle className="h-8 w-8 text-destructive" />
+          <AlertCircle className="size-8 text-destructive" />
           <h2 className="text-lg font-semibold">Something went wrong</h2>
           <p className="text-sm text-foreground-muted max-w-md">
             {result.message}
@@ -198,7 +198,7 @@ export default function DashboardPage() {
         {/* Page Title */}
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="font-heading text-[36px] font-bold leading-[1.05] tracking-tight text-foreground">
+            <h1 className="font-heading text-[36px] font-semibold leading-[1.05] tracking-tight text-foreground">
               Dashboard
             </h1>
             {(subtitle || userLabel) && (
@@ -288,7 +288,7 @@ function ContentTypesCard({ data }: { data: DashboardData }) {
   return (
     <div className="overflow-hidden rounded-lg border border-card-border bg-card">
       <div className="flex items-center justify-between px-5 py-3.5">
-        <h2 className="font-heading text-[16px] font-bold text-foreground">
+        <h2 className="font-heading text-[16px] font-semibold text-foreground">
           Content types
         </h2>
         <Link
@@ -315,7 +315,7 @@ function ContentTypesCard({ data }: { data: DashboardData }) {
               href={`/admin/content/${ct.type}`}
               className="group flex items-center gap-3 border-t border-divider/60 border-l-2 border-l-transparent px-5 py-2.5 transition-colors hover:border-l-primary hover:bg-accent-subtle"
             >
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded bg-blue-100 font-mono text-[11px] font-bold text-primary">
+              <span className="grid size-7 shrink-0 place-items-center rounded bg-blue-100 font-mono text-[11px] font-bold text-primary">
                 {initial}
               </span>
               <div className="min-w-0 flex-1">
@@ -360,7 +360,7 @@ function RecentDraftsCard({
   return (
     <div className="overflow-hidden rounded-lg border border-card-border bg-card">
       <div className="flex items-center justify-between px-5 py-3.5">
-        <h2 className="font-heading text-[16px] font-bold text-foreground">
+        <h2 className="font-heading text-[16px] font-semibold text-foreground">
           Recently updated
         </h2>
         <Link
@@ -389,7 +389,7 @@ function RecentDraftsCard({
               <div className="flex min-w-0 items-center gap-2">
                 <span
                   className={cn(
-                    "h-1.5 w-1.5 shrink-0 rounded-full",
+                    "size-1.5 shrink-0 rounded-full",
                     draft ? "bg-vibrant-green" : "bg-success",
                   )}
                 />

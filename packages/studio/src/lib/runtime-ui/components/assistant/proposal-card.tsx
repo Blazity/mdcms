@@ -54,13 +54,13 @@ function ValidBadge({ validation }: { validation: AssistantValidation }) {
   if (validation.status === "valid") {
     return (
       <span className="inline-flex items-center gap-1 rounded-sm bg-success/15 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-success">
-        <Check className="h-2.5 w-2.5" aria-hidden /> valid
+        <Check className="size-2.5" aria-hidden /> valid
       </span>
     );
   }
   return (
     <span className="inline-flex items-center gap-1 rounded-sm bg-destructive/12 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-destructive">
-      <AlertTriangle className="h-2.5 w-2.5" aria-hidden />{" "}
+      <AlertTriangle className="size-2.5" aria-hidden />{" "}
       {validation.errors.length} error
       {validation.errors.length === 1 ? "" : "s"}
     </span>
@@ -149,8 +149,8 @@ function Footer({
     <div className="flex items-center gap-2 border-t border-divider/40 bg-background-subtle px-3 py-2">
       {contentInvalidated ? (
         <span className="flex flex-1 items-center gap-1.5 font-mono text-[10px] text-destructive">
-          <AlertTriangle className="h-3 w-3" aria-hidden /> source text changed
-          — retry
+          <AlertTriangle className="size-3" aria-hidden /> source text changed,
+          retry
         </span>
       ) : (
         <span className="flex-1" />
@@ -182,7 +182,7 @@ function Footer({
               : "Fix validation before accepting"
         }
       >
-        <Check className="h-3 w-3" aria-hidden />
+        <Check className="size-3" aria-hidden />
         {acceptLabel ?? "Accept"}
       </button>
     </div>
@@ -199,7 +199,7 @@ function RejectFeedback({ onCancel, onSend }: RejectFeedbackProps) {
   return (
     <div className="space-y-2 border-t border-divider/40 bg-muted/40 px-3 py-2.5">
       <div className="font-mono text-[10px] uppercase tracking-wider text-foreground-muted">
-        Rejected — what should change?
+        Rejected: what should change?
       </div>
       <textarea
         value={feedback}
@@ -221,7 +221,7 @@ function RejectFeedback({ onCancel, onSend }: RejectFeedbackProps) {
           onClick={() => onSend(feedback)}
           className="inline-flex items-center gap-1.5 rounded bg-sidebar px-2.5 py-1 font-mono text-[11px] font-semibold text-vibrant-green transition-colors hover:bg-sidebar/90"
         >
-          <Send className="h-3 w-3" aria-hidden />
+          <Send className="size-3" aria-hidden />
           Send & retry
         </button>
       </div>
@@ -281,7 +281,7 @@ function CollapseHeader({
     >
       <ChevronRight
         className={cn(
-          "h-3 w-3 shrink-0 text-foreground-muted transition-transform",
+          "size-3 shrink-0 text-foreground-muted transition-transform",
           !collapsed && "rotate-90",
         )}
         aria-hidden
@@ -316,8 +316,8 @@ function EditOrInsertCard({
   onReject: (feedback: string) => void;
 }) {
   const [collapsed, setCollapsed] = React.useState(defaultCollapsed);
-  const [showReject, setShowReject] = React.useState(rejecting);
-  React.useEffect(() => setShowReject(rejecting), [rejecting]);
+  const [openLocally, setOpenLocally] = React.useState(false);
+  const showReject = rejecting || openLocally;
 
   const isEdit = proposal.kind === "replace_selection";
   const removed = isEdit
@@ -361,10 +361,10 @@ function EditOrInsertCard({
       )}
       {showReject ? (
         <RejectFeedback
-          onCancel={() => setShowReject(false)}
+          onCancel={() => setOpenLocally(false)}
           onSend={(feedback) => {
             onReject(feedback);
-            setShowReject(false);
+            setOpenLocally(false);
           }}
         />
       ) : (
@@ -372,7 +372,7 @@ function EditOrInsertCard({
           contentInvalidated={proposal.contentInvalidated}
           validation={proposal.validation}
           onAccept={onAccept}
-          onReject={() => setShowReject(true)}
+          onReject={() => setOpenLocally(true)}
         />
       )}
     </CardChrome>
@@ -391,8 +391,8 @@ function CreateCard({
   onAccept: () => void;
   onReject: (feedback: string) => void;
 }) {
-  const [showReject, setShowReject] = React.useState(rejecting);
-  React.useEffect(() => setShowReject(rejecting), [rejecting]);
+  const [openLocally, setOpenLocally] = React.useState(false);
+  const showReject = rejecting || openLocally;
 
   const hasBody = Boolean(
     proposal.op.bodyPreview && proposal.op.bodyPreview.trim(),
@@ -407,7 +407,7 @@ function CreateCard({
         locale={proposal.locale}
         validation={proposal.validation}
       />
-      <div className="space-y-3 px-3 py-3">
+      <div className="space-y-3 p-3">
         {!hasBody && !isInvalid && (
           <div className="text-[13px] text-foreground">Create new document</div>
         )}
@@ -439,12 +439,12 @@ function CreateCard({
           proposal.validation.status === "valid" &&
           proposal.validation.checks && (
             <ul className="grid grid-cols-2 gap-x-3 gap-y-1">
-              {proposal.validation.checks.map((c, i) => (
+              {proposal.validation.checks.map((c) => (
                 <li
-                  key={i}
+                  key={c.label}
                   className="flex items-center gap-1.5 text-[11.5px] text-foreground-muted"
                 >
-                  <Check className="h-3 w-3 text-success" aria-hidden />
+                  <Check className="size-3 text-success" aria-hidden />
                   {c.label}
                 </li>
               ))}
@@ -457,8 +457,11 @@ function CreateCard({
               emptyLeftLabel="(no existing content — new document)"
             />
             <ul className="space-y-1 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
-              {proposal.validation.errors.map((e, i) => (
-                <li key={i} className="flex gap-2 text-[12px] text-foreground">
+              {proposal.validation.errors.map((e) => (
+                <li
+                  key={`${e.code}:${e.message}`}
+                  className="flex gap-2 text-[12px] text-foreground"
+                >
                   <span className="shrink-0 font-mono text-[10px] text-destructive">
                     {e.code}
                   </span>
@@ -471,10 +474,10 @@ function CreateCard({
       </div>
       {showReject ? (
         <RejectFeedback
-          onCancel={() => setShowReject(false)}
+          onCancel={() => setOpenLocally(false)}
           onSend={(feedback) => {
             onReject(feedback);
-            setShowReject(false);
+            setOpenLocally(false);
           }}
         />
       ) : (
@@ -482,7 +485,7 @@ function CreateCard({
           contentInvalidated={proposal.contentInvalidated}
           validation={proposal.validation}
           onAccept={onAccept}
-          onReject={() => setShowReject(true)}
+          onReject={() => setOpenLocally(true)}
         />
       )}
     </CardChrome>
@@ -501,8 +504,8 @@ function InvalidInsertCard({
   onAccept: () => void;
   onReject: (feedback: string) => void;
 }) {
-  const [showReject, setShowReject] = React.useState(rejecting);
-  React.useEffect(() => setShowReject(rejecting), [rejecting]);
+  const [openLocally, setOpenLocally] = React.useState(false);
+  const showReject = rejecting || openLocally;
 
   if (proposal.validation.status !== "invalid") return null;
 
@@ -514,14 +517,17 @@ function InvalidInsertCard({
         locale={proposal.locale}
         validation={proposal.validation}
       />
-      <div className="space-y-2.5 px-3 py-3">
+      <div className="space-y-2.5 p-3">
         <DiffBody
           added={proposal.op.bodyMdx}
           emptyLeftLabel="(no existing content — new block)"
         />
         <ul className="space-y-1 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
-          {proposal.validation.errors.map((e, i) => (
-            <li key={i} className="flex gap-2 text-[12px] text-foreground">
+          {proposal.validation.errors.map((e) => (
+            <li
+              key={`${e.code}:${e.message}`}
+              className="flex gap-2 text-[12px] text-foreground"
+            >
               <span className="shrink-0 font-mono text-[10px] text-destructive">
                 {e.code}
               </span>
@@ -532,10 +538,10 @@ function InvalidInsertCard({
       </div>
       {showReject ? (
         <RejectFeedback
-          onCancel={() => setShowReject(false)}
+          onCancel={() => setOpenLocally(false)}
           onSend={(feedback) => {
             onReject(feedback);
-            setShowReject(false);
+            setOpenLocally(false);
           }}
         />
       ) : (
@@ -543,7 +549,7 @@ function InvalidInsertCard({
           contentInvalidated={proposal.contentInvalidated}
           validation={proposal.validation}
           onAccept={onAccept}
-          onReject={() => setShowReject(true)}
+          onReject={() => setOpenLocally(true)}
         />
       )}
     </CardChrome>
@@ -562,8 +568,8 @@ function DeleteCard({
   onAccept: () => void;
   onReject: (feedback: string) => void;
 }) {
-  const [showReject, setShowReject] = React.useState(rejecting);
-  React.useEffect(() => setShowReject(rejecting), [rejecting]);
+  const [openLocally, setOpenLocally] = React.useState(false);
+  const showReject = rejecting || openLocally;
 
   return (
     <CardChrome>
@@ -573,7 +579,7 @@ function DeleteCard({
         locale={proposal.locale}
         validation={proposal.validation}
       />
-      <div className="space-y-2.5 px-3 py-3">
+      <div className="space-y-2.5 p-3">
         <div className="overflow-hidden rounded-md border border-divider/60 bg-background-subtle font-mono text-[12px]">
           <div className="flex gap-2 border-l-2 border-destructive bg-destructive/5 px-2.5 py-1 text-foreground-muted line-through">
             <span className="w-2.5 shrink-0 text-center text-foreground-muted/80">
@@ -590,12 +596,12 @@ function DeleteCard({
         {proposal.validation.status === "valid" &&
           proposal.validation.checks && (
             <ul className="grid grid-cols-2 gap-x-3 gap-y-1">
-              {proposal.validation.checks.map((c, i) => (
+              {proposal.validation.checks.map((c) => (
                 <li
-                  key={i}
+                  key={c.label}
                   className="flex items-center gap-1.5 text-[11.5px] text-foreground-muted"
                 >
-                  <Check className="h-3 w-3 text-success" aria-hidden />
+                  <Check className="size-3 text-success" aria-hidden />
                   {c.label}
                 </li>
               ))}
@@ -604,10 +610,10 @@ function DeleteCard({
       </div>
       {showReject ? (
         <RejectFeedback
-          onCancel={() => setShowReject(false)}
+          onCancel={() => setOpenLocally(false)}
           onSend={(feedback) => {
             onReject(feedback);
-            setShowReject(false);
+            setOpenLocally(false);
           }}
         />
       ) : (
@@ -615,11 +621,11 @@ function DeleteCard({
           contentInvalidated={proposal.contentInvalidated}
           validation={proposal.validation}
           onAccept={onAccept}
-          onReject={() => setShowReject(true)}
+          onReject={() => setOpenLocally(true)}
           rejectLabel="Keep"
           acceptLabel={
             <span className="inline-flex items-center gap-1.5">
-              <Trash2 className="h-3 w-3" aria-hidden /> Delete document
+              <Trash2 className="size-3" aria-hidden /> Delete document
             </span>
           }
           destructive
@@ -850,14 +856,14 @@ export function AppliedLogLine({ proposal }: { proposal: AssistantProposal }) {
     : "";
   const stats = inferDiffStats(proposal);
   return (
-    <div className="flex items-center gap-2 px-1 py-1 font-mono text-[11px] text-foreground-muted">
+    <div className="flex items-center gap-2 p-1 font-mono text-[11px] text-foreground-muted">
       <span aria-hidden className="opacity-70">
         ·
       </span>
       <span>Applied {acceptedAt}</span>
       {docPath && (
         <>
-          <span aria-hidden>—</span>
+          <span aria-hidden>·</span>
           <span
             className="min-w-0 flex-1 truncate text-foreground"
             title={docPath}
@@ -990,8 +996,8 @@ function FrontmatterCard({
   onAccept: () => void;
   onReject: (feedback: string) => void;
 }) {
-  const [showReject, setShowReject] = React.useState(rejecting);
-  React.useEffect(() => setShowReject(rejecting), [rejecting]);
+  const [openLocally, setOpenLocally] = React.useState(false);
+  const showReject = rejecting || openLocally;
   // The fallthrough only renders for non-batch proposals that carry per-doc routing.
   const docPath = "docPath" in proposal ? proposal.docPath : undefined;
   const locale = "locale" in proposal ? proposal.locale : undefined;
@@ -1003,15 +1009,13 @@ function FrontmatterCard({
         locale={locale}
         validation={proposal.validation}
       />
-      <div className="px-3 py-3 text-[13px] text-foreground">
-        {proposal.summary}
-      </div>
+      <div className="p-3 text-[13px] text-foreground">{proposal.summary}</div>
       {showReject ? (
         <RejectFeedback
-          onCancel={() => setShowReject(false)}
+          onCancel={() => setOpenLocally(false)}
           onSend={(feedback) => {
             onReject(feedback);
-            setShowReject(false);
+            setOpenLocally(false);
           }}
         />
       ) : (
@@ -1019,7 +1023,7 @@ function FrontmatterCard({
           contentInvalidated={proposal.contentInvalidated}
           validation={proposal.validation}
           onAccept={onAccept}
-          onReject={() => setShowReject(true)}
+          onReject={() => setOpenLocally(true)}
         />
       )}
     </CardChrome>

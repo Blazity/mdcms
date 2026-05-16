@@ -102,7 +102,7 @@ function assertNonEmptyId(
 function sortByNumericOrderThenId<T extends { id: string; order?: number }>(
   items: readonly T[],
 ): T[] {
-  return [...items].sort((left, right) => {
+  return items.toSorted((left, right) => {
     const leftOrder = left.order ?? Number.MAX_SAFE_INTEGER;
     const rightOrder = right.order ?? Number.MAX_SAFE_INTEGER;
 
@@ -118,9 +118,11 @@ export function normalizeStudioRoutePath(path: string): string {
   const segments = path
     .trim()
     .split("/")
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .map((segment) => (segment.startsWith(":") ? ":*" : segment));
+    .flatMap((segment) => {
+      const trimmed = segment.trim();
+      if (!trimmed) return [];
+      return [trimmed.startsWith(":") ? ":*" : trimmed];
+    });
 
   if (segments.length === 0) {
     return "/";

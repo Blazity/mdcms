@@ -99,7 +99,9 @@ function getHighestRole(
 }
 
 function getScopeLabel(grants: UserWithGrants["grants"]): string {
-  const pathPrefixes = grants.map((g) => g.pathPrefix).filter(Boolean);
+  const pathPrefixes = grants.flatMap((g) =>
+    g.pathPrefix ? [g.pathPrefix] : [],
+  );
   if (pathPrefixes.length > 0) {
     return pathPrefixes.length === 1
       ? pathPrefixes[0]!
@@ -164,7 +166,7 @@ export default function UsersPage() {
       <div className="min-h-screen">
         <PageHeader breadcrumbs={[{ label: "Users" }]} />
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <ShieldOff className="mb-4 h-8 w-8 text-foreground-muted" />
+          <ShieldOff className="mb-4 size-8 text-foreground-muted" />
           <h3 className="mb-2 text-lg font-semibold">Access denied</h3>
           <p className="text-sm text-foreground-muted">
             You don&apos;t have permission to manage users.
@@ -322,7 +324,7 @@ export default function UsersPage() {
           <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
             <DialogTrigger asChild>
               <Button>
-                <Plus className="mr-2 h-4 w-4" />
+                <Plus className="mr-2 size-4" />
                 Invite User
               </Button>
             </DialogTrigger>
@@ -338,14 +340,17 @@ export default function UsersPage() {
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground-muted" />
+                    <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-foreground-muted" />
                     <Input
                       id="email"
                       type="email"
                       placeholder="user@company.com"
                       value={inviteData.email}
                       onChange={(e) =>
-                        setInviteData({ ...inviteData, email: e.target.value })
+                        setInviteData((prev) => ({
+                          ...prev,
+                          email: e.target.value,
+                        }))
                       }
                       className="pl-9"
                     />
@@ -358,7 +363,7 @@ export default function UsersPage() {
                   <Select
                     value={inviteData.role}
                     onValueChange={(value) =>
-                      setInviteData({ ...inviteData, role: value })
+                      setInviteData((prev) => ({ ...prev, role: value }))
                     }
                   >
                     <SelectTrigger>
@@ -384,10 +389,10 @@ export default function UsersPage() {
                       placeholder="e.g. content/blog"
                       value={inviteData.pathPrefix}
                       onChange={(e) =>
-                        setInviteData({
-                          ...inviteData,
+                        setInviteData((prev) => ({
+                          ...prev,
                           pathPrefix: e.target.value,
-                        })
+                        }))
                       }
                       className="font-mono"
                     />
@@ -424,14 +429,14 @@ export default function UsersPage() {
         {/* Loading state */}
         {status === "loading" && (
           <div className="flex items-center justify-center py-16">
-            <Loader2 className="h-6 w-6 animate-spin text-foreground-muted" />
+            <Loader2 className="size-6 animate-spin text-foreground-muted" />
           </div>
         )}
 
         {/* Error state */}
         {status === "error" && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <AlertCircle className="mb-4 h-8 w-8 text-destructive" />
+            <AlertCircle className="mb-4 size-8 text-destructive" />
             <h3 className="mb-2 text-lg font-semibold">Failed to load users</h3>
             <p className="mb-4 text-sm text-foreground-muted">{errorMessage}</p>
             <Button variant="ghost" onClick={refresh}>
@@ -444,7 +449,7 @@ export default function UsersPage() {
         {status === "empty" && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="mb-4 rounded-full bg-background-subtle p-4">
-              <Users className="h-8 w-8 text-foreground-muted" />
+              <Users className="size-8 text-foreground-muted" />
             </div>
             <h3 className="mb-2 text-lg font-semibold">No users found</h3>
             <p className="text-sm text-foreground-muted">
@@ -466,8 +471,8 @@ export default function UsersPage() {
                   className="flex items-center justify-between px-4 py-3"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-background-subtle">
-                      <Clock className="h-4 w-4 text-foreground-muted" />
+                    <div className="flex size-8 items-center justify-center rounded-full bg-background-subtle">
+                      <Clock className="size-4 text-foreground-muted" />
                     </div>
                     <div>
                       <p className="text-sm font-medium">{invite.email}</p>
@@ -483,13 +488,13 @@ export default function UsersPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-foreground-muted hover:text-destructive"
+                      className="size-8 text-foreground-muted hover:text-destructive"
                       disabled={isRevokingInvite}
                       onClick={() =>
                         handleRevokeInvite(invite.id, invite.email)
                       }
                     >
-                      <X className="h-4 w-4" />
+                      <X className="size-4" />
                     </Button>
                   </div>
                 </div>
@@ -518,7 +523,7 @@ export default function UsersPage() {
                     <TableRow key={user.id}>
                       <TableCell>
                         <div className="flex items-center gap-3">
-                          <Avatar className="h-8 w-8">
+                          <Avatar className="size-8">
                             <AvatarFallback>
                               {user.name
                                 .split(" ")
@@ -554,9 +559,9 @@ export default function UsersPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8"
+                              className="size-8"
                             >
-                              <MoreHorizontal className="h-4 w-4" />
+                              <MoreHorizontal className="size-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
@@ -577,7 +582,7 @@ export default function UsersPage() {
                                   setEditRoleDialogOpen(true);
                                 }}
                               >
-                                <Edit className="mr-2 h-4 w-4" />
+                                <Edit className="mr-2 size-4" />
                                 Edit role
                               </DropdownMenuItem>
                               <DropdownMenuItem
@@ -586,7 +591,7 @@ export default function UsersPage() {
                                   handleRevokeSessions(user.id, user.name)
                                 }
                               >
-                                <LogOut className="mr-2 h-4 w-4" />
+                                <LogOut className="mr-2 size-4" />
                                 Revoke sessions
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
@@ -598,7 +603,7 @@ export default function UsersPage() {
                                         className="text-destructive focus:text-destructive"
                                         disabled
                                       >
-                                        <Trash2 className="mr-2 h-4 w-4" />
+                                        <Trash2 className="mr-2 size-4" />
                                         Remove user
                                       </DropdownMenuItem>
                                     </span>
@@ -618,7 +623,7 @@ export default function UsersPage() {
                                     handleRemoveUser(user.id, user.name)
                                   }
                                 >
-                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  <Trash2 className="mr-2 size-4" />
                                   Remove user
                                 </DropdownMenuItem>
                               )}

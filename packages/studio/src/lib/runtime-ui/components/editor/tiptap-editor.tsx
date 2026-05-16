@@ -241,6 +241,7 @@ type ToolbarButtonProps = {
   active?: boolean;
   disabled?: boolean;
   className?: string;
+  onClick?: () => void;
 };
 
 type TipTapEditorInstance = NonNullable<ReturnType<typeof useEditor>>;
@@ -308,6 +309,7 @@ function ToolbarButton({
   active = false,
   disabled = false,
   className,
+  onClick,
 }: ToolbarButtonProps) {
   return (
     <Button
@@ -317,6 +319,7 @@ function ToolbarButton({
       disabled={disabled}
       aria-label={label}
       title={label}
+      onClick={onClick}
       className={cn(
         "h-[30px] w-[30px] rounded-sm border-0 px-0 font-mono text-[13px] text-foreground-muted hover:bg-accent-subtle hover:text-foreground",
         active &&
@@ -1240,9 +1243,9 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
       command();
     };
 
-    const iconClassName = "h-4 w-4";
+    const iconClassName = "size-4";
 
-    const renderToolbarItem = (itemId: string) => {
+    const resolveToolbarIcon = (itemId: string) => {
       switch (itemId) {
         case "undo":
           return <Undo className={iconClassName} />;
@@ -1515,6 +1518,14 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
                     <Separator orientation="vertical" className="mr-1 h-6" />
                   ) : null}
                   {group.items.map((item) => {
+                    const handleItemClick = () => {
+                      if (
+                        item.availability === "enabled" &&
+                        !isEditorReadOnly
+                      ) {
+                        triggerToolbarItem(item.id);
+                      }
+                    };
                     const toolbarButton = (
                       <ToolbarButton
                         disabled={
@@ -1528,6 +1539,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
                               : item.label
                         }
                         active={isToolbarItemActive(item.id)}
+                        onClick={handleItemClick}
                         className={cn(
                           item.id === "heading1" || item.id === "heading2"
                             ? "min-w-10 px-3"
@@ -1536,7 +1548,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
                             "text-foreground-muted",
                         )}
                       >
-                        {renderToolbarItem(item.id)}
+                        {resolveToolbarIcon(item.id)}
                       </ToolbarButton>
                     );
 
@@ -1598,32 +1610,32 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                className="h-7 w-7 p-0"
+                                className="size-7 p-0"
                                 title="Apply link"
                                 onClick={submitLink}
                               >
-                                <CornerDownLeft className="h-3.5 w-3.5" />
+                                <CornerDownLeft className="size-3.5" />
                               </Button>
                               <Button
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                className="h-7 w-7 p-0"
+                                className="size-7 p-0"
                                 title="Open link in new tab"
                                 disabled={!linkInputValue.trim()}
                                 onClick={openLink}
                               >
-                                <ExternalLink className="h-3.5 w-3.5" />
+                                <ExternalLink className="size-3.5" />
                               </Button>
                               <Button
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                className="h-7 w-7 p-0"
+                                className="size-7 p-0"
                                 title="Remove link"
                                 onClick={removeLink}
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <Trash2 className="size-3.5" />
                               </Button>
                             </div>
                           </PopoverContent>
@@ -1632,19 +1644,30 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
                     }
 
                     return (
-                      <div
+                      <ToolbarButton
                         key={item.id}
-                        onClick={() => {
-                          if (
-                            item.availability === "enabled" &&
-                            !isEditorReadOnly
-                          ) {
-                            triggerToolbarItem(item.id);
-                          }
-                        }}
+                        disabled={
+                          item.availability !== "enabled" || isEditorReadOnly
+                        }
+                        label={
+                          item.availability === "visual-only"
+                            ? `${item.label} (planned)`
+                            : isEditorReadOnly
+                              ? `${item.label} (unavailable in read-only mode)`
+                              : item.label
+                        }
+                        active={isToolbarItemActive(item.id)}
+                        onClick={handleItemClick}
+                        className={cn(
+                          item.id === "heading1" || item.id === "heading2"
+                            ? "min-w-10 px-3"
+                            : "w-8 px-0",
+                          item.availability === "visual-only" &&
+                            "text-foreground-muted",
+                        )}
                       >
-                        {toolbarButton}
-                      </div>
+                        {resolveToolbarIcon(item.id)}
+                      </ToolbarButton>
                     );
                   })}
                 </div>
@@ -1679,7 +1702,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
                     }
                     className="border-primary text-primary hover:bg-accent-subtle hover:text-primary"
                   >
-                    {renderToolbarItem(item.id)}
+                    {resolveToolbarIcon(item.id)}
                   </Button>
                 ))}
                 <Button
@@ -1704,12 +1727,12 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
                 >
                   {collapseController.snapshot.globalState === "collapsed" ? (
                     <>
-                      <ChevronsUpDown className="h-4 w-4" />
+                      <ChevronsUpDown className="size-4" />
                       <span>Expand all</span>
                     </>
                   ) : (
                     <>
-                      <ChevronsDownUp className="h-4 w-4" />
+                      <ChevronsDownUp className="size-4" />
                       <span>Collapse all</span>
                     </>
                   )}
@@ -1720,7 +1743,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
             {pickerSource === "toolbar" ? (
               <div
                 data-mdcms-mdx-picker-source="toolbar"
-                className="border-t border-border px-3 py-3"
+                className="border-t border-border p-3"
               >
                 <MdxComponentPicker
                   components={catalogComponents}

@@ -103,6 +103,16 @@ export function ApiKeyCreateDialog({
   );
   const [copied, setCopied] = useState(false);
   const [expiresAt, setExpiresAt] = useState("");
+  const [todayMinDate, setTodayMinDate] = useState<string | undefined>(
+    undefined,
+  );
+
+  useEffect(() => {
+    const d = new Date();
+    setTodayMinDate(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
+    );
+  }, []);
 
   useEffect(() => {
     if (!open) {
@@ -193,7 +203,6 @@ export function ApiKeyCreateDialog({
                   onChange={(e) => setLabel(e.target.value)}
                   placeholder="e.g. CI/CD Pipeline"
                   disabled={isSubmitting}
-                  autoFocus
                 />
               </div>
 
@@ -242,10 +251,7 @@ export function ApiKeyCreateDialog({
                   value={expiresAt}
                   onChange={(e) => setExpiresAt(e.target.value)}
                   disabled={isSubmitting}
-                  min={(() => {
-                    const d = new Date();
-                    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-                  })()}
+                  min={todayMinDate}
                 />
                 <p className="text-xs text-muted-foreground">
                   Leave empty for no expiration.

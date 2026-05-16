@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 
 import type {
   ContentDocumentResponse,
@@ -333,7 +333,7 @@ function PromoteStepper({ stage }: { stage: PromoteStage }) {
             >
               <span
                 className={cn(
-                  "grid h-4 w-4 place-items-center rounded-full bg-background-subtle text-[9px] font-bold",
+                  "grid size-4 place-items-center rounded-full bg-background-subtle text-[9px] font-bold",
                   isActive && "bg-primary text-primary-foreground",
                   !isActive && isDone && "bg-success text-primary-foreground",
                 )}
@@ -343,7 +343,7 @@ function PromoteStepper({ stage }: { stage: PromoteStage }) {
               {entry.label}
             </span>
             {index < PROMOTE_STAGES.length - 1 ? (
-              <ChevronRight className="h-3 w-3 text-foreground-muted/60" />
+              <ChevronRight className="size-3 text-foreground-muted/60" />
             ) : null}
           </span>
         );
@@ -363,7 +363,7 @@ function DefinitionsStrip({ meta }: { meta: EnvironmentDefinitionsMeta }) {
       <span
         aria-hidden
         className={cn(
-          "h-2 w-2 rounded-full",
+          "size-2 rounded-full",
           ready ? "bg-success" : "bg-warning",
         )}
       />
@@ -517,7 +517,7 @@ function EnvironmentRow({
           <span
             aria-hidden
             className={cn(
-              "h-2 w-2 rounded-full",
+              "size-2 rounded-full",
               environment.isDefault ? "bg-primary" : "bg-foreground/40",
             )}
           />
@@ -563,7 +563,7 @@ function EnvironmentRow({
             onClick={() => onRequestPromote?.(environment)}
           >
             Promote
-            <ArrowRight className="ml-1 h-3.5 w-3.5" />
+            <ArrowRight className="ml-1 size-3.5" />
           </Button>
           <Button
             type="button"
@@ -717,10 +717,10 @@ function DrawerShell({
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            className="grid h-7 w-7 place-items-center rounded-sm border border-card-border text-foreground-muted hover:bg-background-subtle"
+            className="grid size-7 place-items-center rounded-sm border border-card-border text-foreground-muted hover:bg-background-subtle"
             aria-label="Close drawer"
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="size-3.5" />
           </button>
         </DialogHeader>
         {children}
@@ -885,15 +885,19 @@ function CloneToggleRow({
   checked: boolean;
   onChange: (value: boolean) => void;
 }) {
+  const switchId = useId();
   return (
-    <label className="flex items-center gap-3 border-t border-card-border/60 py-2">
+    <label
+      htmlFor={switchId}
+      className="flex items-center gap-3 border-t border-card-border/60 py-2"
+    >
       <div className="flex-1">
         <div className="text-sm text-foreground">{title}</div>
         <div className="font-mono text-[10px] text-foreground-muted">
           {hint}
         </div>
       </div>
-      <Switch checked={checked} onCheckedChange={onChange} />
+      <Switch id={switchId} checked={checked} onCheckedChange={onChange} />
     </label>
   );
 }
@@ -1023,7 +1027,7 @@ function PromoteDrawer({
                 Run another
               </Button>
               <Button onClick={() => onPromoteDialogChange?.(false)}>
-                Done
+                Close
               </Button>
             </>
           ) : null}
@@ -1086,6 +1090,7 @@ function PromoteConfigure({
   const documentsLoading = promoteState.documentsLoading;
   const documents = promoteState.documents;
   const documentsError = promoteState.documentsError;
+  const includeUnpublishedSwitchId = useId();
 
   return (
     <>
@@ -1174,7 +1179,7 @@ function PromoteConfigure({
                     data-mdcms-environment-promote-document-checkbox={
                       doc.documentId
                     }
-                    className="h-3.5 w-3.5"
+                    className="size-3.5"
                   />
                   <span className="flex-1 truncate font-mono text-[11px] text-foreground">
                     {doc.path}
@@ -1192,15 +1197,19 @@ function PromoteConfigure({
         </div>
       </div>
 
-      <label className="mt-4 flex items-center gap-3 border-t border-card-border/60 py-2">
+      <label
+        htmlFor={includeUnpublishedSwitchId}
+        className="mt-4 flex items-center gap-3 border-t border-card-border/60 py-2"
+      >
         <div className="flex-1">
           <div className="text-sm text-foreground">Include unpublished</div>
           <div className="font-mono text-[10px] text-foreground-muted">
-            By default only published documents promote — turn on to include
+            By default only published documents promote; turn on to include
             drafts.
           </div>
         </div>
         <Switch
+          id={includeUnpublishedSwitchId}
           checked={promoteState.includeUnpublished}
           onCheckedChange={(value) =>
             onPromoteIncludeUnpublishedChange?.(value)
@@ -1248,12 +1257,12 @@ function PromotePreview({
   return (
     <div data-mdcms-environment-promote-preview className="space-y-4">
       <div className="flex items-start gap-2.5 rounded-md border border-warning/40 bg-warning-subtle p-3">
-        <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-warning text-[12px] font-bold text-primary-foreground">
+        <span className="grid size-5 shrink-0 place-items-center rounded-full bg-warning text-[12px] font-bold text-primary-foreground">
           !
         </span>
         <div className="text-xs leading-relaxed text-foreground">
           <div className="font-semibold">
-            No merge — target content is replaced.
+            No merge: target content is replaced.
           </div>
           Promotes overwrite matching target documents in {targetName} entirely.
           Each document is auto-published;{" "}
@@ -1377,7 +1386,7 @@ function PromoteResult({
   return (
     <div data-mdcms-environment-promote-result className="space-y-4">
       <div className="flex items-start gap-2.5 rounded-md border border-success/30 bg-success-subtle p-3">
-        <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-success text-[12px] font-bold text-primary-foreground">
+        <span className="grid size-5 shrink-0 place-items-center rounded-full bg-success text-[12px] font-bold text-primary-foreground">
           ✓
         </span>
         <div className="text-xs leading-relaxed text-foreground">
@@ -1393,7 +1402,7 @@ function PromoteResult({
   );
 }
 
-function renderRetryButton(onRetry?: () => void) {
+function RetryButton({ onRetry }: { onRetry?: () => void }) {
   if (!onRetry) return null;
   return (
     <Button variant="ghost" onClick={onRetry}>
@@ -1455,7 +1464,7 @@ export function EnvironmentManagementPageView({
       <div className="space-y-6 p-6 lg:p-8">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="space-y-1.5">
-            <h1 className="font-heading text-[36px] font-bold leading-[1.05] tracking-tight text-foreground">
+            <h1 className="font-heading text-[36px] font-semibold leading-[1.05] tracking-tight text-foreground">
               Environments
             </h1>
             <p className="font-mono text-[12px] text-foreground-muted">
@@ -1474,7 +1483,7 @@ export function EnvironmentManagementPageView({
                 disabled={!canCreate}
                 onClick={() => onCreateDialogChange?.(true)}
               >
-                <Plus className="mr-1.5 h-4 w-4" />
+                <Plus className="mr-1.5 size-4" />
                 New environment
               </Button>
               <DialogContent>
@@ -1566,7 +1575,7 @@ export function EnvironmentManagementPageView({
             <Badge variant="destructive">Error</Badge>
             <p className="text-sm text-muted-foreground">{state.message}</p>
             <p className="text-xs text-muted-foreground">{state.project}</p>
-            {renderRetryButton(onRetry)}
+            <RetryButton onRetry={onRetry} />
           </section>
         ) : state.environments.length === 0 ? (
           <section
@@ -1719,7 +1728,7 @@ export default function EnvironmentsPage() {
         setState({
           status: "ready",
           project,
-          environments: [...result.data].sort((left, right) => {
+          environments: result.data.toSorted((left, right) => {
             if (left.isDefault !== right.isDefault) {
               return left.isDefault ? -1 : 1;
             }

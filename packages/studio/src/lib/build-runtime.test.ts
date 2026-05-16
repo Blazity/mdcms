@@ -58,18 +58,20 @@ test("buildStudioRuntimeArtifacts is deterministic for identical source bytes", 
 
     await writeFile(sourceFile, "export const marker = 'stable';\n", "utf8");
 
-    const buildA = await buildStudioRuntimeArtifacts({
-      sourceFile,
-      outDir: outDirA,
-      studioVersion: "1.2.3",
-      mode: "module",
-    });
-    const buildB = await buildStudioRuntimeArtifacts({
-      sourceFile,
-      outDir: outDirB,
-      studioVersion: "1.2.3",
-      mode: "module",
-    });
+    const [buildA, buildB] = await Promise.all([
+      buildStudioRuntimeArtifacts({
+        sourceFile,
+        outDir: outDirA,
+        studioVersion: "1.2.3",
+        mode: "module",
+      }),
+      buildStudioRuntimeArtifacts({
+        sourceFile,
+        outDir: outDirB,
+        studioVersion: "1.2.3",
+        mode: "module",
+      }),
+    ]);
 
     assert.equal(buildA.buildId, buildB.buildId);
     assert.equal(buildA.entryFile, buildB.entryFile);

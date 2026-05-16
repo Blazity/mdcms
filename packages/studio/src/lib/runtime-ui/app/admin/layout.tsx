@@ -463,7 +463,7 @@ function AdminLayoutInner({
   if (sessionState.status === "loading" && typeof window !== "undefined") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="text-foreground-muted text-sm">Loading...</div>
+        <div className="text-foreground-muted text-sm">Loading…</div>
       </div>
     );
   }

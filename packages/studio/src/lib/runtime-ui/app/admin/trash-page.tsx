@@ -87,6 +87,40 @@ function deriveAuthorInitials(email: string | undefined): string {
   return local.slice(0, 2).toUpperCase();
 }
 
+function TrashRowActions({
+  doc,
+  disabled,
+  onRestore,
+}: {
+  doc: MappedTrashDocument;
+  disabled: boolean;
+  onRestore: (documentId: string) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          aria-label={`Actions for ${doc.title}`}
+        >
+          <MoreHorizontal className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          disabled={disabled}
+          onClick={() => onRestore(doc.documentId)}
+        >
+          <RotateCcw className="mr-2 size-4" />
+          Restore
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export default function TrashPage() {
   const mountInfo = useStudioMountInfo();
   const capabilities = useAdminCapabilities();
@@ -203,33 +237,10 @@ export default function TrashPage() {
     ? Math.floor(list.pagination.offset / TRASH_PAGE_SIZE) + 1
     : 1;
 
-  function renderRowActions(doc: MappedTrashDocument) {
-    return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            aria-label={`Actions for ${doc.title}`}
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem
-            disabled={
-              !capabilities.canCreateContent || restoreMutation.isPending
-            }
-            onClick={() => restoreMutation.mutate(doc.documentId)}
-          >
-            <RotateCcw className="mr-2 h-4 w-4" />
-            Restore
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  }
+  const restoreDisabled =
+    !capabilities.canCreateContent || restoreMutation.isPending;
+  const restoreHandler = (documentId: string) =>
+    restoreMutation.mutate(documentId);
 
   return (
     <div className="min-h-screen">
@@ -248,7 +259,7 @@ export default function TrashPage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground-muted" />
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-foreground-muted" />
               <Input
                 aria-label="Search deleted documents"
                 placeholder="Search deleted documents..."
@@ -317,13 +328,13 @@ export default function TrashPage() {
         {/* Content area */}
         {list.status === "loading" && (
           <div className="flex items-center justify-center py-16">
-            <Loader2 className="h-6 w-6 animate-spin text-foreground-muted" />
+            <Loader2 className="size-6 animate-spin text-foreground-muted" />
           </div>
         )}
 
         {list.status === "forbidden" && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <ShieldAlert className="mb-4 h-8 w-8 text-foreground-muted" />
+            <ShieldAlert className="mb-4 size-8 text-foreground-muted" />
             <h3 className="mb-2 text-lg font-semibold">Access restricted</h3>
             <p className="text-sm text-foreground-muted">
               You don&apos;t have permission to view deleted content.
@@ -333,7 +344,7 @@ export default function TrashPage() {
 
         {list.status === "error" && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <AlertCircle className="mb-4 h-8 w-8 text-destructive" />
+            <AlertCircle className="mb-4 size-8 text-destructive" />
             <h3 className="mb-2 text-lg font-semibold">
               Failed to load deleted documents
             </h3>
@@ -349,7 +360,7 @@ export default function TrashPage() {
         {list.status === "empty" && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="mb-4 rounded-full bg-background-subtle p-4">
-              <Trash2 className="h-8 w-8 text-foreground-muted" />
+              <Trash2 className="size-8 text-foreground-muted" />
             </div>
             <h3 className="mb-2 text-lg font-semibold">No deleted documents</h3>
             <p className="text-sm text-foreground-muted">
@@ -393,7 +404,7 @@ export default function TrashPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <Avatar className="h-6 w-6">
+                            <Avatar className="size-6">
                               <AvatarFallback className="text-xs">
                                 {deriveAuthorInitials(
                                   list.users[doc.deletedBy]?.email,
@@ -407,7 +418,13 @@ export default function TrashPage() {
                             </span>
                           </div>
                         </TableCell>
-                        <TableCell>{renderRowActions(doc)}</TableCell>
+                        <TableCell>
+                          <TrashRowActions
+                            doc={doc}
+                            disabled={restoreDisabled}
+                            onRestore={restoreHandler}
+                          />
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -416,7 +433,7 @@ export default function TrashPage() {
             ) : (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <div className="mb-4 rounded-full bg-background-subtle p-4">
-                  <Search className="h-8 w-8 text-foreground-muted" />
+                  <Search className="size-8 text-foreground-muted" />
                 </div>
                 <h3 className="mb-2 text-lg font-semibold">No results</h3>
                 <p className="text-sm text-foreground-muted">

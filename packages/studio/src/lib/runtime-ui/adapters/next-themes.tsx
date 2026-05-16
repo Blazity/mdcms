@@ -1,6 +1,6 @@
 import {
   createContext,
-  useContext,
+  use,
   useEffect,
   useMemo,
   useRef,
@@ -227,7 +227,7 @@ export function ThemeProvider({
 }
 
 export function useTheme(): ThemeContextValue {
-  const value = useContext(ThemeContext);
+  const value = use(ThemeContext);
 
   if (!value) {
     throw new Error("useTheme must be used within ThemeProvider.");

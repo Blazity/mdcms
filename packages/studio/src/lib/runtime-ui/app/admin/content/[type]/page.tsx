@@ -138,7 +138,7 @@ export function TranslationCoverageSummary({
         data-mdcms-translation-coverage-state="loading"
         className="text-xs text-foreground-muted"
       >
-        Loading locale coverage...
+        Loading locale coverage…
       </p>
     );
   }
@@ -190,6 +190,88 @@ function deriveAuthorInitials(email: string | undefined): string {
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
   return local.slice(0, 2).toUpperCase();
+}
+
+function RowActions({
+  doc,
+  capabilities,
+  pending,
+  onEdit,
+  onPublish,
+  onUnpublish,
+  onDuplicate,
+  onDelete,
+}: {
+  doc: MappedContentDocument;
+  capabilities: {
+    canPublishContent: boolean;
+    canUnpublishContent: boolean;
+    canCreateContent: boolean;
+    canDeleteContent: boolean;
+  };
+  pending: boolean;
+  onEdit: (documentId: string) => void;
+  onPublish: (documentId: string) => void;
+  onUnpublish: (documentId: string) => void;
+  onDuplicate: (documentId: string) => void;
+  onDelete: (documentId: string) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="size-8">
+          <MoreHorizontal className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => onEdit(doc.documentId)}>
+          <Edit className="mr-2 size-4" />
+          Edit
+        </DropdownMenuItem>
+        {capabilities.canPublishContent &&
+          (doc.status === "draft" || doc.status === "changed") && (
+            <DropdownMenuItem
+              disabled={pending}
+              onClick={() => onPublish(doc.documentId)}
+            >
+              <Send className="mr-2 size-4" />
+              Publish
+            </DropdownMenuItem>
+          )}
+        {capabilities.canUnpublishContent && doc.status === "published" && (
+          <DropdownMenuItem
+            disabled={pending}
+            onClick={() => onUnpublish(doc.documentId)}
+          >
+            <ArrowUpFromLine className="mr-2 size-4" />
+            Unpublish
+          </DropdownMenuItem>
+        )}
+        {capabilities.canCreateContent && (
+          <DropdownMenuItem
+            disabled={pending}
+            onClick={() => onDuplicate(doc.documentId)}
+          >
+            <Copy className="mr-2 size-4" />
+            Duplicate
+          </DropdownMenuItem>
+        )}
+        {capabilities.canDeleteContent && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled={pending}
+              className="text-destructive focus:text-destructive"
+              onClick={() => onDelete(doc.documentId)}
+            >
+              <Trash2 className="mr-2 size-4" />
+              Delete
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 export default function ContentTypePage() {
@@ -374,68 +456,14 @@ export default function ContentTypePage() {
     });
   };
 
-  function renderRowActions(doc: MappedContentDocument) {
-    return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem
-            onClick={() =>
-              router.push(`/admin/content/${typeId}/${doc.documentId}`)
-            }
-          >
-            <Edit className="mr-2 h-4 w-4" />
-            Edit
-          </DropdownMenuItem>
-          {capabilities.canPublishContent &&
-            (doc.status === "draft" || doc.status === "changed") && (
-              <DropdownMenuItem
-                disabled={isRowActionPending}
-                onClick={() => publishMutation.mutate(doc.documentId)}
-              >
-                <Send className="mr-2 h-4 w-4" />
-                Publish
-              </DropdownMenuItem>
-            )}
-          {capabilities.canUnpublishContent && doc.status === "published" && (
-            <DropdownMenuItem
-              disabled={isRowActionPending}
-              onClick={() => unpublishMutation.mutate(doc.documentId)}
-            >
-              <ArrowUpFromLine className="mr-2 h-4 w-4" />
-              Unpublish
-            </DropdownMenuItem>
-          )}
-          {capabilities.canCreateContent && (
-            <DropdownMenuItem
-              disabled={isRowActionPending}
-              onClick={() => duplicateMutation.mutate(doc.documentId)}
-            >
-              <Copy className="mr-2 h-4 w-4" />
-              Duplicate
-            </DropdownMenuItem>
-          )}
-          {capabilities.canDeleteContent && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                disabled={isRowActionPending}
-                className="text-destructive focus:text-destructive"
-                onClick={() => deleteMutation.mutate(doc.documentId)}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete
-              </DropdownMenuItem>
-            </>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  }
+  const rowActionHandlers = {
+    onEdit: (documentId: string) =>
+      router.push(`/admin/content/${typeId}/${documentId}`),
+    onPublish: (documentId: string) => publishMutation.mutate(documentId),
+    onUnpublish: (documentId: string) => unpublishMutation.mutate(documentId),
+    onDuplicate: (documentId: string) => duplicateMutation.mutate(documentId),
+    onDelete: (documentId: string) => deleteMutation.mutate(documentId),
+  };
 
   return (
     <div className="min-h-screen">
@@ -450,7 +478,7 @@ export default function ContentTypePage() {
         {/* Header */}
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="font-heading text-[36px] font-bold leading-[1.05] tracking-tight text-foreground">
+            <h1 className="font-heading text-[36px] font-semibold leading-[1.05] tracking-tight text-foreground">
               {typeName}
             </h1>
             <p className="mt-1.5 font-mono text-[12px] text-foreground-muted">
@@ -463,7 +491,7 @@ export default function ContentTypePage() {
           </div>
           {capabilities.canCreateContent && schemaEntry && (
             <Button onClick={create.open}>
-              <Plus className="mr-2 h-4 w-4" />
+              <Plus className="mr-2 size-4" />
               New document
             </Button>
           )}
@@ -473,7 +501,7 @@ export default function ContentTypePage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground-muted" />
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-foreground-muted" />
               <Input
                 placeholder="Search documents..."
                 value={searchInput}
@@ -551,7 +579,7 @@ export default function ContentTypePage() {
                 </div>
                 <Skeleton className="h-5 w-16 rounded-full" />
                 <Skeleton className="h-4 w-20" />
-                <Skeleton className="h-6 w-6 rounded-full" />
+                <Skeleton className="size-6 rounded-full" />
               </div>
             ))}
           </div>
@@ -559,7 +587,7 @@ export default function ContentTypePage() {
 
         {list.status === "forbidden" && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <ShieldAlert className="mb-4 h-8 w-8 text-foreground-muted" />
+            <ShieldAlert className="mb-4 size-8 text-foreground-muted" />
             <h3 className="mb-2 text-lg font-semibold">Access denied</h3>
             <p className="text-sm text-foreground-muted">
               You do not have permission to view content for this target.
@@ -569,7 +597,7 @@ export default function ContentTypePage() {
 
         {list.status === "error" && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <AlertCircle className="mb-4 h-8 w-8 text-destructive" />
+            <AlertCircle className="mb-4 size-8 text-destructive" />
             <h3 className="mb-2 text-lg font-semibold">
               Failed to load documents
             </h3>
@@ -585,7 +613,7 @@ export default function ContentTypePage() {
         {list.status === "empty" && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="mb-4 rounded-full bg-background-subtle p-4">
-              <FileText className="h-8 w-8 text-foreground-muted" />
+              <FileText className="size-8 text-foreground-muted" />
             </div>
             <h3 className="mb-2 text-lg font-semibold">No documents yet</h3>
             <p className="mb-4 text-sm text-foreground-muted">
@@ -593,7 +621,7 @@ export default function ContentTypePage() {
             </p>
             {capabilities.canCreateContent && schemaEntry && (
               <Button onClick={create.open}>
-                <Plus className="mr-2 h-4 w-4" />
+                <Plus className="mr-2 size-4" />
                 New Document
               </Button>
             )}
@@ -663,7 +691,7 @@ export default function ContentTypePage() {
                         </TableCell>
                         <TableCell className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <Avatar className="h-6 w-6">
+                            <Avatar className="size-6">
                               <AvatarFallback className="bg-blue-100 text-[10px] font-bold text-primary">
                                 {deriveAuthorInitials(
                                   list.users[doc.updatedBy]?.email,
@@ -676,7 +704,16 @@ export default function ContentTypePage() {
                           className="px-4 py-3"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {renderRowActions(doc)}
+                          <RowActions
+                            doc={doc}
+                            capabilities={capabilities}
+                            pending={isRowActionPending}
+                            onEdit={rowActionHandlers.onEdit}
+                            onPublish={rowActionHandlers.onPublish}
+                            onUnpublish={rowActionHandlers.onUnpublish}
+                            onDuplicate={rowActionHandlers.onDuplicate}
+                            onDelete={rowActionHandlers.onDelete}
+                          />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -686,7 +723,7 @@ export default function ContentTypePage() {
             ) : (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <div className="mb-4 rounded-full bg-background-subtle p-4">
-                  <Search className="h-8 w-8 text-foreground-muted" />
+                  <Search className="size-8 text-foreground-muted" />
                 </div>
                 <h3 className="mb-2 text-lg font-semibold">No results</h3>
                 <p className="text-sm text-foreground-muted">

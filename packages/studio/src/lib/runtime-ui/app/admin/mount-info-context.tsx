@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  createContext,
-  useContext,
-  useMemo,
-  type PropsWithChildren,
-} from "react";
+import { createContext, use, useMemo, type PropsWithChildren } from "react";
 
 import type {
   EnvironmentSummary,
@@ -49,7 +44,7 @@ export function StudioMountInfoProvider({
 }
 
 export function useStudioMountInfo(): StudioMountInfo {
-  return useContext(StudioMountInfoContext);
+  return use(StudioMountInfoContext);
 }
 
 export type StudioApiConfig = {

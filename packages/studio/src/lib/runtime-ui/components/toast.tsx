@@ -2,8 +2,8 @@
 
 import {
   createContext,
+  use,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -87,7 +87,7 @@ export function ToastProvider({ children }: PropsWithChildren) {
 }
 
 export function useToast(): ToastApi {
-  const ctx = useContext(ToastContext);
+  const ctx = use(ToastContext);
   if (!ctx) {
     throw new Error("useToast must be used within a ToastProvider");
   }
@@ -138,14 +138,14 @@ function ToastItem({
         toast.variant === "error" && "border-destructive/20 text-destructive",
       )}
     >
-      <Icon className="h-4 w-4 shrink-0" />
+      <Icon className="size-4 shrink-0" />
       <p className="text-sm flex-1">{toast.message}</p>
       <button
         onClick={() => onDismiss(toast.id)}
         className="shrink-0 opacity-50 hover:opacity-100"
         aria-label="Dismiss"
       >
-        <X className="h-3.5 w-3.5" />
+        <X className="size-3.5" />
       </button>
     </div>
   );

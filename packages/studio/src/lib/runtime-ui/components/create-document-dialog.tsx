@@ -114,7 +114,6 @@ export function CreateDocumentDialog({
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="My new document"
                 disabled={isSubmitting}
-                autoFocus
               />
             </div>
             <div className="space-y-2">

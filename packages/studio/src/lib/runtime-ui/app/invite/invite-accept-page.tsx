@@ -215,7 +215,6 @@ export default function InviteAcceptPage({
               onChange={(e) => setName(e.target.value)}
               required
               autoComplete="name"
-              autoFocus
               disabled={state.status === "submitting"}
             />
           </div>

@@ -33,9 +33,8 @@ test("InlineAiPanel renders the 6 selection-anchored copy edits", () => {
     "fix_grammar",
     "improve_clarity",
   ]) {
-    assert.match(
-      markup,
-      new RegExp(`data-testid="inline-ai-action-${id}"`),
+    assert.ok(
+      markup.includes(`data-testid="inline-ai-action-${id}"`),
       `expected action ${id} to render`,
     );
   }

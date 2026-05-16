@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, type PropsWithChildren } from "react";
+import { createContext, use, type PropsWithChildren } from "react";
 
 export type AdminCapabilitiesValue = {
   canReadSchema: boolean;
@@ -40,7 +40,7 @@ export function AdminCapabilitiesProvider({
 }
 
 export function useAdminCapabilities(): AdminCapabilitiesValue {
-  return useContext(AdminCapabilitiesContext);
+  return use(AdminCapabilitiesContext);
 }
 
 export function useCanReadSchema(): boolean {

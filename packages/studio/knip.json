@@ -1,0 +1,20 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "$comment": "The runtime-ui tree, remote-studio-app, and remote-module are bundled at build-time by build-runtime.ts via dynamic string imports knip can't follow. Listing them as entry points keeps their transitive references visible to knip. See .changeset-gate.json for the same path list reflected on the publishing side.",
+  "entry": [
+    "src/index.ts",
+    "src/lib/build-runtime.ts",
+    "src/lib/document-shell.ts",
+    "src/lib/markdown-pipeline.ts",
+    "src/lib/action-catalog-adapter.ts",
+    "src/lib/studio.ts",
+    "src/lib/remote-module.ts",
+    "src/lib/remote-studio-app.tsx",
+    "src/lib/dev-runtime-watch.ts",
+    "src/lib/runtime-ui/**/*.{ts,tsx}",
+    "src/bun-test.d.ts",
+    "src/**/*.test.{ts,tsx}"
+  ],
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignoreExportsUsedInFile": true
+}

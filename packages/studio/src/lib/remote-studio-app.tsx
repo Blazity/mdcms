@@ -168,17 +168,16 @@ export function matchStudioRoute<T extends MatchableRoute>(
   return routes.find((route) => {
     const routeSegments = getRouteSegments(route.path);
 
-    if (routeSegments.length !== targetSegments.length) {
-      return false;
-    }
+    return (
+      routeSegments.length === targetSegments.length &&
+      routeSegments.every((segment, index) => {
+        if (segment.startsWith(":")) {
+          return true;
+        }
 
-    return routeSegments.every((segment, index) => {
-      if (segment.startsWith(":")) {
-        return true;
-      }
-
-      return segment === targetSegments[index];
-    });
+        return segment === targetSegments[index];
+      })
+    );
   });
 }
 
@@ -296,10 +295,13 @@ function getGeneratedAutoFormFields(
   return createMdxAutoFormFields(component.extractedProps, component.propHints);
 }
 
-function renderRouteContent(
-  route: StudioRuntimeRouteDefinition | undefined,
-  context: StudioMountContext,
-): ReactNode {
+function RouteContent({
+  route,
+  context,
+}: {
+  route: StudioRuntimeRouteDefinition | undefined;
+  context: StudioMountContext;
+}): ReactNode {
   if (!route) {
     return (
       <div className="p-6 text-sm text-amber-900">Unknown Studio route.</div>
@@ -369,7 +371,7 @@ function RuntimeDocumentDiagnostics(props: {
         ))
       )}
       {props.actionStripState.status === "loading" ? (
-        <p data-mdcms-action-state="loading">Loading actions...</p>
+        <p data-mdcms-action-state="loading">Loading actions…</p>
       ) : null}
       {props.actionStripState.status === "error" ? (
         <p data-mdcms-action-state="error">
@@ -535,7 +537,7 @@ export function RemoteStudioApp({
           className="mdcms-studio-runtime"
         >
           {activeRoute?.id === "invite.accept" ? (
-            renderRouteContent(activeRoute, context)
+            <RouteContent route={activeRoute} context={context} />
           ) : activeRoute?.id === "login" ? (
             <StudioSessionProvider value={{ status: "unauthenticated" }}>
               <StudioMountInfoProvider
@@ -550,12 +552,12 @@ export function RemoteStudioApp({
                   hostBridge: context.hostBridge,
                 }}
               >
-                {renderRouteContent(activeRoute, context)}
+                <RouteContent route={activeRoute} context={context} />
               </StudioMountInfoProvider>
             </StudioSessionProvider>
           ) : (
             <AdminLayout context={context}>
-              {renderRouteContent(activeRoute, context)}
+              <RouteContent route={activeRoute} context={context} />
               {activeRoute?.id === "content.document" ? (
                 <RuntimeDocumentDiagnostics
                   context={context}

@@ -77,7 +77,7 @@ function ThreadList({
           className="h-6 gap-1 px-2 text-[11px]"
           onClick={onCreate}
         >
-          <Plus className="h-3 w-3" aria-hidden /> New
+          <Plus className="size-3" aria-hidden /> New
         </Button>
       </div>
       <div className="scrollbar-thin flex-1 overflow-y-auto p-1.5">
@@ -210,9 +210,9 @@ function MentionPicker({
       <div
         role="listbox"
         aria-label="Document picker"
-        className="absolute bottom-full left-3 right-3 mb-1 rounded-md border border-divider/60 bg-popover px-3 py-3 text-[12px] text-destructive shadow-lg"
+        className="absolute bottom-full left-3 right-3 mb-1 rounded-md border border-divider/60 bg-popover p-3 text-[12px] text-destructive shadow-lg"
       >
-        Couldn't search documents — {error}.{" "}
+        Couldn't search documents: {error}.{" "}
         <button
           type="button"
           onClick={onClose}
@@ -229,7 +229,7 @@ function MentionPicker({
       <div
         role="listbox"
         aria-label="Document picker"
-        className="absolute bottom-full left-3 right-3 mb-1 rounded-md border border-divider/60 bg-popover px-3 py-3 text-[12px] text-foreground-muted shadow-lg"
+        className="absolute bottom-full left-3 right-3 mb-1 rounded-md border border-divider/60 bg-popover p-3 text-[12px] text-foreground-muted shadow-lg"
       >
         {loading ? (
           "Searching documents…"
@@ -265,6 +265,7 @@ function MentionPicker({
           key={c.path}
           type="button"
           role="option"
+          aria-selected={false}
           onClick={() => onPick(c)}
           className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors hover:bg-accent-subtle"
         >
@@ -331,7 +332,7 @@ function ContextChips({
             className="-mr-0.5 ml-0.5 rounded text-foreground-muted hover:text-foreground"
             aria-label={`Remove ${d.path} from context`}
           >
-            <X className="h-2.5 w-2.5" />
+            <X className="size-2.5" />
           </button>
         </span>
       ))}
@@ -348,7 +349,7 @@ function ContextChips({
             className="-mr-0.5 ml-0.5 rounded text-primary/80 hover:text-primary"
             aria-label="Detach selection"
           >
-            <X className="h-2.5 w-2.5" />
+            <X className="size-2.5" />
           </button>
         </span>
       )}
@@ -397,9 +398,10 @@ function AssistantBubble({
   const proposalIds = message.proposals ?? [];
   const text = message.text?.trim();
   if (proposalIds.length === 0 && !text && !isStreamingPlaceholder) return null;
-  const proposals = proposalIds
-    .map((pid) => proposalsById[pid])
-    .filter((p): p is AssistantProposal => Boolean(p));
+  const proposals = proposalIds.flatMap((pid) => {
+    const proposal = proposalsById[pid];
+    return proposal ? [proposal] : [];
+  });
   const isMultiTurn = proposals.length > 1;
   return (
     <div className="mb-6 flex items-start gap-0">
@@ -416,9 +418,9 @@ function AssistantBubble({
             className="inline-flex max-w-[92%] items-center gap-1 py-1.5 text-foreground-muted"
             aria-label="Generating response"
           >
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary [animation-delay:-0.2s]" />
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary [animation-delay:0.2s]" />
+            <span className="size-1.5 animate-pulse rounded-full bg-primary [animation-delay:-0.2s]" />
+            <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+            <span className="size-1.5 animate-pulse rounded-full bg-primary [animation-delay:0.2s]" />
           </div>
         ) : null}
         {!isMultiTurn &&
@@ -648,7 +650,7 @@ function TurnGroup({
                 : "border-vibrant-green-border bg-vibrant-green text-vibrant-green-foreground hover:bg-vibrant-green/90",
             )}
           >
-            <Check className="h-3 w-3" aria-hidden />
+            <Check className="size-3" aria-hidden />
             Accept all ({pendingProposals.length})
           </button>
         </div>
@@ -731,7 +733,7 @@ function TurnRow({
             onReject();
           }}
         >
-          <X className="h-3.5 w-3.5" aria-hidden />
+          <X className="size-3.5" aria-hidden />
         </RowIconButton>
         <RowIconButton
           label="Accept"
@@ -742,7 +744,7 @@ function TurnRow({
             if (valid) onAccept();
           }}
         >
-          <Check className="h-3.5 w-3.5" aria-hidden />
+          <Check className="size-3.5" aria-hidden />
         </RowIconButton>
         <RowIconButton
           label={isExpanded ? "Collapse details" : "Expand details"}
@@ -755,7 +757,7 @@ function TurnRow({
         >
           <ChevronRight
             className={cn(
-              "h-3.5 w-3.5 transition-transform",
+              "size-3.5 transition-transform",
               isExpanded && "rotate-90",
             )}
             aria-hidden
@@ -794,7 +796,7 @@ function RowIconButton({
       onClick={onClick}
       title={label}
       className={cn(
-        "grid h-7 w-7 shrink-0 place-items-center rounded text-foreground-muted transition-colors",
+        "grid size-7 shrink-0 place-items-center rounded text-foreground-muted transition-colors",
         disabled
           ? "cursor-not-allowed opacity-40"
           : tone === "accept"
@@ -1023,11 +1025,11 @@ function Composer({
                 ta.setSelectionRange(newCaret, newCaret);
               }, 0);
             }}
-            className="grid h-6 w-6 place-items-center rounded text-foreground-muted hover:bg-muted hover:text-foreground"
+            className="grid size-6 place-items-center rounded text-foreground-muted hover:bg-muted hover:text-foreground"
             title="Attach document (@)"
             aria-label="Attach document"
           >
-            <AtSign className="h-3.5 w-3.5" aria-hidden />
+            <AtSign className="size-3.5" aria-hidden />
           </button>
           <SendStopButton
             pending={assistant.isPending}
@@ -1170,16 +1172,16 @@ export function AssistantPanel({
             <button
               type="button"
               onClick={assistant.toggleFullscreen}
-              className="grid h-6 w-6 place-items-center rounded text-foreground-muted hover:bg-muted hover:text-foreground"
+              className="grid size-6 place-items-center rounded text-foreground-muted hover:bg-muted hover:text-foreground"
               title={assistant.isFullscreen ? "Exit fullscreen" : "Fullscreen"}
               aria-label={
                 assistant.isFullscreen ? "Exit fullscreen" : "Fullscreen"
               }
             >
               {assistant.isFullscreen ? (
-                <Minimize2 className="h-3.5 w-3.5" aria-hidden />
+                <Minimize2 className="size-3.5" aria-hidden />
               ) : (
-                <Maximize2 className="h-3.5 w-3.5" aria-hidden />
+                <Maximize2 className="size-3.5" aria-hidden />
               )}
             </button>
           )}
@@ -1187,11 +1189,11 @@ export function AssistantPanel({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="grid h-6 w-6 place-items-center rounded text-foreground-muted hover:bg-muted hover:text-foreground"
+                className="grid size-6 place-items-center rounded text-foreground-muted hover:bg-muted hover:text-foreground"
                 title="More"
                 aria-label="More actions"
               >
-                <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
+                <MoreHorizontal className="size-3.5" aria-hidden />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
@@ -1219,11 +1221,11 @@ export function AssistantPanel({
             <button
               type="button"
               onClick={assistant.close}
-              className="grid h-6 w-6 place-items-center rounded text-foreground-muted hover:bg-muted hover:text-foreground"
+              className="grid size-6 place-items-center rounded text-foreground-muted hover:bg-muted hover:text-foreground"
               title="Close"
               aria-label="Close assistant"
             >
-              <X className="h-3.5 w-3.5" aria-hidden />
+              <X className="size-3.5" aria-hidden />
             </button>
           )}
         </div>

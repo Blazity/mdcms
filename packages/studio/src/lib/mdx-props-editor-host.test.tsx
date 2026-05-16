@@ -9,7 +9,7 @@ import {
   createInitialMdxPropsEditorHostState,
   createMdxPropsEditorBindings,
   MdxPropsEditorHost,
-  renderReadyMdxPropsEditor,
+  ReadyMdxPropsEditor,
   resolveMdxPropsEditorHostState,
   type PropsEditorComponentProps,
 } from "./mdx-props-editor-host.js";
@@ -305,12 +305,12 @@ test("MdxPropsEditorHost renders compact type hints for generated auto-form fiel
   assert.match(markup, />color</);
 });
 
-test("renderReadyMdxPropsEditor keeps diagnostics out of the visible custom editor surface", () => {
+test("ReadyMdxPropsEditor keeps diagnostics out of the visible custom editor surface", () => {
   const markup = renderToStaticMarkup(
     createElement(
       "section",
       null,
-      renderReadyMdxPropsEditor({
+      createElement(ReadyMdxPropsEditor, {
         componentName: "PricingTable",
         editor: (_props: PropsEditorComponentProps) =>
           createElement(
