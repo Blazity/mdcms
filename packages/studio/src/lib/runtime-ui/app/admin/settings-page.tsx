@@ -39,6 +39,10 @@ function ApiKeyStatusBadge({
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
     setNow(Date.now());
+    // Refresh once a minute so a key crossing its expiry while this page
+    // is open flips from Active → Expired without a manual reload.
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
   }, []);
   const isExpired =
     now !== null && expiresAt !== null && new Date(expiresAt).getTime() < now;

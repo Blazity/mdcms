@@ -108,11 +108,14 @@ export function ApiKeyCreateDialog({
   );
 
   useEffect(() => {
+    if (!open) return;
+    // Recompute on each open so a dialog reopened the next day picks up
+    // today's date instead of the day it was first mounted.
     const d = new Date();
     setTodayMinDate(
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
     );
-  }, []);
+  }, [open]);
 
   useEffect(() => {
     if (!open) {

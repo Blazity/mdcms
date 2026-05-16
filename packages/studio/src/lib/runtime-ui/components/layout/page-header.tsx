@@ -110,7 +110,7 @@ export function BreadcrumbTrail({
     <nav className={cn("flex min-w-0 items-center gap-1.5", className)}>
       {breadcrumbs.map((crumb, index) => (
         <div
-          key={crumb.href ?? crumb.label}
+          key={`${crumb.href ?? crumb.label}-${index}`}
           className="flex min-w-0 items-center gap-1.5"
         >
           {index > 0 && (

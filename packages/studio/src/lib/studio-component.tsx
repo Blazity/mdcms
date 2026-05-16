@@ -721,8 +721,8 @@ export function StudioShellFrame({
       suppressHydrationWarning
     >
       {/* SHELL_THEME_INLINE_SCRIPT is a hardcoded module constant: it reads
-       * the dark/light preference cookie and applies the theme class before
-       * the runtime hydrates, preventing a flash of incorrect theme. The
+       * the dark/light preference from window.localStorage and applies the
+       * theme attribute before the runtime hydrates, preventing FOUC. The
        * payload contains no user input and never touches network data. */}
       <script dangerouslySetInnerHTML={{ __html: SHELL_THEME_INLINE_SCRIPT }} />
       <div
