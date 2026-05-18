@@ -6,6 +6,12 @@ Entries are reverse-chronological (newest first).
 
 ---
 
+## 2026-05-18 — keep Studio CSRF bootstrap stable
+
+**Rule:** Session bootstrap must reuse an existing `mdcms_csrf` cookie instead of rotating it on every `/api/v1/auth/session` call.
+**Why:** Studio has multiple route clients that cache bootstrap tokens; rotating the cookie in one client makes another client's cached header mismatch the browser cookie and surfaces `FORBIDDEN: Valid CSRF token is required...` during assistant apply/reject flows.
+**How to apply:** When changing auth/session behavior, preserve the double-submit invariant by returning and refreshing the current cookie token when present; only generate a new CSRF token when the readable cookie is missing.
+
 ## 2026-05-18 — register cross-rail Studio context upward
 
 **Rule:** When a Studio page needs to feed state into a docked global surface such as the assistant rail, register that state upward through the owning provider instead of relying on React context from the page subtree.

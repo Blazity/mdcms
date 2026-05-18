@@ -1921,12 +1921,10 @@ testWithDatabase(
     try {
       await signUp(handler, { email, password });
       const loginResult = await login(handler, { email, password });
+      const loginCsrf = extractCookieValue(loginResult.setCookie, "mdcms_csrf");
 
-      assert.ok(extractCookieValue(loginResult.setCookie, "mdcms_csrf"));
-      assert.equal(
-        loginResult.csrfToken,
-        extractCookieValue(loginResult.setCookie, "mdcms_csrf"),
-      );
+      assert.ok(loginCsrf);
+      assert.equal(loginResult.csrfToken, loginCsrf);
 
       const sessionResponse = await handler(
         new Request("http://localhost/api/v1/auth/session", {
@@ -1945,6 +1943,7 @@ testWithDatabase(
         "mdcms_csrf",
       );
       assert.ok(sessionCsrf);
+      assert.equal(sessionCsrf, loginCsrf);
       assert.equal(sessionBody.data.csrfToken, sessionCsrf);
     } finally {
       await dbConnection.close();
