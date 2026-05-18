@@ -4,6 +4,7 @@ import * as React from "react";
 import { AlertTriangle, Check, ChevronRight, Send, Trash2 } from "lucide-react";
 
 import { cn } from "../../lib/utils.js";
+import { pushAppliedUndoHandler } from "./applied-undo-stack.js";
 import type {
   AssistantProposal,
   AssistantProposalCreate,
@@ -647,6 +648,13 @@ export type ProposalCardProps = {
    * means a silent reject (Cancel from the panel does NOT call this).
    */
   onReject: (feedback: string) => void;
+  /**
+   * Optional undo handler. When provided AND the proposal has been
+   * accepted, the post-accept banner exposes an Undo button during the
+   * 6-second window. Omitted by callers that don't have a live AI
+   * route configured (e.g. showcases / tests).
+   */
+  onUndo?: () => void;
 };
 
 /** 6-second window — Sonia's design + the AI Elements reference both use this. */
@@ -746,6 +754,26 @@ export function AppliedBanner({
 }: AppliedBannerProps) {
   const [paused, setPaused] = React.useState(false);
   const acceptedAt = proposal.acceptedAt;
+  // Register this banner's undo handler in the panel-scoped LIFO so
+  // ⌘Z / Ctrl-Z fires the most recent still-open window. We use a
+  // ref so the registration callback always sees the latest onUndo
+  // (without re-registering on every render — that would put the
+  // banner at the top of the stack every render and break LIFO
+  // ordering relative to sibling banners).
+  const onUndoRef = React.useRef(onUndo);
+  React.useEffect(() => {
+    onUndoRef.current = onUndo;
+  }, [onUndo]);
+  React.useEffect(() => {
+    if (!canUndo || !onUndo) return;
+    return pushAppliedUndoHandler(() => {
+      onUndoRef.current?.();
+    });
+    // We intentionally re-register only when the "is undo available"
+    // signal flips, not on every onUndo identity change — the ref
+    // above already keeps the handler current.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canUndo]);
   // `acceptedAt` is required for this banner to render — the caller
   // gates on it, but TypeScript needs the narrowing here so the hook
   // doesn't see a possibly-undefined value.
@@ -823,7 +851,19 @@ export function AppliedBanner({
  * the remaining time correctly; reloads after the window land
  * straight in `AppliedLogLine`.
  */
-export function AcceptedView({ proposal }: { proposal: AssistantProposal }) {
+export function AcceptedView({
+  proposal,
+  onUndo,
+}: {
+  proposal: AssistantProposal;
+  /**
+   * Wired by the host when a live AI route is available AND the
+   * proposal carries the per-kind undo metadata stamped at accept
+   * time. Absent for stale localStorage records from before the undo
+   * feature shipped — those land in the quiet log line immediately.
+   */
+  onUndo?: () => void;
+}) {
   const acceptedAt = proposal.acceptedAt;
   // Page-reload-safe initial state: if more than the window has
   // elapsed since accept, jump straight to the quiet log line.
@@ -831,6 +871,28 @@ export function AcceptedView({ proposal }: { proposal: AssistantProposal }) {
     ? Date.now() - new Date(acceptedAt).getTime() >= UNDO_WINDOW_MS
     : true;
   const [expired, setExpired] = React.useState(startsExpired);
+  // Local undo flag flips when the user clicks the button (or fires
+  // the keyboard shortcut). We track it here so the banner dismisses
+  // immediately even before the reducer drops the proposal record on
+  // the round-trip's resolve. Without this, the banner would linger
+  // for one render cycle after click and the countdown would keep
+  // ticking visually.
+  const [undone, setUndone] = React.useState(false);
+  // Undo is only offered when the host wired a handler AND the
+  // proposal carries the metadata the handler needs (accepted doc id,
+  // and a priorDraft for body/frontmatter kinds).
+  const canUndo = Boolean(
+    onUndo &&
+      proposal.acceptedDocumentId &&
+      (proposal.kind === "create_document" ||
+        proposal.kind === "delete_document" ||
+        Boolean(proposal.priorDraft)),
+  );
+  if (undone) {
+    // The reducer will remove the proposal record momentarily; render
+    // nothing in the meantime so we don't flash the log line.
+    return null;
+  }
   if (expired || !acceptedAt) {
     return <AppliedLogLine proposal={proposal} />;
   }
@@ -838,7 +900,15 @@ export function AcceptedView({ proposal }: { proposal: AssistantProposal }) {
     <AppliedBanner
       proposal={proposal}
       onExpire={() => setExpired(true)}
-      canUndo={false}
+      canUndo={canUndo}
+      {...(canUndo && onUndo
+        ? {
+            onUndo: () => {
+              setUndone(true);
+              onUndo();
+            },
+          }
+        : {})}
     />
   );
 }
@@ -916,16 +986,17 @@ export function ProposalCard({
   defaultCollapsed = false,
   onAccept,
   onReject,
+  onUndo,
 }: ProposalCardProps) {
   // Once accepted, the card morphs into a 6-second lime banner with a
-  // visible countdown — Sonia's bullet #3. After the window expires
-  // the same row settles into the quiet `AppliedLogLine`. We don't
-  // wire an Undo button yet — actual rollback for `replace_selection`
-  // / `insert_block` / `update_frontmatter` needs server-side revert
-  // support we don't have today, and a cosmetic-only Undo would lie
-  // about reversibility. Tracked separately.
+  // visible countdown — Sonia's bullet #3. During the window the
+  // banner exposes an Undo button that calls the server's undo
+  // endpoint (delete for create_document, restore for
+  // delete_document, body/frontmatter replay for the three edit
+  // kinds). After the window expires the row settles into the quiet
+  // `AppliedLogLine` and undo is no longer offered.
   if (proposal.acceptedAt) {
-    return <AcceptedView proposal={proposal} />;
+    return <AcceptedView proposal={proposal} {...(onUndo ? { onUndo } : {})} />;
   }
   if (proposal.kind === "delete_document") {
     return (

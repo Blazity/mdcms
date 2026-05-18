@@ -51,6 +51,34 @@ type AssistantAction =
       proposalId: string;
       acceptedAt: string;
       hiddenMessage: AssistantMessage;
+      /**
+       * Document id resolved from the apply response. Stamped on the
+       * proposal so the post-accept undo handler can target the right
+       * doc per kind (delete for create_document, restore for
+       * delete_document, body/frontmatter replay for edit kinds).
+       */
+      acceptedDocumentId?: string;
+      /**
+       * Pre-apply draft snapshot returned by the apply endpoint, only
+       * present for body/frontmatter mutating kinds. Echoed back on
+       * undo.
+       */
+      priorDraft?: { body: string; frontmatter: Record<string, unknown> };
+      /** Draft revision the apply call produced. */
+      postApplyDraftRevision?: number;
+    }
+  | {
+      /**
+       * Undo succeeded inside the 6-second window. Strips the proposal
+       * from the rendering map (so the banner / log line both
+       * disappear) and appends a hidden side-channel turn describing
+       * the undo so the next conversationHistory send reflects it.
+       */
+      type: "mark-proposal-undone";
+      threadId: string;
+      proposalId: string;
+      undoneAt: string;
+      hiddenMessage: AssistantMessage;
     }
   | {
       type: "reject-proposal";
@@ -154,6 +182,29 @@ function describeAcceptanceForAgent(proposal: AssistantProposal): string {
       return `(I accepted your proposal to insert a block${target}.)`;
     case "update_frontmatter":
       return `(I accepted your proposal to update the frontmatter${target}.)`;
+  }
+}
+
+/**
+ * Side-channel text appended after a successful undo. Mirrors
+ * `describeAcceptanceForAgent` so the model receives a coherent
+ * acceptance → reversal pair in its conversation history and doesn't
+ * re-propose the change or reference it as still applied.
+ */
+function describeUndoForAgent(proposal: AssistantProposal): string {
+  const path = "docPath" in proposal ? proposal.docPath : undefined;
+  const target = path ? ` for \`${path}\`` : "";
+  switch (proposal.kind) {
+    case "create_document":
+      return `(I undid your proposal to create the document${target}. The draft has been removed.)`;
+    case "delete_document":
+      return `(I undid your proposal to delete the document${target}. The document has been restored.)`;
+    case "replace_selection":
+      return `(I undid your proposal to rewrite the selection${target}.)`;
+    case "insert_block":
+      return `(I undid your proposal to insert a block${target}.)`;
+    case "update_frontmatter":
+      return `(I undid your proposal to update the frontmatter${target}.)`;
   }
 }
 
@@ -656,10 +707,12 @@ function reducer(
         },
       };
     case "mark-proposal-accepted": {
-      // Stamp `acceptedAt` on the proposal record so the bubble renders
-      // a past-tense log line in place of the full card, and append the
-      // hidden side-channel turn so the next conversationHistory send
-      // carries the acceptance signal.
+      // Stamp `acceptedAt` (plus the per-kind undo metadata) on the
+      // proposal record so the bubble renders a past-tense log line in
+      // place of the full card, and append the hidden side-channel turn
+      // so the next conversationHistory send carries the acceptance
+      // signal. The undo metadata is what the post-accept undo handler
+      // reads to call the server with the right per-kind payload.
       const existing = state.store.proposals[action.proposalId];
       const updatedProposals = existing
         ? {
@@ -667,6 +720,15 @@ function reducer(
             [action.proposalId]: {
               ...existing,
               acceptedAt: action.acceptedAt,
+              ...(action.acceptedDocumentId !== undefined
+                ? { acceptedDocumentId: action.acceptedDocumentId }
+                : {}),
+              ...(action.priorDraft !== undefined
+                ? { priorDraft: action.priorDraft }
+                : {}),
+              ...(action.postApplyDraftRevision !== undefined
+                ? { postApplyDraftRevision: action.postApplyDraftRevision }
+                : {}),
             },
           }
         : state.store.proposals;
@@ -681,6 +743,44 @@ function reducer(
               ...thread,
               updatedAt: action.acceptedAt,
               messages: [...thread.messages, action.hiddenMessage],
+            };
+          }),
+        },
+      };
+    }
+    case "mark-proposal-undone": {
+      // Strip the proposal from its host message so the banner / log
+      // line disappears, append the hidden undo signal turn, and drop
+      // the proposal record + its wire-shape companion. The undo only
+      // succeeds while the window is open, so anything still keyed to
+      // this proposal in localStorage is now stale.
+      const { [action.proposalId]: _droppedProposal, ...remainingProposals } =
+        state.store.proposals;
+      const { [action.proposalId]: _droppedWire, ...remainingWireProposals } =
+        state.store.wireProposals;
+      return {
+        ...state,
+        store: {
+          ...state.store,
+          proposals: remainingProposals,
+          wireProposals: remainingWireProposals,
+          threads: state.store.threads.map((thread) => {
+            if (thread.id !== action.threadId) return thread;
+            return {
+              ...thread,
+              updatedAt: action.undoneAt,
+              messages: [
+                ...thread.messages.map((m) => {
+                  if (!m.proposals?.includes(action.proposalId)) return m;
+                  return {
+                    ...m,
+                    proposals: m.proposals.filter(
+                      (id) => id !== action.proposalId,
+                    ),
+                  };
+                }),
+                action.hiddenMessage,
+              ],
             };
           }),
         },
@@ -743,6 +843,15 @@ export type AssistantContextValue = {
   removeContextDoc: (path: string) => void;
   acceptProposal: (proposal: AssistantProposal) => void;
   rejectProposal: (proposal: AssistantProposal, feedback: string) => void;
+  /**
+   * Reverse a previously accepted proposal inside the 6-second
+   * post-accept undo window. Calls the server's undo endpoint with the
+   * per-kind payload captured on `acceptProposal`, dispatches the
+   * `mark-proposal-undone` reducer action, and emits a hidden
+   * side-channel turn so the agent's conversation history reflects
+   * the reversal.
+   */
+  undoProposal: (proposal: AssistantProposal) => void;
   /**
    * Submit a composer message. Appends a user turn, then calls the chat
    * endpoint via the injected `StudioAiRouteApi` and appends the assistant
@@ -813,6 +922,7 @@ const FALLBACK_VALUE: AssistantContextValue = {
   removeContextDoc: () => {},
   acceptProposal: () => {},
   rejectProposal: () => {},
+  undoProposal: () => {},
   sendMessage: () => {},
   cancelPending: () => {},
   isPending: false,
@@ -1300,7 +1410,7 @@ export function AssistantProvider({
             proposal.proposalId
           ] as StudioAiProposal | undefined;
           try {
-            await liveApi.applyProposal({
+            const applyResult = await liveApi.applyProposal({
               proposalId: proposal.proposalId,
               draftRevision:
                 "baseDraftRevision" in proposal
@@ -1330,6 +1440,121 @@ export function AssistantProvider({
               threadId: state.activeThreadId,
               proposalId: proposal.proposalId,
               acceptedAt,
+              hiddenMessage,
+              // Capture the per-kind undo metadata returned by the
+              // apply call so the AppliedBanner's Undo button can
+              // call the server with the right payload during the
+              // 6-second window.
+              ...(applyResult.document?.documentId
+                ? { acceptedDocumentId: applyResult.document.documentId }
+                : {}),
+              ...(applyResult.priorDraft
+                ? { priorDraft: applyResult.priorDraft }
+                : {}),
+              ...(typeof applyResult.document?.draftRevision === "number"
+                ? {
+                    postApplyDraftRevision: applyResult.document.draftRevision,
+                  }
+                : {}),
+            });
+          } catch (error) {
+            appendErrorTurn(placeholderUser, error);
+          }
+        })();
+      },
+      undoProposal: (proposal) => {
+        void (async () => {
+          const liveApi = apiRef.current;
+          const undoneAt = new Date().toISOString();
+          const placeholderUser: AssistantMessage = {
+            id: `m-undo-${Date.now().toString(36)}`,
+            role: "user",
+            at: undoneAt,
+            text: `Undo ${proposal.proposalId}`,
+          };
+          // Undo only makes sense when the proposal has been accepted
+          // *and* we know which doc it targeted. Apply always stamps
+          // these (acceptProposal above), so a missing id here means
+          // the proposal was reconstructed from stale localStorage
+          // from before this feature shipped — drop into the same
+          // error surface as any other apply failure.
+          if (!proposal.acceptedAt || !proposal.acceptedDocumentId) {
+            appendErrorTurn(
+              placeholderUser,
+              new RuntimeError({
+                code: "AI_UNDO_UNAVAILABLE",
+                message: "Undo is not available for this proposal.",
+                statusCode: 400,
+              }),
+            );
+            return;
+          }
+          if (!liveApi) {
+            appendErrorTurn(
+              placeholderUser,
+              new RuntimeError({
+                code: "AI_UNDO_UNAVAILABLE",
+                message:
+                  "AI route is not configured for this Studio mount — undo is disabled.",
+                statusCode: 503,
+              }),
+            );
+            return;
+          }
+          const schemaHash = await resolveSchemaHash();
+          if (!schemaHash) {
+            appendErrorTurn(
+              placeholderUser,
+              new RuntimeError({
+                code: "SCHEMA_HASH_UNAVAILABLE",
+                message:
+                  "Studio could not resolve the project schemaHash needed to undo this proposal.",
+                statusCode: 503,
+              }),
+            );
+            return;
+          }
+          const wireProposal = state.store.wireProposals[
+            proposal.proposalId
+          ] as StudioAiProposal | undefined;
+          if (!wireProposal) {
+            appendErrorTurn(
+              placeholderUser,
+              new RuntimeError({
+                code: "AI_UNDO_UNAVAILABLE",
+                message:
+                  "Studio cannot find the original proposal body needed for undo.",
+                statusCode: 400,
+              }),
+            );
+            return;
+          }
+          try {
+            await liveApi.undoProposal({
+              proposalId: proposal.proposalId,
+              proposal: wireProposal,
+              documentId: proposal.acceptedDocumentId,
+              schemaHash,
+              ...(proposal.priorDraft
+                ? { priorDraft: proposal.priorDraft }
+                : {}),
+              ...(typeof proposal.postApplyDraftRevision === "number"
+                ? { postApplyDraftRevision: proposal.postApplyDraftRevision }
+                : {}),
+            });
+            const undoSignal = describeUndoForAgent(proposal);
+            const hiddenMessage: AssistantMessage = {
+              id: `m-undo-signal-${Date.now().toString(36)}`,
+              role: "user",
+              at: undoneAt,
+              text: undoSignal,
+              hidden: true,
+            };
+            dispatch({
+              type: "mark-proposal-undone",
+              threadId: state.activeThreadId,
+              proposalId: proposal.proposalId,
+              undoneAt,
               hiddenMessage,
             });
           } catch (error) {

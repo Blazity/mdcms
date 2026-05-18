@@ -70,6 +70,27 @@ type ProposalCommonFields = {
    * disappearing.
    */
   acceptedAt?: string;
+  /**
+   * Document id resolved from the apply response. For `create_document`
+   * proposals this is the newly created doc the undo path soft-deletes;
+   * for `delete_document` it is the doc the undo path restores; for
+   * edit kinds it is the doc whose body/frontmatter the undo path
+   * replays. Absent until apply succeeds.
+   */
+  acceptedDocumentId?: string;
+  /**
+   * Pre-apply draft snapshot returned by the apply endpoint for the
+   * three body/frontmatter mutating kinds. Echoed back on undo so the
+   * server can replay it. Absent for `create_document` and
+   * `delete_document` proposals.
+   */
+  priorDraft?: { body: string; frontmatter: Record<string, unknown> };
+  /**
+   * Draft revision after the apply call landed. Used by the undo path
+   * to detect concurrent edits inside the 6-second window and refuse
+   * to clobber them.
+   */
+  postApplyDraftRevision?: number;
 };
 
 export type AssistantProposalEdit = ProposalCommonFields & {

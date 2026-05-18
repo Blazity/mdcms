@@ -103,6 +103,35 @@ function fakeApi(input: {
       const proposal = (input.proposals ?? [buildProposal()])[0]!;
       return { proposal: { ...proposal, proposalId } };
     },
+    async undoProposal({ proposalId }) {
+      // Inline AI hook tests do not exercise the undo surface; stub
+      // out with a no-op-shaped response so the contract is satisfied.
+      const proposal = (input.proposals ?? [buildProposal()])[0]!;
+      return {
+        proposal: { ...proposal, proposalId },
+        document: {
+          documentId: "doc_1",
+          translationGroupId: "tg_1",
+          project: "demo",
+          environment: "draft",
+          path: "blog/welcome",
+          type: "post",
+          locale: "en",
+          format: "md",
+          isDeleted: false,
+          hasUnpublishedChanges: true,
+          version: 1,
+          publishedVersion: null,
+          draftRevision: 6,
+          frontmatter: {},
+          body: "Welcome back.",
+          createdBy: "u",
+          createdAt: "2026-05-01T00:00:00.000Z",
+          updatedBy: "u",
+          updatedAt: "2026-05-01T00:00:02.000Z",
+        },
+      };
+    },
     async chatMessage({ message }) {
       // Inline AI hook tests do not exercise the chat surface; stub it
       // out with a minimal text-only response so the StudioAiRouteApi
