@@ -134,6 +134,48 @@ describe("createStudioAiRouteApi", () => {
     );
   });
 
+  test("undoProposal posts to the undo endpoint with priorDraft + documentId", async () => {
+    let capturedUrl: string | undefined;
+    let capturedBody: unknown;
+    const fetcher: typeof fetch = async (input, init) => {
+      capturedUrl = String(input);
+      capturedBody = init?.body ? JSON.parse(String(init.body)) : undefined;
+      return jsonResponse({
+        data: {
+          proposal: { proposalId: "p_1", kind: "replace_selection" },
+          document: { documentId: "doc_1", body: "Welcome." },
+        },
+      });
+    };
+
+    const api = createStudioAiRouteApi(config, { fetcher });
+    const result = await api.undoProposal({
+      proposalId: "p_1",
+      proposal: {
+        proposalId: "p_1",
+        kind: "replace_selection",
+        operations: [],
+      } as never,
+      documentId: "doc_1",
+      schemaHash: "h",
+      priorDraft: { body: "Welcome.", frontmatter: { title: "Hi" } },
+      postApplyDraftRevision: 5,
+    });
+
+    assert.match(capturedUrl ?? "", /\/api\/v1\/ai\/proposals\/p_1\/undo$/);
+    const body = capturedBody as {
+      documentId: string;
+      schemaHash: string;
+      priorDraft: { body: string };
+      postApplyDraftRevision: number;
+    };
+    assert.equal(body.documentId, "doc_1");
+    assert.equal(body.schemaHash, "h");
+    assert.equal(body.priorDraft.body, "Welcome.");
+    assert.equal(body.postApplyDraftRevision, 5);
+    assert.equal(result.document.body, "Welcome.");
+  });
+
   test("rejectProposal hits the reject endpoint", async () => {
     let capturedUrl: string | undefined;
     const fetcher: typeof fetch = async (input) => {

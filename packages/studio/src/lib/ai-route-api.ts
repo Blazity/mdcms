@@ -125,7 +125,47 @@ export type StudioAiApplyRequest = {
   signal?: AbortSignal;
 };
 
+/**
+ * Snapshot of the pre-apply draft body and frontmatter returned by the
+ * apply route for body/frontmatter mutating kinds. The client passes
+ * this back to the undo route so the server can replay it without
+ * holding state across calls.
+ */
+export type StudioAiPriorDraft = {
+  body: string;
+  frontmatter: Record<string, unknown>;
+};
+
 export type StudioAiApplyResult = {
+  proposal: StudioAiProposal;
+  document: ContentDocumentResponse;
+  /**
+   * Pre-apply draft snapshot, present only for `replace_selection`,
+   * `insert_block`, and `update_frontmatter` proposals. Client undo
+   * for those kinds passes this back to the server verbatim.
+   */
+  priorDraft?: StudioAiPriorDraft;
+};
+
+export type StudioAiUndoRequest = {
+  proposalId: string;
+  /** Wire-shape proposal body, same envelope as `applyProposal`. */
+  proposal: StudioAiProposal;
+  /** Document the apply call produced or mutated. */
+  documentId: string;
+  schemaHash: string;
+  /** Required for body/frontmatter undo; ignored for create/delete. */
+  priorDraft?: StudioAiPriorDraft;
+  /**
+   * Post-apply draft revision. The server uses this to fail loud with
+   * `AI_PROPOSAL_CONFLICT` when the doc has been edited inside the 6s
+   * undo window so the replay can't clobber concurrent changes.
+   */
+  postApplyDraftRevision?: number;
+  signal?: AbortSignal;
+};
+
+export type StudioAiUndoResult = {
   proposal: StudioAiProposal;
   document: ContentDocumentResponse;
 };
@@ -218,6 +258,12 @@ export type StudioAiRouteApi = {
     input: StudioAiInlineTransformRequest,
   ): Promise<StudioAiInlineTransformResult>;
   applyProposal(input: StudioAiApplyRequest): Promise<StudioAiApplyResult>;
+  /**
+   * Reverse a previously applied proposal through the post-accept undo
+   * window. Routes per kind to a delete / restore / body replay on the
+   * server and emits a paired audit record (`outcome: undone`).
+   */
+  undoProposal(input: StudioAiUndoRequest): Promise<StudioAiUndoResult>;
   rejectProposal(
     input: StudioAiRejectRequest,
   ): Promise<{ proposal: StudioAiProposal }>;
@@ -458,6 +504,47 @@ export function createStudioAiRouteApi(
 
       return unwrapData<StudioAiApplyResult>(
         "POST /api/v1/ai/proposals/:id/apply",
+        payload,
+      );
+    },
+    async undoProposal(input) {
+      const url = buildAiUrl(
+        config,
+        `/api/v1/ai/proposals/${encodeURIComponent(input.proposalId)}/undo`,
+      );
+      const csrfToken = await loadCsrfToken();
+      const response = await fetchAi(config, options, url, {
+        method: "POST",
+        headers: targetHeaders(
+          config,
+          csrfToken ? { "x-mdcms-csrf-token": csrfToken } : undefined,
+        ),
+        signal: input.signal,
+        body: JSON.stringify({
+          proposal: input.proposal,
+          documentId: input.documentId,
+          schemaHash: input.schemaHash,
+          ...(input.priorDraft !== undefined
+            ? { priorDraft: input.priorDraft }
+            : {}),
+          ...(typeof input.postApplyDraftRevision === "number"
+            ? { postApplyDraftRevision: input.postApplyDraftRevision }
+            : {}),
+        }),
+      });
+      const payload = await readJson(response);
+
+      if (!response.ok) {
+        throw failureFromResponse(
+          "POST /api/v1/ai/proposals/:id/undo",
+          response,
+          payload,
+          "Failed to undo AI proposal.",
+        );
+      }
+
+      return unwrapData<StudioAiUndoResult>(
+        "POST /api/v1/ai/proposals/:id/undo",
         payload,
       );
     },

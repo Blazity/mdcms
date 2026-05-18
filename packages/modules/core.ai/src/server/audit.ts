@@ -16,7 +16,9 @@ export type AiAuditOutcome =
   | "rejected"
   | "expired"
   | "apply_failed"
-  | "validation_failed";
+  | "validation_failed"
+  | "undone"
+  | "undo_failed";
 
 /**
  * Audit-only task kind union. The chat surface produces one audit

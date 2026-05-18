@@ -33,6 +33,7 @@ import type {
   AssistantProposal,
   AssistantThread,
 } from "./assistant-types.js";
+import { triggerTopAppliedUndo } from "./applied-undo-stack.js";
 import { AssistantMarkdown } from "./assistant-markdown.js";
 import { EmptyStarter } from "./empty-starter.js";
 import { KindGlyph } from "./kind-glyph.js";
@@ -383,6 +384,7 @@ function AssistantBubble({
   isStreamingPlaceholder,
   onAccept,
   onReject,
+  onUndo,
 }: {
   message: AssistantMessage;
   proposalsById: Record<string, AssistantProposal>;
@@ -394,6 +396,14 @@ function AssistantBubble({
   isStreamingPlaceholder: boolean;
   onAccept: (proposalId: string) => void;
   onReject: (proposalId: string, feedback: string) => void;
+  /**
+   * Optional handler for the post-accept Undo button. Returns a
+   * promise so the banner can wait for the server's response before
+   * dismissing — failures keep the banner mounted with an inline
+   * error. Omitted when no live AI route is wired (e.g. showcases /
+   * tests); in that case the banner hides the button.
+   */
+  onUndo?: (proposalId: string) => Promise<void>;
 }) {
   const proposalIds = message.proposals ?? [];
   const text = message.text?.trim();
@@ -430,6 +440,7 @@ function AssistantBubble({
               proposal={proposal}
               onAccept={() => onAccept(proposal.proposalId)}
               onReject={(feedback) => onReject(proposal.proposalId, feedback)}
+              {...(onUndo ? { onUndo: () => onUndo(proposal.proposalId) } : {})}
             />
           ))}
         {isMultiTurn && (
@@ -437,6 +448,7 @@ function AssistantBubble({
             proposals={proposals}
             onAccept={onAccept}
             onReject={onReject}
+            {...(onUndo ? { onUndo } : {})}
           />
         )}
       </div>
@@ -539,10 +551,18 @@ function TurnGroup({
   proposals,
   onAccept,
   onReject,
+  onUndo,
 }: {
   proposals: AssistantProposal[];
   onAccept: (proposalId: string) => void;
   onReject: (proposalId: string, feedback: string) => void;
+  /**
+   * Optional undo handler — same contract as the single-card path.
+   * Each accepted child opens its own independent undo window per
+   * SPEC-014 §Post-Accept Undo Window, so we thread the handler into
+   * every row instead of scoping it to the most recent accept.
+   */
+  onUndo?: (proposalId: string) => Promise<void>;
 }) {
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({});
   const [showReject, setShowReject] = React.useState(false);
@@ -575,8 +595,17 @@ function TurnGroup({
                 // Hand the row off to the same accepted-view component
                 // a single card uses: 6s lime banner with countdown
                 // first, then morphs to the quiet past-tense log line.
+                // Threading onUndo here is what gives each accepted
+                // child its own independent undo window — without it
+                // multi-proposal turns would silently drop the Undo
+                // affordance the single-card path exposes.
                 <div className="px-3 py-2">
-                  <AcceptedView proposal={proposal} />
+                  <AcceptedView
+                    proposal={proposal}
+                    {...(onUndo
+                      ? { onUndo: () => onUndo(proposal.proposalId) }
+                      : {})}
+                  />
                 </div>
               ) : (
                 <>
@@ -1070,6 +1099,36 @@ export function AssistantPanel({
   // textarea against this state.
   const [draft, setDraft] = React.useState("");
   const composerRef = React.useRef<HTMLTextAreaElement | null>(null);
+  // Root of the panel — used by the panel-scoped ⌘Z / Ctrl-Z handler
+  // to check whether focus is inside our subtree before stealing the
+  // shortcut from the OS / browser.
+  const panelRootRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Panel-scoped post-accept undo shortcut: ⌘Z (macOS) or Ctrl+Z
+  // (other) triggers the most recently registered undo handler
+  // surfaced by `AppliedBanner`. We listen on `document` so the
+  // shortcut fires even when focus is on a composer textarea inside
+  // the panel — only the focus-containment check matters for whether
+  // we claim the event.
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      // Bail on Shift+Z so redo (⌘⇧Z) and selection-extend never
+      // collide with the undo window.
+      if (event.shiftKey) return;
+      const isUndoChord = event.metaKey || event.ctrlKey;
+      if (!isUndoChord) return;
+      if (event.key.toLowerCase() !== "z") return;
+      const root = panelRootRef.current;
+      const active = document.activeElement;
+      if (!root || !active || !root.contains(active)) return;
+      const fired = triggerTopAppliedUndo();
+      if (fired) {
+        event.preventDefault();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   // Sticky-at-bottom auto-scroll. Tracks whether the user is currently
   // pinned to the latest message; we only auto-scroll on new content
@@ -1151,7 +1210,10 @@ export function AssistantPanel({
   const visibleThreadList = !hideThreadList;
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden bg-card text-card-foreground">
+    <div
+      ref={panelRootRef}
+      className="flex h-full min-h-0 overflow-hidden bg-card text-card-foreground"
+    >
       {visibleThreadList && (
         <ThreadList
           threads={assistant.store.threads}
@@ -1280,6 +1342,11 @@ export function AssistantPanel({
                     onReject={(pid, feedback) => {
                       const p = assistant.store.proposals[pid];
                       if (p) assistant.rejectProposal(p, feedback);
+                    }}
+                    onUndo={async (pid) => {
+                      const p = assistant.store.proposals[pid];
+                      if (!p) return;
+                      await assistant.undoProposal(p);
                     }}
                   />
                 ),

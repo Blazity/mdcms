@@ -9,6 +9,7 @@ import {
 
 import {
   applyAiProposal,
+  applyAiProposalUndo,
   type AiApplyContentStore,
   type AiApplyWritePayload,
 } from "./apply.js";
@@ -81,6 +82,7 @@ type StubStoreState = {
     options: { expectedSchemaHash: string };
   }>;
   softDeleteCalls: Array<{ documentId: string }>;
+  restoreCalls?: Array<{ documentId: string }>;
 };
 
 function createStubStore(state: StubStoreState): AiApplyContentStore {
@@ -116,6 +118,11 @@ function createStubStore(state: StubStoreState): AiApplyContentStore {
       state.softDeleteCalls.push({ documentId });
       return { ...state.document, isDeleted: true };
     },
+    async restore(_scope, documentId) {
+      state.restoreCalls = state.restoreCalls ?? [];
+      state.restoreCalls.push({ documentId });
+      return { ...state.document, isDeleted: false };
+    },
   };
 }
 
@@ -147,7 +154,13 @@ describe("applyAiProposal", () => {
     assert.equal(call.payload.updatedBy, undefined);
     assert.equal(call.options.expectedDraftRevision, 4);
     assert.equal(call.options.expectedSchemaHash, "hash_1");
-    assert.equal(result.body, "Hi there!");
+    assert.equal(result.document.body, "Hi there!");
+    assert.ok(
+      result.priorDraft,
+      "replace_selection apply must return a priorDraft snapshot for undo",
+    );
+    assert.equal(result.priorDraft!.body, "Welcome to the site.");
+    assert.deepEqual(result.priorDraft!.frontmatter, { title: "Welcome" });
   });
 
   test("conflict when original selection text is missing in body", async () => {
@@ -279,7 +292,7 @@ describe("applyAiProposal", () => {
     };
     const store = createStubStore(state);
 
-    const document = await applyAiProposal({
+    const result = await applyAiProposal({
       proposal: buildProposal({
         proposalId: "p_3",
         kind: "delete_document",
@@ -300,7 +313,12 @@ describe("applyAiProposal", () => {
     assert.equal(state.createCalls.length, 0);
     assert.equal(state.softDeleteCalls.length, 1);
     assert.equal(state.softDeleteCalls[0]!.documentId, "doc_1");
-    assert.equal(document.isDeleted, true);
+    assert.equal(result.document.isDeleted, true);
+    assert.equal(
+      result.priorDraft,
+      undefined,
+      "delete_document apply does not return a body/frontmatter priorDraft",
+    );
   });
 
   test("delete_document fails when the document does not exist", async () => {
@@ -446,5 +464,212 @@ describe("applyAiProposal", () => {
     );
 
     assert.equal(state.softDeleteCalls.length, 0);
+  });
+});
+
+describe("applyAiProposalUndo", () => {
+  test("create_document undo soft-deletes the newly created document", async () => {
+    const state: StubStoreState = {
+      document: buildDocument({ documentId: "doc_new" }),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    const result = await applyAiProposalUndo({
+      proposal: buildProposal({
+        proposalId: "p_create_undo",
+        kind: "create_document",
+        documentId: undefined,
+        baseDraftRevision: undefined,
+        operations: [
+          {
+            op: "create_document",
+            path: "blog/new",
+            format: "mdx",
+            frontmatter: {},
+            body: "",
+          },
+        ],
+      }),
+      documentId: "doc_new",
+      expectedSchemaHash: "hash_undo",
+      actorId: "user_99",
+      store,
+    });
+
+    assert.equal(state.softDeleteCalls.length, 1);
+    assert.equal(state.softDeleteCalls[0]!.documentId, "doc_new");
+    assert.equal(result.document.isDeleted, true);
+  });
+
+  test("delete_document undo restores the soft-deleted document", async () => {
+    const state: StubStoreState = {
+      document: buildDocument({ isDeleted: true }),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    const result = await applyAiProposalUndo({
+      proposal: buildProposal({
+        proposalId: "p_delete_undo",
+        kind: "delete_document",
+        operations: [
+          {
+            op: "delete_document",
+            path: "blog/welcome",
+          },
+        ],
+      }),
+      documentId: "doc_1",
+      expectedSchemaHash: "hash_undo",
+      actorId: "user_99",
+      store,
+    });
+
+    assert.equal(state.restoreCalls?.length ?? 0, 1);
+    assert.equal(state.restoreCalls![0]!.documentId, "doc_1");
+    assert.equal(result.document.isDeleted, false);
+  });
+
+  test("delete_document undo refuses when the document is not deleted", async () => {
+    const state: StubStoreState = {
+      document: buildDocument({ isDeleted: false }),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    await assert.rejects(
+      () =>
+        applyAiProposalUndo({
+          proposal: buildProposal({
+            proposalId: "p_delete_undo_idempotent",
+            kind: "delete_document",
+            operations: [{ op: "delete_document", path: "blog/welcome" }],
+          }),
+          documentId: "doc_1",
+          expectedSchemaHash: "hash_undo",
+          actorId: "user_99",
+          store,
+        }),
+      (error) =>
+        error instanceof RuntimeError && error.code === "AI_PROPOSAL_CONFLICT",
+    );
+    assert.equal(state.restoreCalls?.length ?? 0, 0);
+  });
+
+  test("replace_selection undo replays the captured priorDraft via update", async () => {
+    const state: StubStoreState = {
+      document: buildDocument({ body: "Hi there!", draftRevision: 5 }),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    const priorDraft = {
+      body: "Welcome to the site.",
+      frontmatter: { title: "Welcome" },
+    };
+
+    await applyAiProposalUndo({
+      proposal: buildProposal(),
+      documentId: "doc_1",
+      expectedSchemaHash: "hash_undo",
+      priorDraft,
+      postApplyDraftRevision: 5,
+      actorId: "user_99",
+      store,
+    });
+
+    assert.equal(state.updateCalls.length, 1);
+    const call = state.updateCalls[0]!;
+    assert.equal(call.payload.body, "Welcome to the site.");
+    assert.deepEqual(call.payload.frontmatter, { title: "Welcome" });
+    assert.equal(call.options.expectedDraftRevision, 5);
+  });
+
+  test("replace_selection undo fails loud on a concurrent edit", async () => {
+    const state: StubStoreState = {
+      document: buildDocument({ draftRevision: 7 }),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    await assert.rejects(
+      () =>
+        applyAiProposalUndo({
+          proposal: buildProposal(),
+          documentId: "doc_1",
+          expectedSchemaHash: "hash_undo",
+          priorDraft: { body: "original", frontmatter: {} },
+          postApplyDraftRevision: 5,
+          actorId: "user_99",
+          store,
+        }),
+      (error) =>
+        error instanceof RuntimeError && error.code === "AI_PROPOSAL_CONFLICT",
+    );
+    assert.equal(state.updateCalls.length, 0);
+  });
+
+  test("body-kind undo requires postApplyDraftRevision (defense-in-depth)", async () => {
+    const state: StubStoreState = {
+      document: buildDocument(),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    // Caller has a priorDraft but forgot to pass the revision. The
+    // route also rejects this, but `applyAiProposalUndo` is a public
+    // export — its own contract MUST refuse the unsafe replay so a
+    // direct caller can't skip the concurrent-edit guard.
+    await assert.rejects(
+      () =>
+        applyAiProposalUndo({
+          proposal: buildProposal(),
+          documentId: "doc_1",
+          expectedSchemaHash: "hash_undo",
+          priorDraft: { body: "original", frontmatter: {} },
+          actorId: "user_99",
+          store,
+        }),
+      (error) =>
+        error instanceof RuntimeError && error.code === "AI_OUTPUT_INVALID",
+    );
+    assert.equal(state.updateCalls.length, 0);
+  });
+
+  test("body-kind undo requires a priorDraft snapshot", async () => {
+    const state: StubStoreState = {
+      document: buildDocument(),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    await assert.rejects(
+      () =>
+        applyAiProposalUndo({
+          proposal: buildProposal(),
+          documentId: "doc_1",
+          expectedSchemaHash: "hash_undo",
+          actorId: "user_99",
+          store,
+        }),
+      (error) =>
+        error instanceof RuntimeError && error.code === "AI_OUTPUT_INVALID",
+    );
+    assert.equal(state.updateCalls.length, 0);
   });
 });

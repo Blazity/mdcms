@@ -29,11 +29,16 @@ export {
 } from "./server/index.js";
 export {
   applyAiProposal,
+  applyAiProposalUndo,
   type AiApplyContentDocument,
   type AiApplyContentScope,
   type AiApplyContentStore,
   type AiApplyInput,
+  type AiApplyPriorDraft,
+  type AiApplyResult,
   type AiApplyWritePayload,
+  type AiUndoInput,
+  type AiUndoResult,
 } from "./server/apply.js";
 export {
   createInMemoryAiProposalStore,
@@ -55,6 +60,7 @@ export {
   type InlineTransformRequestBody,
   type MountAiRoutesOptions,
   type ProposalApplyRequestBody,
+  type ProposalUndoRequestBody,
 } from "./server/routes.js";
 export { aiError, isAiErrorCode, mapProviderError } from "./server/errors.js";
 export {
