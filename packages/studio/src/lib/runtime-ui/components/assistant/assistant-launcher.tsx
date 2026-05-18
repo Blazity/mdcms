@@ -30,7 +30,7 @@ export function AssistantLauncher({ className }: { className?: string }) {
       className={cn(
         "inline-flex h-9 items-center gap-2 rounded-md border px-3 font-mono text-[12px] font-semibold transition-colors",
         isOpen
-          ? "border-vibrant-green/40 bg-vibrant-green/10 text-vibrant-green"
+          ? "border-vibrant-green-border bg-vibrant-green/15 text-foreground"
           : "border-border text-foreground hover:bg-muted",
         className,
       )}
