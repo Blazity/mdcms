@@ -651,10 +651,12 @@ export type ProposalCardProps = {
   /**
    * Optional undo handler. When provided AND the proposal has been
    * accepted, the post-accept banner exposes an Undo button during the
-   * 6-second window. Omitted by callers that don't have a live AI
-   * route configured (e.g. showcases / tests).
+   * 6-second window. Returns a promise that resolves on success and
+   * rejects on failure so the banner can surface inline errors per
+   * SPEC-014 §Post-Accept Undo Window. Omitted by callers without a
+   * live AI route configured (e.g. showcases / tests).
    */
-  onUndo?: () => void;
+  onUndo?: () => Promise<void>;
 };
 
 /** 6-second window — Sonia's design + the AI Elements reference both use this. */
@@ -734,9 +736,23 @@ export type AppliedBannerProps = {
    * Whether the undo affordance is actually wired up for this kind
    * of proposal. When false the banner still shows the countdown but
    * hides the Undo button so we don't promise a revert we can't
-   * deliver (anything other than `create_document` today).
+   * deliver.
    */
   canUndo: boolean;
+  /**
+   * True while the undo round-trip is in flight. The button shows a
+   * pending label and the countdown is paused so the window doesn't
+   * expire under the user mid-undo.
+   */
+  pending?: boolean;
+  /**
+   * Inline error to render below the row when the server rejected
+   * the undo (typically `AI_PROPOSAL_CONFLICT` from a concurrent
+   * edit). The banner stays mounted so the user sees what happened
+   * — SPEC-014 §Post-Accept Undo Window requires inline reporting
+   * rather than appending a chat-level error turn.
+   */
+  errorMessage?: string;
 };
 
 /**
@@ -751,6 +767,8 @@ export function AppliedBanner({
   onUndo,
   onExpire,
   canUndo,
+  pending = false,
+  errorMessage,
 }: AppliedBannerProps) {
   const [paused, setPaused] = React.useState(false);
   const acceptedAt = proposal.acceptedAt;
@@ -776,11 +794,13 @@ export function AppliedBanner({
   }, [canUndo]);
   // `acceptedAt` is required for this banner to render — the caller
   // gates on it, but TypeScript needs the narrowing here so the hook
-  // doesn't see a possibly-undefined value.
+  // doesn't see a possibly-undefined value. Pause the countdown
+  // while the undo round-trip is in flight or after a failure so the
+  // window doesn't expire out from under the user mid-recovery.
   const progress = useUndoCountdown(
     UNDO_WINDOW_MS,
     acceptedAt ?? new Date().toISOString(),
-    paused,
+    paused || pending || Boolean(errorMessage),
     onExpire,
   );
   const secondsRemaining = Math.max(
@@ -819,16 +839,28 @@ export function AppliedBanner({
         {canUndo && onUndo && (
           <button
             type="button"
-            onClick={onUndo}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded border border-divider/60 bg-transparent px-2.5 py-0.5 font-mono text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
+            onClick={pending ? undefined : onUndo}
+            disabled={pending}
+            aria-disabled={pending}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded border border-divider/60 bg-transparent px-2.5 py-0.5 font-mono text-[11px] font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <span>Undo</span>
-            <span className="font-mono text-[10.5px] text-foreground-muted tabular-nums">
-              ({secondsRemaining})
-            </span>
+            <span>{pending ? "Undoing…" : "Undo"}</span>
+            {!pending && (
+              <span className="font-mono text-[10.5px] text-foreground-muted tabular-nums">
+                ({secondsRemaining})
+              </span>
+            )}
           </button>
         )}
       </div>
+      {errorMessage && (
+        <div
+          role="alert"
+          className="border-t border-divider/40 bg-destructive/[0.06] px-3 py-1.5 font-mono text-[11px] text-destructive"
+        >
+          {errorMessage}
+        </div>
+      )}
       <div
         aria-hidden
         className="relative h-0.5 overflow-hidden bg-transparent"
@@ -859,10 +891,13 @@ export function AcceptedView({
   /**
    * Wired by the host when a live AI route is available AND the
    * proposal carries the per-kind undo metadata stamped at accept
-   * time. Absent for stale localStorage records from before the undo
-   * feature shipped — those land in the quiet log line immediately.
+   * time. Returns a promise that resolves on success and rejects on
+   * failure so the banner can stay mounted and render the inline
+   * error per SPEC-014 §Post-Accept Undo Window. Absent for stale
+   * localStorage records from before the undo feature shipped —
+   * those land in the quiet log line immediately.
    */
-  onUndo?: () => void;
+  onUndo?: () => Promise<void>;
 }) {
   const acceptedAt = proposal.acceptedAt;
   // Page-reload-safe initial state: if more than the window has
@@ -871,13 +906,16 @@ export function AcceptedView({
     ? Date.now() - new Date(acceptedAt).getTime() >= UNDO_WINDOW_MS
     : true;
   const [expired, setExpired] = React.useState(startsExpired);
-  // Local undo flag flips when the user clicks the button (or fires
-  // the keyboard shortcut). We track it here so the banner dismisses
-  // immediately even before the reducer drops the proposal record on
-  // the round-trip's resolve. Without this, the banner would linger
-  // for one render cycle after click and the countdown would keep
-  // ticking visually.
-  const [undone, setUndone] = React.useState(false);
+  // `pending` flips while the undo round-trip is in flight; the
+  // banner pauses its countdown and disables the button. On success
+  // the reducer removes the proposal record and the component
+  // unmounts naturally — we never set a local "undone" flag, so a
+  // server failure leaves the banner exactly where it was with the
+  // inline error attached.
+  const [pending, setPending] = React.useState(false);
+  const [errorMessage, setErrorMessage] = React.useState<string | undefined>(
+    undefined,
+  );
   // Undo is only offered when the host wired a handler AND the
   // proposal carries the metadata the handler needs (accepted doc id,
   // and a priorDraft for body/frontmatter kinds).
@@ -888,11 +926,6 @@ export function AcceptedView({
         proposal.kind === "delete_document" ||
         Boolean(proposal.priorDraft)),
   );
-  if (undone) {
-    // The reducer will remove the proposal record momentarily; render
-    // nothing in the meantime so we don't flash the log line.
-    return null;
-  }
   if (expired || !acceptedAt) {
     return <AppliedLogLine proposal={proposal} />;
   }
@@ -901,16 +934,55 @@ export function AcceptedView({
       proposal={proposal}
       onExpire={() => setExpired(true)}
       canUndo={canUndo}
+      pending={pending}
+      {...(errorMessage ? { errorMessage } : {})}
       {...(canUndo && onUndo
         ? {
             onUndo: () => {
-              setUndone(true);
-              onUndo();
+              if (pending) return;
+              setPending(true);
+              setErrorMessage(undefined);
+              onUndo().then(
+                () => {
+                  // Success: the reducer's `mark-proposal-undone`
+                  // strips the proposal record and the component
+                  // unmounts. Nothing to do locally — clearing
+                  // state on an about-to-unmount component would
+                  // trigger a stale setState warning.
+                },
+                (error: unknown) => {
+                  const message = extractUndoErrorMessage(error);
+                  setErrorMessage(message);
+                  setPending(false);
+                },
+              );
             },
           }
         : {})}
     />
   );
+}
+
+/**
+ * Surface a useful inline message from an undo failure. We special-case
+ * the conflict code (the most common reason for the user to see this
+ * path — they edited the doc inside the 6s window) since the raw
+ * server message is operator-oriented; everything else falls through
+ * to the carrier's own message.
+ */
+function extractUndoErrorMessage(error: unknown): string {
+  if (
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "AI_PROPOSAL_CONFLICT"
+  ) {
+    return "Can't undo — the document was edited after the apply.";
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return "Undo failed.";
 }
 
 /**

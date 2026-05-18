@@ -850,8 +850,13 @@ export type AssistantContextValue = {
    * `mark-proposal-undone` reducer action, and emits a hidden
    * side-channel turn so the agent's conversation history reflects
    * the reversal.
+   *
+   * Returns a promise that resolves on success and rejects with the
+   * underlying error on failure. Failure does NOT append a chat error
+   * turn — SPEC-014 §Post-Accept Undo Window requires the banner to
+   * keep itself mounted and surface the inline error.
    */
-  undoProposal: (proposal: AssistantProposal) => void;
+  undoProposal: (proposal: AssistantProposal) => Promise<void>;
   /**
    * Submit a composer message. Appends a user turn, then calls the chat
    * endpoint via the injected `StudioAiRouteApi` and appends the assistant
@@ -922,7 +927,7 @@ const FALLBACK_VALUE: AssistantContextValue = {
   removeContextDoc: () => {},
   acceptProposal: () => {},
   rejectProposal: () => {},
-  undoProposal: () => {},
+  undoProposal: async () => {},
   sendMessage: () => {},
   cancelPending: () => {},
   isPending: false,
@@ -1462,105 +1467,72 @@ export function AssistantProvider({
           }
         })();
       },
-      undoProposal: (proposal) => {
-        void (async () => {
-          const liveApi = apiRef.current;
-          const undoneAt = new Date().toISOString();
-          const placeholderUser: AssistantMessage = {
-            id: `m-undo-${Date.now().toString(36)}`,
-            role: "user",
-            at: undoneAt,
-            text: `Undo ${proposal.proposalId}`,
-          };
-          // Undo only makes sense when the proposal has been accepted
-          // *and* we know which doc it targeted. Apply always stamps
-          // these (acceptProposal above), so a missing id here means
-          // the proposal was reconstructed from stale localStorage
-          // from before this feature shipped — drop into the same
-          // error surface as any other apply failure.
-          if (!proposal.acceptedAt || !proposal.acceptedDocumentId) {
-            appendErrorTurn(
-              placeholderUser,
-              new RuntimeError({
-                code: "AI_UNDO_UNAVAILABLE",
-                message: "Undo is not available for this proposal.",
-                statusCode: 400,
-              }),
-            );
-            return;
-          }
-          if (!liveApi) {
-            appendErrorTurn(
-              placeholderUser,
-              new RuntimeError({
-                code: "AI_UNDO_UNAVAILABLE",
-                message:
-                  "AI route is not configured for this Studio mount — undo is disabled.",
-                statusCode: 503,
-              }),
-            );
-            return;
-          }
-          const schemaHash = await resolveSchemaHash();
-          if (!schemaHash) {
-            appendErrorTurn(
-              placeholderUser,
-              new RuntimeError({
-                code: "SCHEMA_HASH_UNAVAILABLE",
-                message:
-                  "Studio could not resolve the project schemaHash needed to undo this proposal.",
-                statusCode: 503,
-              }),
-            );
-            return;
-          }
-          const wireProposal = state.store.wireProposals[
-            proposal.proposalId
-          ] as StudioAiProposal | undefined;
-          if (!wireProposal) {
-            appendErrorTurn(
-              placeholderUser,
-              new RuntimeError({
-                code: "AI_UNDO_UNAVAILABLE",
-                message:
-                  "Studio cannot find the original proposal body needed for undo.",
-                statusCode: 400,
-              }),
-            );
-            return;
-          }
-          try {
-            await liveApi.undoProposal({
-              proposalId: proposal.proposalId,
-              proposal: wireProposal,
-              documentId: proposal.acceptedDocumentId,
-              schemaHash,
-              ...(proposal.priorDraft
-                ? { priorDraft: proposal.priorDraft }
-                : {}),
-              ...(typeof proposal.postApplyDraftRevision === "number"
-                ? { postApplyDraftRevision: proposal.postApplyDraftRevision }
-                : {}),
-            });
-            const undoSignal = describeUndoForAgent(proposal);
-            const hiddenMessage: AssistantMessage = {
-              id: `m-undo-signal-${Date.now().toString(36)}`,
-              role: "user",
-              at: undoneAt,
-              text: undoSignal,
-              hidden: true,
-            };
-            dispatch({
-              type: "mark-proposal-undone",
-              threadId: state.activeThreadId,
-              proposalId: proposal.proposalId,
-              undoneAt,
-              hiddenMessage,
-            });
-          } catch (error) {
-            appendErrorTurn(placeholderUser, error);
-          }
-        })();
+      undoProposal: async (proposal) => {
+        // Failures here propagate to the caller so the AppliedBanner
+        // can stay mounted and render an inline error — SPEC-014
+        // says undo errors do NOT become chat error turns.
+        const liveApi = apiRef.current;
+        if (!proposal.acceptedAt || !proposal.acceptedDocumentId) {
+          throw new RuntimeError({
+            code: "AI_UNDO_UNAVAILABLE",
+            message: "Undo is not available for this proposal.",
+            statusCode: 400,
+          });
+        }
+        if (!liveApi) {
+          throw new RuntimeError({
+            code: "AI_UNDO_UNAVAILABLE",
+            message:
+              "AI route is not configured for this Studio mount — undo is disabled.",
+            statusCode: 503,
+          });
+        }
+        const schemaHash = await resolveSchemaHash();
+        if (!schemaHash) {
+          throw new RuntimeError({
+            code: "SCHEMA_HASH_UNAVAILABLE",
+            message:
+              "Studio could not resolve the project schemaHash needed to undo this proposal.",
+            statusCode: 503,
+          });
+        }
+        const wireProposal = state.store.wireProposals[proposal.proposalId] as
+          | StudioAiProposal
+          | undefined;
+        if (!wireProposal) {
+          throw new RuntimeError({
+            code: "AI_UNDO_UNAVAILABLE",
+            message:
+              "Studio cannot find the original proposal body needed for undo.",
+            statusCode: 400,
+          });
+        }
+        await liveApi.undoProposal({
+          proposalId: proposal.proposalId,
+          proposal: wireProposal,
+          documentId: proposal.acceptedDocumentId,
+          schemaHash,
+          ...(proposal.priorDraft ? { priorDraft: proposal.priorDraft } : {}),
+          ...(typeof proposal.postApplyDraftRevision === "number"
+            ? { postApplyDraftRevision: proposal.postApplyDraftRevision }
+            : {}),
+        });
+        const undoneAt = new Date().toISOString();
+        const undoSignal = describeUndoForAgent(proposal);
+        const hiddenMessage: AssistantMessage = {
+          id: `m-undo-signal-${Date.now().toString(36)}`,
+          role: "user",
+          at: undoneAt,
+          text: undoSignal,
+          hidden: true,
+        };
+        dispatch({
+          type: "mark-proposal-undone",
+          threadId: state.activeThreadId,
+          proposalId: proposal.proposalId,
+          undoneAt,
+          hiddenMessage,
+        });
       },
       rejectProposal: (proposal, feedback) => {
         void (async () => {

@@ -397,11 +397,13 @@ function AssistantBubble({
   onAccept: (proposalId: string) => void;
   onReject: (proposalId: string, feedback: string) => void;
   /**
-   * Optional handler for the post-accept Undo button. Omitted when no
-   * live AI route is wired (e.g. showcases / tests) — in that case
-   * the AppliedBanner hides the button.
+   * Optional handler for the post-accept Undo button. Returns a
+   * promise so the banner can wait for the server's response before
+   * dismissing — failures keep the banner mounted with an inline
+   * error. Omitted when no live AI route is wired (e.g. showcases /
+   * tests); in that case the banner hides the button.
    */
-  onUndo?: (proposalId: string) => void;
+  onUndo?: (proposalId: string) => Promise<void>;
 }) {
   const proposalIds = message.proposals ?? [];
   const text = message.text?.trim();
@@ -446,6 +448,7 @@ function AssistantBubble({
             proposals={proposals}
             onAccept={onAccept}
             onReject={onReject}
+            {...(onUndo ? { onUndo } : {})}
           />
         )}
       </div>
@@ -548,10 +551,18 @@ function TurnGroup({
   proposals,
   onAccept,
   onReject,
+  onUndo,
 }: {
   proposals: AssistantProposal[];
   onAccept: (proposalId: string) => void;
   onReject: (proposalId: string, feedback: string) => void;
+  /**
+   * Optional undo handler — same contract as the single-card path.
+   * Each accepted child opens its own independent undo window per
+   * SPEC-014 §Post-Accept Undo Window, so we thread the handler into
+   * every row instead of scoping it to the most recent accept.
+   */
+  onUndo?: (proposalId: string) => Promise<void>;
 }) {
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({});
   const [showReject, setShowReject] = React.useState(false);
@@ -584,8 +595,17 @@ function TurnGroup({
                 // Hand the row off to the same accepted-view component
                 // a single card uses: 6s lime banner with countdown
                 // first, then morphs to the quiet past-tense log line.
+                // Threading onUndo here is what gives each accepted
+                // child its own independent undo window — without it
+                // multi-proposal turns would silently drop the Undo
+                // affordance the single-card path exposes.
                 <div className="px-3 py-2">
-                  <AcceptedView proposal={proposal} />
+                  <AcceptedView
+                    proposal={proposal}
+                    {...(onUndo
+                      ? { onUndo: () => onUndo(proposal.proposalId) }
+                      : {})}
+                  />
                 </div>
               ) : (
                 <>
@@ -1323,9 +1343,10 @@ export function AssistantPanel({
                       const p = assistant.store.proposals[pid];
                       if (p) assistant.rejectProposal(p, feedback);
                     }}
-                    onUndo={(pid) => {
+                    onUndo={async (pid) => {
                       const p = assistant.store.proposals[pid];
-                      if (p) assistant.undoProposal(p);
+                      if (!p) return;
+                      await assistant.undoProposal(p);
                     }}
                   />
                 ),

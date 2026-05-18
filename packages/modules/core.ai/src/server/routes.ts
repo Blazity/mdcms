@@ -612,8 +612,18 @@ function buildLifecycleAudit(input: {
   actorId?: string;
   errorCode?: string;
   errorMessage?: string;
+  /**
+   * Explicit document id override. The undo path always operates on
+   * the document the apply call landed on, even for `create_document`
+   * proposals whose `proposal.documentId` is undefined (the resulting
+   * id is resolved client-side from the apply response and posted on
+   * the undo request). Pass this so the audit record carries the
+   * operated document id per SPEC-014 §Observability.
+   */
+  documentId?: string;
 }): AiAuditRecord {
   const taskKind = mapKindToTask(input.proposal.kind);
+  const resolvedDocumentId = input.documentId ?? input.proposal.documentId;
 
   return buildAuditRecord({
     taskKind,
@@ -627,9 +637,7 @@ function buildLifecycleAudit(input: {
     actorId: input.actorId,
     project: input.proposal.project,
     environment: input.proposal.environment,
-    ...(input.proposal.documentId
-      ? { documentId: input.proposal.documentId }
-      : {}),
+    ...(resolvedDocumentId ? { documentId: resolvedDocumentId } : {}),
     ...(input.errorCode ? { errorCode: input.errorCode } : {}),
     ...(input.errorMessage ? { errorMessage: input.errorMessage } : {}),
   });
@@ -893,6 +901,7 @@ async function handleProposalUndo(
   const occurredAt = new Date();
   let parsedProposal: AiProposal | undefined;
   let resolvedActorId: string | undefined;
+  let resolvedDocumentId: string | undefined;
 
   try {
     await options.requireCsrf(request);
@@ -900,6 +909,7 @@ async function handleProposalUndo(
     const body = await readJsonBody<ProposalUndoRequestBody>(request);
     const schemaHash = ensureNonEmptyString(body.schemaHash, "schemaHash");
     const documentId = ensureNonEmptyString(body.documentId, "documentId");
+    resolvedDocumentId = documentId;
     const postApplyDraftRevision = ensureOptionalNonNegativeInteger(
       body.postApplyDraftRevision,
       "postApplyDraftRevision",
@@ -938,6 +948,23 @@ async function handleProposalUndo(
     }
     const proposal = parsed.data;
     parsedProposal = proposal;
+
+    // SPEC-014 §Post-Accept Undo Window: body/frontmatter undo MUST
+    // ship the post-apply draft revision so the server can refuse a
+    // replay that would clobber a concurrent edit. The apply call
+    // returns it on `result.document.draftRevision`; the client
+    // stamps it onto the proposal on accept. A request that omits
+    // it is a programming error, not a transient failure.
+    const isBodyOrFrontmatterKind =
+      proposal.kind === "replace_selection" ||
+      proposal.kind === "insert_block" ||
+      proposal.kind === "update_frontmatter";
+    if (isBodyOrFrontmatterKind && typeof postApplyDraftRevision !== "number") {
+      throw invalidInput(
+        "postApplyDraftRevision is required for body/frontmatter undo.",
+        { field: "postApplyDraftRevision", proposalKind: proposal.kind },
+      );
+    }
 
     // Undo authorization mirrors the action being reverted:
     //   create_document  → content:delete (we are deleting the doc)
@@ -979,6 +1006,7 @@ async function handleProposalUndo(
         outcome: "undone",
         occurredAt,
         actorId: aiAuth.actorId,
+        documentId,
       }),
     );
 
@@ -1004,6 +1032,7 @@ async function handleProposalUndo(
           outcome: "undo_failed",
           occurredAt,
           ...(resolvedActorId ? { actorId: resolvedActorId } : {}),
+          ...(resolvedDocumentId ? { documentId: resolvedDocumentId } : {}),
           errorCode: code,
           errorMessage,
         }),

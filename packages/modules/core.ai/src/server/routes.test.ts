@@ -1422,6 +1422,117 @@ describe("mountAiRoutes — proposals/:id/undo", () => {
     const last = setup.audits.at(-1)!;
     assert.equal(last.outcome, "undone");
     assert.equal(last.proposalKind, "replace_selection");
+    assert.equal(last.documentId, "doc_1");
+  });
+
+  test("body undo without postApplyDraftRevision returns 400", async () => {
+    const setup = createTestSetup({});
+    const proposal = applyProposalShape({ proposalId: "p_undo_norev" });
+
+    const response = await setup.app.fetch(
+      "POST",
+      `https://test.local/api/v1/ai/proposals/${proposal.proposalId}/undo`,
+      {
+        method: "POST",
+        headers: TARGET_HEADERS,
+        body: JSON.stringify({
+          proposal,
+          documentId: "doc_1",
+          schemaHash: "hash_1",
+          priorDraft: {
+            body: "Welcome to the site.",
+            frontmatter: { title: "Welcome" },
+          },
+          // postApplyDraftRevision omitted on purpose — the route MUST
+          // refuse to call the store without it, otherwise a stale
+          // priorDraft would clobber a concurrent edit silently.
+        }),
+      },
+    );
+
+    assert.equal(response.status, 400);
+    const body = (await response.json()) as { code: string };
+    assert.equal(body.code, "INVALID_INPUT");
+  });
+
+  test("create_document undo audit carries the operated documentId", async () => {
+    const setup = createTestSetup({});
+    // `create_document` proposals MUST NOT carry a source documentId
+    // or baseDraftRevision per the zod schema — construct one inline
+    // rather than going through the route-test helper, which assigns
+    // defaults for both fields.
+    const createProposal: AiProposal = {
+      proposalId: "p_create_undo",
+      kind: "create_document",
+      project: "demo",
+      environment: "draft",
+      type: "post",
+      locale: "en",
+      summary: "New doc.",
+      operations: [
+        {
+          op: "create_document",
+          path: "blog/new",
+          format: "mdx",
+          frontmatter: {},
+          body: "",
+        },
+      ],
+      validation: { status: "valid" },
+      expiresAt: "2026-05-01T00:05:00.000Z",
+      provider: {
+        providerId: "echo",
+        model: "echo-1",
+        promptTemplateId: "new_document_draft.v1",
+      },
+    };
+
+    const response = await setup.app.fetch(
+      "POST",
+      `https://test.local/api/v1/ai/proposals/${createProposal.proposalId}/undo`,
+      {
+        method: "POST",
+        headers: TARGET_HEADERS,
+        body: JSON.stringify({
+          proposal: createProposal,
+          documentId: "doc_new",
+          schemaHash: "hash_1",
+        }),
+      },
+    );
+
+    assert.equal(response.status, 200);
+    const last = setup.audits.at(-1)!;
+    assert.equal(last.outcome, "undone");
+    // The proposal's own documentId is absent for create_document, so
+    // the route must thread the explicit body documentId into the
+    // audit record per SPEC-014 §Observability.
+    assert.equal(last.documentId, "doc_new");
+  });
+
+  test("undo_failed audit carries the operated documentId", async () => {
+    const setup = createTestSetup({ schemaHash: "hash_server" });
+    const proposal = applyProposalShape({ proposalId: "p_audit_docid" });
+
+    await setup.app.fetch(
+      "POST",
+      `https://test.local/api/v1/ai/proposals/${proposal.proposalId}/undo`,
+      {
+        method: "POST",
+        headers: TARGET_HEADERS,
+        body: JSON.stringify({
+          proposal,
+          documentId: "doc_42",
+          schemaHash: "hash_client_wrong",
+          priorDraft: { body: "x", frontmatter: {} },
+          postApplyDraftRevision: 4,
+        }),
+      },
+    );
+
+    const failure = setup.audits.find((r) => r.outcome === "undo_failed");
+    assert.ok(failure, "expected an undo_failed audit record");
+    assert.equal(failure!.documentId, "doc_42");
   });
 
   test("invalid input — missing proposal body returns 400", async () => {
