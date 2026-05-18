@@ -879,6 +879,7 @@ test("saveContentDocumentReadyState persists routed draft updates through the co
         return createDocumentResponse({
           body: "# Launch Notes\nUpdated",
           hasUnpublishedChanges: true,
+          draftRevision: 9,
           updatedAt: "2026-03-27T12:05:00.000Z",
         });
       },
@@ -898,6 +899,7 @@ test("saveContentDocumentReadyState persists routed draft updates through the co
   });
   assert.equal(next.saveState, "saved");
   assert.equal(next.document.body, "# Launch Notes\nUpdated");
+  assert.equal(next.document.draftRevision, 9);
   assert.equal(next.document.updatedAt, "2026-03-27T12:05:00.000Z");
 });
 
@@ -1386,6 +1388,27 @@ test("applySuccessfulDraftSaveToReadyState prefers the persisted body returned b
   assert.equal(next.document.body, "# Launch Notes");
   assert.equal(next.draftBody, "# Launch Notes");
   assert.equal(next.saveState, "saved");
+});
+
+test("applySuccessfulDraftSaveToReadyState records the server draft revision", () => {
+  const saving = reduceContentDocumentPageReadyState(
+    reduceContentDocumentPageReadyState(createReadyState(), {
+      type: "draftChanged",
+      body: "# Launch Notes\nUpdated",
+    }),
+    {
+      type: "saveStarted",
+    },
+  );
+
+  const next = applySuccessfulDraftSaveToReadyState({
+    state: saving,
+    requestBody: "# Launch Notes\nUpdated",
+    updatedAt: "2026-03-27T12:06:00.000Z",
+    draftRevision: 12,
+  });
+
+  assert.equal(next.document.draftRevision, 12);
 });
 
 test("parseSelectedComparisonVersionValue clears the selection for an empty placeholder value", () => {

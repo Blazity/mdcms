@@ -263,6 +263,7 @@ type ContentDocumentPageReadyEvent =
       updatedAt: string;
       body?: string;
       frontmatter?: Record<string, unknown>;
+      draftRevision?: number;
     }
   | {
       type: "saveFailed";
@@ -1457,6 +1458,7 @@ export async function saveContentDocumentReadyState(input: {
       body: result.body ?? input.state.draftBody,
       frontmatter: result.frontmatter ?? input.state.draftFrontmatter,
       updatedAt: result.updatedAt ?? input.state.document.updatedAt,
+      draftRevision: result.draftRevision,
     });
   } catch (error) {
     if (isSchemaGuardRuntimeError(error)) {
@@ -1659,6 +1661,9 @@ export function reduceContentDocumentPageReadyState(
           body: savedBody,
           hasUnpublishedChanges: true,
           updatedAt: event.updatedAt,
+          ...(typeof event.draftRevision === "number"
+            ? { draftRevision: event.draftRevision }
+            : {}),
         },
         draftBody,
         draftFrontmatter,
@@ -1699,6 +1704,7 @@ export function applySuccessfulDraftSaveToReadyState(input: {
   persistedBody?: string;
   persistedFrontmatter?: Record<string, unknown>;
   updatedAt: string;
+  draftRevision?: number;
 }): ContentDocumentPageReadyState {
   const requestFrontmatter =
     input.requestFrontmatter ??
@@ -1730,6 +1736,9 @@ export function applySuccessfulDraftSaveToReadyState(input: {
       body: persistedBody,
       hasUnpublishedChanges: true,
       updatedAt: input.updatedAt,
+      ...(typeof input.draftRevision === "number"
+        ? { draftRevision: input.draftRevision }
+        : {}),
     },
     draftBody,
     draftFrontmatter,
@@ -3772,6 +3781,7 @@ export default function ContentDocumentPage({
             persistedBody,
             persistedFrontmatter: nextState.document.frontmatter,
             updatedAt: nextState.document.updatedAt,
+            draftRevision: nextState.document.draftRevision,
           })
         : current,
     );
