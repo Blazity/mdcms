@@ -74,6 +74,7 @@ test("SDK content detail page clearly identifies the SDK data source", async () 
   assert.match(markup, /Data source:\s*<strong>@mdcms\/sdk<\/strong>/i);
   assert.match(markup, /\/demo\/sdk-content/i);
   assert.match(markup, /\/demo\/content/i);
+  assert.match(markup, /\/preview\/post\/hello-world/i);
   assert.match(markup, /Hello World/);
 
   globalThis.fetch = originalFetch;

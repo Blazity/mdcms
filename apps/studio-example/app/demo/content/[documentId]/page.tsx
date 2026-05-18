@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { getPreviewHrefForDocument } from "../../../../lib/preview-routing";
 import config from "../../../../mdcms.config";
 
 type ContentDocument = {
@@ -137,6 +138,9 @@ export default async function DemoContentDocumentPage({
 }: DocumentPageProps) {
   const { documentId } = await params;
   const result = await fetchDocument(documentId);
+  const previewHref = result.ok
+    ? getPreviewHrefForDocument(result.document)
+    : undefined;
 
   return (
     <main>
@@ -172,6 +176,11 @@ export default async function DemoContentDocumentPage({
             publishedVersion=
             <code>{result.document.publishedVersion ?? "-"}</code>
           </p>
+          {previewHref ? (
+            <p>
+              <Link href={previewHref}>Open rendered preview</Link>
+            </p>
+          ) : null}
           <p>frontmatter (raw JSON):</p>
           <pre>{JSON.stringify(result.document.frontmatter, null, 2)}</pre>
           <p>body (raw):</p>

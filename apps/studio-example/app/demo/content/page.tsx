@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { getPreviewHrefForDocument } from "../../../lib/preview-routing";
 import config from "../../../mdcms.config";
 
 type ContentDocument = {
@@ -182,38 +183,48 @@ export default async function DemoContentPage() {
         <section>
           <h2>Documents ({result.total})</h2>
           <ul>
-            {result.documents.map((document) => (
-              <li key={document.documentId}>
-                <h3>
-                  <Link href={`/demo/content/${document.documentId}`}>
-                    {document.documentId}
-                  </Link>
-                </h3>
-                <p>
-                  type=<code>{document.type}</code> path=
-                  <code>{document.path}</code> locale=
-                  <code>{document.locale}</code> format=
-                  <code>{document.format}</code>
-                </p>
-                <p>
-                  draftRevision=<code>{document.draftRevision}</code>{" "}
-                  publishedVersion=
-                  <code>{document.publishedVersion ?? "-"}</code>
-                </p>
-                <p>
-                  Also inspect the SDK view:{" "}
-                  <Link
-                    href={`/demo/sdk-content/${document.documentId}?type=${encodeURIComponent(document.type)}`}
-                  >
-                    /demo/sdk-content/{document.documentId}
-                  </Link>
-                </p>
-                <p>frontmatter (raw JSON):</p>
-                <pre>{JSON.stringify(document.frontmatter, null, 2)}</pre>
-                <p>body (raw):</p>
-                <pre>{document.body}</pre>
-              </li>
-            ))}
+            {result.documents.map((document) => {
+              const previewHref = getPreviewHrefForDocument(document);
+
+              return (
+                <li key={document.documentId}>
+                  <h3>
+                    <Link href={`/demo/content/${document.documentId}`}>
+                      {document.documentId}
+                    </Link>
+                  </h3>
+                  <p>
+                    type=<code>{document.type}</code> path=
+                    <code>{document.path}</code> locale=
+                    <code>{document.locale}</code> format=
+                    <code>{document.format}</code>
+                  </p>
+                  <p>
+                    draftRevision=<code>{document.draftRevision}</code>{" "}
+                    publishedVersion=
+                    <code>{document.publishedVersion ?? "-"}</code>
+                  </p>
+                  <p>
+                    Also inspect the SDK view:{" "}
+                    <Link
+                      href={`/demo/sdk-content/${document.documentId}?type=${encodeURIComponent(document.type)}`}
+                    >
+                      /demo/sdk-content/{document.documentId}
+                    </Link>
+                    {previewHref ? (
+                      <>
+                        {" | "}
+                        <Link href={previewHref}>Rendered preview</Link>
+                      </>
+                    ) : null}
+                  </p>
+                  <p>frontmatter (raw JSON):</p>
+                  <pre>{JSON.stringify(document.frontmatter, null, 2)}</pre>
+                  <p>body (raw):</p>
+                  <pre>{document.body}</pre>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

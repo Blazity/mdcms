@@ -16,6 +16,7 @@ test("raw content detail page clearly identifies the raw API data source", async
           format: "md",
           frontmatter: {
             title: "Hello MDCMS",
+            slug: "hello-mdcms",
           },
           body: "Hello world",
           draftRevision: 5,
@@ -44,6 +45,7 @@ test("raw content detail page clearly identifies the raw API data source", async
     markup,
     /\/demo\/sdk-content\/11111111-1111-1111-1111-111111111111/i,
   );
+  assert.match(markup, /\/preview\/post\/hello-mdcms/i);
 
   globalThis.fetch = originalFetch;
 });

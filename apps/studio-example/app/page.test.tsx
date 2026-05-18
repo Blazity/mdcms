@@ -10,6 +10,9 @@ test("home page links to both raw and SDK demo content routes", () => {
 
   assert.match(markup, /\/demo\/content/);
   assert.match(markup, /\/demo\/sdk-content/);
+  assert.match(markup, /\/preview\/post\/hello-mdcms/);
+  assert.match(markup, /\/preview\/page\/about/);
   assert.match(markup, /Raw Content API/i);
   assert.match(markup, /SDK Client/i);
+  assert.match(markup, /Rendered previews/i);
 });

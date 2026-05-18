@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import type { ContentDocumentResponse } from "@mdcms/cli";
 
+import { getPreviewHrefForDocument } from "../../../../lib/preview-routing";
 import { createDemoSdkClient, toDemoRequestFailure } from "../sdk-demo-client";
 
 type DocumentResult =
@@ -53,6 +54,9 @@ export default async function DemoSdkContentDocumentPage({
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const type = resolvedSearchParams?.type?.trim() || "post";
   const result = await fetchDocument(type, documentId);
+  const previewHref = result.ok
+    ? getPreviewHrefForDocument(result.document)
+    : undefined;
 
   return (
     <main>
@@ -92,6 +96,11 @@ export default async function DemoSdkContentDocumentPage({
             publishedVersion=
             <code>{result.document.publishedVersion ?? "-"}</code>
           </p>
+          {previewHref ? (
+            <p>
+              <Link href={previewHref}>Open rendered preview</Link>
+            </p>
+          ) : null}
           <p>frontmatter (raw JSON):</p>
           <pre>{JSON.stringify(result.document.frontmatter, null, 2)}</pre>
           <p>body (raw):</p>

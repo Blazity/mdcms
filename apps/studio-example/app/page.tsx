@@ -13,6 +13,12 @@ export default function HomePage() {
         {" | "}
         <Link href="/demo/sdk-content">SDK Client</Link>
       </p>
+      <p>
+        Rendered previews:{" "}
+        <Link href="/preview/post/hello-mdcms">sample post</Link>
+        {" | "}
+        <Link href="/preview/page/about">sample page</Link>
+      </p>
     </main>
   );
 }

@@ -18,6 +18,8 @@ Example Next.js host app demonstrating how to embed `@mdcms/studio` at a catch-a
 | `/demo/content/:documentId`     | Raw content detail                     |
 | `/demo/sdk-content`             | SDK-backed content demo (`@mdcms/sdk`) |
 | `/demo/sdk-content/:documentId` | SDK-backed content detail              |
+| `/preview/post/:slug`           | Rendered draft preview for `post`      |
+| `/preview/page/:path`           | Rendered draft preview for `page`      |
 
 ## Local Run
 
@@ -48,6 +50,10 @@ Default demo credentials (seeded automatically in `compose:dev`):
 | `MDCMS_STUDIO_EXAMPLE_PORT` | `4173`                                          | Port                           |
 | `DATABASE_URL`              | `postgresql://mdcms:mdcms@localhost:5432/mdcms` | For `server:dev`               |
 | `MDCMS_DEMO_API_KEY`        | Seeded in compose                               | API key for demo content pages |
+
+The preview routes use the same `MDCMS_DEMO_API_KEY` as the raw and SDK demo
+routes. They render the draft body for `post` and `page` documents through the
+same local MDX components registered in `mdcms.config.ts`.
 
 For local CLI workflows in this demo, put developer-specific values in `apps/studio-example/.env.local` next to `mdcms.config.ts`. The `mdcms` CLI loads `.env*` files from that config directory before importing the config, with shell exports taking precedence over file values.
 
