@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-05-01
-last_updated: 2026-05-09
+last_updated: 2026-05-18
 ---
 
 # SPEC-014 AI-Assisted Studio Editing
@@ -149,6 +149,77 @@ AI output is always mediated through proposals:
 
 Rejecting a proposal has no content side effects. Proposals expire after a short
 server-defined lifetime and may also become stale when a draft revision changes.
+
+### Post-Accept Undo Window
+
+After a proposal is successfully applied, Studio offers a bounded undo window
+in place of the proposal card. The window is the only opportunity to revert an
+applied proposal through the AI surface; once it expires, restore must go
+through the normal version history and trash endpoints.
+
+Window behaviour:
+
+- The window is **6 seconds** long, opens when the apply endpoint returns
+  success, and is per-proposal (each accepted proposal opens its own window).
+- During the window, Studio renders an `Applied` banner with a visible
+  countdown and an `Undo` affordance in place of the proposal card.
+- Hovering the banner pauses the countdown. Hiding the tab pauses the
+  countdown. Reloading the page inside the window resumes the remaining time;
+  reloading after the window expires lands directly in the past-tense
+  log-line state.
+- The keyboard shortcut `⌘Z` on macOS or `Ctrl+Z` on other platforms triggers
+  undo on the most recent still-open window when focus is inside the assistant
+  panel. Outside the assistant panel the shortcut falls through to the
+  surrounding editor or browser default.
+- When the window expires, the banner morphs into a quiet past-tense log line
+  and the affordance is no longer offered.
+
+Undo is routed through a single dedicated endpoint
+`POST /api/v1/ai/proposals/:proposalId/undo` that the client invokes with
+the proposal body, the post-apply `documentId`, and any per-kind payload
+returned in the apply response. The server fans out to the appropriate
+content-store mutation, enforces the per-kind authorization scope, and
+emits the paired audit record. This keeps audit emission in one place and
+removes any reliance on the client coordinating multiple round trips.
+
+Undo by proposal kind:
+
+| Kind                                                      | Server-side action invoked through the undo endpoint                                                                                              |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create_document`                                         | Soft-delete the newly created document (same mutation as `DELETE /api/v1/content/:documentId`).                                                    |
+| `delete_document`                                         | Restore the soft-deleted document (same mutation as `POST /api/v1/content/:documentId/restore` with `targetStatus=draft`).                         |
+| `replace_selection`, `insert_block`, `update_frontmatter` | Replay the pre-apply draft snapshot (same mutation as `PUT /api/v1/content/:documentId`) using the `priorDraft` payload returned by the apply.     |
+
+To make body/frontmatter undo possible without storing state server-side,
+the apply endpoint captures the pre-apply draft state at the moment of
+write and returns it on the success response as
+`priorDraft: { body, frontmatter }` for the three edit kinds. The client
+echoes that payload back on the undo call.
+
+Undo authorization mirrors the action being reverted:
+
+- `create_document` undo requires `content:delete`.
+- `delete_document` undo requires `content:write` (the existing restore
+  authorization).
+- Edit-kind undo requires `content:write`.
+
+Undo emits its own audit record with `outcome: undone` referencing the
+original proposal id and target `documentId`. Apply and undo therefore form a
+paired audit trail.
+
+Concurrent edits within the undo window are handled by failing loud: if the
+draft revision has advanced past the post-apply revision the apply produced,
+the undo request returns `AI_PROPOSAL_CONFLICT` (`409`) and the banner shows
+an inline error. The user retains the option to restore through normal
+version history.
+
+Out of scope for this window:
+
+- Persisting an undo affordance beyond the 6-second window. Recovery after
+  the window goes through the content API restore endpoints defined in
+  `SPEC-003`.
+- Partial undo of multi-proposal turns. Each accepted child opens its own
+  independent undo window.
 
 ## Context Model
 
@@ -402,8 +473,9 @@ This table is normative and follows the shared contract template in `SPEC-005`.
 | ------ | ----------------------------------------- | ------------------ | ------------------------------------------------------------------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | POST   | `/api/v1/ai/inline-transform`             | session_or_api_key | `ai:use`, `content:read:draft`                                                       | required: `project_environment` | JSON: `{ documentId, draftRevision, selectionId, selectedText, action, instruction?, tone? }` — `selectedText` is the **markdown** serialization of the selected slice (block-level structure preserved).                                                                                       | `200` `{ data: { proposals: AiProposal[] } }`                            | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `AI_DISABLED` (`403`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_CONTEXT_TOO_LARGE` (`413`), `AI_RATE_LIMITED` (`429`), `AI_PROVIDER_UNAVAILABLE` (`503`)                                        |
 | POST   | `/api/v1/ai/chat/messages`                | session_or_api_key | `ai:use`, `content:read:draft` for read/edit operations                              | required: `project_environment` | JSON: `{ message, conversationId?, attachedDocumentIds?: string[], attachedSelection?: { documentId, draftRevision, selectionId, text }, rejectedProposalId?: string, rejectionFeedback?: string, allowedActions?: ("answer" \| "edit_document" \| "create_document" \| "delete_document")[] }` | `200` `{ data: { conversationId, message, proposals? } }`                | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `AI_DISABLED` (`403`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_UNSUPPORTED_ACTION` (`400`), `AI_CONTEXT_TOO_LARGE` (`413`), `AI_RATE_LIMITED` (`429`), `AI_PROVIDER_UNAVAILABLE` (`503`)       |
-| POST   | `/api/v1/ai/proposals/:proposalId/apply`  | session_or_api_key | `content:write`; `content:delete` when the proposal targets a `delete_document` kind | required: `project_environment` | path `proposalId`, JSON: `{ draftRevision?, schemaHash, clientSelectionState? }`                                                                                                                                                                                                                | `200` `{ data: { proposal: AiProposal, documents: ContentDocument[] } }` | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_PROPOSAL_EXPIRED` (`410`), `AI_PROPOSAL_CONFLICT` (`409`), `AI_OUTPUT_INVALID` (`422`), `SCHEMA_HASH_REQUIRED` (`400`), `SCHEMA_HASH_MISMATCH` (`409`) |
+| POST   | `/api/v1/ai/proposals/:proposalId/apply`  | session_or_api_key | `content:write`; `content:delete` when the proposal targets a `delete_document` kind | required: `project_environment` | path `proposalId`, JSON: `{ draftRevision?, schemaHash, clientSelectionState? }`                                                                                                                                                                                                                | `200` `{ data: { proposal: AiProposal, documents: ContentDocument[], priorDraft?: { body: string, frontmatter: Record<string, unknown> } } }` | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_PROPOSAL_EXPIRED` (`410`), `AI_PROPOSAL_CONFLICT` (`409`), `AI_OUTPUT_INVALID` (`422`), `SCHEMA_HASH_REQUIRED` (`400`), `SCHEMA_HASH_MISMATCH` (`409`) |
 | POST   | `/api/v1/ai/proposals/:proposalId/reject` | session_or_api_key | `content:write`                                                                      | required: `project_environment` | path `proposalId`, JSON body optional and ignored                                                                                                                                                                                                                                               | `200` `{ data: { proposal: AiProposal } }`                               | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_PROPOSAL_EXPIRED` (`410`), `AI_PROPOSAL_CONFLICT` (`409`)                                                                                              |
+| POST   | `/api/v1/ai/proposals/:proposalId/undo`   | session_or_api_key | mirrors the action being reverted (see "Post-Accept Undo Window")                    | required: `project_environment` | path `proposalId`, JSON: `{ proposal: AiProposal, documentId: string, schemaHash: string, priorDraft?: { body: string, frontmatter: Record<string, unknown> }, postApplyDraftRevision?: number }`                                                                                              | `200` `{ data: { proposal: AiProposal, document: ContentDocument } }`    | `MISSING_TARGET_ROUTING` (`400`), `TARGET_ROUTING_MISMATCH` (`400`), `INVALID_INPUT` (`400`), `UNAUTHORIZED` (`401`), `FORBIDDEN` (`403`), `NOT_FOUND` (`404`), `AI_PROPOSAL_CONFLICT` (`409`), `SCHEMA_HASH_MISMATCH` (`409`)                                                                                              |
 
 `action` for inline transforms is an enum of selection-anchored copy edits:
 
@@ -480,7 +552,10 @@ Audit records include:
 - proposal id
 - proposal kind
 - action name or chat allowed action
-- accepted, rejected, expired, or failed outcome
+- accepted, rejected, expired, undone, or failed outcome (the `undone` outcome
+  is emitted on the post-accept undo path defined under
+  "Post-Accept Undo Window" and references the original apply audit record's
+  proposal id)
 - provider and model identifier
 - prompt template or workflow identifier
 - validation status
@@ -496,6 +571,11 @@ Regression coverage must include:
 - generated frontmatter is schema-validated before writing
 - rejected proposals do not mutate content
 - accepted proposals write drafts only
+- post-accept undo invoked inside the 6-second window reverts the apply
+  through the proposal-kind-specific mechanism defined under
+  "Post-Accept Undo Window" and emits an `undone` audit record
+- post-accept undo invoked after a concurrent edit fails with
+  `AI_PROPOSAL_CONFLICT` and does not mutate content
 
 ## Deferred Follow-Up Areas
 
