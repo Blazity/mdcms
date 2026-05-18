@@ -1,7 +1,29 @@
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = dirname(fileURLToPath(import.meta.url));
+const workspaceRoot = resolve(rootDir, "../..");
+const mdcmsSourceAliases = {
+  "@mdcms/cli$": resolve(workspaceRoot, "apps/cli/src/index.ts"),
+  "@mdcms/sdk$": resolve(workspaceRoot, "packages/sdk/src/index.ts"),
+  "@mdcms/shared$": resolve(workspaceRoot, "packages/shared/src/index.ts"),
+  "@mdcms/shared/action-catalog-contract$": resolve(
+    workspaceRoot,
+    "packages/shared/src/lib/contracts/action-catalog-contract.ts",
+  ),
+  "@mdcms/shared/mdx$": resolve(
+    workspaceRoot,
+    "packages/shared/src/lib/mdx/index.ts",
+  ),
+  "@mdcms/shared/mdx/auto-form$": resolve(
+    workspaceRoot,
+    "packages/shared/src/lib/mdx/auto-form.ts",
+  ),
+  "@mdcms/shared/server$": resolve(
+    workspaceRoot,
+    "packages/shared/src/lib/contracts/schema-hash.ts",
+  ),
+};
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -17,14 +39,10 @@ const nextConfig = {
   },
   webpack(config) {
     config.resolve ??= {};
-    const conditionNames = config.resolve.conditionNames ?? [];
-
-    config.resolve.conditionNames = [
-      "@mdcms/source",
-      ...conditionNames.filter(
-        (conditionName) => conditionName !== "@mdcms/source",
-      ),
-    ];
+    config.resolve.alias = {
+      ...(config.resolve.alias ?? {}),
+      ...mdcmsSourceAliases,
+    };
     config.resolve.extensionAlias = {
       ...(config.resolve.extensionAlias ?? {}),
       ".js": [".ts", ".tsx", ".js"],
