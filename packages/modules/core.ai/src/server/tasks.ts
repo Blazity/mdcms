@@ -244,6 +244,12 @@ function escapePromptText(value: string): string {
     .replace(/>/g, "&gt;");
 }
 
+function escapePromptXmlText(value: string): string {
+  return escapePromptText(value)
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
 function escapePromptAttribute(value: string): string {
   return escapePromptText(value).replace(/"/g, "&quot;");
 }
@@ -646,7 +652,7 @@ export function buildChatSystemPrompt(input: {
     // stable section so providers can parse it separately from user content.
     xmlBlock(
       "project_knowledge",
-      renderProjectKnowledgeBlock(input.projectKnowledge),
+      escapePromptXmlText(renderProjectKnowledgeBlock(input.projectKnowledge)),
     ),
     xmlBlock("available_tools", availableTools),
     xmlBlock("action_availability", actionAvailability),
