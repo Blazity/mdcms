@@ -28,6 +28,24 @@ export type AssistantSelectionContext = {
   selectionId?: string;
 };
 
+export type AssistantMessageContextDocument = {
+  documentId?: string;
+  path: string;
+  type?: string;
+  locale?: string;
+  source: "current" | "attached";
+};
+
+export type AssistantMessageContextSnapshot = {
+  documents: AssistantMessageContextDocument[];
+  selection?: {
+    documentId?: string;
+    path: string;
+    text: string;
+    selectionId?: string;
+  };
+};
+
 export type AssistantValidationCheck = {
   label: string;
   ok: true;
@@ -52,6 +70,12 @@ export type AssistantProposalKind =
 
 type ProposalCommonFields = {
   proposalId: string;
+  /**
+   * Stable server identity for existing-document proposals. UI surfaces
+   * should prefer `docPath` for display and keep this only for resolving
+   * labels or follow-up API calls.
+   */
+  documentId?: string;
   summary: string;
   validation: AssistantValidation;
   expiresAt?: string;
@@ -174,6 +198,8 @@ export type AssistantMessage = {
   role: AssistantMessageRole;
   /** Plain-text composer content for user turns. Empty string for assistant turns that emit only proposals. */
   text?: string;
+  /** Context chips that were attached when this user turn was sent. */
+  context?: AssistantMessageContextSnapshot;
   proposals?: string[];
   at: string;
   /**

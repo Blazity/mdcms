@@ -57,7 +57,9 @@ import {
 import { BreadcrumbTrail } from "../components/layout/page-header.js";
 import { AssistantLauncher } from "../components/assistant/assistant-launcher.js";
 import {
+  ASSISTANT_PROPOSAL_APPLIED_EVENT,
   AssistantActiveDocumentProvider,
+  type AssistantProposalAppliedEventDetail,
   useAssistant,
   type AssistantActiveDocument,
 } from "../components/assistant/assistant-context.js";
@@ -300,7 +302,13 @@ type ContentDocumentPageViewProps = {
   aiSelection?: TipTapEditorSelectionInfo | null;
   onAiSelectionChange?: (selection: TipTapEditorSelectionInfo | null) => void;
   aiApi?: StudioAiRouteApi;
-  onAiProposalApplied?: (input: { bodyAfter: string }) => void;
+  onAiProposalApplied?: (input: {
+    bodyAfter: string;
+    documentId?: string;
+    frontmatterAfter?: Record<string, unknown>;
+    draftRevision?: number;
+    updatedAt?: string;
+  }) => void;
 };
 
 /** Captures the routed document identity used to reject stale async results. */
@@ -1742,6 +1750,50 @@ export function applySuccessfulDraftSaveToReadyState(input: {
   };
 }
 
+export function applyAssistantProposalDocumentToReadyState(input: {
+  state: ContentDocumentPageReadyState;
+  document: {
+    documentId: string;
+    body: string;
+    frontmatter?: Record<string, unknown>;
+    draftRevision?: number;
+    updatedAt?: string;
+    hasUnpublishedChanges?: boolean;
+  };
+}): ContentDocumentPageReadyState {
+  if (input.document.documentId !== input.state.documentId) {
+    return input.state;
+  }
+
+  const draftFrontmatter = cloneFrontmatter(
+    input.document.frontmatter ?? input.state.draftFrontmatter,
+  );
+
+  return {
+    ...input.state,
+    document: {
+      ...input.state.document,
+      body: input.document.body,
+      frontmatter: draftFrontmatter,
+      hasUnpublishedChanges: input.document.hasUnpublishedChanges ?? true,
+      ...(typeof input.document.draftRevision === "number"
+        ? { draftRevision: input.document.draftRevision }
+        : {}),
+      ...(input.document.updatedAt
+        ? { updatedAt: input.document.updatedAt }
+        : {}),
+    },
+    draftBody: input.document.body,
+    draftFrontmatter,
+    saveState: "saved",
+    mutationError: undefined,
+    fieldErrors: undefined,
+    saveRequestBody: undefined,
+    saveRequestFrontmatter: undefined,
+    viewingVersion: undefined,
+  };
+}
+
 export function applyFailedDraftSaveToReadyState(input: {
   state: ContentDocumentPageReadyState;
   requestBody: string;
@@ -2707,9 +2759,8 @@ export function ContentDocumentPageView({
 
   // Publish the active document to the assistant rail so the chat surface
   // can attach the right document context + resolve the schema hash on
-  // accept. The chat-level selection UX is a future surface; for now we
-  // only thread document identity + schemaHash, which is what the apply
-  // route requires.
+  // accept. The live editor selection is included so document chat can
+  // send the same selected span that powers inline AI transforms.
   const assistantActiveDocument =
     useMemo<AssistantActiveDocument | null>(() => {
       if (state.status !== "ready") return null;
@@ -2720,17 +2771,33 @@ export function ContentDocumentPageView({
       return {
         documentId,
         path: state.document.path,
+        type: state.document.type,
+        locale: state.document.locale,
+        draftRevision: state.document.draftRevision,
         schemaHash,
         project: state.route.project,
         environment: state.route.initialEnvironment,
+        ...(aiSelection
+          ? {
+              selection: {
+                selectionId: aiSelection.selectionId,
+                text: aiSelection.text,
+              },
+            }
+          : {}),
       };
     }, [
       state.status,
       state.status === "ready" ? state.document.documentId : undefined,
       state.status === "ready" ? state.document.path : undefined,
+      state.status === "ready" ? state.document.type : undefined,
+      state.status === "ready" ? state.document.locale : undefined,
+      state.status === "ready" ? state.document.draftRevision : undefined,
       state.status === "ready" ? state.schemaState : undefined,
       state.status === "ready" ? state.route.project : undefined,
       state.status === "ready" ? state.route.initialEnvironment : undefined,
+      aiSelection?.selectionId,
+      aiSelection?.text,
     ]);
 
   return (
@@ -4123,6 +4190,63 @@ export default function ContentDocumentPage({
     }
   });
 
+  const handleAiProposalApplied = useEffectEvent(
+    (input: {
+      bodyAfter: string;
+      documentId?: string;
+      frontmatterAfter?: Record<string, unknown>;
+      draftRevision?: number;
+      updatedAt?: string;
+    }) => {
+      const currentState = stateRef.current;
+      if (currentState.status !== "ready") return;
+
+      const appliedDocumentId = input.documentId ?? currentState.documentId;
+      if (appliedDocumentId !== currentState.documentId) return;
+
+      editorRef.current?.setContent(input.bodyAfter);
+      setState((current) =>
+        current.status === "ready"
+          ? applyAssistantProposalDocumentToReadyState({
+              state: current,
+              document: {
+                documentId: appliedDocumentId,
+                body: input.bodyAfter,
+                ...(input.frontmatterAfter
+                  ? { frontmatter: input.frontmatterAfter }
+                  : {}),
+                ...(typeof input.draftRevision === "number"
+                  ? { draftRevision: input.draftRevision }
+                  : {}),
+                ...(input.updatedAt ? { updatedAt: input.updatedAt } : {}),
+              },
+            })
+          : current,
+      );
+    },
+  );
+
+  useEffect(() => {
+    const onApplied = (event: Event) => {
+      const detail = (event as CustomEvent<AssistantProposalAppliedEventDetail>)
+        .detail;
+      if (!detail) return;
+
+      handleAiProposalApplied({
+        bodyAfter: detail.body,
+        documentId: detail.documentId,
+        frontmatterAfter: detail.frontmatter,
+        draftRevision: detail.draftRevision,
+        updatedAt: detail.updatedAt,
+      });
+    };
+
+    document.addEventListener(ASSISTANT_PROPOSAL_APPLIED_EVENT, onApplied);
+    return () => {
+      document.removeEventListener(ASSISTANT_PROPOSAL_APPLIED_EVENT, onApplied);
+    };
+  }, [handleAiProposalApplied]);
+
   useEffect(() => {
     void loadDocument();
   }, [activeContext, documentId, route, typeId, typeLabel]);
@@ -4326,26 +4450,7 @@ export default function ContentDocumentPage({
       aiSelection={aiSelection}
       onAiSelectionChange={setAiSelection}
       aiApi={aiApi}
-      onAiProposalApplied={({ bodyAfter }) => {
-        if (editorRef.current) {
-          editorRef.current.setContent(bodyAfter);
-        }
-        setState((current) =>
-          current.status === "ready"
-            ? {
-                ...current,
-                draftBody: bodyAfter,
-                // Sync the persisted snapshot too — otherwise
-                // saved/unsaved comparisons (draftBody vs
-                // document.body) would treat the just-applied AI
-                // change as a fresh local edit.
-                document: { ...current.document, body: bodyAfter },
-                saveState: "saved",
-                mutationError: undefined,
-              }
-            : current,
-        );
-      }}
+      onAiProposalApplied={handleAiProposalApplied}
     />
   );
 }

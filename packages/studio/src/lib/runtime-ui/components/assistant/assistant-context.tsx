@@ -6,18 +6,47 @@ import { RuntimeError } from "@mdcms/shared";
 
 import type {
   StudioAiChatMessageRequest,
+  StudioAiChatAttachedSelection,
   StudioAiProposal,
   StudioAiRouteApi,
 } from "../../../ai-route-api.js";
 import type {
   AssistantContextDoc,
   AssistantMessage,
+  AssistantMessageContextSnapshot,
   AssistantProposal,
   AssistantStore,
   AssistantThread,
 } from "./assistant-types.js";
 
+export type { AssistantThread } from "./assistant-types.js";
+
 type RailMode = "closed" | "rail" | "fullscreen";
+
+export const ASSISTANT_PROPOSAL_APPLIED_EVENT =
+  "mdcms:assistant-proposal-applied";
+
+export type AssistantProposalAppliedEventDetail = {
+  documentId: string;
+  body: string;
+  frontmatter: Record<string, unknown>;
+  draftRevision: number;
+  updatedAt: string;
+};
+
+export function emitAssistantProposalApplied(
+  detail: AssistantProposalAppliedEventDetail,
+) {
+  if (typeof document === "undefined") return;
+  document.dispatchEvent(
+    new CustomEvent<AssistantProposalAppliedEventDetail>(
+      ASSISTANT_PROPOSAL_APPLIED_EVENT,
+      {
+        detail,
+      },
+    ),
+  );
+}
 
 type AssistantState = {
   store: AssistantStore;
@@ -245,6 +274,38 @@ function collectProposalDocPaths(p: AssistantProposal): string[] {
   return [];
 }
 
+function collectMessageDocPaths(message: AssistantMessage): string[] {
+  return message.context?.documents.map((doc) => doc.path) ?? [];
+}
+
+type DocumentPathLookup = ReadonlyMap<string, string>;
+const ACTIVE_DOCUMENT_PATH_LOOKUP_KEY = "__mdcms_active_document_path__";
+const UUID_DOCUMENT_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type StudioProposalFromWireOptions = {
+  documentPathById?: DocumentPathLookup;
+};
+
+function lookupDocumentPath(
+  lookup: DocumentPathLookup | undefined,
+  documentId: string | undefined,
+): string | undefined {
+  if (!lookup || !documentId) return undefined;
+  return lookup.get(documentId);
+}
+
+function sourceDocumentPathForWire(
+  wire: StudioAiProposal,
+  options?: StudioProposalFromWireOptions,
+): string {
+  return (
+    lookupDocumentPath(options?.documentPathById, wire.documentId) ??
+    wire.documentId ??
+    ""
+  );
+}
+
 /**
  * Map a wire-level `StudioAiProposal` (returned by the chat endpoint)
  * into the studio's local `AssistantProposal` discriminated union used
@@ -260,6 +321,7 @@ function collectProposalDocPaths(p: AssistantProposal): string[] {
  */
 export function studioProposalFromWire(
   wire: StudioAiProposal,
+  options?: StudioProposalFromWireOptions,
 ): AssistantProposal | undefined {
   const op = wire.operations[0];
   if (!op) return undefined;
@@ -269,13 +331,15 @@ export function studioProposalFromWire(
     summary: wire.summary,
     validation: wire.validation,
     expiresAt: wire.expiresAt,
+    ...(wire.documentId ? { documentId: wire.documentId } : {}),
   };
+  const sourceDocumentPath = sourceDocumentPathForWire(wire, options);
 
   if (wire.kind === "replace_selection" && op.op === "replace_selection") {
     return {
       ...common,
       kind: "replace_selection",
-      docPath: wire.documentId ?? "",
+      docPath: sourceDocumentPath,
       type: wire.type,
       locale: wire.locale,
       baseDraftRevision: wire.baseDraftRevision,
@@ -291,7 +355,7 @@ export function studioProposalFromWire(
     return {
       ...common,
       kind: "insert_block",
-      docPath: wire.documentId ?? "",
+      docPath: sourceDocumentPath,
       type: wire.type,
       locale: wire.locale,
       baseDraftRevision: wire.baseDraftRevision,
@@ -308,7 +372,7 @@ export function studioProposalFromWire(
     return {
       ...common,
       kind: "update_frontmatter",
-      docPath: wire.documentId ?? "",
+      docPath: sourceDocumentPath,
       type: wire.type,
       locale: wire.locale,
       baseDraftRevision: wire.baseDraftRevision,
@@ -364,13 +428,103 @@ export function studioProposalFromWire(
 export type AssistantActiveDocument = {
   documentId: string;
   path: string;
+  type: string;
+  locale: string;
+  draftRevision: number;
   schemaHash: string;
   project: string;
   environment: string;
+  selection?: {
+    selectionId: string;
+    text: string;
+  };
 };
+
+function addDocumentPath(
+  map: Map<string, string>,
+  documentId: string | undefined,
+  path: string | undefined,
+) {
+  if (!documentId || !path) return;
+  map.set(documentId, path);
+}
+
+export function buildAssistantProposalDocumentPathMap(input: {
+  activeDocument: AssistantActiveDocument | null;
+  thread: AssistantThread;
+  userMessage?: AssistantMessage;
+}): Map<string, string> {
+  const map = new Map<string, string>();
+  addDocumentPath(
+    map,
+    input.activeDocument?.documentId,
+    input.activeDocument?.path,
+  );
+  if (input.activeDocument?.path) {
+    map.set(ACTIVE_DOCUMENT_PATH_LOOKUP_KEY, input.activeDocument.path);
+  }
+
+  for (const ctx of input.thread.contextDocs) {
+    addDocumentPath(map, ctx.documentId, ctx.path);
+  }
+  if (input.thread.attachedSelection) {
+    addDocumentPath(
+      map,
+      input.thread.attachedSelection.documentId,
+      input.thread.attachedSelection.path,
+    );
+  }
+  for (const message of input.thread.messages) {
+    for (const doc of message.context?.documents ?? []) {
+      addDocumentPath(map, doc.documentId, doc.path);
+    }
+    addDocumentPath(
+      map,
+      message.context?.selection?.documentId,
+      message.context?.selection?.path,
+    );
+  }
+  for (const doc of input.userMessage?.context?.documents ?? []) {
+    addDocumentPath(map, doc.documentId, doc.path);
+  }
+  addDocumentPath(
+    map,
+    input.userMessage?.context?.selection?.documentId,
+    input.userMessage?.context?.selection?.path,
+  );
+
+  return map;
+}
+
+export function resolveAssistantProposalDisplayPath(
+  proposal: AssistantProposal,
+  documentPathById: ReadonlyMap<string, string>,
+): AssistantProposal {
+  if (!("docPath" in proposal)) return proposal;
+
+  const resolved =
+    (proposal.documentId
+      ? documentPathById.get(proposal.documentId)
+      : undefined) ??
+    documentPathById.get(proposal.docPath) ??
+    (UUID_DOCUMENT_ID_PATTERN.test(proposal.docPath)
+      ? documentPathById.get(ACTIVE_DOCUMENT_PATH_LOOKUP_KEY)
+      : undefined);
+
+  if (!resolved || resolved === proposal.docPath) return proposal;
+  return { ...proposal, docPath: resolved };
+}
 
 export const AssistantActiveDocumentContext =
   React.createContext<AssistantActiveDocument | null>(null);
+
+type AssistantActiveDocumentRegistration = (input: {
+  token: symbol;
+  document: AssistantActiveDocument | null;
+}) => void;
+
+const AssistantActiveDocumentRegistrationContext =
+  React.createContext<AssistantActiveDocumentRegistration | null>(null);
 
 export function AssistantActiveDocumentProvider({
   value,
@@ -379,6 +533,22 @@ export function AssistantActiveDocumentProvider({
   value: AssistantActiveDocument | null;
   children: React.ReactNode;
 }) {
+  const register = React.use(AssistantActiveDocumentRegistrationContext);
+  const tokenRef = React.useRef<symbol | null>(null);
+  if (!tokenRef.current) {
+    tokenRef.current = Symbol("assistant-active-document");
+  }
+
+  React.useEffect(() => {
+    register?.({ token: tokenRef.current!, document: value });
+  }, [register, value]);
+
+  React.useEffect(() => {
+    return () => {
+      register?.({ token: tokenRef.current!, document: null });
+    };
+  }, [register]);
+
   return (
     <AssistantActiveDocumentContext.Provider value={value}>
       {children}
@@ -388,6 +558,93 @@ export function AssistantActiveDocumentProvider({
 
 export function useAssistantActiveDocument(): AssistantActiveDocument | null {
   return React.use(AssistantActiveDocumentContext);
+}
+
+export function buildAssistantChatRequestContext(input: {
+  activeDocument: AssistantActiveDocument | null;
+  thread: AssistantThread;
+}): Pick<
+  StudioAiChatMessageRequest,
+  "attachedDocumentIds" | "attachedSelection"
+> {
+  const ids = new Set<string>();
+  if (input.activeDocument?.documentId) {
+    ids.add(input.activeDocument.documentId);
+  }
+  for (const ctx of input.thread.contextDocs) {
+    if (ctx.documentId) ids.add(ctx.documentId);
+  }
+
+  const attachedSelection: StudioAiChatAttachedSelection | undefined = input
+    .activeDocument?.selection
+    ? {
+        documentId: input.activeDocument.documentId,
+        draftRevision: input.activeDocument.draftRevision,
+        selectionId: input.activeDocument.selection.selectionId,
+        text: input.activeDocument.selection.text,
+      }
+    : undefined;
+
+  return {
+    ...(ids.size > 0 ? { attachedDocumentIds: Array.from(ids) } : {}),
+    ...(attachedSelection ? { attachedSelection } : {}),
+  };
+}
+
+export function buildAssistantMessageContextSnapshot(input: {
+  activeDocument: AssistantActiveDocument | null;
+  thread: AssistantThread;
+}): AssistantMessageContextSnapshot {
+  const documents: AssistantMessageContextSnapshot["documents"] = [];
+  const seenPaths = new Set<string>();
+
+  if (input.activeDocument) {
+    documents.push({
+      documentId: input.activeDocument.documentId,
+      path: input.activeDocument.path,
+      type: input.activeDocument.type,
+      locale: input.activeDocument.locale,
+      source: "current",
+    });
+    seenPaths.add(input.activeDocument.path);
+  }
+
+  for (const ctx of input.thread.contextDocs) {
+    if (seenPaths.has(ctx.path)) continue;
+    documents.push({
+      ...(ctx.documentId ? { documentId: ctx.documentId } : {}),
+      path: ctx.path,
+      type: ctx.type,
+      locale: ctx.locale,
+      source: "attached",
+    });
+    seenPaths.add(ctx.path);
+  }
+
+  const selection = input.activeDocument?.selection
+    ? {
+        documentId: input.activeDocument.documentId,
+        path: input.activeDocument.path,
+        text: input.activeDocument.selection.text,
+        selectionId: input.activeDocument.selection.selectionId,
+      }
+    : input.thread.attachedSelection
+      ? {
+          ...(input.thread.attachedSelection.documentId
+            ? { documentId: input.thread.attachedSelection.documentId }
+            : {}),
+          path: input.thread.attachedSelection.path,
+          text: input.thread.attachedSelection.text,
+          ...(input.thread.attachedSelection.selectionId
+            ? { selectionId: input.thread.attachedSelection.selectionId }
+            : {}),
+        }
+      : undefined;
+
+  return {
+    documents,
+    ...(selection ? { selection } : {}),
+  };
 }
 
 function reducer(
@@ -482,6 +739,7 @@ function reducer(
             if (thread.id !== action.threadId) return thread;
             const docCount = new Set([
               ...thread.contextDocs.map((d) => d.path),
+              ...collectMessageDocPaths(action.userMessage),
               ...action.newProposals.flatMap((p) => collectProposalDocPaths(p)),
             ]).size;
             const isFirstUserTurn =
@@ -522,6 +780,10 @@ function reducer(
           ...state.store,
           threads: state.store.threads.map((thread) => {
             if (thread.id !== action.threadId) return thread;
+            const docCount = new Set([
+              ...thread.contextDocs.map((d) => d.path),
+              ...collectMessageDocPaths(action.userMessage),
+            ]).size;
             const isFirstUserTurn =
               thread.title === NEW_THREAD_TITLE &&
               !thread.messages.some((m) => m.role === "user") &&
@@ -543,6 +805,7 @@ function reducer(
               ...thread,
               title: nextTitle,
               preview: nextPreview,
+              docCount: Math.max(thread.docCount, docCount),
               updatedAt: action.placeholderAt,
               messages: [...thread.messages, action.userMessage, placeholder],
             };
@@ -1045,7 +1308,20 @@ export function AssistantProvider({
       activeThreadId: store.activeThreadId,
     };
   });
-  const activeDocument = useAssistantActiveDocument();
+  const [registeredActiveDocument, setRegisteredActiveDocument] =
+    React.useState<AssistantActiveDocument | null>(null);
+  const registeredActiveDocumentTokenRef = React.useRef<symbol | null>(null);
+  const registerActiveDocument =
+    React.useCallback<AssistantActiveDocumentRegistration>((input) => {
+      if (input.document) {
+        registeredActiveDocumentTokenRef.current = input.token;
+        setRegisteredActiveDocument(input.document);
+        return;
+      }
+      if (registeredActiveDocumentTokenRef.current !== input.token) return;
+      registeredActiveDocumentTokenRef.current = null;
+      setRegisteredActiveDocument(null);
+    }, []);
 
   const activeThread =
     state.store.threads.find((t) => t.id === state.activeThreadId) ??
@@ -1059,10 +1335,10 @@ export function AssistantProvider({
   React.useEffect(() => {
     apiRef.current = api;
   }, [api]);
-  const activeDocumentRef = React.useRef(activeDocument);
+  const activeDocumentRef = React.useRef(registeredActiveDocument);
   React.useEffect(() => {
-    activeDocumentRef.current = activeDocument;
-  }, [activeDocument]);
+    activeDocumentRef.current = registeredActiveDocument;
+  }, [registeredActiveDocument]);
   const activeThreadRef = React.useRef(activeThread);
   React.useEffect(() => {
     activeThreadRef.current = activeThread;
@@ -1177,16 +1453,15 @@ export function AssistantProvider({
         return;
       }
 
-      const attachedDocumentIdSet = new Set<string>();
-      if (liveDoc?.documentId) {
-        attachedDocumentIdSet.add(liveDoc.documentId);
-      }
-      for (const ctx of liveThread.contextDocs) {
-        if (ctx.documentId) {
-          attachedDocumentIdSet.add(ctx.documentId);
-        }
-      }
-      const attachedDocumentIds = Array.from(attachedDocumentIdSet);
+      const requestContext = buildAssistantChatRequestContext({
+        activeDocument: liveDoc,
+        thread: liveThread,
+      });
+      const proposalDocumentPathMap = buildAssistantProposalDocumentPathMap({
+        activeDocument: liveDoc,
+        thread: liveThread,
+        userMessage: input.userMessage,
+      });
 
       // Build a rolling window of prior conversation turns so the server
       // can resolve anaphora across the thread. Skip empty assistant
@@ -1214,7 +1489,7 @@ export function AssistantProvider({
         ...(input.conversationId
           ? { conversationId: input.conversationId }
           : {}),
-        ...(attachedDocumentIds.length > 0 ? { attachedDocumentIds } : {}),
+        ...requestContext,
         ...(input.rejectedProposalId
           ? { rejectedProposalId: input.rejectedProposalId }
           : {}),
@@ -1254,7 +1529,9 @@ export function AssistantProvider({
             const newProposals: AssistantProposal[] = [];
             const newWireProposals: Record<string, StudioAiProposal> = {};
             for (const wp of wireProposals) {
-              const mapped = studioProposalFromWire(wp);
+              const mapped = studioProposalFromWire(wp, {
+                documentPathById: proposalDocumentPathMap,
+              });
               if (mapped) {
                 newProposals.push(mapped);
                 newWireProposals[wp.proposalId] = wp;
@@ -1424,6 +1701,13 @@ export function AssistantProvider({
               schemaHash,
               ...(wireProposal ? { proposal: wireProposal } : {}),
             });
+            emitAssistantProposalApplied({
+              documentId: applyResult.document.documentId,
+              body: applyResult.document.body,
+              frontmatter: applyResult.document.frontmatter,
+              draftRevision: applyResult.document.draftRevision,
+              updatedAt: applyResult.document.updatedAt,
+            });
             const acceptedAt = new Date().toISOString();
             // Hidden side-channel turn — the model needs to know the
             // user accepted the proposal so it doesn't suggest the
@@ -1589,11 +1873,18 @@ export function AssistantProvider({
       sendMessage: (text) => {
         const trimmed = text.trim();
         if (!trimmed) return;
+        const context = buildAssistantMessageContextSnapshot({
+          activeDocument: activeDocumentRef.current,
+          thread: activeThreadRef.current,
+        });
         const userMessage: AssistantMessage = {
           id: `m-${Date.now().toString(36)}`,
           role: "user",
           at: new Date().toISOString(),
           text: trimmed,
+          ...(context.documents.length > 0 || context.selection
+            ? { context }
+            : {}),
         };
         void runChatRequest({
           userMessage,
@@ -1716,9 +2007,17 @@ export function AssistantProvider({
 
   return (
     <AssistantMountedContext.Provider value={true}>
-      <AssistantContext.Provider value={value}>
-        {children}
-      </AssistantContext.Provider>
+      <AssistantActiveDocumentRegistrationContext.Provider
+        value={registerActiveDocument}
+      >
+        <AssistantActiveDocumentContext.Provider
+          value={registeredActiveDocument}
+        >
+          <AssistantContext.Provider value={value}>
+            {children}
+          </AssistantContext.Provider>
+        </AssistantActiveDocumentContext.Provider>
+      </AssistantActiveDocumentRegistrationContext.Provider>
     </AssistantMountedContext.Provider>
   );
 }

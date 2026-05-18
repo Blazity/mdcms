@@ -1501,9 +1501,11 @@ async function prepareChatTurn(
   const additionalContextDocs =
     additionalDocuments.length > 0
       ? additionalDocuments.map((doc) => ({
+          documentId: doc.documentId,
           path: doc.path,
           type: doc.type,
           locale: doc.locale,
+          draftRevision: doc.draftRevision,
           ...(doc.body ? { body: doc.body } : {}),
           ...(doc.frontmatter ? { frontmatter: doc.frontmatter } : {}),
         }))
@@ -1548,6 +1550,8 @@ async function prepareChatTurn(
             type: attachedDocument.type,
             locale: attachedDocument.locale,
             draftRevision: attachedDocument.draftRevision,
+            body: attachedDocument.body,
+            frontmatter: attachedDocument.frontmatter,
             hasPublishedVersion:
               attachedDocument.publishedVersion !== null &&
               attachedDocument.publishedVersion !== undefined,
@@ -1817,9 +1821,11 @@ async function handleChatMessage(
     const additionalContextDocs =
       additionalDocuments.length > 0
         ? additionalDocuments.map((doc) => ({
+            documentId: doc.documentId,
             path: doc.path,
             type: doc.type,
             locale: doc.locale,
+            draftRevision: doc.draftRevision,
             ...(doc.body ? { body: doc.body } : {}),
             ...(doc.frontmatter ? { frontmatter: doc.frontmatter } : {}),
           }))
@@ -1876,6 +1882,8 @@ async function handleChatMessage(
                 type: attachedDocument.type,
                 locale: attachedDocument.locale,
                 draftRevision: attachedDocument.draftRevision,
+                body: attachedDocument.body,
+                frontmatter: attachedDocument.frontmatter,
                 hasPublishedVersion:
                   attachedDocument.publishedVersion !== null &&
                   attachedDocument.publishedVersion !== undefined,

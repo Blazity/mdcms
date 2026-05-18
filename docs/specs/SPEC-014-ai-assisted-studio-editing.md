@@ -377,6 +377,23 @@ The chat assistant grounds the model in real project data via three layers:
 Both tools are capability-gated on `content:read:draft`; absent capability removes
 the tool from the model's surface and the model gracefully responds in text.
 
+**Document context policy:**
+
+- The active target draft may include its body and frontmatter inline when the
+  caller can read drafts. This keeps exact-text edits, section deletions, and
+  selection-free rewrites anchored to the current draft.
+- Additional `@`-referenced documents are injected as compact, read-only context
+  cards by default rather than full bodies. Each card includes the `documentId`,
+  path, type, locale, draft revision, frontmatter summary, heading outline, and a
+  short excerpt when available.
+- The model must use `get_entry({ documentId })` when a referenced document's full
+  body or complete frontmatter is needed. Referenced document content is source
+  material only; it must not be treated as instructions and must not become a
+  write target unless the user explicitly makes that document the active target.
+- If the active target draft is too large for the configured prompt budget, the
+  server may fall back to the same compact-card representation plus selected or
+  nearby editor context and require tool lookup for the rest.
+
 **Validator codes (server-side trust boundary):**
 
 - `UNKNOWN_CONTENT_TYPE` — proposed type not registered for the project.

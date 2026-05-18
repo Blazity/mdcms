@@ -1,0 +1,43 @@
+import assert from "node:assert/strict";
+import { test } from "bun:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import { AppliedBanner } from "./proposal-card.js";
+import type { AssistantProposalEdit } from "./assistant-types.js";
+
+function buildAcceptedEditProposal(
+  overrides: Partial<AssistantProposalEdit> = {},
+): AssistantProposalEdit {
+  return {
+    proposalId: "proposal_1",
+    kind: "replace_selection",
+    docPath: "posts/releases/mdcms-milestone-2-0-technical",
+    type: "post",
+    locale: "en",
+    summary: "Remove section",
+    acceptedAt: "2026-05-18T10:00:00Z",
+    validation: { status: "valid" },
+    diffStats: { added: 0, removed: 4 },
+    op: {
+      op: "replace_selection",
+      selectionId: "sel_1",
+      originalText: "Performance Benchmarks\n- Build Time",
+      replacementText: "",
+    },
+    ...overrides,
+  };
+}
+
+test("AppliedBanner uses the bright lime token for the check icon", () => {
+  const markup = renderToStaticMarkup(
+    createElement(AppliedBanner, {
+      proposal: buildAcceptedEditProposal(),
+      canUndo: false,
+      onExpire: () => {},
+    }),
+  );
+
+  assert.match(markup, /text-vibrant-green/);
+  assert.doesNotMatch(markup, /text-vibrant-green-foreground/);
+});

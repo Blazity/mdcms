@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "bun:test";
 
-import { relTime, studioProposalFromWire } from "./assistant-context.js";
+import {
+  buildAssistantChatRequestContext,
+  buildAssistantMessageContextSnapshot,
+  buildAssistantProposalDocumentPathMap,
+  relTime,
+  resolveAssistantProposalDisplayPath,
+  studioProposalFromWire,
+} from "./assistant-context.js";
 import { buildAssistantMockStore } from "./assistant-mock-data.js";
 import type { StudioAiProposal } from "../../../ai-route-api.js";
+import type {
+  AssistantActiveDocument,
+  AssistantThread,
+} from "./assistant-context.js";
 
 test("relTime formats relative timestamps against an explicit now", () => {
   const now = "2026-05-07T10:00:00Z";
@@ -38,6 +49,102 @@ test("mock store contains every proposal kind referenced by SPEC-014", () => {
   assert.ok(kinds.has("create_document"));
   assert.ok(kinds.has("delete_document"));
   assert.ok(kinds.has("update_frontmatter"));
+});
+
+function buildThread(
+  overrides: Partial<AssistantThread> = {},
+): AssistantThread {
+  return {
+    id: "thread_1",
+    title: "Thread",
+    updatedAt: "2026-05-07T10:00:00Z",
+    preview: "",
+    contextDocs: [],
+    messages: [],
+    docCount: 0,
+    ...overrides,
+  };
+}
+
+function buildActiveDocument(
+  overrides: Partial<AssistantActiveDocument> = {},
+): AssistantActiveDocument {
+  return {
+    documentId: "doc_active",
+    path: "posts/releases/mdcms-milestone-2-0-technical.md",
+    type: "post",
+    locale: "en",
+    draftRevision: 7,
+    schemaHash: "schema_hash_1",
+    project: "demo",
+    environment: "draft",
+    ...overrides,
+  };
+}
+
+test("buildAssistantChatRequestContext sends active document and live selection", () => {
+  const activeDocument = buildActiveDocument({
+    selection: {
+      selectionId: "sel:10-25",
+      text: "Performance Benchmarks",
+    },
+  });
+  const thread = buildThread({
+    contextDocs: [
+      {
+        documentId: "doc_extra",
+        path: "posts/releases/related.md",
+        type: "post",
+        locale: "en",
+      },
+    ],
+  });
+
+  const context = buildAssistantChatRequestContext({
+    activeDocument,
+    thread,
+  });
+
+  assert.deepEqual(context.attachedDocumentIds, ["doc_active", "doc_extra"]);
+  assert.deepEqual(context.attachedSelection, {
+    documentId: "doc_active",
+    draftRevision: 7,
+    selectionId: "sel:10-25",
+    text: "Performance Benchmarks",
+  });
+});
+
+test("buildAssistantMessageContextSnapshot records attached document labels for the user turn", () => {
+  const activeDocument = buildActiveDocument();
+  const thread = buildThread({
+    contextDocs: [
+      {
+        documentId: "doc_extra",
+        path: "posts/releases/related.md",
+        type: "post",
+        locale: "en",
+      },
+    ],
+  });
+
+  const snapshot = buildAssistantMessageContextSnapshot({
+    activeDocument,
+    thread,
+  });
+
+  assert.deepEqual(
+    snapshot.documents.map((doc) => ({
+      path: doc.path,
+      source: doc.source,
+    })),
+    [
+      {
+        path: "posts/releases/mdcms-milestone-2-0-technical.md",
+        source: "current",
+      },
+      { path: "posts/releases/related.md", source: "attached" },
+    ],
+  );
 });
 
 // ─────────────────────────────────────────────────────────────────────
@@ -87,6 +194,54 @@ test("studioProposalFromWire maps a replace_selection wire proposal", () => {
     assert.equal(studio.op.replacementText, "after");
     assert.equal(studio.locale, "en");
     assert.equal(studio.baseDraftRevision, 4);
+  }
+});
+
+test("studioProposalFromWire uses attached document path for existing-document proposals", () => {
+  const wire = buildWireProposal({
+    documentId: "doc_active",
+  });
+  const studio = studioProposalFromWire(wire, {
+    documentPathById: new Map([
+      ["doc_active", "posts/releases/mdcms-milestone-2-0-technical"],
+    ]),
+  });
+  assert.ok(studio);
+  assert.equal(studio.kind, "replace_selection");
+  if (studio.kind === "replace_selection") {
+    assert.equal(
+      studio.docPath,
+      "posts/releases/mdcms-milestone-2-0-technical",
+    );
+  }
+});
+
+test("resolveAssistantProposalDisplayPath falls back to the active path for persisted UUID-only proposals", () => {
+  const wire = buildWireProposal({
+    documentId: "10a6a5b8-125b-4180-a40e-8e03df652555",
+  });
+  const studio = studioProposalFromWire(wire);
+  assert.ok(studio);
+  assert.equal(studio.kind, "replace_selection");
+
+  const pathMap = buildAssistantProposalDocumentPathMap({
+    activeDocument: buildActiveDocument({
+      documentId: "10a6a5b8-125b-4180-a40e-8e03df652555",
+      path: "posts/releases/mdcms-milestone-2-0-technical",
+    }),
+    thread: buildThread(),
+  });
+  const resolved = resolveAssistantProposalDisplayPath(
+    { ...studio, documentId: undefined },
+    pathMap,
+  );
+
+  assert.equal(resolved.kind, "replace_selection");
+  if (resolved.kind === "replace_selection") {
+    assert.equal(
+      resolved.docPath,
+      "posts/releases/mdcms-milestone-2-0-technical",
+    );
   }
 });
 

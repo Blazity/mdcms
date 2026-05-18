@@ -24,6 +24,8 @@ import {
 import {
   ASSISTANT_COMPOSER_DATA_ATTR,
   type AssistantActiveDocument,
+  buildAssistantProposalDocumentPathMap,
+  resolveAssistantProposalDisplayPath,
   useAssistant,
   useAssistantActiveDocument,
   relTime,
@@ -297,6 +299,15 @@ function ContextChips({
   onRemoveDoc: (path: string) => void;
 }) {
   const sel = thread.attachedSelection;
+  const liveSelection = activeDocument?.selection
+    ? {
+        documentId: activeDocument.documentId,
+        path: activeDocument.path,
+        text: activeDocument.selection.text,
+        selectionId: activeDocument.selection.selectionId,
+      }
+    : null;
+  const visibleSelection = sel ?? liveSelection;
   // Render mention-added context docs as `+` chips, skipping any that
   // already represent the active editor doc (path-matched) so we don't
   // double up if the user mentions the doc they're currently editing.
@@ -313,7 +324,8 @@ function ContextChips({
           className="inline-flex items-center gap-1.5 rounded-sm border border-divider/60 bg-card px-1.5 py-0.5 font-mono text-[10.5px] text-foreground-muted"
           title={`Current document — ${activeDocument.path}`}
         >
-          <span className="text-primary">◆</span> current
+          <span className="text-primary">◆</span>
+          {activeDocument.path}
         </span>
       )}
       {extras.map((d) => (
@@ -337,21 +349,23 @@ function ContextChips({
           </button>
         </span>
       ))}
-      {sel && (
+      {visibleSelection && (
         <span
           className="inline-flex items-center gap-1.5 rounded-sm border border-primary/30 bg-blue-100 px-1.5 py-0.5 font-mono text-[10.5px] text-primary"
-          title={sel.text}
+          title={visibleSelection.text}
         >
           <SparkleMark size={9} />
           selected text
-          <button
-            type="button"
-            onClick={onClearSelection}
-            className="-mr-0.5 ml-0.5 rounded text-primary/80 hover:text-primary"
-            aria-label="Detach selection"
-          >
-            <X className="size-2.5" />
-          </button>
+          {sel ? (
+            <button
+              type="button"
+              onClick={onClearSelection}
+              className="-mr-0.5 ml-0.5 rounded text-primary/80 hover:text-primary"
+              aria-label="Detach selection"
+            >
+              <X className="size-2.5" />
+            </button>
+          ) : null}
         </span>
       )}
     </div>
@@ -364,9 +378,34 @@ function ContextChips({
 // lands on assistant prose rather than bouncing back to the echo of
 // the user's own text.
 function UserBubble({ message }: { message: AssistantMessage }) {
+  const docs = message.context?.documents ?? [];
+  const selection = message.context?.selection;
   return (
     <div className="mb-6 flex justify-end">
       <div className="max-w-[70%] border-r-2 border-foreground/20 py-1.5 pl-2.5 pr-2.5 text-right text-[13px] leading-normal text-foreground/60">
+        {docs.length > 0 || selection ? (
+          <div className="mb-1.5 flex flex-wrap justify-end gap-1">
+            {docs.map((doc) => (
+              <span
+                key={`${doc.source}:${doc.path}`}
+                className="inline-flex max-w-full items-center gap-1 rounded-sm border border-divider/50 px-1.5 py-0.5 font-mono text-[10px] text-foreground-muted"
+                title={`${doc.source === "current" ? "Current document" : "Attached document"} — ${doc.path}`}
+              >
+                {doc.source === "current" ? "◆" : "＋"}
+                <span className="truncate">{doc.path}</span>
+              </span>
+            ))}
+            {selection ? (
+              <span
+                className="inline-flex max-w-full items-center gap-1 rounded-sm border border-primary/30 px-1.5 py-0.5 font-mono text-[10px] text-primary"
+                title={selection.text}
+              >
+                <SparkleMark size={9} />
+                selected text
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         {message.text}
       </div>
     </div>
@@ -381,6 +420,7 @@ function UserBubble({ message }: { message: AssistantMessage }) {
 function AssistantBubble({
   message,
   proposalsById,
+  documentPathById,
   isStreamingPlaceholder,
   onAccept,
   onReject,
@@ -388,6 +428,7 @@ function AssistantBubble({
 }: {
   message: AssistantMessage;
   proposalsById: Record<string, AssistantProposal>;
+  documentPathById: ReadonlyMap<string, string>;
   /**
    * True when this message is the most-recent assistant turn AND the
    * context is mid-stream. Drives the typing-indicator render when
@@ -410,7 +451,9 @@ function AssistantBubble({
   if (proposalIds.length === 0 && !text && !isStreamingPlaceholder) return null;
   const proposals = proposalIds.flatMap((pid) => {
     const proposal = proposalsById[pid];
-    return proposal ? [proposal] : [];
+    return proposal
+      ? [resolveAssistantProposalDisplayPath(proposal, documentPathById)]
+      : [];
   });
   const isMultiTurn = proposals.length > 1;
   return (
@@ -1094,6 +1137,14 @@ export function AssistantPanel({
   const assistant = useAssistant();
   const activeDocument = useAssistantActiveDocument();
   const thread = assistant.activeThread;
+  const proposalDocumentPathMap = React.useMemo(
+    () =>
+      buildAssistantProposalDocumentPathMap({
+        activeDocument,
+        thread,
+      }),
+    [activeDocument, thread],
+  );
   // Lifted so the empty-state example cards can fill the same buffer
   // the Composer renders. The Composer is otherwise a controlled
   // textarea against this state.
@@ -1332,6 +1383,7 @@ export function AssistantPanel({
                     key={m.id}
                     message={m}
                     proposalsById={assistant.store.proposals}
+                    documentPathById={proposalDocumentPathMap}
                     isStreamingPlaceholder={
                       assistant.isPending && idx === lastAssistantIdx
                     }

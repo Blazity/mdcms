@@ -164,6 +164,15 @@ function parseJsonObjectField(
   return parsed as Record<string, unknown>;
 }
 
+function documentTextSelectionId(originalText: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < originalText.length; i += 1) {
+    hash ^= originalText.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `doc-text:${(hash >>> 0).toString(36)}`;
+}
+
 export function buildChatTools(deps: ChatToolDeps): Record<string, Tool> {
   const tools: Record<string, Tool> = {};
 
@@ -251,6 +260,48 @@ export function buildChatTools(deps: ChatToolDeps): Record<string, Tool> {
   }
 
   if (deps.capabilities.canEditDocument && deps.hasActiveDocument) {
+    tools.propose_replace_document_text = tool({
+      description:
+        "Propose replacing or removing an exact markdown span from the active draft, without requiring the user to highlight it first. Use for whole-document edits like deleting a named section, rewriting a paragraph by heading, or replacing a block you can copy exactly from the active draft context. The `originalText` must be copied exactly from the active draft and must appear only once; use an empty `replacementText` to delete it.",
+      inputSchema: z.object({
+        summary: SUMMARY_FIELD,
+        originalText: z
+          .string()
+          .min(1)
+          .describe(
+            "Exact markdown span from the active draft to replace or remove. Include enough surrounding structure (for example the heading plus its section body) so it appears once.",
+          ),
+        replacementText: z
+          .string()
+          .describe(
+            "Replacement markdown. Pass an empty string to delete the original span.",
+          ),
+      }),
+      execute: async (args) => {
+        try {
+          const selectionId = documentTextSelectionId(args.originalText);
+          const proposal = await stampProposal(
+            {
+              summary: args.summary,
+              operations: [
+                {
+                  op: "replace_selection",
+                  selectionId,
+                  originalText: args.originalText,
+                  replacementText: args.replacementText,
+                },
+              ],
+            },
+            { selectionId },
+          );
+          deps.collected.push(proposal);
+          return { proposalId: proposal.proposalId, queued: true as const };
+        } catch (error) {
+          return toolErrorResult(error);
+        }
+      },
+    });
+
     tools.propose_insert_block = tool({
       description:
         "Propose inserting a new MDX block into the active draft (a new paragraph, list, callout, code sample, etc.). Use when the user wants something added — not a replacement of existing text.",

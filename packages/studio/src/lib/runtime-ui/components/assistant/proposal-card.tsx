@@ -816,12 +816,10 @@ export function AppliedBanner({
       className="overflow-hidden rounded-md border border-divider/60 bg-vibrant-green/[0.08]"
     >
       <div className="flex items-center gap-2.5 px-3 py-2">
-        <span
+        <Check
           aria-hidden
-          className="text-[13px] font-semibold text-vibrant-green-foreground/80"
-        >
-          ✓
-        </span>
+          className="size-4 shrink-0 stroke-[2.5] text-vibrant-green"
+        />
         <span className="text-[12.5px] text-foreground">Applied</span>
         {docPath && (
           <span

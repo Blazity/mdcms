@@ -14,6 +14,7 @@ import type { StudioDocumentShell } from "../../document-shell.js";
 import { StudioNavigationProvider } from "../navigation.js";
 import {
   applyFailedDraftSaveToReadyState,
+  applyAssistantProposalDocumentToReadyState,
   applySuccessfulPublishToReadyState,
   applySuccessfulDraftSaveToReadyState,
   applySchemaStateToReadyState,
@@ -37,6 +38,7 @@ import {
 function createReadyShell(
   overrides: Partial<StudioDocumentShell["data"]> = {},
 ): StudioDocumentShell {
+  const { draftRevision = 8, ...dataOverrides } = overrides;
   return {
     state: "ready",
     type: "BlogPost",
@@ -55,7 +57,8 @@ function createReadyShell(
       updatedAt: "2026-03-27T12:00:00.000Z",
       hasUnpublishedChanges: true,
       publishedVersion: 5,
-      ...overrides,
+      draftRevision,
+      ...dataOverrides,
     },
   };
 }
@@ -768,6 +771,34 @@ test("applySuccessfulDraftSaveToReadyState preserves newer unsaved edits when an
   assert.equal(next.document.body, "# Launch Notes\nSaved edit");
   assert.equal(next.draftBody, "# Launch Notes\nNewer edit");
   assert.equal(next.saveState, "unsaved");
+  assert.equal(next.mutationError, undefined);
+});
+
+test("applyAssistantProposalDocumentToReadyState adopts the assistant-applied draft as saved", () => {
+  const initial = reduceContentDocumentPageReadyState(createReadyState(), {
+    type: "draftChanged",
+    body: "# Launch Notes\nLocal edit",
+  });
+
+  const next = applyAssistantProposalDocumentToReadyState({
+    state: initial,
+    document: createDocumentResponse({
+      body: "# Launch Notes\nAssistant edit",
+      frontmatter: {
+        title: "Assistant Launch Notes",
+      },
+      draftRevision: 9,
+      updatedAt: "2026-03-27T12:07:00.000Z",
+    }),
+  });
+
+  assert.equal(next.draftBody, "# Launch Notes\nAssistant edit");
+  assert.deepEqual(next.draftFrontmatter, {
+    title: "Assistant Launch Notes",
+  });
+  assert.equal(next.document.body, "# Launch Notes\nAssistant edit");
+  assert.equal(next.document.draftRevision, 9);
+  assert.equal(next.saveState, "saved");
   assert.equal(next.mutationError, undefined);
 });
 

@@ -192,3 +192,79 @@ describe("get_entry tool", () => {
     assert.ok(result.error.toLowerCase().includes("not found"));
   });
 });
+
+describe("document text replacement tool", () => {
+  test("is registered for editable active documents even without a selected span", () => {
+    const tools = buildChatTools(
+      baseDeps({
+        envelope: {
+          project: "p",
+          environment: "e",
+          type: "post",
+          locale: "en",
+          documentId: "doc_1",
+          baseDraftRevision: 4,
+        },
+        hasActiveDocument: true,
+        capabilities: {
+          canEditDocument: true,
+          canCreateDocument: false,
+          canDeleteDocument: false,
+          canReadEntries: false,
+        },
+      }),
+    );
+
+    assert.ok(tools.propose_replace_document_text);
+  });
+
+  test("queues a replace_selection proposal with a server-generated document-text anchor", async () => {
+    const collected: AiProposal[] = [];
+    const tools = buildChatTools(
+      baseDeps({
+        envelope: {
+          project: "p",
+          environment: "e",
+          type: "post",
+          locale: "en",
+          documentId: "doc_1",
+          baseDraftRevision: 4,
+        },
+        hasActiveDocument: true,
+        capabilities: {
+          canEditDocument: true,
+          canCreateDocument: false,
+          canDeleteDocument: false,
+          canReadEntries: false,
+        },
+        collected,
+      }),
+    );
+
+    const result = (await tools.propose_replace_document_text!.execute!(
+      {
+        summary: "Remove performance benchmarks",
+        originalText:
+          "## Performance Benchmarks\n\n- Build Time: Reduced from 3 min 45 s.",
+        replacementText: "",
+      },
+      { toolCallId: "tc_1", messages: [] },
+    )) as { proposalId: string; queued: true };
+
+    assert.equal(result.queued, true);
+    assert.equal(collected.length, 1);
+    const proposal = collected[0]!;
+    assert.equal(proposal.kind, "replace_selection");
+    assert.equal(proposal.documentId, "doc_1");
+    assert.equal(proposal.baseDraftRevision, 4);
+    assert.equal(proposal.operations[0]?.op, "replace_selection");
+    if (proposal.operations[0]?.op === "replace_selection") {
+      assert.match(proposal.operations[0].selectionId, /^doc-text:/);
+      assert.equal(
+        proposal.operations[0].originalText,
+        "## Performance Benchmarks\n\n- Build Time: Reduced from 3 min 45 s.",
+      );
+      assert.equal(proposal.operations[0].replacementText, "");
+    }
+  });
+});

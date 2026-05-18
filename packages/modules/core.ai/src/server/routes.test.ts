@@ -24,6 +24,7 @@ import {
 import { createAiOrchestrator, type AiOrchestrator } from "./orchestrator.js";
 import {
   createEchoAiProvider,
+  type EchoAiProviderOptions,
   type EchoStepResponse,
 } from "./providers/echo.js";
 import type { AiProposalValidator } from "./proposal-builder.js";
@@ -166,9 +167,11 @@ function buildEchoOutputForReplaceSelection(): string {
 
 function createTestSetup(input: {
   document?: ContentDocumentResponse;
+  documents?: ContentDocumentResponse[];
   schemaHash?: string;
   authorize?: AiAuthorizer;
   emitAudit?: AiAuditEmitter;
+  echoRespond?: EchoAiProviderOptions["respond"];
   echoSteps?: EchoStepResponse[];
   proposalValidator?: AiProposalValidator;
   contentTypesLookup?: MountAiRoutesOptions["contentTypesLookup"];
@@ -177,10 +180,16 @@ function createTestSetup(input: {
   listEntries?: MountAiRoutesOptions["listEntries"];
   getEntry?: MountAiRoutesOptions["getEntry"];
 }) {
-  const document = input.document ?? buildDocument();
+  const document = input.document ?? input.documents?.[0] ?? buildDocument();
+  const documents = input.documents ?? [document];
+  const findDocument = (
+    documentId: string,
+  ): ContentDocumentResponse | undefined =>
+    documents.find((candidate) => candidate.documentId === documentId);
   const orchestrator: AiOrchestrator = createAiOrchestrator({
     provider: createEchoAiProvider({
-      respond: () => buildEchoOutputForReplaceSelection(),
+      respond:
+        input.echoRespond ?? (() => buildEchoOutputForReplaceSelection()),
       ...(input.echoSteps ? { steps: input.echoSteps } : {}),
     }),
     clock: () => new Date("2026-05-01T00:00:00.000Z"),
@@ -205,8 +214,8 @@ function createTestSetup(input: {
   }> = [];
 
   const contentStore: AiContentStore = {
-    async getById() {
-      return document;
+    async getById(_scope, documentId) {
+      return findDocument(documentId) ?? document;
     },
     async update(_scope, documentId, payload) {
       updateCalls.push({ documentId, payload });
@@ -236,14 +245,15 @@ function createTestSetup(input: {
 
   const contextResolver: AiContextResolver = {
     async loadDraftContext({ documentId }) {
-      if (documentId !== document.documentId) {
+      const resolved = findDocument(documentId);
+      if (!resolved) {
         throw new RuntimeError({
           code: "NOT_FOUND",
           message: "Document not found.",
           statusCode: 404,
         });
       }
-      return { document };
+      return { document: resolved };
     },
   };
 
@@ -1049,6 +1059,81 @@ describe("mountAiRoutes — chat-message", () => {
     };
     assert.equal((payload.data.proposals ?? []).length, 0);
     assert.equal(payload.data.message.text, "Hi! What can I help with?");
+  });
+
+  test("chat prompt passes secondary attached documents as fetchable cards", async () => {
+    let capturedPrompt = "";
+    const { app } = createTestSetup({
+      authorize: authorizeWithScopes(
+        new Set(["ai:use", "content:read:draft", "content:write"]),
+      ),
+      documents: [
+        buildDocument({
+          documentId: "doc_1",
+          path: "posts/current",
+          body: "ACTIVE_DOC_BODY_SENTINEL",
+        }),
+        buildDocument({
+          documentId: "doc_related",
+          path: "posts/related",
+          draftRevision: 9,
+          frontmatter: {
+            title: "Related Article",
+            description: "Useful background",
+            internalNotes: "not for prompt",
+          },
+          body: [
+            "# Related Article",
+            "",
+            "Short context paragraph.",
+            "",
+            "## Details",
+            "",
+            "FULL_RELATED_BODY_SENTINEL",
+          ].join("\n"),
+        }),
+      ],
+      echoRespond: (options: unknown) => {
+        const prompt = (
+          options as {
+            prompt: Array<{
+              role: string;
+              content: Array<{ type: string; text?: string }>;
+            }>;
+          }
+        ).prompt;
+        capturedPrompt =
+          prompt
+            .find((message) => message.role === "user")
+            ?.content.find((part) => part.type === "text")?.text ?? "";
+        return "I can use that context.";
+      },
+    });
+
+    const response = await app.fetch(
+      "POST",
+      "https://test.local/api/v1/ai/chat/messages",
+      {
+        method: "POST",
+        headers: TARGET_HEADERS,
+        body: JSON.stringify({
+          message: "Use the related article as background",
+          attachedDocumentIds: ["doc_1", "doc_related"],
+        }),
+      },
+    );
+
+    assert.equal(response.status, 200);
+    assert.match(
+      capturedPrompt,
+      /Active draft body:\nACTIVE_DOC_BODY_SENTINEL/,
+    );
+    assert.match(capturedPrompt, /documentId: doc_related/);
+    assert.match(capturedPrompt, /draftRevision: 9/);
+    assert.match(capturedPrompt, /Headings: Related Article > Details/);
+    assert.match(capturedPrompt, /Use get_entry\(\{ documentId \}\)/);
+    assert.doesNotMatch(capturedPrompt, /FULL_RELATED_BODY_SENTINEL/);
+    assert.doesNotMatch(capturedPrompt, /internalNotes/);
   });
 
   test("propose_create_document with empty frontmatter returns INVALID via validator", async () => {

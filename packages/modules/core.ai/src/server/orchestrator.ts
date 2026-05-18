@@ -85,6 +85,8 @@ export type AiChatActiveDocument = {
   type: string;
   locale: string;
   draftRevision: number;
+  body?: string;
+  frontmatter?: Record<string, unknown>;
   hasPublishedVersion: boolean;
 };
 
@@ -501,6 +503,12 @@ function prepareChatRun(
           path: call.activeDocument.path,
           type: call.activeDocument.type,
           locale: call.activeDocument.locale,
+          ...(call.activeDocument.body
+            ? { body: call.activeDocument.body }
+            : {}),
+          ...(call.activeDocument.frontmatter
+            ? { frontmatter: call.activeDocument.frontmatter }
+            : {}),
         }
       : undefined,
     additionalContextDocs: call.additionalContextDocs,
