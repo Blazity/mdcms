@@ -2,14 +2,14 @@
 
 ## What it is + why
 
-Local infrastructure for development. MDCMS depends on PostgreSQL, Redis, MinIO (S3-compatible object storage), and MailHog (SMTP catch-all for dev email testing). All four run via `docker-compose.yml` at the repo root.
+Local infrastructure for host-process development. MDCMS depends on PostgreSQL, Redis, MinIO (S3-compatible object storage), and MailHog (SMTP catch-all for dev email testing). All four run via named services in `docker-compose.yml` at the repo root.
 
 ## Configuration
 
 ```bash
-docker compose up -d --build         # Bring up the stack
-docker compose down                  # Tear down
-docker compose logs -f <service>     # Tail a service
+docker compose up -d postgres redis minio mailhog # Bring up infrastructure only
+docker compose down                               # Tear down
+docker compose logs -f <service>                  # Tail a service
 ```
 
 Services:
@@ -19,7 +19,7 @@ Services:
 - **minio** — Media uploads (S3-compatible).
 - **mailhog** — Dev-only SMTP capture; web UI at `localhost:8025`.
 
-The server expects this stack on default ports. Ports and credentials live in `docker-compose.yml` and the server's `.env` (local-only).
+The local server process expects this stack on default ports. Ports and credentials live in `docker-compose.yml` and the server's `.env` (local-only). The default `docker compose up -d --build` stack also starts a containerized server on port 4000, so do not combine it with `bun run dev`.
 
 ## How agents interact
 
@@ -33,7 +33,9 @@ bun run integration                 # Runs Docker health + migration check
 For a clean re-run during debugging:
 
 ```bash
-docker compose down -v && docker compose up -d --build
+docker compose down -v
+docker compose up -d postgres redis minio mailhog
+bun run --cwd apps/server db:migrate
 ```
 
 The `-v` flag drops volumes — useful when starting from a clean DB state, **not safe** if you want to preserve seeded content.

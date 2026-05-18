@@ -8,13 +8,14 @@ Backend API server for MDCMS, built with [Elysia](https://elysiajs.com/) and Pos
 
 The steps below are for contributors working inside the monorepo.
 
-### With Docker Compose (recommended)
+### Start infrastructure
 
 ```bash
-docker compose up -d --build
+docker compose up -d postgres redis minio mailhog
+bun run --cwd apps/server db:migrate
 ```
 
-This starts PostgreSQL, Redis, MinIO, and Mailhog. Migrations run automatically.
+This starts PostgreSQL, Redis, MinIO, and Mailhog for a local server process.
 
 ### Start the server
 
@@ -23,6 +24,8 @@ bun --cwd apps/server run start
 ```
 
 The server starts on `http://localhost:4000`. Verify with `GET /healthz`.
+
+Do not run `docker compose up -d --build` before starting the server locally; the default Compose stack starts its own server container on port 4000.
 
 ## API Endpoints
 
@@ -60,7 +63,7 @@ bun run --cwd apps/server db:generate
 bun run --cwd apps/server db:migrate
 ```
 
-In Docker Compose, migrations run automatically before the server starts.
+In the default Docker Compose stack, migrations run automatically before the containerized server starts.
 
 ## Documentation
 

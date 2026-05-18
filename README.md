@@ -187,8 +187,19 @@ To work on MDCMS itself, clone the repo and use [Bun](https://bun.sh/) as the ru
 git clone https://github.com/mdcms-ai/mdcms.git
 cd mdcms
 bun install
-docker compose up -d --build   # Start Postgres, Redis, MinIO, Mailhog
-bun run dev                     # Start backend, Studio watcher, and example app
+docker compose up -d postgres redis minio mailhog
+bun run --cwd apps/server db:migrate
+MDCMS_DEMO_ENVIRONMENT=staging bun run --cwd apps/server demo:seed
+MDCMS_DEMO_ENVIRONMENT=production bun run --cwd apps/server demo:seed
+bun run dev
+```
+
+This starts only the infrastructure services in Docker, then runs the backend, Studio watcher, and example app from your local checkout. Do not run `docker compose up -d --build` before `bun run dev`; the default Compose stack also starts a server container on port 4000.
+
+For a fully containerized development loop instead, run:
+
+```bash
+bun run compose:dev
 ```
 
 Visit [http://127.0.0.1:4173/admin](http://127.0.0.1:4173/admin) to open the Studio UI in the example host app.

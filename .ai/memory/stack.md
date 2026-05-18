@@ -28,7 +28,8 @@ Runtime, dependencies, and infrastructure. Update when any of them change.
 
 ## Infrastructure (dev)
 
-- `docker compose up -d --build` brings up postgres, redis, minio, mailhog.
+- Host-process development uses `docker compose up -d postgres redis minio mailhog` for infrastructure, then `bun run dev` for the server, Studio watcher, and Studio example app.
+- `docker compose up -d --build` starts the default containerized server on port 4000 and must not be combined with `bun run dev`.
 - Server runs on port 4000.
 
 ## Custom export condition

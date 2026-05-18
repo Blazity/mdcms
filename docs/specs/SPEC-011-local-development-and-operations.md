@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-03-11
+last_updated: 2026-05-18
 ---
 
 # SPEC-011 Local Development and Operations
@@ -107,26 +107,43 @@ volumes:
 
 ### Getting Started (Developer Experience)
 
+MDCMS supports two local contributor loops. They must not be combined:
+
+- Host-process development starts only infrastructure services with Docker
+  Compose, then runs the server, Studio watcher, and Studio example app from
+  the local checkout with Bun.
+- Containerized development uses `docker-compose.dev.yml` to run
+  infrastructure, migrations, demo seeding, the server, the Studio watcher, and
+  the Studio example app inside Compose.
+
+The default `docker-compose.yml` starts the production-shaped server container
+on port 4000. It is appropriate for self-hosting and integration checks, but it
+must not be followed by `bun run dev`, because `server:dev` also binds port 4000.
+
+#### Host-process development
+
 ```bash
-# 1. Clone the repo and start the backend
 git clone <repo>
 cd mdcms
 bun install
-docker compose up -d
-
-# 2. In the user's project, install the packages
-npm install @mdcms/cli @mdcms/studio @mdcms/sdk
-
-# 3. Initialize MDCMS in the project
-npx cms init
-
-# 4. Embed the Studio in the app (e.g., Next.js)
-# Create app/admin/[[...path]]/page.tsx with <Studio />
-
-# 5. Start developing
-npm run dev
-# Visit /admin to access the CMS
+docker compose up -d postgres redis minio mailhog
+bun run --cwd apps/server db:migrate
+MDCMS_DEMO_ENVIRONMENT=staging bun run --cwd apps/server demo:seed
+MDCMS_DEMO_ENVIRONMENT=production bun run --cwd apps/server demo:seed
+bun run dev
 ```
+
+The Studio example app is available at `http://127.0.0.1:4173/admin`.
+
+#### Containerized development
+
+```bash
+git clone <repo>
+cd mdcms
+bun run compose:dev
+```
+
+The Studio example app is available at `http://127.0.0.1:4173/admin`.
 
 Repository-local Git hooks are installed during `bun install` when the repo is
 available as a Git worktree. The tracked `pre-push` hook must run the required
