@@ -216,7 +216,7 @@ export type AuthService = {
     requirement: AuthorizationRequirement,
   ) => Promise<AuthorizedRequest>;
   requireCsrfProtection: (request: Request) => Promise<void>;
-  issueCsrfBootstrap: () => {
+  issueCsrfBootstrap: (request?: Request) => {
     token: string;
     setCookie: string;
   };
@@ -2287,8 +2287,17 @@ export function createAuthService(
       adminAllowlist.userIds.has(session.userId) ||
       adminAllowlist.emails.has(session.email.toLowerCase()));
 
-  function createCsrfBootstrap(): { token: string; setCookie: string } {
-    const token = randomBytes(CSRF_TOKEN_BYTES).toString("base64url");
+  function createCsrfBootstrap(request?: Request): {
+    token: string;
+    setCookie: string;
+  } {
+    const existingToken = request
+      ? readCookieValue(request, CSRF_COOKIE_NAME)?.trim()
+      : undefined;
+    const token =
+      existingToken && existingToken.length > 0
+        ? existingToken
+        : randomBytes(CSRF_TOKEN_BYTES).toString("base64url");
 
     return {
       token,
@@ -3831,8 +3840,8 @@ export function createAuthService(
       await assertCsrfProtection(request);
     },
 
-    issueCsrfBootstrap() {
-      return createCsrfBootstrap();
+    issueCsrfBootstrap(request) {
+      return createCsrfBootstrap(request);
     },
 
     clearCsrfCookie() {
@@ -5055,7 +5064,7 @@ export function mountAuthRoutes(
         const session = requireSessionPayload(
           await options.authService.getSession(request),
         );
-        const csrf = options.authService.issueCsrfBootstrap();
+        const csrf = options.authService.issueCsrfBootstrap(request);
         return createJsonResponse(
           {
             data: {
