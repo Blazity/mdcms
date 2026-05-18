@@ -47,7 +47,7 @@ test("SDK content detail page clearly identifies the SDK data source", async () 
             title: "Hello World",
             slug: "hello-world",
           },
-          body: "Hello world",
+          body: "# Hello **rendered**",
           createdBy: "33333333-3333-3333-3333-333333333333",
           createdAt: "2026-03-27T08:00:00.000Z",
           updatedAt: "2026-03-27T09:00:00.000Z",
@@ -75,6 +75,9 @@ test("SDK content detail page clearly identifies the SDK data source", async () 
   assert.match(markup, /\/demo\/sdk-content/i);
   assert.match(markup, /\/demo\/content/i);
   assert.match(markup, /Hello World/);
+  assert.match(markup, /Rendered body/i);
+  assert.match(markup, /<h1>Hello <strong>rendered<\/strong><\/h1>/i);
+  assert.match(markup, /body \(raw\):/i);
 
   globalThis.fetch = originalFetch;
   delete process.env.MDCMS_DEMO_API_KEY;

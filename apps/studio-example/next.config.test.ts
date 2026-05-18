@@ -36,6 +36,7 @@ test("next dev aliases clean-checkout MDCMS packages to source files", () => {
     react: "react",
     "@mdcms/cli$": resolve(workspaceRoot, "apps/cli/src/index.ts"),
     "@mdcms/sdk$": resolve(workspaceRoot, "packages/sdk/src/index.ts"),
+    "@mdcms/sdk/react$": resolve(workspaceRoot, "packages/sdk/src/react.ts"),
     "@mdcms/shared$": resolve(workspaceRoot, "packages/shared/src/index.ts"),
     "@mdcms/shared/action-catalog-contract$": resolve(
       workspaceRoot,

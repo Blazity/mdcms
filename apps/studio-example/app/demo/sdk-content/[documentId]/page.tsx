@@ -1,8 +1,12 @@
 import Link from "next/link";
 
 import type { ContentDocumentResponse } from "@mdcms/cli";
+import { createMdcmsRenderer } from "@mdcms/sdk/react";
 
+import config from "../../../../mdcms.config";
 import { createDemoSdkClient, toDemoRequestFailure } from "../sdk-demo-client";
+
+const contentRenderer = createMdcmsRenderer(config);
 
 type DocumentResult =
   | {
@@ -53,6 +57,9 @@ export default async function DemoSdkContentDocumentPage({
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const type = resolvedSearchParams?.type?.trim() || "post";
   const result = await fetchDocument(type, documentId);
+  const renderedBody = result.ok
+    ? await contentRenderer.render(result.document)
+    : null;
 
   return (
     <main>
@@ -92,6 +99,8 @@ export default async function DemoSdkContentDocumentPage({
             publishedVersion=
             <code>{result.document.publishedVersion ?? "-"}</code>
           </p>
+          <h3>Rendered body</h3>
+          <div>{renderedBody}</div>
           <p>frontmatter (raw JSON):</p>
           <pre>{JSON.stringify(result.document.frontmatter, null, 2)}</pre>
           <p>body (raw):</p>

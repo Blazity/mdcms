@@ -6,12 +6,14 @@ A thin TypeScript client for reading content from the MDCMS API. `createClient()
 
 The SDK is framework-agnostic. It works in Next.js, Remix, Astro, or any environment with `fetch`. The goal is to stay minimal and predictable.
 
+The optional `@mdcms/sdk/react` subpath is the exception: it is server-only, React-specific, and renders fetched Markdown/MDX bodies with components loaded from `mdcms.config.ts`.
+
 ## Boundaries
 
 - Read-only. Does not create, update, publish, or delete content.
 - Does not manage auth flows. It takes an API key and sends it as a Bearer token.
 - Does not handle caching, revalidation, or ISR. That's the consuming framework's responsibility.
-- Does not depend on any other MDCMS package at runtime except `@mdcms/shared` for types.
+- The default export does not depend on any other MDCMS package at runtime except `@mdcms/shared` for types.
 
 ## Relevant specs
 

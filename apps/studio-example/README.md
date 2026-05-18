@@ -10,14 +10,14 @@ Example Next.js host app demonstrating how to embed `@mdcms/studio` at a catch-a
 
 ## Routes
 
-| Route                           | Description                            |
-| ------------------------------- | -------------------------------------- |
-| `/`                             | Host app home page                     |
-| `/admin/*`                      | Embedded Studio UI (catch-all)         |
-| `/demo/content`                 | Raw content API demo (draft scope)     |
-| `/demo/content/:documentId`     | Raw content detail                     |
-| `/demo/sdk-content`             | SDK-backed content demo (`@mdcms/sdk`) |
-| `/demo/sdk-content/:documentId` | SDK-backed content detail              |
+| Route                           | Description                                              |
+| ------------------------------- | -------------------------------------------------------- |
+| `/`                             | Host app home page                                       |
+| `/admin/*`                      | Embedded Studio UI (catch-all)                           |
+| `/demo/content`                 | Raw content API demo (draft scope)                       |
+| `/demo/content/:documentId`     | Raw content detail                                       |
+| `/demo/sdk-content`             | SDK-backed content demo (`@mdcms/sdk`)                   |
+| `/demo/sdk-content/:documentId` | SDK-backed content detail with `@mdcms/sdk/react` output |
 
 ## Local Run
 

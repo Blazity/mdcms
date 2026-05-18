@@ -84,19 +84,28 @@ for (const post of response.data) {
 
 `list` returns the full paginated envelope — iterate `response.data`, and use `response.pagination` for offset/total/hasMore.
 
-Document return values include the frontmatter fields as declared in `mdcms.config.ts` plus the body. Use them directly in React:
+Document return values include the frontmatter fields as declared in `mdcms.config.ts` plus the body. Use them directly in React, or use `@mdcms/sdk/react` to render the body on the server from the same config component registrations:
 
 ```tsx
+import { createMdcmsRenderer } from "@mdcms/sdk/react";
+import config from "../mdcms.config";
+
+const renderer = createMdcmsRenderer(config);
+
 export default async function AboutPage() {
   const about = await cms.get("page", { slug: "about", locale: "en" });
+  const body = await renderer.render(about);
+
   return (
     <article>
       <h1>{about.title}</h1>
-      {/* render about.body — either as HTML, or via MDX runtime */}
+      {body}
     </article>
   );
 }
 ```
+
+The renderer is server-only. Do not import `@mdcms/sdk/react` from client components or browser bundles. MDX `import` and `export` syntax is not supported; register components in `mdcms.config.ts` and provide `load` functions there.
 
 ### 4. Draft vs published
 
@@ -190,7 +199,7 @@ export default async function PostPage({ params }) {
 
 ## Related skills
 
-- **`mdcms-mdx-components`** — if the content body is MDX with custom components, the host app needs an MDX runtime that knows about the same component registry Studio uses.
+- **`mdcms-mdx-components`** — if the content body is MDX with custom components, register them in `mdcms.config.ts` so Studio and `@mdcms/sdk/react` load the same components.
 - **`mdcms-schema-refine`** — if the SDK types returned don't include a field the host needs.
 - **`mdcms-content-sync-workflow`** — pair with this to understand when content is pushed vs pulled vs published.
 
@@ -198,5 +207,5 @@ export default async function PostPage({ params }) {
 
 - `@mdcms/sdk` is the first-party client. If the codebase uses a hand-rolled `fetch` directly against the API, migrate to the SDK — contract stability lives there.
 - Covers Next.js App Router as the reference target; adapt patterns for Pages Router, Remix, React Router, or a plain React SPA as needed.
-- Does not cover custom resolvers or server-side data transformation pipelines — SDK returns what the server returns.
+- Does not cover custom resolvers or server-side data transformation pipelines — SDK reads return what the server returns; `@mdcms/sdk/react` only renders the returned body.
 - Caching/revalidation examples use Next primitives; the SDK itself does not ship a cache layer.
