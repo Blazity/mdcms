@@ -95,15 +95,19 @@ type FormState = {
   submitError: string | null;
 };
 
-const initialFormState: FormState = {
-  step: "form",
-  label: "",
-  selectedScopes: new Set(),
-  expiresAt: "",
-  createdResult: null,
-  copied: false,
-  submitError: null,
-};
+function createInitialFormState(): FormState {
+  return {
+    step: "form",
+    label: "",
+    selectedScopes: new Set(),
+    expiresAt: "",
+    createdResult: null,
+    copied: false,
+    submitError: null,
+  };
+}
+
+const initialFormState: FormState = createInitialFormState();
 
 type FormAction =
   | { type: "reset" }
@@ -118,7 +122,10 @@ type FormAction =
 function formReducer(state: FormState, action: FormAction): FormState {
   switch (action.type) {
     case "reset":
-      return initialFormState;
+      // Build a fresh state so `selectedScopes` is a new Set rather than the
+      // shared one held by `initialFormState` — otherwise a subsequent
+      // `scope-toggle` would mutate the module-level reference.
+      return createInitialFormState();
     case "label-change":
       return { ...state, label: action.value };
     case "scope-toggle": {

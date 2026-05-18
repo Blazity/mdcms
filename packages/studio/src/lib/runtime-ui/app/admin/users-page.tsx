@@ -353,11 +353,13 @@ function EditRoleDialog({
 }) {
   const [role, setRole] = useState<string>("editor");
   const [pathPrefix, setPathPrefix] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (target) {
       setRole(target.currentRole);
       setPathPrefix(target.currentGrants[0]?.pathPrefix ?? "");
+      setError(null);
     }
   }, [target]);
 
@@ -398,9 +400,14 @@ function EditRoleDialog({
             })),
           ]
         : [editedGrant];
-    await updateGrants(target.userId, updatedGrants);
-    onSaved(target.userName);
-    onOpenChange(false);
+    setError(null);
+    try {
+      await updateGrants(target.userId, updatedGrants);
+      onSaved(target.userName);
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update role.");
+    }
   }
 
   return (
@@ -444,6 +451,7 @@ function EditRoleDialog({
               </p>
             </div>
           )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>

@@ -334,8 +334,17 @@ function ContentTypeDocumentsTable({
           {documents.map((doc) => (
             <TableRow
               key={doc.documentId}
-              className="cursor-pointer border-b border-divider/60 last:border-0"
+              role="button"
+              tabIndex={0}
+              aria-label={`Open document ${doc.title}`}
+              className="cursor-pointer border-b border-divider/60 last:border-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
               onClick={() => onRowClick(doc.documentId)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onRowClick(doc.documentId);
+                }
+              }}
             >
               <TableCell className="px-4 py-3">
                 <div className="max-w-[480px]">
@@ -410,6 +419,13 @@ function ContentTypePaginationBar({
   totalPages: number;
   onPageChange: (newOffset: number) => void;
 }) {
+  const maxOffset = Math.max(0, (totalPages - 1) * PAGE_SIZE);
+  const clamp = (value: number) => Math.max(0, Math.min(value, maxOffset));
+  const visibleCount = Math.min(5, totalPages);
+  const windowStart = Math.max(
+    1,
+    Math.min(currentPage - 2, totalPages - visibleCount + 1),
+  );
   return (
     <div className="flex items-center justify-between">
       <p className="text-sm text-foreground-muted">
@@ -420,7 +436,7 @@ function ContentTypePaginationBar({
         <PaginationContent>
           <PaginationItem>
             <PaginationPrevious
-              onClick={() => onPageChange(Math.max(0, offset - PAGE_SIZE))}
+              onClick={() => onPageChange(clamp(offset - PAGE_SIZE))}
               className={
                 currentPage === 1
                   ? "pointer-events-none opacity-50"
@@ -428,12 +444,12 @@ function ContentTypePaginationBar({
               }
             />
           </PaginationItem>
-          {Array.from({ length: Math.min(5, totalPages) }).map((_, i) => {
-            const page = i + 1;
+          {Array.from({ length: visibleCount }).map((_, i) => {
+            const page = windowStart + i;
             return (
               <PaginationItem key={page}>
                 <PaginationLink
-                  onClick={() => onPageChange((page - 1) * PAGE_SIZE)}
+                  onClick={() => onPageChange(clamp((page - 1) * PAGE_SIZE))}
                   isActive={currentPage === page}
                   className="cursor-pointer"
                 >
@@ -444,7 +460,7 @@ function ContentTypePaginationBar({
           })}
           <PaginationItem>
             <PaginationNext
-              onClick={() => onPageChange(offset + PAGE_SIZE)}
+              onClick={() => onPageChange(clamp(offset + PAGE_SIZE))}
               className={
                 currentPage === totalPages
                   ? "pointer-events-none opacity-50"

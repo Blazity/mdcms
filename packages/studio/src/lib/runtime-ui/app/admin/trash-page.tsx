@@ -286,6 +286,13 @@ function TrashPagination({
   totalPages: number;
   onPageChange: (newOffset: number) => void;
 }) {
+  const maxOffset = Math.max(0, (totalPages - 1) * TRASH_PAGE_SIZE);
+  const clamp = (value: number) => Math.max(0, Math.min(value, maxOffset));
+  const visibleCount = Math.min(5, totalPages);
+  const windowStart = Math.max(
+    1,
+    Math.min(currentPage - 2, totalPages - visibleCount + 1),
+  );
   return (
     <div className="flex items-center justify-between">
       <p className="text-sm text-foreground-muted">
@@ -296,9 +303,7 @@ function TrashPagination({
         <PaginationContent>
           <PaginationItem>
             <PaginationPrevious
-              onClick={() =>
-                onPageChange(Math.max(0, offset - TRASH_PAGE_SIZE))
-              }
+              onClick={() => onPageChange(clamp(offset - TRASH_PAGE_SIZE))}
               className={
                 currentPage === 1
                   ? "pointer-events-none opacity-50"
@@ -306,12 +311,14 @@ function TrashPagination({
               }
             />
           </PaginationItem>
-          {Array.from({ length: Math.min(5, totalPages) }).map((_, i) => {
-            const page = i + 1;
+          {Array.from({ length: visibleCount }).map((_, i) => {
+            const page = windowStart + i;
             return (
               <PaginationItem key={page}>
                 <PaginationLink
-                  onClick={() => onPageChange((page - 1) * TRASH_PAGE_SIZE)}
+                  onClick={() =>
+                    onPageChange(clamp((page - 1) * TRASH_PAGE_SIZE))
+                  }
                   isActive={currentPage === page}
                   className="cursor-pointer"
                 >
@@ -322,7 +329,7 @@ function TrashPagination({
           })}
           <PaginationItem>
             <PaginationNext
-              onClick={() => onPageChange(offset + TRASH_PAGE_SIZE)}
+              onClick={() => onPageChange(clamp(offset + TRASH_PAGE_SIZE))}
               className={
                 currentPage === totalPages
                   ? "pointer-events-none opacity-50"
