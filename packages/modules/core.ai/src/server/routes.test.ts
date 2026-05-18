@@ -1124,13 +1124,14 @@ describe("mountAiRoutes — chat-message", () => {
     );
 
     assert.equal(response.status, 200);
+    assert.match(capturedPrompt, /<active_document>/);
+    assert.match(capturedPrompt, /<body>\nACTIVE_DOC_BODY_SENTINEL\n<\/body>/);
+    assert.match(capturedPrompt, /<document documentId="doc_related">/);
+    assert.match(capturedPrompt, /<draft_revision>9<\/draft_revision>/);
     assert.match(
       capturedPrompt,
-      /Active draft body:\nACTIVE_DOC_BODY_SENTINEL/,
+      /<headings>Related Article &gt; Details<\/headings>/,
     );
-    assert.match(capturedPrompt, /documentId: doc_related/);
-    assert.match(capturedPrompt, /draftRevision: 9/);
-    assert.match(capturedPrompt, /Headings: Related Article > Details/);
     assert.match(capturedPrompt, /Use get_entry\(\{ documentId \}\)/);
     assert.doesNotMatch(capturedPrompt, /FULL_RELATED_BODY_SENTINEL/);
     assert.doesNotMatch(capturedPrompt, /internalNotes/);

@@ -394,6 +394,20 @@ the tool from the model's surface and the model gracefully responds in text.
   server may fall back to the same compact-card representation plus selected or
   nearby editor context and require tool lookup for the rest.
 
+**Prompt structure policy:**
+
+- Chat prompts use stable XML-style section tags to separate trusted
+  instructions, project knowledge, tool availability, document context,
+  conversation history, and the user's current message.
+- User-authored text, document bodies, document frontmatter, excerpts, and prior
+  conversation turns are treated as untrusted content inside those sections.
+  Literal XML-significant characters in that content are escaped before being
+  inserted into the prompt so embedded text cannot close or spoof a trusted
+  section tag.
+- The prompt envelope is a model-facing organization format only. Tool schemas,
+  proposal validation, authorization, and audit records remain the server-side
+  source of truth for what the assistant can do.
+
 **Validator codes (server-side trust boundary):**
 
 - `UNKNOWN_CONTENT_TYPE` — proposed type not registered for the project.
