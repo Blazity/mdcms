@@ -16,6 +16,9 @@ test("next dev resolves local MDCMS packages through source exports", () => {
   const webpackConfig = {
     resolve: {
       conditionNames: ["import", "module", "default"],
+      extensionAlias: {
+        ".js": [".js"],
+      },
     },
   };
 
@@ -28,4 +31,8 @@ test("next dev resolves local MDCMS packages through source exports", () => {
     "module",
     "default",
   ]);
+  assert.deepEqual(webpackConfig.resolve.extensionAlias, {
+    ".js": [".ts", ".tsx", ".js"],
+    ".jsx": [".tsx", ".jsx"],
+  });
 });

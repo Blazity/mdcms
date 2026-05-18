@@ -25,6 +25,11 @@ const nextConfig = {
         (conditionName) => conditionName !== "@mdcms/source",
       ),
     ];
+    config.resolve.extensionAlias = {
+      ...(config.resolve.extensionAlias ?? {}),
+      ".js": [".ts", ".tsx", ".js"],
+      ".jsx": [".tsx", ".jsx"],
+    };
 
     return config;
   },
