@@ -228,6 +228,14 @@ describe("createStudioAiRouteApi", () => {
         text: "Welcome",
       },
       allowedActions: ["edit_document"],
+      mdxCatalog: {
+        components: [
+          {
+            name: "Callout",
+            importPath: "@/components/mdx/Callout",
+          },
+        ],
+      },
     });
 
     assert.match(capturedUrl ?? "", /\/api\/v1\/ai\/chat\/messages$/);
@@ -240,11 +248,13 @@ describe("createStudioAiRouteApi", () => {
       conversationId: string;
       attachedSelection?: { documentId: string };
       allowedActions?: string[];
+      mdxCatalog?: { components: Array<{ name: string }> };
     };
     assert.equal(sent.message, "Tighten the lede");
     assert.equal(sent.conversationId, "conv_1");
     assert.equal(sent.attachedSelection?.documentId, "doc_1");
     assert.deepEqual(sent.allowedActions, ["edit_document"]);
+    assert.equal(sent.mdxCatalog?.components[0]?.name, "Callout");
 
     assert.equal(result.conversationId, "conv_1");
     assert.equal(result.message.id, "m_1");

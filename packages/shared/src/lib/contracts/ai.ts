@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { RuntimeError } from "../runtime/error.js";
+import { mdxComponentCatalogSchema } from "./extensibility.js";
 
 export const AI_TASK_KINDS = [
   "copy_improvement",
@@ -373,6 +374,13 @@ export const aiChatMessageRequestSchema = z
     rejectedProposal: aiProposalSchema.optional(),
     rejectionFeedback: nonEmptyString.optional(),
     allowedActions: z.array(aiChatAllowedActionSchema).optional(),
+    /**
+     * Serializable active MDX component catalog supplied by the embedded
+     * Studio host. The server uses it to ground chat proposals and to
+     * reject generated MDX that references unregistered components or
+     * invalid props before the user can accept it.
+     */
+    mdxCatalog: mdxComponentCatalogSchema.optional(),
     /**
      * Prior turns from the same conversation, oldest first. The server is
      * stateless per request — the client owns conversation memory — so it

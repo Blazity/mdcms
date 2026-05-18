@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, test } from "bun:test";
 
-import type { SchemaRegistryTypeSnapshot } from "@mdcms/shared";
+import type {
+  MdxComponentCatalog,
+  SchemaRegistryTypeSnapshot,
+} from "@mdcms/shared";
 
 import { renderProjectKnowledgeBlock } from "./project-knowledge.js";
 
@@ -71,6 +74,61 @@ describe("renderProjectKnowledgeBlock", () => {
     }
     // The id keeps its `_` so opaque tokens stay intact.
     assert.ok(block.includes("(id: user_1)"));
+  });
+
+  test("renders an empty MDX catalog as a no-JSX instruction", () => {
+    const block = renderProjectKnowledgeBlock({
+      project: "p",
+      environment: "e",
+      registeredTypes: [],
+      supportedLocales: [],
+      mdxCatalog: { components: [] },
+    });
+    assert.ok(block.includes("### Registered MDX components"));
+    assert.ok(
+      block.includes(
+        "No MDX components are registered. Do not generate JSX component tags in Markdown or MDX bodies.",
+      ),
+    );
+  });
+
+  test("renders registered MDX component names and props", () => {
+    const mdxCatalog: MdxComponentCatalog = {
+      components: [
+        {
+          name: "Callout",
+          importPath: "./components/Callout",
+          description: "Inline notice",
+          extractedProps: {
+            tone: {
+              type: "enum",
+              required: true,
+              values: ["info", "warning"],
+            },
+            title: {
+              type: "string",
+              required: false,
+            },
+          },
+        },
+      ],
+    };
+    const block = renderProjectKnowledgeBlock({
+      project: "p",
+      environment: "e",
+      registeredTypes: [],
+      supportedLocales: [],
+      mdxCatalog,
+    });
+    assert.ok(block.includes("### Registered MDX components"));
+    assert.ok(
+      block.includes(
+        "Use only these component names when generating MDX. Any other component name fails validation.",
+      ),
+    );
+    assert.ok(block.includes("- **Callout** — Inline notice"));
+    assert.ok(block.includes('tone (enum "info" | "warning", required)'));
+    assert.ok(block.includes("title (string, optional)"));
   });
 });
 
