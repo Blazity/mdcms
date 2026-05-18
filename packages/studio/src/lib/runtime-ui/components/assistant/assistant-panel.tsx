@@ -438,9 +438,7 @@ function AssistantBubble({
               proposal={proposal}
               onAccept={() => onAccept(proposal.proposalId)}
               onReject={(feedback) => onReject(proposal.proposalId, feedback)}
-              {...(onUndo
-                ? { onUndo: () => onUndo(proposal.proposalId) }
-                : {})}
+              {...(onUndo ? { onUndo: () => onUndo(proposal.proposalId) } : {})}
             />
           ))}
         {isMultiTurn && (

@@ -855,10 +855,14 @@ export type ProposalUndoRequestBody = {
   postApplyDraftRevision?: unknown;
 };
 
-function ensurePriorDraftPayload(value: unknown): AiApplyPriorDraft | undefined {
+function ensurePriorDraftPayload(
+  value: unknown,
+): AiApplyPriorDraft | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== "object") {
-    throw invalidInput("priorDraft must be an object.", { field: "priorDraft" });
+    throw invalidInput("priorDraft must be an object.", {
+      field: "priorDraft",
+    });
   }
   const record = value as Record<string, unknown>;
   if (typeof record.body !== "string") {
@@ -923,7 +927,8 @@ async function handleProposalUndo(
     if (parsed.data.proposalId !== proposalId) {
       throw new RuntimeError({
         code: "INVALID_INPUT",
-        message: "Proposal body proposalId does not match the URL path parameter.",
+        message:
+          "Proposal body proposalId does not match the URL path parameter.",
         statusCode: 400,
         details: {
           urlProposalId: proposalId,
