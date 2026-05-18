@@ -15,6 +15,19 @@ const nextConfig = {
   turbopack: {
     root: rootDir,
   },
+  webpack(config) {
+    config.resolve ??= {};
+    const conditionNames = config.resolve.conditionNames ?? [];
+
+    config.resolve.conditionNames = [
+      "@mdcms/source",
+      ...conditionNames.filter(
+        (conditionName) => conditionName !== "@mdcms/source",
+      ),
+    ];
+
+    return config;
+  },
 };
 
 export default nextConfig;
