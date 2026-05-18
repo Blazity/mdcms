@@ -611,7 +611,11 @@ function validateMdxTargetsAgainstCatalog(
         continue;
       }
 
-      const props = component.extractedProps ?? {};
+      const props = component.extractedProps;
+      if (!props) {
+        continue;
+      }
+
       for (const [propName, propSchema] of Object.entries(props)) {
         if (
           propName === "children" ||

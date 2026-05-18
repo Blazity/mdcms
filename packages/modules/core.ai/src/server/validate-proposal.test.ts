@@ -567,6 +567,43 @@ describe("createMdxCatalogProposalValidator", () => {
 
     assert.equal(result.status, "valid");
   });
+
+  test("does not validate props when registered component props were not extracted", async () => {
+    const validator = createMdxCatalogProposalValidator({
+      validator: async () => ({ status: "valid" }),
+      catalog: {
+        components: [
+          {
+            name: "Hero",
+            importPath: "@/components/mdx/Hero",
+          },
+        ],
+      },
+    });
+    const result = await validator({
+      proposalId: "p1",
+      kind: "insert_block",
+      project: "demo",
+      environment: "draft",
+      type: "page",
+      locale: "en",
+      summary: "Insert hero",
+      operations: [
+        {
+          op: "insert_block",
+          bodyMdx: '<Hero title="Launch" eyebrow="News">Hello</Hero>',
+        },
+      ],
+      expiresAt: "2026-05-15T00:05:00.000Z",
+      provider: {
+        providerId: "echo",
+        model: "echo-1",
+        promptTemplateId: "chat_tools.v1",
+      },
+    });
+
+    assert.equal(result.status, "valid");
+  });
 });
 
 const POST_WITH_REF_SCHEMA: SchemaRegistryTypeSnapshot = {
