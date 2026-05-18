@@ -1061,6 +1061,79 @@ describe("mountAiRoutes — chat-message", () => {
     assert.equal(payload.data.message.text, "Hi! What can I help with?");
   });
 
+  test("stale attached selection does not block text-only chat turns", async () => {
+    let capturedSystem = "";
+    let capturedPrompt = "";
+    const { app } = createTestSetup({
+      authorize: authorizeWithScopes(
+        new Set(["ai:use", "content:read:draft", "content:write"]),
+      ),
+      echoRespond: (options: unknown) => {
+        const prompt = (
+          options as {
+            prompt: Array<{
+              role: string;
+              content: string | Array<{ type: string; text?: string }>;
+            }>;
+          }
+        ).prompt;
+        const textContent = (
+          message:
+            | { content: string | Array<{ type: string; text?: string }> }
+            | undefined,
+        ) =>
+          Array.isArray(message?.content)
+            ? (message.content.find((part) => part.type === "text")?.text ?? "")
+            : (message?.content ?? "");
+        capturedSystem = textContent(
+          prompt.find((message) => message.role === "system"),
+        );
+        capturedPrompt = textContent(
+          prompt.find((message) => message.role === "user"),
+        );
+        return "I'm not sure what you'd like to do.";
+      },
+    });
+
+    const response = await app.fetch(
+      "POST",
+      "https://test.local/api/v1/ai/chat/messages",
+      {
+        method: "POST",
+        headers: TARGET_HEADERS,
+        body: JSON.stringify({
+          message: "asdas",
+          attachedSelection: {
+            documentId: "doc_1",
+            draftRevision: 3,
+            selectionId: "sel_stale",
+            text: "stale selected text",
+          },
+        }),
+      },
+    );
+
+    assert.equal(response.status, 200);
+    const payload = (await response.json()) as {
+      data: {
+        message: { text?: string; proposals?: string[] };
+        proposals?: AiProposal[];
+      };
+    };
+    assert.equal((payload.data.proposals ?? []).length, 0);
+    assert.equal(
+      payload.data.message.text,
+      "I'm not sure what you'd like to do.",
+    );
+    assert.match(
+      capturedSystem,
+      /Edit selection \(`propose_edit_selection`\): UNAVAILABLE/,
+    );
+    assert.match(capturedPrompt, /<active_document>/);
+    assert.doesNotMatch(capturedPrompt, /<selection selectionId="sel_stale">/);
+    assert.doesNotMatch(capturedPrompt, /stale selected text/);
+  });
+
   test("chat prompt passes secondary attached documents as fetchable cards", async () => {
     let capturedPrompt = "";
     const { app } = createTestSetup({

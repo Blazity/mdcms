@@ -408,6 +408,19 @@ the tool from the model's surface and the model gracefully responds in text.
   proposal validation, authorization, and audit records remain the server-side
   source of truth for what the assistant can do.
 
+**Selection freshness policy:**
+
+- Inline transforms are selection-anchored mutations. Their request
+  `draftRevision` must match the live draft revision before the model is called.
+- Chat turns treat `attachedSelection` as optional context. If the attached
+  selection's `draftRevision` is stale, the server keeps the active document
+  context, omits the stale selection from the model prompt and tool surface, and
+  continues the turn. Selection-anchored edit tools are unavailable for that turn,
+  but text-only answers, document-level edits, creates, deletes, and lookups may
+  still proceed according to the normal capability rules.
+- Apply and undo requests remain strict: stale draft revisions at mutation time
+  return `AI_PROPOSAL_CONFLICT` and do not mutate content.
+
 **Validator codes (server-side trust boundary):**
 
 - `UNKNOWN_CONTENT_TYPE` — proposed type not registered for the project.
