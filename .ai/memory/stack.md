@@ -18,6 +18,7 @@ Runtime, dependencies, and infrastructure. Update when any of them change.
 ## Frontend
 
 - **React** for Studio.
+- **`@mdx-js/mdx`** for server-side SDK React rendering of fetched Markdown/MDX bodies.
 - **TanStack Query** for client-side data fetching.
 - **TipTap** for the editor with MDX component support.
 

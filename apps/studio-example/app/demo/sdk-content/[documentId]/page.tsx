@@ -1,9 +1,13 @@
 import Link from "next/link";
 
 import type { ContentDocumentResponse } from "@mdcms/cli";
+import { createMdcmsRenderer } from "@mdcms/sdk/react";
 
 import { getPreviewHrefForDocument } from "../../../../lib/preview-routing";
+import config from "../../../../mdcms.config";
 import { createDemoSdkClient, toDemoRequestFailure } from "../sdk-demo-client";
+
+const contentRenderer = createMdcmsRenderer(config);
 
 type DocumentResult =
   | {
@@ -57,6 +61,9 @@ export default async function DemoSdkContentDocumentPage({
   const previewHref = result.ok
     ? getPreviewHrefForDocument(result.document)
     : undefined;
+  const renderedBody = result.ok
+    ? await contentRenderer.render(result.document)
+    : null;
 
   return (
     <main>
@@ -101,6 +108,8 @@ export default async function DemoSdkContentDocumentPage({
               <Link href={previewHref}>Open rendered preview</Link>
             </p>
           ) : null}
+          <h3>Rendered body</h3>
+          <div>{renderedBody}</div>
           <p>frontmatter (raw JSON):</p>
           <pre>{JSON.stringify(result.document.frontmatter, null, 2)}</pre>
           <p>body (raw):</p>

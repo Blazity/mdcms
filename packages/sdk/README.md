@@ -60,10 +60,41 @@ List documents with filtering, pagination, and sorting. Supports `locale`, `reso
 
 Per-call `project` and `environment` override the client defaults for that request.
 
+### React rendering
+
+`@mdcms/sdk/react` renders fetched document bodies to React nodes on the server.
+It loads custom MDX components from `mdcms.config.ts`.
+
+```tsx
+import { createClient } from "@mdcms/sdk";
+import { createMdcmsRenderer } from "@mdcms/sdk/react";
+import config from "../mdcms.config";
+
+const cms = createClient({
+  serverUrl: process.env.MDCMS_SERVER_URL!,
+  apiKey: process.env.MDCMS_API_KEY!,
+  project: process.env.MDCMS_PROJECT!,
+  environment: process.env.MDCMS_ENVIRONMENT!,
+});
+const renderer = createMdcmsRenderer(config);
+
+export default async function Page() {
+  const document = await cms.get("page", { slug: "about", locale: "en" });
+  const body = await renderer.render(document);
+
+  return <article>{body}</article>;
+}
+```
+
+The React subpath is server-only. MDX `import` and `export` syntax is rejected;
+register components in `mdcms.config.ts` instead. Renderer failures throw
+`MdcmsRendererError`.
+
 ### Error Handling
 
 - `MdcmsApiError` — thrown for API error envelopes (4xx/5xx responses)
 - `MdcmsClientError` — thrown for transport failures, malformed responses, and SDK-derived lookup failures
+- `MdcmsRendererError` — thrown by `@mdcms/sdk/react` for server-only, component loading, unsupported MDX ESM, and render failures
 
 ## Documentation
 

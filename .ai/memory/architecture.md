@@ -20,6 +20,7 @@ Architecture invariants and key technical decisions. Update when one changes.
 
 - `@mdcms/shared` exports types, validators, pure utilities. **No runtime side effects, no HTTP, no DB.**
 - `@mdcms/sdk` is read-only. Bearer-token client. **No write methods.**
+- `@mdcms/sdk/react` is the SDK's server-only React rendering subpath. It renders fetched Markdown/MDX bodies and loads custom components from `mdcms.config.ts`; keep React/MDX concerns out of the default `@mdcms/sdk` export.
 - `@mdcms/cli` owns push/pull/sync logic and the loopback OAuth flow.
 - `@mdcms/studio` runs inside the host app's process — embedded React component, not a separate page.
 - `@mdcms/server` is the only thing that talks to the database.

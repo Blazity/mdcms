@@ -2,7 +2,7 @@
 status: live
 canonical: true
 created: 2026-03-11
-last_updated: 2026-04-15
+last_updated: 2026-05-18
 ---
 
 # SPEC-008 CLI and SDK
@@ -65,6 +65,38 @@ The SDK follows the same reference-resolution contract documented in SPEC-003. R
 - `list(type, input)` maps to the content list query contract owned by SPEC-003, including pagination (`limit`, `offset`), sorting (`sort`, `order`), draft reads, and the supported filter fields.
 - The SDK parses the shared API envelopes directly: single-document reads unwrap `{ data }`, list reads unwrap `{ data, pagination }`, and document payloads preserve any `resolveErrors` map returned by the API.
 - API error responses are surfaced through a deterministic SDK error type parsed from the shared error envelope. Transport failures, malformed success payloads, and client misconfiguration use a separate client-side error type so callers can distinguish backend errors from local failures.
+
+### React Rendering Subpath
+
+`@mdcms/sdk/react` is an optional server-side rendering helper for React
+applications. It does not add an HTTP endpoint and does not change the
+framework-agnostic default `@mdcms/sdk` export.
+
+```typescript
+import { createClient } from "@mdcms/sdk";
+import { createMdcmsRenderer } from "@mdcms/sdk/react";
+import config from "../mdcms.config";
+
+const cms = createClient({
+  serverUrl: "http://localhost:4000",
+  apiKey: process.env.MDCMS_API_KEY,
+  project: "marketing-site",
+  environment: "production",
+});
+const renderer = createMdcmsRenderer(config);
+
+const document = await cms.get("page", { slug: "about", locale: "en" });
+const body = await renderer.render(document);
+```
+
+- The subpath exports `createMdcmsRenderer(config, options?)`, `renderMdcmsContent(document, { config, ...options })`, and `MdcmsRendererError`.
+- Rendering is server-only and returns `Promise<React.ReactNode>`.
+- The renderer uses `document.format` and `document.body` from `ContentDocumentResponse` as input.
+- Registered MDX components are loaded from `mdcms.config.ts` via `config.components[*].load`; callers do not pass a separate component map.
+- Component loader results are cached per renderer instance.
+- MDX `import` and `export` syntax is unsupported. Components must be registered in `mdcms.config.ts` instead.
+- Browser usage, component load failures, unsupported MDX ESM syntax, and MDX compile/render failures surface as deterministic `MdcmsRendererError` codes.
+- The renderer executes trusted MDCMS-authored MDX on the server. It is not a browser-side compiler and is not a sandbox for untrusted arbitrary user input.
 
 ### Type Safety and Schema Metadata
 
