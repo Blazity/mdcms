@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useReducer, useState } from "react";
 import {
   Plus,
   MoreHorizontal,
@@ -84,13 +84,18 @@ const roleConfig = {
   },
 };
 
-function getHighestRole(
-  grants: UserWithGrants["grants"],
-): "owner" | "admin" | "editor" | "viewer" {
-  const roleRank = { owner: 3, admin: 2, editor: 1, viewer: 0 };
-  let highest: "owner" | "admin" | "editor" | "viewer" = "viewer";
+type Role = keyof typeof roleConfig;
+
+function getHighestRole(grants: UserWithGrants["grants"]): Role {
+  const roleRank: Record<Role, number> = {
+    owner: 3,
+    admin: 2,
+    editor: 1,
+    viewer: 0,
+  };
+  let highest: Role = "viewer";
   for (const grant of grants) {
-    const role = grant.role as keyof typeof roleRank;
+    const role = grant.role as Role;
     if (roleRank[role] !== undefined && roleRank[role] > roleRank[highest]) {
       highest = role;
     }
@@ -119,24 +124,556 @@ function formatJoinedDate(isoString: string): string {
   });
 }
 
+/* ----------------------------------------------------------------- */
+/* InviteUserDialog                                                   */
+/* ----------------------------------------------------------------- */
+
+type InviteFormState = {
+  email: string;
+  role: string;
+  pathPrefix: string;
+  error: string | null;
+};
+
+const initialInviteState: InviteFormState = {
+  email: "",
+  role: "editor",
+  pathPrefix: "",
+  error: null,
+};
+
+type InviteFormAction =
+  | { type: "reset" }
+  | { type: "field"; field: "email" | "role" | "pathPrefix"; value: string }
+  | { type: "error"; message: string | null };
+
+function inviteFormReducer(
+  state: InviteFormState,
+  action: InviteFormAction,
+): InviteFormState {
+  switch (action.type) {
+    case "reset":
+      return initialInviteState;
+    case "field":
+      return { ...state, [action.field]: action.value };
+    case "error":
+      return { ...state, error: action.message };
+  }
+}
+
+function InviteUserDialog({
+  open,
+  onOpenChange,
+  inviteUser,
+  isInviting,
+  activeProject,
+  activeEnvironment,
+  onInvited,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  inviteUser: ReturnType<typeof useUserList>["inviteUser"];
+  isInviting: boolean;
+  activeProject: string | null;
+  activeEnvironment: string | null;
+  onInvited: () => void;
+}) {
+  const [form, dispatch] = useReducer(inviteFormReducer, initialInviteState);
+
+  useEffect(() => {
+    if (!open) dispatch({ type: "reset" });
+  }, [open]);
+
+  async function handleInvite() {
+    dispatch({ type: "error", message: null });
+    try {
+      const useFolderPrefix = form.pathPrefix && activeEnvironment;
+      await inviteUser({
+        email: form.email,
+        grants: [
+          {
+            role: form.role,
+            scopeKind:
+              form.role === "admin"
+                ? "global"
+                : useFolderPrefix
+                  ? "folder_prefix"
+                  : "project",
+            project:
+              form.role === "admin" ? undefined : activeProject || undefined,
+            environment:
+              form.role === "admin"
+                ? undefined
+                : useFolderPrefix
+                  ? activeEnvironment
+                  : undefined,
+            pathPrefix:
+              form.role === "admin"
+                ? undefined
+                : useFolderPrefix
+                  ? form.pathPrefix
+                  : undefined,
+          },
+        ],
+      });
+      onInvited();
+      onOpenChange(false);
+    } catch (err) {
+      dispatch({
+        type: "error",
+        message:
+          err instanceof Error ? err.message : "Failed to send invitation.",
+      });
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button>
+          <Plus className="mr-2 size-4" />
+          Invite User
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Invite a new user</DialogTitle>
+          <DialogDescription>
+            Send an invitation to join this CMS instance
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-foreground-muted" />
+              <Input
+                id="email"
+                type="email"
+                placeholder="user@company.com"
+                value={form.email}
+                onChange={(e) =>
+                  dispatch({
+                    type: "field",
+                    field: "email",
+                    value: e.target.value,
+                  })
+                }
+                className="pl-9"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Role</Label>
+            <Select
+              value={form.role}
+              onValueChange={(value) =>
+                dispatch({ type: "field", field: "role", value })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="editor">Editor</SelectItem>
+                <SelectItem value="viewer">Viewer</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {(form.role === "editor" || form.role === "viewer") && (
+            <div className="space-y-2">
+              <Label htmlFor="path-prefix">Folder prefix (optional)</Label>
+              <Input
+                id="path-prefix"
+                placeholder="e.g. content/blog"
+                value={form.pathPrefix}
+                onChange={(e) =>
+                  dispatch({
+                    type: "field",
+                    field: "pathPrefix",
+                    value: e.target.value,
+                  })
+                }
+                className="font-mono"
+              />
+              <p className="text-xs text-foreground-muted">
+                Restricts access to content under this path only. Leave empty
+                for full project access.
+              </p>
+            </div>
+          )}
+
+          {form.error && (
+            <p className="text-sm text-destructive">{form.error}</p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button disabled={isInviting || !form.email} onClick={handleInvite}>
+            {isInviting ? "Sending..." : "Send Invitation"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ----------------------------------------------------------------- */
+/* EditRoleDialog                                                     */
+/* ----------------------------------------------------------------- */
+
+export type EditRoleTarget = {
+  userId: string;
+  userName: string;
+  currentRole: Role;
+  currentGrants: UserWithGrants["grants"];
+};
+
+function EditRoleDialog({
+  target,
+  onOpenChange,
+  updateGrants,
+  isUpdatingGrants,
+  activeEnvironment,
+  activeProject,
+  onSaved,
+}: {
+  target: EditRoleTarget | null;
+  onOpenChange: (open: boolean) => void;
+  updateGrants: ReturnType<typeof useUserList>["updateGrants"];
+  isUpdatingGrants: boolean;
+  activeEnvironment: string | null;
+  activeProject: string | null;
+  onSaved: (userName: string) => void;
+}) {
+  const [role, setRole] = useState<string>("editor");
+  const [pathPrefix, setPathPrefix] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (target) {
+      setRole(target.currentRole);
+      setPathPrefix(target.currentGrants[0]?.pathPrefix ?? "");
+      setError(null);
+    }
+  }, [target]);
+
+  async function handleSave() {
+    if (!target) return;
+    const useFolderPrefix = pathPrefix && activeEnvironment;
+    const editedGrant = {
+      role,
+      scopeKind:
+        role === "admin"
+          ? "global"
+          : useFolderPrefix
+            ? "folder_prefix"
+            : "project",
+      project:
+        role === "admin"
+          ? undefined
+          : (target.currentGrants[0]?.project ?? activeProject ?? undefined),
+      environment:
+        role === "admin"
+          ? undefined
+          : useFolderPrefix
+            ? activeEnvironment
+            : undefined,
+      pathPrefix:
+        role === "admin" ? undefined : useFolderPrefix ? pathPrefix : undefined,
+    };
+    const updatedGrants =
+      target.currentGrants.length > 1
+        ? [
+            editedGrant,
+            ...target.currentGrants.slice(1).map((g) => ({
+              role: g.role,
+              scopeKind: g.scopeKind,
+              project: g.project ?? undefined,
+              environment: g.environment ?? undefined,
+              pathPrefix: g.pathPrefix ?? undefined,
+            })),
+          ]
+        : [editedGrant];
+    setError(null);
+    try {
+      await updateGrants(target.userId, updatedGrants);
+      onSaved(target.userName);
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update role.");
+    }
+  }
+
+  return (
+    <Dialog open={target !== null} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit role</DialogTitle>
+          <DialogDescription>
+            Change the role for {target?.userName}.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Role</Label>
+            <Select value={role} onValueChange={setRole}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="editor">Editor</SelectItem>
+                <SelectItem value="viewer">Viewer</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {(role === "editor" || role === "viewer") && (
+            <div className="space-y-2">
+              <Label htmlFor="edit-role-path-prefix">
+                Folder prefix (optional)
+              </Label>
+              <Input
+                id="edit-role-path-prefix"
+                placeholder="e.g. content/blog"
+                value={pathPrefix}
+                onChange={(e) => setPathPrefix(e.target.value)}
+                className="font-mono"
+              />
+              <p className="text-xs text-foreground-muted">
+                Restricts access to content under this path only. Leave empty
+                for full project access.
+              </p>
+            </div>
+          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button disabled={isUpdatingGrants} onClick={handleSave}>
+            {isUpdatingGrants ? "Saving..." : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ----------------------------------------------------------------- */
+/* PendingInvitesList                                                 */
+/* ----------------------------------------------------------------- */
+
+function PendingInvitesList({
+  invites,
+  isRevoking,
+  onRevoke,
+}: {
+  invites: ReturnType<typeof useUserList>["pendingInvites"];
+  isRevoking: boolean;
+  onRevoke: (inviteId: string, email: string) => void;
+}) {
+  if (invites.length === 0) return null;
+  return (
+    <div className="space-y-3">
+      <h2 className="text-sm font-medium text-foreground-muted">
+        Pending Invitations ({invites.length})
+      </h2>
+      <div className="rounded-lg border border-border divide-y divide-border">
+        {invites.map((invite) => (
+          <div
+            key={invite.id}
+            className="flex items-center justify-between px-4 py-3"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex size-8 items-center justify-center rounded-full bg-background-subtle">
+                <Clock className="size-4 text-foreground-muted" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">{invite.email}</p>
+                <p className="text-xs text-foreground-muted">
+                  Expires {formatJoinedDate(invite.expiresAt)}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs">
+                {invite.grants[0]?.role ?? "editor"}
+              </Badge>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 text-foreground-muted hover:text-destructive"
+                disabled={isRevoking}
+                onClick={() => onRevoke(invite.id, invite.email)}
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------- */
+/* UsersTable                                                         */
+/* ----------------------------------------------------------------- */
+
+function UsersTable({
+  users,
+  isRemoving,
+  isRevokingSessions,
+  onEditRole,
+  onRevokeSessions,
+  onRemoveUser,
+}: {
+  users: ReturnType<typeof useUserList>["users"];
+  isRemoving: boolean;
+  isRevokingSessions: boolean;
+  onEditRole: (target: EditRoleTarget) => void;
+  onRevokeSessions: (userId: string, userName: string) => void;
+  onRemoveUser: (userId: string, userName: string) => void;
+}) {
+  return (
+    <div className="rounded-lg border border-border">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>User</TableHead>
+            <TableHead className="w-28">Role</TableHead>
+            <TableHead className="w-32">Scope</TableHead>
+            <TableHead className="w-28">Joined</TableHead>
+            <TableHead className="w-14"></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {users.map((user) => {
+            const role = getHighestRole(user.grants);
+            return (
+              <TableRow key={user.id}>
+                <TableCell>
+                  <div className="flex items-center gap-3">
+                    <Avatar className="size-8">
+                      <AvatarFallback>
+                        {user.name
+                          .split(" ")
+                          .map((n) => n[0])
+                          .join("")}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="font-medium">{user.name}</p>
+                      <p className="text-sm text-foreground-muted">
+                        {user.email}
+                      </p>
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant="outline"
+                    className={cn("text-xs", roleConfig[role].className)}
+                  >
+                    {roleConfig[role].label}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-sm text-foreground-muted">
+                  {getScopeLabel(user.grants)}
+                </TableCell>
+                <TableCell className="text-sm text-foreground-muted">
+                  {formatJoinedDate(user.createdAt)}
+                </TableCell>
+                <TableCell>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="size-8">
+                        <MoreHorizontal className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <TooltipProvider>
+                        <DropdownMenuItem
+                          disabled={role === "owner"}
+                          onClick={() =>
+                            onEditRole({
+                              userId: user.id,
+                              userName: user.name,
+                              currentRole: role,
+                              currentGrants: user.grants,
+                            })
+                          }
+                        >
+                          <Edit className="mr-2 size-4" />
+                          Edit role
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={isRevokingSessions}
+                          onClick={() => onRevokeSessions(user.id, user.name)}
+                        >
+                          <LogOut className="mr-2 size-4" />
+                          Revoke sessions
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        {role === "owner" ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="w-full">
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  disabled
+                                >
+                                  <Trash2 className="mr-2 size-4" />
+                                  Remove user
+                                </DropdownMenuItem>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="left">
+                              <p>
+                                Owners cannot be removed. Transfer ownership
+                                first.
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            disabled={isRemoving}
+                            onClick={() => onRemoveUser(user.id, user.name)}
+                          >
+                            <Trash2 className="mr-2 size-4" />
+                            Remove user
+                          </DropdownMenuItem>
+                        )}
+                      </TooltipProvider>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------- */
+/* UsersPage (orchestrator)                                           */
+/* ----------------------------------------------------------------- */
+
 export default function UsersPage() {
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
-  const [inviteData, setInviteData] = useState({
-    email: "",
-    role: "editor",
-    pathPrefix: "",
-  });
-  const [inviteError, setInviteError] = useState<string | null>(null);
-
-  const [editRoleDialogOpen, setEditRoleDialogOpen] = useState(false);
-  const [editRoleTarget, setEditRoleTarget] = useState<{
-    userId: string;
-    userName: string;
-    currentRole: string;
-    currentGrants: UserWithGrants["grants"];
-  } | null>(null);
-  const [editRoleValue, setEditRoleValue] = useState("editor");
-  const [editRolePathPrefix, setEditRolePathPrefix] = useState("");
+  const [editRoleTarget, setEditRoleTarget] = useState<EditRoleTarget | null>(
+    null,
+  );
 
   const toast = useToast();
   const {
@@ -176,58 +713,14 @@ export default function UsersPage() {
     );
   }
 
-  async function handleInvite() {
-    setInviteError(null);
-    try {
-      const useFolderPrefix = inviteData.pathPrefix && activeEnvironment;
-      await inviteUser({
-        email: inviteData.email,
-        grants: [
-          {
-            role: inviteData.role,
-            scopeKind:
-              inviteData.role === "admin"
-                ? "global"
-                : useFolderPrefix
-                  ? "folder_prefix"
-                  : "project",
-            project:
-              inviteData.role === "admin"
-                ? undefined
-                : activeProject || undefined,
-            environment:
-              inviteData.role === "admin"
-                ? undefined
-                : useFolderPrefix
-                  ? activeEnvironment
-                  : undefined,
-            pathPrefix:
-              inviteData.role === "admin"
-                ? undefined
-                : useFolderPrefix
-                  ? inviteData.pathPrefix
-                  : undefined,
-          },
-        ],
-      });
-      setInviteDialogOpen(false);
-      setInviteData({ email: "", role: "editor", pathPrefix: "" });
-      toast.success("Invitation sent successfully.");
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to send invitation.";
-      setInviteError(message);
-    }
-  }
-
   async function handleRevokeSessions(userId: string, userName: string) {
     try {
       await revokeSessions(userId);
       toast.success(`Sessions revoked for ${userName}.`);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to revoke sessions.";
-      toast.error(message);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to revoke sessions.",
+      );
     }
   }
 
@@ -240,9 +733,9 @@ export default function UsersPage() {
       await removeUser(userId);
       toast.success(`${userName} has been removed.`);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to remove user.";
-      toast.error(message);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to remove user.",
+      );
     }
   }
 
@@ -251,65 +744,9 @@ export default function UsersPage() {
       await revokeInvite(inviteId);
       toast.success(`Invitation for ${email} has been revoked.`);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to revoke invitation.";
-      toast.error(message);
-    }
-  }
-
-  async function handleEditRole() {
-    if (!editRoleTarget) return;
-    try {
-      const editUseFolderPrefix = editRolePathPrefix && activeEnvironment;
-      const editedGrant = {
-        role: editRoleValue,
-        scopeKind:
-          editRoleValue === "admin"
-            ? "global"
-            : editUseFolderPrefix
-              ? "folder_prefix"
-              : "project",
-        project:
-          editRoleValue === "admin"
-            ? undefined
-            : (editRoleTarget.currentGrants[0]?.project ??
-              activeProject ??
-              undefined),
-        environment:
-          editRoleValue === "admin"
-            ? undefined
-            : editUseFolderPrefix
-              ? activeEnvironment
-              : undefined,
-        pathPrefix:
-          editRoleValue === "admin"
-            ? undefined
-            : editUseFolderPrefix
-              ? editRolePathPrefix
-              : undefined,
-      };
-      // If user has multiple grants, preserve the others and only replace the first
-      const updatedGrants =
-        editRoleTarget.currentGrants.length > 1
-          ? [
-              editedGrant,
-              ...editRoleTarget.currentGrants.slice(1).map((g) => ({
-                role: g.role,
-                scopeKind: g.scopeKind,
-                project: g.project ?? undefined,
-                environment: g.environment ?? undefined,
-                pathPrefix: g.pathPrefix ?? undefined,
-              })),
-            ]
-          : [editedGrant];
-      await updateGrants(editRoleTarget.userId, updatedGrants);
-      toast.success(`Role updated for ${editRoleTarget.userName}.`);
-      setEditRoleDialogOpen(false);
-      setEditRoleTarget(null);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to update role.";
-      toast.error(message);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to revoke invitation.",
+      );
     }
   }
 
@@ -318,122 +755,25 @@ export default function UsersPage() {
       <PageHeader breadcrumbs={[{ label: "Users" }]} />
 
       <div className="p-6 space-y-6">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">Users</h1>
-          <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 size-4" />
-                Invite User
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Invite a new user</DialogTitle>
-                <DialogDescription>
-                  Send an invitation to join this CMS instance
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                {/* Email */}
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-foreground-muted" />
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="user@company.com"
-                      value={inviteData.email}
-                      onChange={(e) =>
-                        setInviteData((prev) => ({
-                          ...prev,
-                          email: e.target.value,
-                        }))
-                      }
-                      className="pl-9"
-                    />
-                  </div>
-                </div>
-
-                {/* Role */}
-                <div className="space-y-2">
-                  <Label>Role</Label>
-                  <Select
-                    value={inviteData.role}
-                    onValueChange={(value) =>
-                      setInviteData((prev) => ({ ...prev, role: value }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="admin">Admin</SelectItem>
-                      <SelectItem value="editor">Editor</SelectItem>
-                      <SelectItem value="viewer">Viewer</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Folder prefix (editor/viewer only) */}
-                {(inviteData.role === "editor" ||
-                  inviteData.role === "viewer") && (
-                  <div className="space-y-2">
-                    <Label htmlFor="path-prefix">
-                      Folder prefix (optional)
-                    </Label>
-                    <Input
-                      id="path-prefix"
-                      placeholder="e.g. content/blog"
-                      value={inviteData.pathPrefix}
-                      onChange={(e) =>
-                        setInviteData((prev) => ({
-                          ...prev,
-                          pathPrefix: e.target.value,
-                        }))
-                      }
-                      className="font-mono"
-                    />
-                    <p className="text-xs text-foreground-muted">
-                      Restricts access to content under this path only. Leave
-                      empty for full project access.
-                    </p>
-                  </div>
-                )}
-
-                {/* Invite error */}
-                {inviteError && (
-                  <p className="text-sm text-destructive">{inviteError}</p>
-                )}
-              </div>
-              <DialogFooter>
-                <Button
-                  variant="ghost"
-                  onClick={() => setInviteDialogOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  disabled={isInviting || !inviteData.email}
-                  onClick={handleInvite}
-                >
-                  {isInviting ? "Sending..." : "Send Invitation"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <InviteUserDialog
+            open={inviteDialogOpen}
+            onOpenChange={setInviteDialogOpen}
+            inviteUser={inviteUser}
+            isInviting={isInviting}
+            activeProject={activeProject}
+            activeEnvironment={activeEnvironment}
+            onInvited={() => toast.success("Invitation sent successfully.")}
+          />
         </div>
 
-        {/* Loading state */}
         {status === "loading" && (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="size-6 animate-spin text-foreground-muted" />
           </div>
         )}
 
-        {/* Error state */}
         {status === "error" && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <AlertCircle className="mb-4 size-8 text-destructive" />
@@ -445,7 +785,6 @@ export default function UsersPage() {
           </div>
         )}
 
-        {/* Empty state */}
         {status === "empty" && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="mb-4 rounded-full bg-background-subtle p-4">
@@ -458,242 +797,34 @@ export default function UsersPage() {
           </div>
         )}
 
-        {/* Pending Invitations */}
-        {pendingInvites.length > 0 && (
-          <div className="space-y-3">
-            <h2 className="text-sm font-medium text-foreground-muted">
-              Pending Invitations ({pendingInvites.length})
-            </h2>
-            <div className="rounded-lg border border-border divide-y divide-border">
-              {pendingInvites.map((invite) => (
-                <div
-                  key={invite.id}
-                  className="flex items-center justify-between px-4 py-3"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-8 items-center justify-center rounded-full bg-background-subtle">
-                      <Clock className="size-4 text-foreground-muted" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">{invite.email}</p>
-                      <p className="text-xs text-foreground-muted">
-                        Expires {formatJoinedDate(invite.expiresAt)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-xs">
-                      {invite.grants[0]?.role ?? "editor"}
-                    </Badge>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 text-foreground-muted hover:text-destructive"
-                      disabled={isRevokingInvite}
-                      onClick={() =>
-                        handleRevokeInvite(invite.id, invite.email)
-                      }
-                    >
-                      <X className="size-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <PendingInvitesList
+          invites={pendingInvites}
+          isRevoking={isRevokingInvite}
+          onRevoke={handleRevokeInvite}
+        />
 
-        {/* Users Table */}
         {status === "ready" && (
-          <div className="rounded-lg border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead className="w-28">Role</TableHead>
-                  <TableHead className="w-32">Scope</TableHead>
-                  <TableHead className="w-28">Joined</TableHead>
-                  <TableHead className="w-14"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((user) => {
-                  const role = getHighestRole(user.grants);
-                  return (
-                    <TableRow key={user.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <Avatar className="size-8">
-                            <AvatarFallback>
-                              {user.name
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <p className="font-medium">{user.name}</p>
-                            <p className="text-sm text-foreground-muted">
-                              {user.email}
-                            </p>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={cn("text-xs", roleConfig[role].className)}
-                        >
-                          {roleConfig[role].label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-foreground-muted">
-                        {getScopeLabel(user.grants)}
-                      </TableCell>
-                      <TableCell className="text-sm text-foreground-muted">
-                        {formatJoinedDate(user.createdAt)}
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="size-8"
-                            >
-                              <MoreHorizontal className="size-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <TooltipProvider>
-                              <DropdownMenuItem
-                                disabled={role === "owner"}
-                                onClick={() => {
-                                  setEditRoleTarget({
-                                    userId: user.id,
-                                    userName: user.name,
-                                    currentRole: role,
-                                    currentGrants: user.grants,
-                                  });
-                                  setEditRoleValue(role);
-                                  setEditRolePathPrefix(
-                                    user.grants[0]?.pathPrefix ?? "",
-                                  );
-                                  setEditRoleDialogOpen(true);
-                                }}
-                              >
-                                <Edit className="mr-2 size-4" />
-                                Edit role
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                disabled={isRevokingSessions}
-                                onClick={() =>
-                                  handleRevokeSessions(user.id, user.name)
-                                }
-                              >
-                                <LogOut className="mr-2 size-4" />
-                                Revoke sessions
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              {role === "owner" ? (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="w-full">
-                                      <DropdownMenuItem
-                                        className="text-destructive focus:text-destructive"
-                                        disabled
-                                      >
-                                        <Trash2 className="mr-2 size-4" />
-                                        Remove user
-                                      </DropdownMenuItem>
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="left">
-                                    <p>
-                                      Owners cannot be removed. Transfer
-                                      ownership first.
-                                    </p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              ) : (
-                                <DropdownMenuItem
-                                  className="text-destructive focus:text-destructive"
-                                  disabled={isRemoving}
-                                  onClick={() =>
-                                    handleRemoveUser(user.id, user.name)
-                                  }
-                                >
-                                  <Trash2 className="mr-2 size-4" />
-                                  Remove user
-                                </DropdownMenuItem>
-                              )}
-                            </TooltipProvider>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+          <UsersTable
+            users={users}
+            isRemoving={isRemoving}
+            isRevokingSessions={isRevokingSessions}
+            onEditRole={setEditRoleTarget}
+            onRevokeSessions={handleRevokeSessions}
+            onRemoveUser={handleRemoveUser}
+          />
         )}
 
-        {/* Edit Role Dialog */}
-        <Dialog open={editRoleDialogOpen} onOpenChange={setEditRoleDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Edit role</DialogTitle>
-              <DialogDescription>
-                Change the role for {editRoleTarget?.userName}.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label>Role</Label>
-                <Select value={editRoleValue} onValueChange={setEditRoleValue}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="editor">Editor</SelectItem>
-                    <SelectItem value="viewer">Viewer</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {(editRoleValue === "editor" || editRoleValue === "viewer") && (
-                <div className="space-y-2">
-                  <Label htmlFor="edit-role-path-prefix">
-                    Folder prefix (optional)
-                  </Label>
-                  <Input
-                    id="edit-role-path-prefix"
-                    placeholder="e.g. content/blog"
-                    value={editRolePathPrefix}
-                    onChange={(e) => setEditRolePathPrefix(e.target.value)}
-                    className="font-mono"
-                  />
-                  <p className="text-xs text-foreground-muted">
-                    Restricts access to content under this path only. Leave
-                    empty for full project access.
-                  </p>
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <Button
-                variant="ghost"
-                onClick={() => setEditRoleDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button disabled={isUpdatingGrants} onClick={handleEditRole}>
-                {isUpdatingGrants ? "Saving..." : "Save"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <EditRoleDialog
+          target={editRoleTarget}
+          onOpenChange={(open) => {
+            if (!open) setEditRoleTarget(null);
+          }}
+          updateGrants={updateGrants}
+          isUpdatingGrants={isUpdatingGrants}
+          activeEnvironment={activeEnvironment}
+          activeProject={activeProject}
+          onSaved={(userName) => toast.success(`Role updated for ${userName}.`)}
+        />
       </div>
     </div>
   );

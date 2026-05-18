@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useEffect, useReducer, useState } from "react";
 import { Copy, Check } from "lucide-react";
 
 import {
@@ -85,6 +85,71 @@ export type ApiKeyCreateDialogProps = {
 
 type Step = "form" | "created";
 
+type FormState = {
+  step: Step;
+  label: string;
+  selectedScopes: Set<ApiKeyOperationScope>;
+  expiresAt: string;
+  createdResult: ApiKeyCreateResult | null;
+  copied: boolean;
+  submitError: string | null;
+};
+
+function createInitialFormState(): FormState {
+  return {
+    step: "form",
+    label: "",
+    selectedScopes: new Set(),
+    expiresAt: "",
+    createdResult: null,
+    copied: false,
+    submitError: null,
+  };
+}
+
+const initialFormState: FormState = createInitialFormState();
+
+type FormAction =
+  | { type: "reset" }
+  | { type: "label-change"; value: string }
+  | { type: "scope-toggle"; scope: ApiKeyOperationScope }
+  | { type: "expires-at-change"; value: string }
+  | { type: "submit-start" }
+  | { type: "submit-success"; result: ApiKeyCreateResult }
+  | { type: "submit-error"; message: string }
+  | { type: "copy-set"; copied: boolean };
+
+function formReducer(state: FormState, action: FormAction): FormState {
+  switch (action.type) {
+    case "reset":
+      // Build a fresh state so `selectedScopes` is a new Set rather than the
+      // shared one held by `initialFormState` — otherwise a subsequent
+      // `scope-toggle` would mutate the module-level reference.
+      return createInitialFormState();
+    case "label-change":
+      return { ...state, label: action.value };
+    case "scope-toggle": {
+      const next = new Set(state.selectedScopes);
+      if (next.has(action.scope)) {
+        next.delete(action.scope);
+      } else {
+        next.add(action.scope);
+      }
+      return { ...state, selectedScopes: next };
+    }
+    case "expires-at-change":
+      return { ...state, expiresAt: action.value };
+    case "submit-start":
+      return { ...state, submitError: null };
+    case "submit-success":
+      return { ...state, step: "created", createdResult: action.result };
+    case "submit-error":
+      return { ...state, submitError: action.message };
+    case "copy-set":
+      return { ...state, copied: action.copied };
+  }
+}
+
 export function ApiKeyCreateDialog({
   open,
   onOpenChange,
@@ -93,62 +158,40 @@ export function ApiKeyCreateDialog({
   error,
 }: ApiKeyCreateDialogProps) {
   const mountInfo = useStudioMountInfo();
-  const [step, setStep] = useState<Step>("form");
-  const [label, setLabel] = useState("");
-  const [selectedScopes, setSelectedScopes] = useState<
-    Set<ApiKeyOperationScope>
-  >(new Set());
-  const [createdResult, setCreatedResult] = useState<ApiKeyCreateResult | null>(
-    null,
-  );
-  const [copied, setCopied] = useState(false);
-  const [expiresAt, setExpiresAt] = useState("");
+  const [form, dispatch] = useReducer(formReducer, initialFormState);
+  const {
+    step,
+    label,
+    selectedScopes,
+    expiresAt,
+    createdResult,
+    copied,
+    submitError,
+  } = form;
   const [todayMinDate, setTodayMinDate] = useState<string | undefined>(
     undefined,
   );
 
   useEffect(() => {
-    if (!open) return;
-    // Recompute on each open so a dialog reopened the next day picks up
-    // today's date instead of the day it was first mounted.
+    if (!open) {
+      dispatch({ type: "reset" });
+      return;
+    }
+    // Recompute today's date each time the dialog opens so a reopen the
+    // next day picks up the new date instead of the first-mount day.
     const d = new Date();
     setTodayMinDate(
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
     );
   }, [open]);
 
-  useEffect(() => {
-    if (!open) {
-      setStep("form");
-      setLabel("");
-      setSelectedScopes(new Set());
-      setCreatedResult(null);
-      setCopied(false);
-      setExpiresAt("");
-    }
-  }, [open]);
-
-  const toggleScope = useCallback((scope: ApiKeyOperationScope) => {
-    setSelectedScopes((prev) => {
-      const next = new Set(prev);
-      if (next.has(scope)) {
-        next.delete(scope);
-      } else {
-        next.add(scope);
-      }
-      return next;
-    });
-  }, []);
-
   const canSubmit =
     label.trim().length > 0 && selectedScopes.size > 0 && !isSubmitting;
-
-  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
-    setSubmitError(null);
+    dispatch({ type: "submit-start" });
 
     const contextAllowlist =
       mountInfo.project && mountInfo.environment
@@ -164,20 +207,21 @@ export function ApiKeyCreateDialog({
 
     try {
       const result = await onSubmit(input);
-      setCreatedResult(result);
-      setStep("created");
+      dispatch({ type: "submit-success", result });
     } catch (err) {
-      setSubmitError(
-        err instanceof Error ? err.message : "Failed to create API key.",
-      );
+      dispatch({
+        type: "submit-error",
+        message:
+          err instanceof Error ? err.message : "Failed to create API key.",
+      });
     }
   };
 
   const handleCopy = async () => {
     if (!createdResult) return;
     await navigator.clipboard.writeText(createdResult.key);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    dispatch({ type: "copy-set", copied: true });
+    setTimeout(() => dispatch({ type: "copy-set", copied: false }), 2000);
   };
 
   const handleDismiss = () => {
@@ -203,7 +247,9 @@ export function ApiKeyCreateDialog({
                 <Input
                   id="api-key-label"
                   value={label}
-                  onChange={(e) => setLabel(e.target.value)}
+                  onChange={(e) =>
+                    dispatch({ type: "label-change", value: e.target.value })
+                  }
                   placeholder="e.g. CI/CD Pipeline"
                   disabled={isSubmitting}
                 />
@@ -226,7 +272,9 @@ export function ApiKeyCreateDialog({
                             type="button"
                             disabled={isSubmitting}
                             aria-pressed={isSelected}
-                            onClick={() => toggleScope(scope)}
+                            onClick={() =>
+                              dispatch({ type: "scope-toggle", scope })
+                            }
                           >
                             <Badge
                               variant={isSelected ? "default" : "outline"}
@@ -252,7 +300,12 @@ export function ApiKeyCreateDialog({
                   id="api-key-expires"
                   type="date"
                   value={expiresAt}
-                  onChange={(e) => setExpiresAt(e.target.value)}
+                  onChange={(e) =>
+                    dispatch({
+                      type: "expires-at-change",
+                      value: e.target.value,
+                    })
+                  }
                   disabled={isSubmitting}
                   min={todayMinDate}
                 />

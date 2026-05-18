@@ -274,6 +274,206 @@ function RowActions({
   );
 }
 
+function ContentTypeDocumentsTable({
+  documents,
+  users,
+  capabilities,
+  pendingRowAction,
+  showTranslationCoverage,
+  translationCoverageStatus,
+  translationCoverageByGroup,
+  tableColumns,
+  onRowClick,
+  rowActionHandlers,
+}: {
+  documents: MappedContentDocument[];
+  users: Record<string, { email?: string; name?: string }>;
+  capabilities: {
+    canPublishContent: boolean;
+    canUnpublishContent: boolean;
+    canCreateContent: boolean;
+    canDeleteContent: boolean;
+  };
+  pendingRowAction: boolean;
+  showTranslationCoverage: boolean;
+  translationCoverageStatus: ReturnType<
+    typeof useContentTypeList
+  >["translationCoverageStatus"];
+  translationCoverageByGroup: ReturnType<
+    typeof useContentTypeList
+  >["translationCoverageByGroup"];
+  tableColumns: ReturnType<typeof getContentTypeTableColumns>;
+  onRowClick: (documentId: string) => void;
+  rowActionHandlers: {
+    onEdit: (documentId: string) => void;
+    onPublish: (documentId: string) => void;
+    onUnpublish: (documentId: string) => void;
+    onDuplicate: (documentId: string) => void;
+    onDelete: (documentId: string) => void;
+  };
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-card-border bg-card">
+      <Table>
+        <TableHeader className="bg-background-subtle">
+          <TableRow>
+            {tableColumns.map((column) => (
+              <TableHead
+                key={column.key}
+                className={cn(
+                  "h-10 px-4 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-foreground-muted",
+                  column.className,
+                )}
+              >
+                {column.label}
+              </TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {documents.map((doc) => (
+            <TableRow
+              key={doc.documentId}
+              role="button"
+              tabIndex={0}
+              aria-label={`Open document ${doc.title}`}
+              className="cursor-pointer border-b border-divider/60 last:border-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+              onClick={() => onRowClick(doc.documentId)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onRowClick(doc.documentId);
+                }
+              }}
+            >
+              <TableCell className="px-4 py-3">
+                <div className="max-w-[480px]">
+                  <p className="truncate text-[13px] font-semibold text-foreground">
+                    {doc.title}
+                  </p>
+                  <p className="truncate font-mono text-[11px] text-foreground-muted">
+                    {doc.path}
+                  </p>
+                </div>
+              </TableCell>
+              {showTranslationCoverage ? (
+                <TableCell className="px-4 py-3">
+                  <TranslationCoverageSummary
+                    status={translationCoverageStatus}
+                    coverage={
+                      translationCoverageByGroup[doc.translationGroupId]
+                    }
+                  />
+                </TableCell>
+              ) : null}
+              <TableCell className="px-4 py-3">
+                <span className={statusConfig[doc.status].className}>
+                  {statusConfig[doc.status].label}
+                </span>
+              </TableCell>
+              <TableCell className="px-4 py-3 font-mono text-[11px] text-foreground-muted">
+                {formatRelativeTime(doc.updatedAt)}
+              </TableCell>
+              <TableCell className="px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <Avatar className="size-6">
+                    <AvatarFallback className="bg-blue-100 text-[10px] font-bold text-primary">
+                      {deriveAuthorInitials(users[doc.updatedBy]?.email)}
+                    </AvatarFallback>
+                  </Avatar>
+                </div>
+              </TableCell>
+              <TableCell
+                className="px-4 py-3"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <RowActions
+                  doc={doc}
+                  capabilities={capabilities}
+                  pending={pendingRowAction}
+                  onEdit={rowActionHandlers.onEdit}
+                  onPublish={rowActionHandlers.onPublish}
+                  onUnpublish={rowActionHandlers.onUnpublish}
+                  onDuplicate={rowActionHandlers.onDuplicate}
+                  onDelete={rowActionHandlers.onDelete}
+                />
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function ContentTypePaginationBar({
+  offset,
+  total,
+  currentPage,
+  totalPages,
+  onPageChange,
+}: {
+  offset: number;
+  total: number;
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (newOffset: number) => void;
+}) {
+  const maxOffset = Math.max(0, (totalPages - 1) * PAGE_SIZE);
+  const clamp = (value: number) => Math.max(0, Math.min(value, maxOffset));
+  const visibleCount = Math.min(5, totalPages);
+  const windowStart = Math.max(
+    1,
+    Math.min(currentPage - 2, totalPages - visibleCount + 1),
+  );
+  return (
+    <div className="flex items-center justify-between">
+      <p className="text-sm text-foreground-muted">
+        Showing {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of {total}{" "}
+        documents
+      </p>
+      <Pagination>
+        <PaginationContent>
+          <PaginationItem>
+            <PaginationPrevious
+              onClick={() => onPageChange(clamp(offset - PAGE_SIZE))}
+              className={
+                currentPage === 1
+                  ? "pointer-events-none opacity-50"
+                  : "cursor-pointer"
+              }
+            />
+          </PaginationItem>
+          {Array.from({ length: visibleCount }).map((_, i) => {
+            const page = windowStart + i;
+            return (
+              <PaginationItem key={page}>
+                <PaginationLink
+                  onClick={() => onPageChange(clamp((page - 1) * PAGE_SIZE))}
+                  isActive={currentPage === page}
+                  className="cursor-pointer"
+                >
+                  {page}
+                </PaginationLink>
+              </PaginationItem>
+            );
+          })}
+          <PaginationItem>
+            <PaginationNext
+              onClick={() => onPageChange(clamp(offset + PAGE_SIZE))}
+              className={
+                currentPage === totalPages
+                  ? "pointer-events-none opacity-50"
+                  : "cursor-pointer"
+              }
+            />
+          </PaginationItem>
+        </PaginationContent>
+      </Pagination>
+    </div>
+  );
+}
+
 export default function ContentTypePage() {
   const params = useParams();
   const router = useRouter();
@@ -631,95 +831,20 @@ export default function ContentTypePage() {
         {list.status === "ready" && (
           <>
             {list.documents.length > 0 ? (
-              <div className="overflow-hidden rounded-lg border border-card-border bg-card">
-                <Table>
-                  <TableHeader className="bg-background-subtle">
-                    <TableRow>
-                      {tableColumns.map((column) => (
-                        <TableHead
-                          key={column.key}
-                          className={cn(
-                            "h-10 px-4 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-foreground-muted",
-                            column.className,
-                          )}
-                        >
-                          {column.label}
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {list.documents.map((doc) => (
-                      <TableRow
-                        key={doc.documentId}
-                        className="cursor-pointer border-b border-divider/60 last:border-0"
-                        onClick={() =>
-                          router.push(
-                            `/admin/content/${typeId}/${doc.documentId}`,
-                          )
-                        }
-                      >
-                        <TableCell className="px-4 py-3">
-                          <div className="max-w-[480px]">
-                            <p className="truncate text-[13px] font-semibold text-foreground">
-                              {doc.title}
-                            </p>
-                            <p className="truncate font-mono text-[11px] text-foreground-muted">
-                              {doc.path}
-                            </p>
-                          </div>
-                        </TableCell>
-                        {showTranslationCoverage ? (
-                          <TableCell className="px-4 py-3">
-                            <TranslationCoverageSummary
-                              status={list.translationCoverageStatus}
-                              coverage={
-                                list.translationCoverageByGroup[
-                                  doc.translationGroupId
-                                ]
-                              }
-                            />
-                          </TableCell>
-                        ) : null}
-                        <TableCell className="px-4 py-3">
-                          <span className={statusConfig[doc.status].className}>
-                            {statusConfig[doc.status].label}
-                          </span>
-                        </TableCell>
-                        <TableCell className="px-4 py-3 font-mono text-[11px] text-foreground-muted">
-                          {formatRelativeTime(doc.updatedAt)}
-                        </TableCell>
-                        <TableCell className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <Avatar className="size-6">
-                              <AvatarFallback className="bg-blue-100 text-[10px] font-bold text-primary">
-                                {deriveAuthorInitials(
-                                  list.users[doc.updatedBy]?.email,
-                                )}
-                              </AvatarFallback>
-                            </Avatar>
-                          </div>
-                        </TableCell>
-                        <TableCell
-                          className="px-4 py-3"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <RowActions
-                            doc={doc}
-                            capabilities={capabilities}
-                            pending={isRowActionPending}
-                            onEdit={rowActionHandlers.onEdit}
-                            onPublish={rowActionHandlers.onPublish}
-                            onUnpublish={rowActionHandlers.onUnpublish}
-                            onDuplicate={rowActionHandlers.onDuplicate}
-                            onDelete={rowActionHandlers.onDelete}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+              <ContentTypeDocumentsTable
+                documents={list.documents}
+                users={list.users}
+                capabilities={capabilities}
+                pendingRowAction={isRowActionPending}
+                showTranslationCoverage={showTranslationCoverage}
+                translationCoverageStatus={list.translationCoverageStatus}
+                translationCoverageByGroup={list.translationCoverageByGroup}
+                tableColumns={tableColumns}
+                onRowClick={(documentId) =>
+                  router.push(`/admin/content/${typeId}/${documentId}`)
+                }
+                rowActionHandlers={rowActionHandlers}
+              />
             ) : (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <div className="mb-4 rounded-full bg-background-subtle p-4">
@@ -733,64 +858,13 @@ export default function ContentTypePage() {
             )}
 
             {totalPages > 1 && list.pagination && (
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-foreground-muted">
-                  Showing {list.pagination.offset + 1}–
-                  {Math.min(
-                    list.pagination.offset + PAGE_SIZE,
-                    list.pagination.total,
-                  )}{" "}
-                  of {list.pagination.total} documents
-                </p>
-                <Pagination>
-                  <PaginationContent>
-                    <PaginationItem>
-                      <PaginationPrevious
-                        onClick={() =>
-                          list.setPage(
-                            Math.max(0, list.pagination!.offset - PAGE_SIZE),
-                          )
-                        }
-                        className={
-                          currentPage === 1
-                            ? "pointer-events-none opacity-50"
-                            : "cursor-pointer"
-                        }
-                      />
-                    </PaginationItem>
-                    {Array.from({ length: Math.min(5, totalPages) }).map(
-                      (_, i) => {
-                        const page = i + 1;
-                        return (
-                          <PaginationItem key={page}>
-                            <PaginationLink
-                              onClick={() =>
-                                list.setPage((page - 1) * PAGE_SIZE)
-                              }
-                              isActive={currentPage === page}
-                              className="cursor-pointer"
-                            >
-                              {page}
-                            </PaginationLink>
-                          </PaginationItem>
-                        );
-                      },
-                    )}
-                    <PaginationItem>
-                      <PaginationNext
-                        onClick={() =>
-                          list.setPage(list.pagination!.offset + PAGE_SIZE)
-                        }
-                        className={
-                          currentPage === totalPages
-                            ? "pointer-events-none opacity-50"
-                            : "cursor-pointer"
-                        }
-                      />
-                    </PaginationItem>
-                  </PaginationContent>
-                </Pagination>
-              </div>
+              <ContentTypePaginationBar
+                offset={list.pagination.offset}
+                total={list.pagination.total}
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={(newOffset) => list.setPage(newOffset)}
+              />
             )}
           </>
         )}
