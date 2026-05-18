@@ -559,7 +559,7 @@ export function buildChatSystemPrompt(input: {
     );
   } else {
     reasons.push(
-      "- Edit selection (`propose_edit_selection`): available. Rewrites the highlighted span; the selectionId is server-supplied — don't invent one.",
+      "- Edit selection (`propose_edit_selection`): available. Rewrites the highlighted span; the selectionId and original source text are server-supplied — preserve markdown block markers such as list bullets in the replacement unless the user asked to change structure.",
     );
   }
 

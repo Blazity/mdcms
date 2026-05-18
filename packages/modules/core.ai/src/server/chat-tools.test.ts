@@ -268,3 +268,78 @@ describe("document text replacement tool", () => {
     }
   });
 });
+
+describe("selected text replacement tool", () => {
+  test("anchors replacement proposals to the server-trusted attached selection text", async () => {
+    const collected: AiProposal[] = [];
+    const tools = buildChatTools(
+      baseDeps({
+        envelope: {
+          project: "p",
+          environment: "e",
+          type: "page",
+          locale: "en",
+          documentId: "doc_1",
+          baseDraftRevision: 4,
+        },
+        hasActiveDocument: true,
+        attachedSelection: {
+          selectionId: "sel:list",
+          text: [
+            "- one demo user",
+            "- one fixed demo API key",
+            "- sample content documents",
+          ].join("\n"),
+        },
+        capabilities: {
+          canEditDocument: true,
+          canCreateDocument: false,
+          canDeleteDocument: false,
+          canReadEntries: false,
+        },
+        collected,
+      }),
+    );
+
+    const result = (await tools.propose_edit_selection!.execute!(
+      {
+        summary: "Add emojis to list items",
+        originalText: [
+          "one demo user",
+          "one fixed demo API key",
+          "sample content documents",
+        ].join("\n"),
+        replacementText: [
+          "- 👤 one demo user",
+          "- 🔑 one fixed demo API key",
+          "- 📦 sample content documents",
+        ].join("\n"),
+      },
+      { toolCallId: "tc_1", messages: [] },
+    )) as { proposalId: string; queued: true };
+
+    assert.equal(result.queued, true);
+    assert.equal(collected.length, 1);
+    const operation = collected[0]?.operations[0];
+    assert.equal(operation?.op, "replace_selection");
+    if (operation?.op === "replace_selection") {
+      assert.equal(operation.selectionId, "sel:list");
+      assert.equal(
+        operation.originalText,
+        [
+          "- one demo user",
+          "- one fixed demo API key",
+          "- sample content documents",
+        ].join("\n"),
+      );
+      assert.equal(
+        operation.replacementText,
+        [
+          "- 👤 one demo user",
+          "- 🔑 one fixed demo API key",
+          "- 📦 sample content documents",
+        ].join("\n"),
+      );
+    }
+  });
+});

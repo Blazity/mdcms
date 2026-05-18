@@ -72,8 +72,12 @@ export type ChatToolCapabilities = {
 export type ChatToolDeps = {
   /** Stamped onto every proposal. Active doc fields (documentId/baseDraftRevision) are propagated. */
   envelope: AiProposalEnvelope;
-  /** Required for replace_selection — the selectionId is server-trusted. */
-  attachedSelection?: { selectionId: string };
+  /**
+   * Required for replace_selection. Both fields are server-trusted:
+   * the model may describe the source text, but proposal anchoring uses
+   * this exact selected markdown span.
+   */
+  attachedSelection?: { selectionId: string; text: string };
   /** Set when the request had an active document; gates insert_block / update_frontmatter / delete tools. */
   hasActiveDocument: boolean;
   /** Path of the active document; needed to populate the delete operation's `path` field. */
@@ -228,11 +232,13 @@ export function buildChatTools(deps: ChatToolDeps): Record<string, Tool> {
           .string()
           .min(1)
           .describe(
-            "The exact text being replaced. Must match the selected span the user is editing.",
+            "A copy of the selected text for review context. The server anchors the proposal to the attached selection span.",
           ),
         replacementText: z
           .string()
-          .describe("The new text that replaces the selection."),
+          .describe(
+            "The new markdown text that replaces the selection. Preserve block markers such as '- ' for selected lists unless the user asked to change the structure.",
+          ),
       }),
       execute: async (args) => {
         try {
@@ -243,7 +249,7 @@ export function buildChatTools(deps: ChatToolDeps): Record<string, Tool> {
                 {
                   op: "replace_selection",
                   selectionId: deps.attachedSelection!.selectionId,
-                  originalText: args.originalText,
+                  originalText: deps.attachedSelection!.text,
                   replacementText: args.replacementText,
                 },
               ],

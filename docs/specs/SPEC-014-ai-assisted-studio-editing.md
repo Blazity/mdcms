@@ -117,6 +117,13 @@ The assistant surface presents:
 - One proposal card per generated proposal, rendered inline in the assistant
   thread next to the model turn that produced it.
 
+When a current editor selection is attached to a chat turn, Studio serializes
+the selection with the same markdown rules as inline transforms. Complete block
+selections include their markdown markers (for example list bullets); partial
+in-block selections remain plain text. Selection edit proposals are anchored to
+this server-trusted attached selection, not to a model-recreated copy of the
+selected text.
+
 When the assistant proposes a content change, Studio renders the change as a
 draft proposal with explicit accept/reject controls. The proposal card shows
 the target document path, locale, kind chip, and a unified diff: removed lines

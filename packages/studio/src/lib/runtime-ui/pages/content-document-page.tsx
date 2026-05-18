@@ -2790,7 +2790,7 @@ export function ContentDocumentPageView({
           ? {
               selection: {
                 selectionId: aiSelection.selectionId,
-                text: aiSelection.text,
+                text: aiSelection.serializedText,
               },
             }
           : {}),
@@ -2807,6 +2807,7 @@ export function ContentDocumentPageView({
       state.status === "ready" ? state.route.initialEnvironment : undefined,
       aiSelection?.selectionId,
       aiSelection?.text,
+      aiSelection?.serializedText,
     ]);
 
   return (

@@ -728,6 +728,113 @@ describe("mountAiRoutes — chat-message", () => {
     assert.equal(payload.data.message.text, "Proposed a tighter intro.");
   });
 
+  test("chat-selected list proposals apply against the markdown selection span", async () => {
+    const listBody = [
+      "The sample stack seeds:",
+      "",
+      "- one demo user",
+      "- one fixed demo API key",
+      "- sample content documents",
+    ].join("\n");
+    const replacement = [
+      "- 👤 one demo user",
+      "- 🔑 one fixed demo API key",
+      "- 📦 sample content documents",
+    ].join("\n");
+    const { app } = createTestSetup({
+      document: buildDocument({ body: listBody }),
+      authorize: authorizeWithScopes(
+        new Set(["ai:use", "content:read:draft", "content:write"]),
+      ),
+      echoSteps: [
+        {
+          type: "tool-calls",
+          calls: [
+            {
+              toolName: "propose_edit_selection",
+              input: JSON.stringify({
+                summary: "Add emojis to list items",
+                originalText: [
+                  "one demo user",
+                  "one fixed demo API key",
+                  "sample content documents",
+                ].join("\n"),
+                replacementText: replacement,
+              }),
+            },
+          ],
+        },
+        {
+          type: "text",
+          text: "I've proposed adding emojis.",
+        },
+      ],
+    });
+
+    const chatResponse = await app.fetch(
+      "POST",
+      "https://test.local/api/v1/ai/chat/messages",
+      {
+        method: "POST",
+        headers: TARGET_HEADERS,
+        body: JSON.stringify({
+          message: "add emojis to this",
+          attachedSelection: {
+            documentId: "doc_1",
+            draftRevision: 4,
+            selectionId: "sel:list",
+            text: [
+              "- one demo user",
+              "- one fixed demo API key",
+              "- sample content documents",
+            ].join("\n"),
+          },
+        }),
+      },
+    );
+    assert.equal(chatResponse.status, 200);
+    const chatPayload = (await chatResponse.json()) as {
+      data: { proposals?: AiProposal[] };
+    };
+    const proposal = chatPayload.data.proposals?.[0];
+    assert.ok(proposal);
+    const operation = proposal.operations[0];
+    assert.equal(operation?.op, "replace_selection");
+    if (operation?.op === "replace_selection") {
+      assert.equal(
+        operation.originalText,
+        [
+          "- one demo user",
+          "- one fixed demo API key",
+          "- sample content documents",
+        ].join("\n"),
+      );
+    }
+
+    const applyResponse = await app.fetch(
+      "POST",
+      `https://test.local/api/v1/ai/proposals/${proposal.proposalId}/apply`,
+      {
+        method: "POST",
+        headers: TARGET_HEADERS,
+        body: JSON.stringify({
+          schemaHash: "hash_1",
+          draftRevision: 4,
+          proposal,
+        }),
+      },
+    );
+
+    assert.equal(applyResponse.status, 200);
+    const applyPayload = (await applyResponse.json()) as {
+      data: { document: { body: string } };
+    };
+    assert.equal(
+      applyPayload.data.document.body,
+      ["The sample stack seeds:", "", replacement].join("\n"),
+    );
+  });
+
   test("echoes the supplied conversationId on the response", async () => {
     const { app } = createTestSetup({
       authorize: authorizeWithScopes(
