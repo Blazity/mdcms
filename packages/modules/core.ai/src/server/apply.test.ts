@@ -9,6 +9,7 @@ import {
 
 import {
   applyAiProposal,
+  applyAiProposalUndo,
   type AiApplyContentStore,
   type AiApplyWritePayload,
 } from "./apply.js";
@@ -81,6 +82,7 @@ type StubStoreState = {
     options: { expectedSchemaHash: string };
   }>;
   softDeleteCalls: Array<{ documentId: string }>;
+  restoreCalls?: Array<{ documentId: string }>;
 };
 
 function createStubStore(state: StubStoreState): AiApplyContentStore {
@@ -115,6 +117,11 @@ function createStubStore(state: StubStoreState): AiApplyContentStore {
     async softDelete(_scope, documentId) {
       state.softDeleteCalls.push({ documentId });
       return { ...state.document, isDeleted: true };
+    },
+    async restore(_scope, documentId) {
+      state.restoreCalls = state.restoreCalls ?? [];
+      state.restoreCalls.push({ documentId });
+      return { ...state.document, isDeleted: false };
     },
   };
 }
@@ -457,5 +464,183 @@ describe("applyAiProposal", () => {
     );
 
     assert.equal(state.softDeleteCalls.length, 0);
+  });
+});
+
+describe("applyAiProposalUndo", () => {
+  test("create_document undo soft-deletes the newly created document", async () => {
+    const state: StubStoreState = {
+      document: buildDocument({ documentId: "doc_new" }),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    const result = await applyAiProposalUndo({
+      proposal: buildProposal({
+        proposalId: "p_create_undo",
+        kind: "create_document",
+        documentId: undefined,
+        baseDraftRevision: undefined,
+        operations: [
+          {
+            op: "create_document",
+            path: "blog/new",
+            format: "mdx",
+            frontmatter: {},
+            body: "",
+          },
+        ],
+      }),
+      documentId: "doc_new",
+      expectedSchemaHash: "hash_undo",
+      actorId: "user_99",
+      store,
+    });
+
+    assert.equal(state.softDeleteCalls.length, 1);
+    assert.equal(state.softDeleteCalls[0]!.documentId, "doc_new");
+    assert.equal(result.document.isDeleted, true);
+  });
+
+  test("delete_document undo restores the soft-deleted document", async () => {
+    const state: StubStoreState = {
+      document: buildDocument({ isDeleted: true }),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    const result = await applyAiProposalUndo({
+      proposal: buildProposal({
+        proposalId: "p_delete_undo",
+        kind: "delete_document",
+        operations: [
+          {
+            op: "delete_document",
+            path: "blog/welcome",
+          },
+        ],
+      }),
+      documentId: "doc_1",
+      expectedSchemaHash: "hash_undo",
+      actorId: "user_99",
+      store,
+    });
+
+    assert.equal(state.restoreCalls?.length ?? 0, 1);
+    assert.equal(state.restoreCalls![0]!.documentId, "doc_1");
+    assert.equal(result.document.isDeleted, false);
+  });
+
+  test("delete_document undo refuses when the document is not deleted", async () => {
+    const state: StubStoreState = {
+      document: buildDocument({ isDeleted: false }),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    await assert.rejects(
+      () =>
+        applyAiProposalUndo({
+          proposal: buildProposal({
+            proposalId: "p_delete_undo_idempotent",
+            kind: "delete_document",
+            operations: [{ op: "delete_document", path: "blog/welcome" }],
+          }),
+          documentId: "doc_1",
+          expectedSchemaHash: "hash_undo",
+          actorId: "user_99",
+          store,
+        }),
+      (error) =>
+        error instanceof RuntimeError && error.code === "AI_PROPOSAL_CONFLICT",
+    );
+    assert.equal(state.restoreCalls?.length ?? 0, 0);
+  });
+
+  test("replace_selection undo replays the captured priorDraft via update", async () => {
+    const state: StubStoreState = {
+      document: buildDocument({ body: "Hi there!", draftRevision: 5 }),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    const priorDraft = {
+      body: "Welcome to the site.",
+      frontmatter: { title: "Welcome" },
+    };
+
+    await applyAiProposalUndo({
+      proposal: buildProposal(),
+      documentId: "doc_1",
+      expectedSchemaHash: "hash_undo",
+      priorDraft,
+      postApplyDraftRevision: 5,
+      actorId: "user_99",
+      store,
+    });
+
+    assert.equal(state.updateCalls.length, 1);
+    const call = state.updateCalls[0]!;
+    assert.equal(call.payload.body, "Welcome to the site.");
+    assert.deepEqual(call.payload.frontmatter, { title: "Welcome" });
+    assert.equal(call.options.expectedDraftRevision, 5);
+  });
+
+  test("replace_selection undo fails loud on a concurrent edit", async () => {
+    const state: StubStoreState = {
+      document: buildDocument({ draftRevision: 7 }),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    await assert.rejects(
+      () =>
+        applyAiProposalUndo({
+          proposal: buildProposal(),
+          documentId: "doc_1",
+          expectedSchemaHash: "hash_undo",
+          priorDraft: { body: "original", frontmatter: {} },
+          postApplyDraftRevision: 5,
+          actorId: "user_99",
+          store,
+        }),
+      (error) =>
+        error instanceof RuntimeError && error.code === "AI_PROPOSAL_CONFLICT",
+    );
+    assert.equal(state.updateCalls.length, 0);
+  });
+
+  test("body-kind undo requires a priorDraft snapshot", async () => {
+    const state: StubStoreState = {
+      document: buildDocument(),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    await assert.rejects(
+      () =>
+        applyAiProposalUndo({
+          proposal: buildProposal(),
+          documentId: "doc_1",
+          expectedSchemaHash: "hash_undo",
+          actorId: "user_99",
+          store,
+        }),
+      (error) =>
+        error instanceof RuntimeError && error.code === "AI_OUTPUT_INVALID",
+    );
+    assert.equal(state.updateCalls.length, 0);
   });
 });
