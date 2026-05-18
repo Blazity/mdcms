@@ -200,9 +200,7 @@ function InviteUserDialog({
                   ? "folder_prefix"
                   : "project",
             project:
-              form.role === "admin"
-                ? undefined
-                : activeProject || undefined,
+              form.role === "admin" ? undefined : activeProject || undefined,
             environment:
               form.role === "admin"
                 ? undefined
@@ -385,11 +383,7 @@ function EditRoleDialog({
             ? activeEnvironment
             : undefined,
       pathPrefix:
-        role === "admin"
-          ? undefined
-          : useFolderPrefix
-            ? pathPrefix
-            : undefined,
+        role === "admin" ? undefined : useFolderPrefix ? pathPrefix : undefined,
     };
     const updatedGrants =
       target.currentGrants.length > 1
@@ -821,9 +815,7 @@ export default function UsersPage() {
           isUpdatingGrants={isUpdatingGrants}
           activeEnvironment={activeEnvironment}
           activeProject={activeProject}
-          onSaved={(userName) =>
-            toast.success(`Role updated for ${userName}.`)
-          }
+          onSaved={(userName) => toast.success(`Role updated for ${userName}.`)}
         />
       </div>
     </div>
