@@ -436,6 +436,7 @@ export type AssistantActiveDocument = {
   environment: string;
   selection?: {
     selectionId: string;
+    /** AI-facing selected span; complete block selections preserve markdown markers. */
     text: string;
   };
 };

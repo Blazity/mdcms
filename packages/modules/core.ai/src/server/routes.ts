@@ -1328,6 +1328,16 @@ type ChatTurnPreparation = {
   chatInput: import("./orchestrator.js").AiChatInput;
 };
 
+function resolveFreshChatSelection(
+  body: AiChatMessageRequest,
+  attachedDocument: ContentDocumentResponse | undefined,
+) {
+  if (!body.attachedSelection || !attachedDocument) return undefined;
+  return attachedDocument.draftRevision === body.attachedSelection.draftRevision
+    ? body.attachedSelection
+    : undefined;
+}
+
 /**
  * Shared chat-turn prep: CSRF, parsing, auth + capability probe,
  * regenerate-prefix resolution, attached-doc loading, project-knowledge
@@ -1466,22 +1476,6 @@ async function prepareChatTurn(
         documentId: primaryDocumentId,
       });
       attachedDocument = ctx.document;
-      if (
-        body.attachedSelection &&
-        attachedDocument.draftRevision !== body.attachedSelection.draftRevision
-      ) {
-        throw new RuntimeError({
-          code: "AI_PROPOSAL_CONFLICT",
-          message:
-            "attachedSelection.draftRevision does not match the live draft revision.",
-          statusCode: 409,
-          details: {
-            documentId: primaryDocumentId,
-            providedDraftRevision: body.attachedSelection.draftRevision,
-            currentDraftRevision: attachedDocument.draftRevision,
-          },
-        });
-      }
     }
     for (const docId of additionalDocumentIds) {
       try {
@@ -1510,6 +1504,11 @@ async function prepareChatTurn(
           ...(doc.frontmatter ? { frontmatter: doc.frontmatter } : {}),
         }))
       : undefined;
+
+  const attachedSelectionForChat = resolveFreshChatSelection(
+    body,
+    attachedDocument,
+  );
 
   const conversationHistory =
     body.conversationHistory && body.conversationHistory.length > 0
@@ -1558,11 +1557,11 @@ async function prepareChatTurn(
           },
         }
       : {}),
-    ...(body.attachedSelection
+    ...(attachedSelectionForChat
       ? {
           attachedSelection: {
-            selectionId: body.attachedSelection.selectionId,
-            text: body.attachedSelection.text,
+            selectionId: attachedSelectionForChat.selectionId,
+            text: attachedSelectionForChat.text,
           },
         }
       : {}),
@@ -1780,24 +1779,6 @@ async function handleChatMessage(
           documentId: primaryDocumentId,
         });
         attachedDocument = ctx.document;
-
-        if (
-          body.attachedSelection &&
-          attachedDocument.draftRevision !==
-            body.attachedSelection.draftRevision
-        ) {
-          throw new RuntimeError({
-            code: "AI_PROPOSAL_CONFLICT",
-            message:
-              "attachedSelection.draftRevision does not match the live draft revision.",
-            statusCode: 409,
-            details: {
-              documentId: primaryDocumentId,
-              providedDraftRevision: body.attachedSelection.draftRevision,
-              currentDraftRevision: attachedDocument.draftRevision,
-            },
-          });
-        }
       }
       // Best-effort: skip any additional id that fails to resolve rather
       // than failing the whole turn — a stale mention chip shouldn't break
@@ -1830,6 +1811,11 @@ async function handleChatMessage(
             ...(doc.frontmatter ? { frontmatter: doc.frontmatter } : {}),
           }))
         : undefined;
+
+    const attachedSelectionForChat = resolveFreshChatSelection(
+      body,
+      attachedDocument,
+    );
 
     const conversationHistory =
       body.conversationHistory && body.conversationHistory.length > 0
@@ -1890,11 +1876,11 @@ async function handleChatMessage(
               },
             }
           : {}),
-        ...(body.attachedSelection
+        ...(attachedSelectionForChat
           ? {
               attachedSelection: {
-                selectionId: body.attachedSelection.selectionId,
-                text: body.attachedSelection.text,
+                selectionId: attachedSelectionForChat.selectionId,
+                text: attachedSelectionForChat.text,
               },
             }
           : {}),

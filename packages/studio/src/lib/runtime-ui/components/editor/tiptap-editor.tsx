@@ -180,6 +180,14 @@ export type TipTapEditorSelectionInfo = {
   selectionId: string;
   /** Plain text inside the selection. */
   text: string;
+  /**
+   * AI-facing serialization of the same range. Whole-block selections
+   * preserve markdown structure such as list markers; mid-block
+   * selections remain plain text.
+   */
+  serializedText: string;
+  /** How `serializedText` was produced and should be interpreted. */
+  serializationMode: "markdown" | "text";
   /** ProseMirror document positions for the selection range. */
   from: number;
   to: number;
@@ -246,6 +254,11 @@ type ToolbarButtonProps = {
 
 type TipTapEditorInstance = NonNullable<ReturnType<typeof useEditor>>;
 
+export type TipTapEditorSerializedSelection = {
+  text: string;
+  mode: "markdown" | "text";
+};
+
 const ZERO_ANCHOR_RECT: TipTapEditorAnchorRect = {
   top: 0,
   left: 0,
@@ -301,6 +314,49 @@ export function stripBlockMarkers(text: string): string {
         .replace(/^\s*#{1,6}\s+/, ""),
     )
     .join("\n");
+}
+
+export function getSelectionMarkdownForAi(
+  editor: TipTapEditorInstance,
+  input: { from: number; to: number },
+): TipTapEditorSerializedSelection | null {
+  const docSize = editor.state.doc.content.size;
+  if (input.from < 0 || input.to > docSize || input.from > input.to) {
+    return null;
+  }
+  if (input.from === input.to) {
+    return { text: "", mode: "text" };
+  }
+
+  // Decide markdown vs text by whether the cut is at a clean block
+  // boundary, NOT by the slice's open depth. Whole-bullet selections
+  // still have openStart/openEnd > 0 because the cuts are inside a
+  // paragraph inside a listItem inside a bulletList, but parentOffset
+  // alignment means markdown round-trips cleanly.
+  const $from = editor.state.doc.resolve(input.from);
+  const $to = editor.state.doc.resolve(input.to);
+  const fromAtParentStart = $from.parentOffset === 0;
+  const toAtParentEnd = $to.parentOffset === $to.parent.content.size;
+  const isWholeBlockCut = fromAtParentStart && toAtParentEnd;
+
+  if (!isWholeBlockCut) {
+    return {
+      text: editor.state.doc.textBetween(input.from, input.to, "\n", "\n"),
+      mode: "text",
+    };
+  }
+
+  const slice = editor.state.doc.slice(input.from, input.to, true);
+  const fragmentJson = slice.content.toJSON() as
+    | Array<Record<string, unknown>>
+    | undefined;
+  return {
+    text: serializeDocumentToMarkdown({
+      type: "doc",
+      content: fragmentJson ?? [],
+    }),
+    mode: "markdown",
+  };
 }
 
 function ToolbarButton({
@@ -569,6 +625,10 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
         }
 
         const text = nextEditor.state.doc.textBetween(from, to, "\n", "\n");
+        const serializedSelection = getSelectionMarkdownForAi(nextEditor, {
+          from,
+          to,
+        }) ?? { text, mode: "text" as const };
 
         if (text.trim().length === 0) {
           if (lastPublishedTextSelectionRef.current !== null) {
@@ -587,14 +647,22 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
         // moved-but-identical selection still re-uses the same id and
         // the AI proposal stays anchored across `Try again` calls.
         const selectionId = `sel:${from}-${to}`;
-        const fingerprint = `${selectionId}::${text}::${anchorRect.top}::${anchorRect.left}::${anchorRect.bottom}::${anchorRect.right}`;
+        const fingerprint = `${selectionId}::${text}::${serializedSelection.text}::${anchorRect.top}::${anchorRect.left}::${anchorRect.bottom}::${anchorRect.right}`;
 
         if (lastPublishedTextSelectionRef.current === fingerprint) {
           return;
         }
 
         lastPublishedTextSelectionRef.current = fingerprint;
-        onSelectionTextChange({ selectionId, text, from, to, anchorRect });
+        onSelectionTextChange({
+          selectionId,
+          text,
+          serializedText: serializedSelection.text,
+          serializationMode: serializedSelection.mode,
+          from,
+          to,
+          anchorRect,
+        });
       },
     );
     const scheduleAuxSelectionUpdate = useEffectEvent(
@@ -881,50 +949,7 @@ export const TipTapEditor = forwardRef<TipTapEditorHandle, TipTapEditorProps>(
           if (!editor || editor.isDestroyed) {
             return null;
           }
-          const docSize = editor.state.doc.content.size;
-          if (input.from < 0 || input.to > docSize || input.from > input.to) {
-            return null;
-          }
-          if (input.from === input.to) {
-            return { text: "", mode: "text" };
-          }
-
-          // Decide markdown vs text by whether the cut is at a clean
-          // block boundary, NOT by the slice's open depth. Whole-bullet
-          // selections still have openStart/openEnd > 0 because the
-          // cuts are inside a paragraph inside a listItem inside a
-          // bulletList — but parentOffset === 0 at `from` and
-          // parentOffset === parent.content.size at `to` means we're
-          // structurally aligned and markdown round-trips cleanly.
-          const $from = editor.state.doc.resolve(input.from);
-          const $to = editor.state.doc.resolve(input.to);
-          const fromAtParentStart = $from.parentOffset === 0;
-          const toAtParentEnd = $to.parentOffset === $to.parent.content.size;
-          const isWholeBlockCut = fromAtParentStart && toAtParentEnd;
-
-          if (!isWholeBlockCut) {
-            return {
-              text: editor.state.doc.textBetween(
-                input.from,
-                input.to,
-                "\n",
-                "\n",
-              ),
-              mode: "text",
-            };
-          }
-
-          const slice = editor.state.doc.slice(input.from, input.to, true);
-          const fragmentJson = slice.content.toJSON() as
-            | Array<Record<string, unknown>>
-            | undefined;
-          return {
-            text: serializeDocumentToMarkdown({
-              type: "doc",
-              content: fragmentJson ?? [],
-            }),
-            mode: "markdown",
-          };
+          return getSelectionMarkdownForAi(editor, input);
         },
         applyInlinePreview(input) {
           if (!editor || editor.isDestroyed) {

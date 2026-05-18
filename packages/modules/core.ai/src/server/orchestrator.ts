@@ -442,6 +442,7 @@ function prepareChatRun(
       ? {
           attachedSelection: {
             selectionId: call.attachedSelection.selectionId,
+            text: call.attachedSelection.text,
           },
         }
       : {}),
