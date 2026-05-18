@@ -4,6 +4,7 @@ import {
   type AiErrorCode,
   type AiProposal,
   type AiTaskKind,
+  type MdxComponentCatalog,
 } from "@mdcms/shared";
 
 import {
@@ -24,6 +25,7 @@ import {
   type AiProposalValidator,
 } from "./proposal-builder.js";
 import type { AiProvider, AiProviderUsage } from "./provider.js";
+import { createMdxCatalogProposalValidator } from "./validate-proposal.js";
 import {
   AI_TASK_DEFINITIONS,
   buildChatSystemPrompt,
@@ -121,6 +123,13 @@ export type AiChatInput = {
    * required.
    */
   projectKnowledge?: Omit<ProjectKnowledgeInput, "project" | "environment">;
+  /**
+   * Active host-supplied MDX component catalog. Chat tools wrap the
+   * configured proposal validator with this catalog so generated MDX
+   * is rejected when it references unregistered components or invalid
+   * props.
+   */
+  mdxCatalog?: MdxComponentCatalog;
   /**
    * Backends for the read-only chat tools (find_entries, get_entry).
    * The route handler wires these from the contentStore; when absent,
@@ -436,6 +445,14 @@ function prepareChatRun(
       : {}),
   };
 
+  const baseValidator = call.proposalValidator ?? validator;
+  const effectiveValidator = call.mdxCatalog
+    ? createMdxCatalogProposalValidator({
+        ...(baseValidator ? { validator: baseValidator } : {}),
+        catalog: call.mdxCatalog,
+      })
+    : baseValidator;
+
   const tools = buildChatTools({
     envelope,
     ...(call.attachedSelection
@@ -457,11 +474,7 @@ function prepareChatRun(
     clock,
     idFactory,
     ttlMs,
-    ...(call.proposalValidator
-      ? { validator: call.proposalValidator }
-      : validator
-        ? { validator }
-        : {}),
+    ...(effectiveValidator ? { validator: effectiveValidator } : {}),
     capabilities: {
       ...call.capabilities,
       canReadEntries: Boolean(call.toolBackends?.findEntries),
@@ -487,6 +500,7 @@ function prepareChatRun(
     ...(call.projectKnowledge?.currentUser
       ? { currentUser: call.projectKnowledge.currentUser }
       : {}),
+    ...(call.mdxCatalog ? { mdxCatalog: call.mdxCatalog } : {}),
   };
 
   const system = buildChatSystemPrompt({

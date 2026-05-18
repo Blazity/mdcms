@@ -1573,6 +1573,7 @@ async function prepareChatTurn(
       supportedLocales,
       ...(currentUser ? { currentUser } : {}),
     },
+    ...(body.mdxCatalog ? { mdxCatalog: body.mdxCatalog } : {}),
     ...(options.listEntries || options.getEntry
       ? {
           toolBackends: {
@@ -1892,6 +1893,7 @@ async function handleChatMessage(
           supportedLocales,
           ...(currentUser ? { currentUser } : {}),
         },
+        ...(body.mdxCatalog ? { mdxCatalog: body.mdxCatalog } : {}),
         ...(options.listEntries || options.getEntry
           ? {
               toolBackends: {

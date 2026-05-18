@@ -492,7 +492,7 @@ const mdxPropHintSchema = z.union([
     .strict(),
 ]);
 
-const mdxComponentCatalogEntrySchema = z
+export const mdxComponentCatalogEntrySchema = z
   .object({
     name: nonEmptyStringSchema,
     importPath: nonEmptyStringSchema,
@@ -503,7 +503,7 @@ const mdxComponentCatalogEntrySchema = z
   })
   .strict();
 
-const mdxComponentCatalogSchema = z
+export const mdxComponentCatalogSchema = z
   .object({
     components: z.array(mdxComponentCatalogEntrySchema),
   })

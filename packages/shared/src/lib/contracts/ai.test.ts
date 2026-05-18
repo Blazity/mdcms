@@ -392,6 +392,17 @@ test("aiChatMessageRequestSchema accepts a fully populated request", () => {
     rejectedProposalId: "p_prev",
     rejectionFeedback: "Keep the original tone please.",
     allowedActions: ["answer", "edit_document"],
+    mdxCatalog: {
+      components: [
+        {
+          name: "Callout",
+          importPath: "@/components/mdx/Callout",
+          extractedProps: {
+            tone: { type: "enum", required: true, values: ["info"] },
+          },
+        },
+      ],
+    },
   });
   assert.equal(parsed.success, true);
 });

@@ -1457,6 +1457,70 @@ describe("mountAiRoutes — chat-message", () => {
     assert.equal(proposal.type, "blog");
   });
 
+  test("propose_create_document with unregistered MDX component returns INVALID", async () => {
+    const { app } = createTestSetup({
+      authorize: authorizeWithScopes(
+        new Set(["ai:use", "content:read:draft", "content:write"]),
+      ),
+      echoSteps: [
+        {
+          type: "tool-calls",
+          calls: [
+            {
+              toolName: "propose_create_document",
+              input: JSON.stringify({
+                summary: "Draft an image carousel page",
+                path: "pages/image-carousel",
+                type: "page",
+                format: "mdx",
+                frontmatter: '{"title":"Image Carousel"}',
+                body: [
+                  "<Carousel>",
+                  '  <img src="/images/slide1.jpg" alt="Slide 1" />',
+                  "</Carousel>",
+                ].join("\n"),
+              }),
+            },
+          ],
+        },
+        { type: "text", text: "Proposed a new page." },
+      ],
+    });
+
+    const response = await app.fetch(
+      "POST",
+      "https://test.local/api/v1/ai/chat/messages",
+      {
+        method: "POST",
+        headers: TARGET_HEADERS,
+        body: JSON.stringify({
+          message: "create a new page with an image carousel",
+          mdxCatalog: {
+            components: [
+              {
+                name: "Callout",
+                importPath: "@/components/mdx/Callout",
+              },
+            ],
+          },
+        }),
+      },
+    );
+
+    assert.equal(response.status, 200);
+    const payload = (await response.json()) as {
+      data: { proposals?: AiProposal[] };
+    };
+    const proposal = payload.data.proposals?.[0]!;
+    assert.equal(proposal.validation.status, "invalid");
+    if (proposal.validation.status === "invalid") {
+      assert.deepEqual(
+        proposal.validation.errors.map((error) => error.code),
+        ["MDX_UNKNOWN_COMPONENT"],
+      );
+    }
+  });
+
   test("system prompt includes project knowledge block from lookups", async () => {
     const { app } = createTestSetup({
       authorize: authorizeWithScopes(

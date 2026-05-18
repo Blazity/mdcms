@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, test } from "bun:test";
-import type { SchemaRegistryTypeSnapshot } from "@mdcms/shared";
+import type {
+  MdxComponentCatalog,
+  SchemaRegistryTypeSnapshot,
+} from "@mdcms/shared";
 
 import type { AiProposalCandidate } from "./proposal-builder.js";
 import {
+  createMdxCatalogProposalValidator,
   createSchemaAwareProposalValidator,
   type SchemaLookup,
 } from "./validate-proposal.js";
@@ -453,6 +457,151 @@ describe("createSchemaAwareProposalValidator — other kinds", () => {
         promptTemplateId: "chat_tools.v1",
       },
     });
+    assert.equal(result.status, "valid");
+  });
+});
+
+describe("createMdxCatalogProposalValidator", () => {
+  const catalog: MdxComponentCatalog = {
+    components: [
+      {
+        name: "Callout",
+        importPath: "@/components/mdx/Callout",
+        extractedProps: {
+          tone: {
+            type: "enum",
+            required: true,
+            values: ["info", "warning"],
+          },
+        },
+      },
+    ],
+  };
+
+  test("flags create_document body that uses an unregistered MDX component", async () => {
+    const baseValidator = createSchemaAwareProposalValidator({
+      schemaLookup: lookup,
+    });
+    const validator = createMdxCatalogProposalValidator({
+      validator: baseValidator,
+      catalog,
+    });
+    const result = await validator(
+      createCandidate({
+        type: "page",
+        operations: [
+          {
+            op: "create_document",
+            path: "pages/image-carousel",
+            format: "mdx",
+            frontmatter: { title: "Image Carousel" },
+            body: [
+              "<Carousel>",
+              '  <img src="/images/slide1.jpg" alt="Slide 1" />',
+              "</Carousel>",
+            ].join("\n"),
+          },
+        ],
+      }),
+    );
+
+    assert.equal(result.status, "invalid");
+    if (result.status === "invalid") {
+      assert.equal(result.errors[0]?.code, "MDX_UNKNOWN_COMPONENT");
+      assert.equal(result.errors[0]?.path, "operations[0].body");
+    }
+  });
+
+  test("flags missing required props on registered MDX components", async () => {
+    const validator = createMdxCatalogProposalValidator({
+      validator: async () => ({ status: "valid" }),
+      catalog,
+    });
+    const result = await validator({
+      proposalId: "p1",
+      kind: "insert_block",
+      project: "demo",
+      environment: "draft",
+      type: "page",
+      locale: "en",
+      summary: "Insert callout",
+      operations: [{ op: "insert_block", bodyMdx: "<Callout>Hi</Callout>" }],
+      expiresAt: "2026-05-15T00:05:00.000Z",
+      provider: {
+        providerId: "echo",
+        model: "echo-1",
+        promptTemplateId: "chat_tools.v1",
+      },
+    });
+
+    assert.equal(result.status, "invalid");
+    if (result.status === "invalid") {
+      assert.equal(result.errors[0]?.code, "MDX_MISSING_REQUIRED_PROP");
+      assert.equal(result.errors[0]?.path, "operations[0].bodyMdx");
+    }
+  });
+
+  test("accepts registered MDX components with valid props", async () => {
+    const validator = createMdxCatalogProposalValidator({
+      validator: async () => ({ status: "valid" }),
+      catalog,
+    });
+    const result = await validator({
+      proposalId: "p1",
+      kind: "insert_block",
+      project: "demo",
+      environment: "draft",
+      type: "page",
+      locale: "en",
+      summary: "Insert callout",
+      operations: [
+        { op: "insert_block", bodyMdx: '<Callout tone="info">Hi</Callout>' },
+      ],
+      expiresAt: "2026-05-15T00:05:00.000Z",
+      provider: {
+        providerId: "echo",
+        model: "echo-1",
+        promptTemplateId: "chat_tools.v1",
+      },
+    });
+
+    assert.equal(result.status, "valid");
+  });
+
+  test("does not validate props when registered component props were not extracted", async () => {
+    const validator = createMdxCatalogProposalValidator({
+      validator: async () => ({ status: "valid" }),
+      catalog: {
+        components: [
+          {
+            name: "Hero",
+            importPath: "@/components/mdx/Hero",
+          },
+        ],
+      },
+    });
+    const result = await validator({
+      proposalId: "p1",
+      kind: "insert_block",
+      project: "demo",
+      environment: "draft",
+      type: "page",
+      locale: "en",
+      summary: "Insert hero",
+      operations: [
+        {
+          op: "insert_block",
+          bodyMdx: '<Hero title="Launch" eyebrow="News">Hello</Hero>',
+        },
+      ],
+      expiresAt: "2026-05-15T00:05:00.000Z",
+      provider: {
+        providerId: "echo",
+        model: "echo-1",
+        promptTemplateId: "chat_tools.v1",
+      },
+    });
+
     assert.equal(result.status, "valid");
   });
 });
