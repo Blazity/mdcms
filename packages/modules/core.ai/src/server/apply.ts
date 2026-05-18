@@ -484,6 +484,18 @@ export async function applyAiProposalUndo(
       { proposalId: proposal.proposalId, documentId },
     );
   }
+  // Defense-in-depth: the route handler also enforces this, but direct
+  // callers of `applyAiProposalUndo` must not be able to skip the
+  // concurrent-edit guard by simply omitting `postApplyDraftRevision`.
+  // Without an explicit revision we'd silently overwrite whatever
+  // draft state currently exists, which defeats the safety contract
+  // SPEC-014 §Post-Accept Undo Window promises.
+  if (typeof input.postApplyDraftRevision !== "number") {
+    throw aiOutputInvalid(
+      `Undo for ${proposal.kind} requires postApplyDraftRevision.`,
+      { proposalId: proposal.proposalId, documentId },
+    );
+  }
   const existing = await store.getById(scope, documentId, { draft: true });
   if (!existing || existing.isDeleted) {
     throw new RuntimeError({
@@ -493,10 +505,7 @@ export async function applyAiProposalUndo(
       details: { documentId },
     });
   }
-  if (
-    typeof input.postApplyDraftRevision === "number" &&
-    existing.draftRevision !== input.postApplyDraftRevision
-  ) {
+  if (existing.draftRevision !== input.postApplyDraftRevision) {
     throw aiProposalConflict(
       "Document has been edited since the AI apply; refusing to clobber concurrent changes.",
       {

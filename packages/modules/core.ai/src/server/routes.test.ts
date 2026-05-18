@@ -1425,6 +1425,35 @@ describe("mountAiRoutes — proposals/:id/undo", () => {
     assert.equal(last.documentId, "doc_1");
   });
 
+  test("rejects 400 when request documentId mismatches the proposal target", async () => {
+    const setup = createTestSetup({});
+    const proposal = applyProposalShape({ proposalId: "p_docid_mismatch" });
+
+    const response = await setup.app.fetch(
+      "POST",
+      `https://test.local/api/v1/ai/proposals/${proposal.proposalId}/undo`,
+      {
+        method: "POST",
+        headers: TARGET_HEADERS,
+        body: JSON.stringify({
+          proposal,
+          // proposal.documentId is "doc_1" — this points at a doc the
+          // caller might have write access to but never accepted a
+          // proposal against. The route MUST refuse rather than
+          // replay the priorDraft snapshot onto the wrong doc.
+          documentId: "doc_other",
+          schemaHash: "hash_1",
+          priorDraft: { body: "x", frontmatter: {} },
+          postApplyDraftRevision: 4,
+        }),
+      },
+    );
+
+    assert.equal(response.status, 400);
+    const body = (await response.json()) as { code: string };
+    assert.equal(body.code, "INVALID_INPUT");
+  });
+
   test("body undo without postApplyDraftRevision returns 400", async () => {
     const setup = createTestSetup({});
     const proposal = applyProposalShape({ proposalId: "p_undo_norev" });

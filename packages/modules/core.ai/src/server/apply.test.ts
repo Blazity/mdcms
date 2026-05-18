@@ -620,6 +620,35 @@ describe("applyAiProposalUndo", () => {
     assert.equal(state.updateCalls.length, 0);
   });
 
+  test("body-kind undo requires postApplyDraftRevision (defense-in-depth)", async () => {
+    const state: StubStoreState = {
+      document: buildDocument(),
+      updateCalls: [],
+      createCalls: [],
+      softDeleteCalls: [],
+    };
+    const store = createStubStore(state);
+
+    // Caller has a priorDraft but forgot to pass the revision. The
+    // route also rejects this, but `applyAiProposalUndo` is a public
+    // export — its own contract MUST refuse the unsafe replay so a
+    // direct caller can't skip the concurrent-edit guard.
+    await assert.rejects(
+      () =>
+        applyAiProposalUndo({
+          proposal: buildProposal(),
+          documentId: "doc_1",
+          expectedSchemaHash: "hash_undo",
+          priorDraft: { body: "original", frontmatter: {} },
+          actorId: "user_99",
+          store,
+        }),
+      (error) =>
+        error instanceof RuntimeError && error.code === "AI_OUTPUT_INVALID",
+    );
+    assert.equal(state.updateCalls.length, 0);
+  });
+
   test("body-kind undo requires a priorDraft snapshot", async () => {
     const state: StubStoreState = {
       document: buildDocument(),

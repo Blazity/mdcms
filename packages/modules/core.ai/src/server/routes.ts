@@ -966,6 +966,29 @@ async function handleProposalUndo(
       );
     }
 
+    // For every kind except `create_document`, the proposal already
+    // pins the target document. Allowing the request body documentId
+    // to diverge would let a caller replay the proposal's captured
+    // priorDraft (or restore-from-trash, or soft-delete) onto an
+    // unrelated document the caller happens to have write access to.
+    // The proposal's documentId is the canonical target; refuse a
+    // mismatch up front so the audit + mutation paths only ever see
+    // a consistent pair.
+    if (
+      proposal.kind !== "create_document" &&
+      proposal.documentId !== documentId
+    ) {
+      throw invalidInput(
+        "Request documentId does not match the proposal's target document.",
+        {
+          field: "documentId",
+          proposalKind: proposal.kind,
+          requestDocumentId: documentId,
+          proposalDocumentId: proposal.documentId,
+        },
+      );
+    }
+
     // Undo authorization mirrors the action being reverted:
     //   create_document  → content:delete (we are deleting the doc)
     //   delete_document  → content:write  (we are restoring the doc)
