@@ -24,6 +24,13 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./react": {
+      "@mdcms/source": "./src/react.ts",
+      "bun": "./src/react.ts",
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "default": "./dist/react.js"
     }
   },
   "nx": {
@@ -36,7 +43,22 @@
   },
   "dependencies": {
     "@mdcms/shared": "^0.2.0",
+    "@mdx-js/mdx": "^3.1.1",
     "tslib": "^2.3.0"
   },
-  "license": "MIT"
+  "peerDependencies": {
+    "react": "^19.2.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/react": "^19.0.12",
+    "@types/react-dom": "^19.0.5",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  }
 }
