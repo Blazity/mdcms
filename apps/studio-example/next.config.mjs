@@ -6,7 +6,12 @@ const rootDir = dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["@mdcms/studio"],
+  transpilePackages: [
+    "@mdcms/cli",
+    "@mdcms/sdk",
+    "@mdcms/shared",
+    "@mdcms/studio",
+  ],
   turbopack: {
     root: rootDir,
   },

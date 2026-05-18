@@ -6,6 +6,12 @@ Entries are reverse-chronological (newest first).
 
 ---
 
+## 2026-05-18 — list local workspace packages in Next transpilePackages
+
+**Rule:** When the Studio example imports local `@mdcms/*` workspace packages from app routes, include those packages in `next.config.mjs` `transpilePackages`.
+**Why:** Bun installs workspace links under each workspace's own `node_modules`, and Next/Webpack can fail to resolve or transpile packages imported through `mdcms.config.ts` unless the app declares them explicitly.
+**How to apply:** For new direct or server-route imports from local MDCMS workspaces in `apps/studio-example`, update `transpilePackages` and add/adjust a config test before relying on `bun run compose:dev`.
+
 ## 2026-05-01 — rerun loopback CLI tests outside the sandbox
 
 **Rule:** Treat loopback listener failures on port `0` in CLI tests as a likely sandbox artifact before debugging login code.
