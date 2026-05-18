@@ -127,6 +127,7 @@ git clone <repo>
 cd mdcms
 bun install
 docker compose up -d postgres redis minio mailhog
+export DATABASE_URL=postgresql://mdcms:mdcms@localhost:5432/mdcms
 bun run --cwd apps/server db:migrate
 MDCMS_DEMO_ENVIRONMENT=staging bun run --cwd apps/server demo:seed
 MDCMS_DEMO_ENVIRONMENT=production bun run --cwd apps/server demo:seed

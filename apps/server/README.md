@@ -12,10 +12,11 @@ The steps below are for contributors working inside the monorepo.
 
 ```bash
 docker compose up -d postgres redis minio mailhog
+export DATABASE_URL=postgresql://mdcms:mdcms@localhost:5432/mdcms
 bun run --cwd apps/server db:migrate
 ```
 
-This starts PostgreSQL, Redis, MinIO, and Mailhog for a local server process.
+This starts PostgreSQL, Redis, MinIO, and Mailhog for a local server process, then points local server commands at the Compose PostgreSQL instance.
 
 ### Start the server
 

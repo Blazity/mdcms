@@ -28,7 +28,8 @@ Runtime, dependencies, and infrastructure. Update when any of them change.
 
 ## Infrastructure (dev)
 
-- Host-process development uses `docker compose up -d postgres redis minio mailhog` for infrastructure, then `bun run dev` for the server, Studio watcher, and Studio example app.
+- Root README development uses `bun run compose:dev` for the full containerized contributor loop.
+- Host-process development uses `docker compose up -d postgres redis minio mailhog`, exports `DATABASE_URL=postgresql://mdcms:mdcms@localhost:5432/mdcms`, then runs `bun run dev` for the server, Studio watcher, and Studio example app.
 - `docker compose up -d --build` starts the default containerized server on port 4000 and must not be combined with `bun run dev`.
 - Server runs on port 4000.
 

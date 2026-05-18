@@ -35,6 +35,7 @@ For a clean re-run during debugging:
 ```bash
 docker compose down -v
 docker compose up -d postgres redis minio mailhog
+export DATABASE_URL=postgresql://mdcms:mdcms@localhost:5432/mdcms
 bun run --cwd apps/server db:migrate
 ```
 
