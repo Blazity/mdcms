@@ -52,6 +52,16 @@ export type AiApplyContentStore = {
     scope: AiApplyContentScope,
     documentId: string,
   ): Promise<AiApplyContentDocument>;
+  /**
+   * Restore a previously soft-deleted document back to draft state.
+   * Mirrors `POST /api/v1/content/:documentId/restore` with
+   * `targetStatus=draft`. Used by the post-accept undo path for
+   * `delete_document` proposals.
+   */
+  restore?(
+    scope: AiApplyContentScope,
+    documentId: string,
+  ): Promise<AiApplyContentDocument>;
 };
 
 export type AiApplyInput = {
@@ -67,6 +77,53 @@ export type AiApplyInput = {
    */
   actorId: string;
   store: AiApplyContentStore;
+};
+
+/**
+ * Snapshot of the pre-apply draft state captured at the moment of
+ * write. Returned by `applyAiProposal` for body/frontmatter mutating
+ * kinds so the post-accept undo path can replay the prior values
+ * without storing them server-side. The shape is intentionally simple
+ * — body and frontmatter are the only fields content edits touch.
+ */
+export type AiApplyPriorDraft = {
+  body: string;
+  frontmatter: Record<string, unknown>;
+};
+
+export type AiApplyResult = {
+  document: AiApplyContentDocument;
+  /**
+   * Present only for `replace_selection`, `insert_block`, and
+   * `update_frontmatter` proposals. The post-accept undo endpoint
+   * replays this payload through `PUT /api/v1/content/:documentId`.
+   */
+  priorDraft?: AiApplyPriorDraft;
+};
+
+export type AiUndoInput = {
+  proposal: AiProposal;
+  documentId: string;
+  expectedSchemaHash: string;
+  /**
+   * Caller-supplied draft snapshot to replay for body/frontmatter
+   * kinds. Required for `replace_selection`, `insert_block`, and
+   * `update_frontmatter`; ignored for create/delete kinds.
+   */
+  priorDraft?: AiApplyPriorDraft;
+  /**
+   * Post-apply draft revision (the revision the apply call produced).
+   * The undo path rejects with `AI_PROPOSAL_CONFLICT` when the live
+   * draft has advanced past this — the user edited the doc inside the
+   * 6-second window and a blind replay would clobber their work.
+   */
+  postApplyDraftRevision?: number;
+  actorId: string;
+  store: AiApplyContentStore;
+};
+
+export type AiUndoResult = {
+  document: AiApplyContentDocument;
 };
 
 function aiProposalConflict(
@@ -188,7 +245,7 @@ function mergeFrontmatter(
  */
 export async function applyAiProposal(
   input: AiApplyInput,
-): Promise<AiApplyContentDocument> {
+): Promise<AiApplyResult> {
   const { proposal, expectedSchemaHash, store } = input;
   // `actorId` is intentionally not destructured into a local — the
   // store calls below fall through to DEFAULT_ACTOR for createdBy/
@@ -209,7 +266,7 @@ export async function applyAiProposal(
       );
     }
 
-    return await store.create(
+    const document = await store.create(
       scope,
       {
         type: proposal.type,
@@ -227,6 +284,7 @@ export async function applyAiProposal(
       },
       { expectedSchemaHash },
     );
+    return { document };
   }
 
   if (!proposal.documentId) {
@@ -298,8 +356,18 @@ export async function applyAiProposal(
     // here because content paths can shift via rename without affecting
     // identity, and we already proved we're deleting the doc the model
     // intended via the existing draft load.
-    return await store.softDelete(scope, proposal.documentId);
+    const document = await store.softDelete(scope, proposal.documentId);
+    return { document };
   }
+
+  // Snapshot the pre-apply body and frontmatter before the write so the
+  // post-accept undo path can replay the prior state without persisting
+  // it server-side. `existing.frontmatter` is captured by reference here
+  // — the store guarantees frontmatter is a fresh object per fetch.
+  const priorDraft: AiApplyPriorDraft = {
+    body: existing.body,
+    frontmatter: { ...existing.frontmatter },
+  };
 
   let nextBody = existing.body;
   let nextFrontmatter = existing.frontmatter;
@@ -317,7 +385,7 @@ export async function applyAiProposal(
     );
   }
 
-  return await store.update(
+  const document = await store.update(
     scope,
     proposal.documentId,
     {
@@ -331,4 +399,125 @@ export async function applyAiProposal(
       expectedDraftRevision: proposal.baseDraftRevision,
     },
   );
+  return { document, priorDraft };
+}
+
+/**
+ * Reverse a previously applied AI proposal. Fans out per kind:
+ *
+ * - `create_document` → soft-delete the document the apply call created.
+ * - `delete_document` → restore the soft-deleted document.
+ * - `replace_selection` / `insert_block` / `update_frontmatter` →
+ *   re-write the document body and frontmatter to the snapshot the
+ *   apply call captured.
+ *
+ * The undo path rejects with `AI_PROPOSAL_CONFLICT` (409) when the live
+ * draft revision has moved past `postApplyDraftRevision` for body /
+ * frontmatter kinds — a concurrent edit landed inside the 6-second
+ * window and a blind replay would clobber the user's work.
+ */
+export async function applyAiProposalUndo(
+  input: AiUndoInput,
+): Promise<AiUndoResult> {
+  const { proposal, documentId, expectedSchemaHash, store } = input;
+  void input.actorId; // audit-only — store mutations use DEFAULT_ACTOR.
+  const scope: AiApplyContentScope = {
+    project: proposal.project,
+    environment: proposal.environment,
+  };
+
+  if (proposal.kind === "create_document") {
+    // Soft-delete the newly created document. The store's soft-delete
+    // surface is idempotent in practice (already-deleted → no-op), but
+    // we still load first so we can report a clean NOT_FOUND for a
+    // stale undo (e.g. user manually deleted in another tab).
+    const existing = await store.getById(scope, documentId, { draft: true });
+    if (!existing || existing.isDeleted) {
+      throw new RuntimeError({
+        code: "NOT_FOUND",
+        message: "Document not found or already deleted.",
+        statusCode: 404,
+        details: { documentId },
+      });
+    }
+    const document = await store.softDelete(scope, documentId);
+    return { document };
+  }
+
+  if (proposal.kind === "delete_document") {
+    if (!store.restore) {
+      throw new RuntimeError({
+        code: "AI_PROPOSAL_CONFLICT",
+        message:
+          "Content store does not support restore — delete_document undo unavailable in this deployment.",
+        statusCode: 409,
+        details: { documentId },
+      });
+    }
+    // `draft: true` returns the head row regardless of soft-delete
+    // state, which is exactly what restore-from-trash needs.
+    const existing = await store.getById(scope, documentId, {
+      draft: true,
+    });
+    if (!existing) {
+      throw new RuntimeError({
+        code: "NOT_FOUND",
+        message: "Document not found.",
+        statusCode: 404,
+        details: { documentId },
+      });
+    }
+    if (!existing.isDeleted) {
+      throw aiProposalConflict(
+        "Document is not in a deleted state; nothing to restore.",
+        { documentId, proposalId: proposal.proposalId },
+      );
+    }
+    const document = await store.restore(scope, documentId);
+    return { document };
+  }
+
+  // Body / frontmatter kinds: replay the captured snapshot.
+  if (!input.priorDraft) {
+    throw aiOutputInvalid(
+      `Undo for ${proposal.kind} requires a priorDraft snapshot.`,
+      { proposalId: proposal.proposalId, documentId },
+    );
+  }
+  const existing = await store.getById(scope, documentId, { draft: true });
+  if (!existing || existing.isDeleted) {
+    throw new RuntimeError({
+      code: "NOT_FOUND",
+      message: "Document not found.",
+      statusCode: 404,
+      details: { documentId },
+    });
+  }
+  if (
+    typeof input.postApplyDraftRevision === "number" &&
+    existing.draftRevision !== input.postApplyDraftRevision
+  ) {
+    throw aiProposalConflict(
+      "Document has been edited since the AI apply; refusing to clobber concurrent changes.",
+      {
+        proposalId: proposal.proposalId,
+        documentId,
+        postApplyDraftRevision: input.postApplyDraftRevision,
+        currentDraftRevision: existing.draftRevision,
+      },
+    );
+  }
+  const document = await store.update(
+    scope,
+    documentId,
+    {
+      body: input.priorDraft.body,
+      frontmatter: input.priorDraft.frontmatter,
+    },
+    {
+      expectedSchemaHash,
+      expectedDraftRevision: existing.draftRevision,
+    },
+  );
+  return { document };
 }

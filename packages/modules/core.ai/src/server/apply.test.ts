@@ -147,7 +147,13 @@ describe("applyAiProposal", () => {
     assert.equal(call.payload.updatedBy, undefined);
     assert.equal(call.options.expectedDraftRevision, 4);
     assert.equal(call.options.expectedSchemaHash, "hash_1");
-    assert.equal(result.body, "Hi there!");
+    assert.equal(result.document.body, "Hi there!");
+    assert.ok(
+      result.priorDraft,
+      "replace_selection apply must return a priorDraft snapshot for undo",
+    );
+    assert.equal(result.priorDraft!.body, "Welcome to the site.");
+    assert.deepEqual(result.priorDraft!.frontmatter, { title: "Welcome" });
   });
 
   test("conflict when original selection text is missing in body", async () => {
@@ -279,7 +285,7 @@ describe("applyAiProposal", () => {
     };
     const store = createStubStore(state);
 
-    const document = await applyAiProposal({
+    const result = await applyAiProposal({
       proposal: buildProposal({
         proposalId: "p_3",
         kind: "delete_document",
@@ -300,7 +306,12 @@ describe("applyAiProposal", () => {
     assert.equal(state.createCalls.length, 0);
     assert.equal(state.softDeleteCalls.length, 1);
     assert.equal(state.softDeleteCalls[0]!.documentId, "doc_1");
-    assert.equal(document.isDeleted, true);
+    assert.equal(result.document.isDeleted, true);
+    assert.equal(
+      result.priorDraft,
+      undefined,
+      "delete_document apply does not return a body/frontmatter priorDraft",
+    );
   });
 
   test("delete_document fails when the document does not exist", async () => {

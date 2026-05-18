@@ -363,6 +363,8 @@ export function createServerRequestHandlerWithModules(
         contentStore.create(scope, payload, opts),
       softDelete: (scope, documentId) =>
         contentStore.softDelete(scope, documentId),
+      restore: (scope, documentId) =>
+        contentStore.restore(scope, documentId),
     },
     contextResolver: {
       loadDraftContext: async ({

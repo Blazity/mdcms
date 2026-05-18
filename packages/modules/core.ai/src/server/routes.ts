@@ -12,7 +12,12 @@ import {
   type ContentDocumentResponse,
 } from "@mdcms/shared";
 
-import { applyAiProposal, type AiApplyContentStore } from "./apply.js";
+import {
+  applyAiProposal,
+  applyAiProposalUndo,
+  type AiApplyContentStore,
+  type AiApplyPriorDraft,
+} from "./apply.js";
 import { buildAuditRecord, type AiAuditRecord } from "./audit.js";
 import {
   getOrchestratorFailureAudit,
@@ -754,12 +759,13 @@ async function handleProposalApply(
     });
     ensureSchemaHashMatch(expected, schemaHash);
 
-    const document = await applyAiProposal({
+    const applyResult = await applyAiProposal({
       proposal,
       expectedSchemaHash: schemaHash,
       actorId: aiAuth.actorId,
       store: options.contentStore,
     });
+    const { document, priorDraft } = applyResult;
 
     // Mark accepted in the store only when we sourced the proposal
     // from the store. Client-supplied chat proposals don't have a store
@@ -781,7 +787,11 @@ async function handleProposalApply(
 
     return new Response(
       JSON.stringify({
-        data: { proposal: acceptedProposal, document },
+        data: {
+          proposal: acceptedProposal,
+          document,
+          ...(priorDraft ? { priorDraft } : {}),
+        },
       }),
       {
         status: 200,
@@ -828,6 +838,172 @@ async function handleProposalApply(
       );
     }
 
+    return toRuntimeErrorResponse(error);
+  }
+}
+
+export type ProposalUndoRequestBody = {
+  /** Wire-shape proposal body (same as apply). */
+  proposal?: unknown;
+  /** The document the apply call produced / mutated. */
+  documentId?: unknown;
+  /** Schema hash for the project, threaded the same as apply. */
+  schemaHash?: unknown;
+  /** Captured pre-apply body+frontmatter for body/frontmatter kinds. */
+  priorDraft?: unknown;
+  /** Post-apply draft revision for conflict detection on edit kinds. */
+  postApplyDraftRevision?: unknown;
+};
+
+function ensurePriorDraftPayload(value: unknown): AiApplyPriorDraft | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object") {
+    throw invalidInput("priorDraft must be an object.", { field: "priorDraft" });
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.body !== "string") {
+    throw invalidInput("priorDraft.body must be a string.", {
+      field: "priorDraft.body",
+    });
+  }
+  if (
+    typeof record.frontmatter !== "object" ||
+    record.frontmatter === null ||
+    Array.isArray(record.frontmatter)
+  ) {
+    throw invalidInput("priorDraft.frontmatter must be a plain object.", {
+      field: "priorDraft.frontmatter",
+    });
+  }
+  return {
+    body: record.body,
+    frontmatter: record.frontmatter as Record<string, unknown>,
+  };
+}
+
+async function handleProposalUndo(
+  request: Request,
+  proposalId: string,
+  options: MountAiRoutesOptions,
+): Promise<Response> {
+  const occurredAt = new Date();
+  let parsedProposal: AiProposal | undefined;
+  let resolvedActorId: string | undefined;
+
+  try {
+    await options.requireCsrf(request);
+    assertRequestTargetRouting(request, "project_environment");
+    const body = await readJsonBody<ProposalUndoRequestBody>(request);
+    const schemaHash = ensureNonEmptyString(body.schemaHash, "schemaHash");
+    const documentId = ensureNonEmptyString(body.documentId, "documentId");
+    const postApplyDraftRevision = ensureOptionalNonNegativeInteger(
+      body.postApplyDraftRevision,
+      "postApplyDraftRevision",
+    );
+
+    if (body.proposal === undefined) {
+      throw invalidInput("Undo requires the wire-shape proposal body.", {
+        field: "proposal",
+      });
+    }
+    const parsed = aiProposalSchema.safeParse(body.proposal);
+    if (!parsed.success) {
+      throw new RuntimeError({
+        code: "INVALID_INPUT",
+        message: "Proposal body failed schema validation.",
+        statusCode: 400,
+        details: {
+          issues: parsed.error.issues.map((issue) => ({
+            path: issue.path.join("."),
+            message: issue.message,
+          })),
+        },
+      });
+    }
+    if (parsed.data.proposalId !== proposalId) {
+      throw new RuntimeError({
+        code: "INVALID_INPUT",
+        message: "Proposal body proposalId does not match the URL path parameter.",
+        statusCode: 400,
+        details: {
+          urlProposalId: proposalId,
+          bodyProposalId: parsed.data.proposalId,
+        },
+      });
+    }
+    const proposal = parsed.data;
+    parsedProposal = proposal;
+
+    // Undo authorization mirrors the action being reverted:
+    //   create_document  → content:delete (we are deleting the doc)
+    //   delete_document  → content:write  (we are restoring the doc)
+    //   edit kinds       → content:write
+    const requiredScope =
+      proposal.kind === "create_document" ? "content:delete" : "content:write";
+    const aiAuth = await options.authorize(request, {
+      requiredScope,
+      project: proposal.project,
+      environment: proposal.environment,
+    });
+    resolvedActorId = aiAuth.actorId;
+
+    const expected = await options.schemaHashLookup({
+      project: proposal.project,
+      environment: proposal.environment,
+    });
+    ensureSchemaHashMatch(expected, schemaHash);
+
+    const priorDraft = ensurePriorDraftPayload(body.priorDraft);
+
+    const undoResult = await applyAiProposalUndo({
+      proposal,
+      documentId,
+      expectedSchemaHash: schemaHash,
+      actorId: aiAuth.actorId,
+      store: options.contentStore,
+      ...(priorDraft ? { priorDraft } : {}),
+      ...(typeof postApplyDraftRevision === "number"
+        ? { postApplyDraftRevision }
+        : {}),
+    });
+
+    emitAudit(
+      options.emitAudit,
+      buildLifecycleAudit({
+        proposal,
+        outcome: "undone",
+        occurredAt,
+        actorId: aiAuth.actorId,
+      }),
+    );
+
+    return new Response(
+      JSON.stringify({
+        data: { proposal, document: undoResult.document },
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      },
+    );
+  } catch (error) {
+    if (parsedProposal) {
+      const code =
+        error instanceof RuntimeError ? error.code : "INTERNAL_ERROR";
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      emitAudit(
+        options.emitAudit,
+        buildLifecycleAudit({
+          proposal: parsedProposal,
+          outcome: "undo_failed",
+          occurredAt,
+          ...(resolvedActorId ? { actorId: resolvedActorId } : {}),
+          errorCode: code,
+          errorMessage,
+        }),
+      );
+    }
     return toRuntimeErrorResponse(error);
   }
 }
@@ -1986,6 +2162,16 @@ export function mountAiRoutes(
     "/api/v1/ai/proposals/:proposalId/reject",
     ({ request, params }: any) =>
       handleProposalReject(
+        request,
+        ensureNonEmptyString(params.proposalId, "proposalId"),
+        options,
+      ),
+  );
+
+  aiApp.post?.(
+    "/api/v1/ai/proposals/:proposalId/undo",
+    ({ request, params }: any) =>
+      handleProposalUndo(
         request,
         ensureNonEmptyString(params.proposalId, "proposalId"),
         options,
