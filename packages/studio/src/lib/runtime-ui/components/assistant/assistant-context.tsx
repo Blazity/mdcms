@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { RuntimeError } from "@mdcms/shared";
+import { RuntimeError, type MdxComponentCatalog } from "@mdcms/shared";
 
 import type {
   StudioAiChatMessageRequest,
@@ -1236,6 +1236,12 @@ export type AssistantProviderProps = {
    */
   schemaHashFetcher?: () => Promise<string | null>;
   /**
+   * Active host-supplied MDX component catalog. Sent with chat turns so
+   * the server can validate generated MDX proposals against the same
+   * component set the embedded Studio can render locally.
+   */
+  mdxCatalog?: MdxComponentCatalog;
+  /**
    * localStorage key for persisting the thread store across reloads.
    * When omitted, persistence is disabled (tests / storybook). The admin
    * layout passes a key scoped to `<project>:<environment>` so projects
@@ -1295,6 +1301,7 @@ export function AssistantProvider({
   initialMode = "closed",
   api,
   schemaHashFetcher,
+  mdxCatalog,
   storageKey,
 }: AssistantProviderProps) {
   const [state, dispatch] = React.useReducer(reducer, undefined, () => {
@@ -1491,6 +1498,7 @@ export function AssistantProvider({
           ? { conversationId: input.conversationId }
           : {}),
         ...requestContext,
+        ...(mdxCatalog ? { mdxCatalog } : {}),
         ...(input.rejectedProposalId
           ? { rejectedProposalId: input.rejectedProposalId }
           : {}),
@@ -1624,7 +1632,7 @@ export function AssistantProvider({
         }
       }
     },
-    [appendErrorTurn, state.activeThreadId],
+    [appendErrorTurn, mdxCatalog, state.activeThreadId],
   );
 
   const value = React.useMemo<AssistantContextValue>(

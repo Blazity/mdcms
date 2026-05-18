@@ -14,7 +14,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import type { StudioMountContext } from "@mdcms/shared";
+import type { MdxComponentCatalog, StudioMountContext } from "@mdcms/shared";
 
 import { createStudioQueryClient } from "../../query-client.js";
 import { ToastProvider } from "../../components/toast.js";
@@ -549,12 +549,17 @@ function AdminLayoutInner({
           return response.schemaHash ?? null;
         }
       : undefined;
+  const mdxCatalog = useMemo<MdxComponentCatalog>(
+    () => context.mdx?.catalog ?? { components: [] },
+    [context.mdx?.catalog],
+  );
 
   return (
     <ToastProvider>
       <AssistantProvider
         api={aiRouteApi}
         schemaHashFetcher={schemaHashFetcher}
+        mdxCatalog={mdxCatalog}
         storageKey={
           context.documentRoute && activeEnvironment
             ? `mdcms-assistant-v1:${context.documentRoute.project}:${activeEnvironment}`

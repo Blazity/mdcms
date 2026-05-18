@@ -4,6 +4,8 @@ import type {
 } from "./proposal-builder.js";
 import type {
   AiProposalValidation,
+  MdxComponentCatalog,
+  MdxExtractedProp,
   SchemaRegistryFieldSnapshot,
   SchemaRegistryTypeSnapshot,
 } from "@mdcms/shared";
@@ -105,9 +107,61 @@ type ValidationError = {
   path?: string;
 };
 
+type MdxValidationTarget = {
+  source: string;
+  path: string;
+};
+
+type MdxTag = {
+  name: string;
+  attrs: Record<string, MdxAttributeValue>;
+  selfClosing: boolean;
+};
+
+type MdxAttributeValue =
+  | { kind: "boolean"; value: boolean }
+  | { kind: "string"; value: string }
+  | { kind: "expression"; value: string };
+
 /** RFC4122-ish UUID literal — mirrors the apply-time check in `reference-validation.ts`. */
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Wrap an existing proposal validator with MDX component-catalog
+ * validation. The base validator remains responsible for content type,
+ * frontmatter, path, and reference checks; this layer rejects generated
+ * MDX that cannot be grounded in Studio's active host-supplied catalog.
+ */
+export function createMdxCatalogProposalValidator(input: {
+  validator?: AiProposalValidator;
+  catalog: MdxComponentCatalog;
+}): AiProposalValidator {
+  const { validator, catalog } = input;
+
+  return async (candidate) => {
+    const base = validator
+      ? await validator(candidate)
+      : ({ status: "valid" } satisfies AiProposalValidation);
+    const mdxErrors = validateMdxTargetsAgainstCatalog(
+      collectMdxTargets(candidate),
+      catalog,
+    );
+
+    if (mdxErrors.length === 0) {
+      return base;
+    }
+
+    if (base.status === "invalid") {
+      return {
+        status: "invalid",
+        errors: [...base.errors, ...mdxErrors],
+      };
+    }
+
+    return { status: "invalid", errors: mdxErrors };
+  };
+}
 
 async function validateCreateDocument(
   candidate: AiProposalCandidate,
@@ -498,6 +552,402 @@ function expectedJsKind(
     default:
       return undefined;
   }
+}
+
+function collectMdxTargets(
+  candidate: AiProposalCandidate,
+): MdxValidationTarget[] {
+  const targets: MdxValidationTarget[] = [];
+
+  candidate.operations.forEach((operation, index) => {
+    if (operation.op === "create_document") {
+      targets.push({
+        source: operation.body,
+        path: `operations[${index}].body`,
+      });
+      return;
+    }
+
+    if (operation.op === "insert_block") {
+      targets.push({
+        source: operation.bodyMdx,
+        path: `operations[${index}].bodyMdx`,
+      });
+      return;
+    }
+
+    if (operation.op === "replace_selection") {
+      targets.push({
+        source: operation.replacementText,
+        path: `operations[${index}].replacementText`,
+      });
+    }
+  });
+
+  return targets;
+}
+
+function validateMdxTargetsAgainstCatalog(
+  targets: readonly MdxValidationTarget[],
+  catalog: MdxComponentCatalog,
+): ValidationError[] {
+  if (targets.length === 0) return [];
+
+  const componentsByName = new Map(
+    catalog.components.map((component) => [component.name, component]),
+  );
+  const errors: ValidationError[] = [];
+
+  for (const target of targets) {
+    const tags = extractMdxComponentTags(target.source);
+    for (const tag of tags) {
+      const component = componentsByName.get(tag.name);
+      if (!component) {
+        errors.push({
+          code: "MDX_UNKNOWN_COMPONENT",
+          message: `<${tag.name}> is not registered in the active MDX component catalog.`,
+          path: target.path,
+        });
+        continue;
+      }
+
+      const props = component.extractedProps;
+      if (!props) {
+        continue;
+      }
+
+      for (const [propName, propSchema] of Object.entries(props)) {
+        if (
+          propName === "children" ||
+          !propSchema.required ||
+          tag.attrs[propName] !== undefined
+        ) {
+          continue;
+        }
+        errors.push({
+          code: "MDX_MISSING_REQUIRED_PROP",
+          message: `<${tag.name}> is missing required prop "${propName}".`,
+          path: target.path,
+        });
+      }
+
+      for (const [propName, attr] of Object.entries(tag.attrs)) {
+        const propSchema = props[propName];
+        if (!propSchema) {
+          errors.push({
+            code: "MDX_UNKNOWN_PROP",
+            message: `<${tag.name}> includes prop "${propName}" which is not defined in the component catalog.`,
+            path: target.path,
+          });
+          continue;
+        }
+        const error = validateMdxPropValue(
+          tag.name,
+          propName,
+          attr,
+          propSchema,
+        );
+        if (error) {
+          errors.push({ ...error, path: target.path });
+        }
+      }
+    }
+  }
+
+  return errors;
+}
+
+function extractMdxComponentTags(source: string): MdxTag[] {
+  const stripped = stripMarkdownCode(source);
+  const tags: MdxTag[] = [];
+  let index = 0;
+
+  while (index < stripped.length) {
+    const start = stripped.indexOf("<", index);
+    if (start < 0) break;
+
+    const next = stripped[start + 1];
+    if (
+      next === undefined ||
+      next === "/" ||
+      next === "!" ||
+      next === "?" ||
+      next === ">"
+    ) {
+      index = start + 1;
+      continue;
+    }
+
+    const close = findTagClose(stripped, start + 1);
+    if (close < 0) break;
+
+    const raw = stripped.slice(start + 1, close).trim();
+    const parsed = parseOpeningMdxTag(raw);
+    if (parsed) tags.push(parsed);
+
+    index = close + 1;
+  }
+
+  return tags;
+}
+
+function stripMarkdownCode(source: string): string {
+  const lines = source.split(/\r?\n/);
+  let inFence = false;
+  const strippedLines = lines.map((line) => {
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      return "";
+    }
+    return inFence ? "" : line;
+  });
+
+  return strippedLines.join("\n").replace(/`[^`\n]*`/g, "");
+}
+
+function findTagClose(source: string, start: number): number {
+  let quote: '"' | "'" | null = null;
+  let braceDepth = 0;
+
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    const previous = source[index - 1];
+
+    if (quote) {
+      if (char === quote && previous !== "\\") quote = null;
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+
+    if (char === "{") {
+      braceDepth += 1;
+      continue;
+    }
+
+    if (char === "}") {
+      braceDepth = Math.max(0, braceDepth - 1);
+      continue;
+    }
+
+    if (char === ">" && braceDepth === 0) return index;
+  }
+
+  return -1;
+}
+
+function parseOpeningMdxTag(raw: string): MdxTag | undefined {
+  const selfClosing = /\/\s*$/.test(raw);
+  const cleaned = selfClosing ? raw.replace(/\/\s*$/, "").trimEnd() : raw;
+  const match = /^([A-Za-z][A-Za-z0-9_.-]*)(\s[\s\S]*)?$/.exec(cleaned);
+  if (!match) return undefined;
+
+  const name = match[1]!;
+  if (!isMdxComponentName(name)) return undefined;
+
+  return {
+    name,
+    attrs: parseMdxAttributes(match[2] ?? ""),
+    selfClosing,
+  };
+}
+
+function isMdxComponentName(name: string): boolean {
+  const [head] = name.split(".");
+  return Boolean(head && /^[A-Z]/.test(head));
+}
+
+function parseMdxAttributes(raw: string): Record<string, MdxAttributeValue> {
+  const attrs: Record<string, MdxAttributeValue> = {};
+  let index = 0;
+
+  while (index < raw.length) {
+    while (/\s/.test(raw[index] ?? "")) index += 1;
+    if (index >= raw.length) break;
+
+    const nameStart = index;
+    while (/[A-Za-z0-9_:$.-]/.test(raw[index] ?? "")) index += 1;
+    const name = raw.slice(nameStart, index);
+    if (!name) break;
+
+    while (/\s/.test(raw[index] ?? "")) index += 1;
+    if (raw[index] !== "=") {
+      attrs[name] = { kind: "boolean", value: true };
+      continue;
+    }
+
+    index += 1;
+    while (/\s/.test(raw[index] ?? "")) index += 1;
+    const parsed = readMdxAttributeValue(raw, index);
+    if (!parsed) break;
+    attrs[name] = parsed.value;
+    index = parsed.nextIndex;
+  }
+
+  return attrs;
+}
+
+function readMdxAttributeValue(
+  raw: string,
+  index: number,
+):
+  | {
+      value: MdxAttributeValue;
+      nextIndex: number;
+    }
+  | undefined {
+  const first = raw[index];
+  if (first === '"' || first === "'") {
+    let cursor = index + 1;
+    let value = "";
+    while (cursor < raw.length) {
+      const char = raw[cursor];
+      if (char === first && raw[cursor - 1] !== "\\") {
+        return {
+          value: { kind: "string", value },
+          nextIndex: cursor + 1,
+        };
+      }
+      value += char;
+      cursor += 1;
+    }
+    return undefined;
+  }
+
+  if (first === "{") {
+    let cursor = index + 1;
+    let depth = 1;
+    let quote: '"' | "'" | null = null;
+    let value = "";
+    while (cursor < raw.length) {
+      const char = raw[cursor];
+      const previous = raw[cursor - 1];
+      if (quote) {
+        if (char === quote && previous !== "\\") quote = null;
+        value += char;
+        cursor += 1;
+        continue;
+      }
+      if (char === '"' || char === "'") {
+        quote = char;
+        value += char;
+        cursor += 1;
+        continue;
+      }
+      if (char === "{") depth += 1;
+      if (char === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          return {
+            value: { kind: "expression", value: value.trim() },
+            nextIndex: cursor + 1,
+          };
+        }
+      }
+      value += char;
+      cursor += 1;
+    }
+    return undefined;
+  }
+
+  const start = index;
+  while (!/\s/.test(raw[index] ?? "") && raw[index] !== undefined) index += 1;
+  return {
+    value: { kind: "string", value: raw.slice(start, index) },
+    nextIndex: index,
+  };
+}
+
+function validateMdxPropValue(
+  componentName: string,
+  propName: string,
+  attr: MdxAttributeValue,
+  prop: MdxExtractedProp,
+): Omit<ValidationError, "path"> | undefined {
+  const value = normalizeMdxAttributeValue(attr);
+  const actual = jsKindOf(value);
+
+  switch (prop.type) {
+    case "string":
+    case "date":
+      if (typeof value !== "string") {
+        return invalidMdxPropType(componentName, propName, prop.type, actual);
+      }
+      if (prop.type === "date" && Number.isNaN(Date.parse(value))) {
+        return {
+          code: "MDX_INVALID_PROP_TYPE",
+          message: `<${componentName}> prop "${propName}" must be a valid date string.`,
+        };
+      }
+      return undefined;
+    case "number":
+      return typeof value === "number"
+        ? undefined
+        : invalidMdxPropType(componentName, propName, "number", actual);
+    case "boolean":
+      return typeof value === "boolean"
+        ? undefined
+        : invalidMdxPropType(componentName, propName, "boolean", actual);
+    case "enum":
+      if (typeof value !== "string" || !prop.values.includes(value)) {
+        return {
+          code: "MDX_INVALID_PROP_TYPE",
+          message: `<${componentName}> prop "${propName}" must be one of: ${prop.values.join(", ")}.`,
+        };
+      }
+      return undefined;
+    case "array":
+      if (
+        !Array.isArray(value) ||
+        !value.every((item) => typeof item === prop.items)
+      ) {
+        return invalidMdxPropType(
+          componentName,
+          propName,
+          `${prop.items}[]`,
+          actual,
+        );
+      }
+      return undefined;
+    case "json":
+      return value !== undefined
+        ? undefined
+        : invalidMdxPropType(componentName, propName, "json", actual);
+    case "rich-text":
+      return undefined;
+  }
+}
+
+function normalizeMdxAttributeValue(attr: MdxAttributeValue): unknown {
+  if (attr.kind === "boolean") return attr.value;
+  if (attr.kind === "string") return attr.value;
+
+  const expression = attr.value.trim();
+  if (expression === "true") return true;
+  if (expression === "false") return false;
+  if (/^-?\d+(\.\d+)?$/.test(expression)) return Number(expression);
+  const stringMatch = /^["']([\s\S]*)["']$/.exec(expression);
+  if (stringMatch) return stringMatch[1];
+  try {
+    return JSON.parse(expression);
+  } catch {
+    return undefined;
+  }
+}
+
+function invalidMdxPropType(
+  componentName: string,
+  propName: string,
+  expected: string,
+  actual: string,
+): Omit<ValidationError, "path"> {
+  return {
+    code: "MDX_INVALID_PROP_TYPE",
+    message: `<${componentName}> prop "${propName}" expects ${expected} but received ${actual}.`,
+  };
 }
 
 function jsKindOf(value: unknown): string {

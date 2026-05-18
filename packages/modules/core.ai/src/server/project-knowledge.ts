@@ -1,4 +1,5 @@
 import type {
+  MdxComponentCatalog,
   SchemaRegistryFieldSnapshot,
   SchemaRegistryTypeSnapshot,
 } from "@mdcms/shared";
@@ -9,6 +10,7 @@ export type ProjectKnowledgeInput = {
   registeredTypes: SchemaRegistryTypeSnapshot[];
   supportedLocales: string[];
   currentUser?: { id: string; displayName: string };
+  mdxCatalog?: MdxComponentCatalog;
 };
 
 /**
@@ -66,6 +68,25 @@ export function renderProjectKnowledgeBlock(
   if (input.supportedLocales.length > 0) {
     lines.push("", "### Supported locales");
     lines.push(input.supportedLocales.join(", "));
+  }
+
+  if (input.mdxCatalog) {
+    lines.push("", "### Registered MDX components");
+    if (input.mdxCatalog.components.length === 0) {
+      lines.push(
+        "No MDX components are registered. Do not generate JSX component tags in Markdown or MDX bodies.",
+      );
+    } else {
+      lines.push(
+        "Use only these component names when generating MDX. Any other component name fails validation.",
+      );
+      const sortedComponents = [...input.mdxCatalog.components].sort((a, b) =>
+        a.name.localeCompare(b.name),
+      );
+      for (const component of sortedComponents) {
+        lines.push(...renderMdxComponentEntry(component));
+      }
+    }
   }
 
   return lines.join("\n");
@@ -172,4 +193,32 @@ function renderKindDescriptor(
     return "<nested object> — call get_entry on a sibling for the full shape";
   }
   return field.kind;
+}
+
+function renderMdxComponentEntry(
+  component: MdxComponentCatalog["components"][number],
+): string[] {
+  const lines = [`- **${sanitizeForPrompt(component.name)}**`];
+  if (component.description) {
+    lines[0] += ` — ${sanitizeUserText(component.description)}`;
+  }
+
+  const propEntries = Object.entries(component.extractedProps ?? {});
+  if (propEntries.length === 0) {
+    lines.push("  Props: none declared.");
+    return lines;
+  }
+
+  lines.push("  Props:");
+  for (const [name, prop] of propEntries) {
+    const detail =
+      prop.type === "enum"
+        ? `enum ${prop.values.map((value) => JSON.stringify(value)).join(" | ")}`
+        : prop.type === "array"
+          ? `array of ${prop.items}`
+          : prop.type;
+    const flags = prop.required ? "required" : "optional";
+    lines.push(`  - ${sanitizeForPrompt(name)} (${detail}, ${flags})`);
+  }
+  return lines;
 }
